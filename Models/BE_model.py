@@ -1,3 +1,31 @@
+"""
+Boundary Estimation Model - High-level Interface
+
+This module provides the BoundaryEstimationModel class, a stateful wrapper
+around the stateless BEModel core. It maintains backward compatibility with
+existing analysis code while delegating to the new functional core.
+
+For inference (MCMC, SBI), use the core directly:
+    from Models.BE_core import BEParams, BEState, BEModel
+
+For interactive use, analysis, and plotting:
+    from Models.BE_model import BoundaryEstimationModel
+
+Usage:
+    # Simulation
+    model = BoundaryEstimationModel(sigma_percep=0.15, A_repulsion=0.1,
+                                    eta_learning=0.35, eta_relax=0.12)
+    model.reset_belief(burn_in=1000)
+    choices, p_B = model.simulate_session(stimuli, categories)
+    
+    # Fitting
+    model, results = BoundaryEstimationModel.fit(stimuli, categories, observed_choices)
+    
+    # Access core components
+    params = model.params  # BEParams
+    state = model.state    # BEState
+"""
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -5,12 +33,11 @@ from typing import Optional, Dict, List, Tuple, Union
 import warnings
 
 from scipy.optimize import minimize
-from scipy.stats import norm
-from scipy.integrate import trapezoid
 
-from Analysis.update_matrix import compute_update_matrix, matrix_error
+from Models.BE_core import BEParams, BEState, BEModel
 from Helpers.psychometry import fit_psychometric
 from Helpers.utils import generate_stimuli
+
 
 # =============================================================================
 # BOUNDARY ESTIMATION MODEL CLASS
@@ -20,22 +47,23 @@ class BoundaryEstimationModel:
     """
     Boundary Estimation (BE) model for sound categorisation.
     
-    The agent maintains a belief distribution over the category boundary location
-    and updates this belief based on trial-by-trial feedback (true category).
+    This is a stateful wrapper around the functional BEModel core.
+    It maintains parameters and state internally for convenient interactive use.
     
     Parameters:
         sigma_percep: Perceptual noise standard deviation
         A_repulsion: Serial dependence strength (repulsion from previous trial)
-        mu_learning: Learning rate for boundary belief updates
-        mu_relax: Relaxation rate toward uniform distribution
+        eta_learning: Learning rate for boundary belief updates
+        eta_relax: Relaxation rate toward uniform distribution
     
-    Derived:
-        sigma_boundary = 1 / sigma_percep (update precision in sigmoid)
+    Attributes:
+        params: BEParams object (immutable parameters)
+        state: BEState object (mutable belief state)
     
     Usage:
         # Simulation
         model = BoundaryEstimationModel(sigma_percep=0.15, A_repulsion=0.1,
-                                        mu_learning=0.3, mu_relax=0.1)
+                                        eta_learning=0.35, eta_relax=0.12)
         choices, p_B = model.simulate_session(stimuli, categories)
         
         # Fitting
@@ -47,11 +75,11 @@ class BoundaryEstimationModel:
     """
     
     # =========================================================================
-    # CORE MODEL METHODS
+    # INITIALISATION
     # =========================================================================
     
     def __init__(self, sigma_percep: float, A_repulsion: float,
-                 mu_learning: float, mu_relax: float,
+                 eta_learning: float, eta_relax: float,
                  x_min: float = -1, x_max: float = 1, n_points: int = 500):
         """
         Initialise model with parameters.
@@ -59,26 +87,91 @@ class BoundaryEstimationModel:
         Args:
             sigma_percep: Perceptual noise standard deviation
             A_repulsion: Strength of serial dependence (repulsion)
-            mu_learning: Learning rate for boundary belief updates
-            mu_relax: Relaxation rate toward uniform distribution
+            eta_learning: Learning rate for boundary belief updates
+            eta_relax: Relaxation rate toward uniform distribution
             x_min, x_max: Stimulus space bounds
             n_points: Discretisation resolution for belief distribution
         """
-        self.sigma_percep = sigma_percep
-        self.A_repulsion = A_repulsion
-        self.mu_learning = mu_learning
-        self.mu_relax = mu_relax
-        self.sigma_boundary = 1 / sigma_percep  # Derived parameter
+        # Store as BEParams
+        self._params = BEParams(
+            sigma_percep=sigma_percep,
+            A_repulsion=A_repulsion,
+            eta_learning=eta_learning,
+            eta_relax=eta_relax
+        )
         
-        # Stimulus space discretisation
-        self.x = np.linspace(x_min, x_max, n_points)
-        self.x_min = x_min
-        self.x_max = x_max
-        self.n_points = n_points
+        # Grid settings
+        self._x_min = x_min
+        self._x_max = x_max
+        self._n_points = n_points
         
         # Initialise state
-        self.reset_belief()
-        self.s_hat_prev = None
+        self._state = BEState.initial_uniform(x_min, x_max, n_points)
+        
+        # Storage for plotting
+        self._history = {}
+    
+    # =========================================================================
+    # PROPERTIES - Access to core components
+    # =========================================================================
+    
+    @property
+    def params(self) -> BEParams:
+        """Access underlying BEParams object."""
+        return self._params
+    
+    @property
+    def state(self) -> BEState:
+        """Access underlying BEState object."""
+        return self._state
+    
+    @property
+    def sigma_percep(self) -> float:
+        return self._params.sigma_percep
+    
+    @property
+    def A_repulsion(self) -> float:
+        return self._params.A_repulsion
+    
+    @property
+    def eta_learning(self) -> float:
+        return self._params.eta_learning
+    
+    @property
+    def eta_relax(self) -> float:
+        return self._params.eta_relax
+    
+    @property
+    def sigma_boundary(self) -> float:
+        return self._params.sigma_boundary
+    
+    @property
+    def x(self) -> np.ndarray:
+        return self._state.x
+    
+    @property
+    def x_min(self) -> float:
+        return self._x_min
+    
+    @property
+    def x_max(self) -> float:
+        return self._x_max
+    
+    @property
+    def n_points(self) -> int:
+        return self._n_points
+    
+    @property
+    def boundary_belief(self) -> np.ndarray:
+        return self._state.boundary_belief
+    
+    @property
+    def s_hat_prev(self) -> Optional[float]:
+        return self._state.s_hat_prev
+    
+    # =========================================================================
+    # STATE MANAGEMENT
+    # =========================================================================
     
     def reset_belief(self, belief: Optional[np.ndarray] = None,
                      burn_in: int = 0, burn_in_seed: int = 42):
@@ -99,135 +192,62 @@ class BoundaryEstimationModel:
             would have experienced before the session starts.
         """
         if belief is not None:
-            if len(belief) != len(self.x):
-                raise ValueError(f"Belief length ({len(belief)}) must match "
-                                f"discretisation ({len(self.x)})")
-            self.boundary_belief = belief.copy()
-            # Normalise
-            self.boundary_belief = self.boundary_belief / trapezoid(self.boundary_belief, self.x)
+            self._state = BEState.from_belief(
+                belief, self._x_min, self._x_max, s_hat_prev=None
+            )
         elif burn_in > 0:
-            self._run_burn_in(burn_in, burn_in_seed)
+            initial = BEState.initial_uniform(self._x_min, self._x_max, self._n_points)
+            self._state = BEModel.run_burn_in(
+                self._params, initial, burn_in, burn_in_seed
+            )
         else:
-            # Uniform belief
-            self.boundary_belief = np.ones_like(self.x) / (self.x_max - self.x_min)
-            # Normalise properly
-            self.boundary_belief = self.boundary_belief / trapezoid(self.boundary_belief, self.x)
-        
-        self.s_hat_prev = None
+            self._state = BEState.initial_uniform(
+                self._x_min, self._x_max, self._n_points
+            )
     
-    def _run_burn_in(self, n_trials: int, seed: int):
+    def get_belief_copy(self) -> np.ndarray:
+        """Return copy of current boundary belief distribution."""
+        return self._state.boundary_belief.copy()
+    
+    def set_belief(self, belief: np.ndarray):
         """
-        Run burn-in simulation to establish expert-like belief.
-        
-        Simulates n_trials with uniform stimulus distribution, updating the
-        boundary belief as if the animal had experienced these trials.
+        Set boundary belief distribution (for carrying across sessions).
         
         Args:
-            n_trials: Number of burn-in trials
-            seed: Random seed
+            belief: New belief distribution (will be normalised)
         """
-        rng = np.random.default_rng(seed)
-        
-        # Start with uniform belief
-        self.boundary_belief = np.ones_like(self.x) / (self.x_max - self.x_min)
-        self.boundary_belief = self.boundary_belief / trapezoid(self.boundary_belief, self.x)
-        self.s_hat_prev = None
-        
-        # Generate burn-in stimuli (uniform distribution)
-        burn_in_stimuli, burn_in_categories, rng = generate_stimuli(x_min = self.x_min,
-                                                                   x_max = self.x_max,
-                                                                   n_trials = n_trials,
-                                                                   seed=42)
-
-        
-        # Run through trials (don't need to store choices)
-        for t in range(n_trials):
-            s_hat = self._perceive_stimulus(burn_in_stimuli[t], rng)
-            # Update belief based on true category
-            self._update_belief(s_hat, burn_in_categories[t])
+        self._state = BEState.from_belief(
+            belief, self._x_min, self._x_max, self._state.s_hat_prev
+        )
     
-    def _perceive_stimulus(self, s_t: float, rng: np.random.Generator) -> float:
-        """
-        Apply perceptual noise and repulsion from previous trial.
-        
-        Args:
-            s_t: True stimulus value
-            rng: Random number generator
-        
-        Returns:
-            s_hat: Perceived stimulus value
-        """
-        # Perceptual noise
-        noise = rng.normal(0, self.sigma_percep)
-        s_tilde = s_t + noise
-        
-        # Repulsion from previous trial
-        if self.s_hat_prev is not None:
-            diff = s_tilde - self.s_hat_prev
-            repulsion = self.A_repulsion * diff * np.exp(-np.abs(diff))
-            s_hat = s_tilde + repulsion
-        else:
-            s_hat = s_tilde
-        
-        return s_hat
+    def get_params(self) -> Dict[str, float]:
+        """Return current parameters as dict."""
+        return self._params.to_dict()
     
-    def _find_closest_idx(self, s_hat: float) -> int:
-        """Find index of closest element in x to s_hat."""
-        return int(np.abs(self.x - s_hat).argmin())
+    def get_state(self) -> Dict:
+        """Return complete model state (for checkpointing)."""
+        return {
+            'params': self._params.to_dict(),
+            'boundary_belief': self._state.boundary_belief.copy(),
+            's_hat_prev': self._state.s_hat_prev,
+            'x': self._state.x.copy(),
+            'x_min': self._x_min,
+            'x_max': self._x_max,
+            'n_points': self._n_points
+        }
     
-    def _get_choice_probability(self, s_hat: float) -> float:
-        """
-        Compute P(choose B) given perceived stimulus.
-        
-        P(choose B) = P(boundary < s_hat) = CDF of boundary belief at s_hat
-        
-        Args:
-            s_hat: Perceived stimulus value
-        
-        Returns:
-            P(choose B)
-        """
-        j = self._find_closest_idx(s_hat)
-        p_B = trapezoid(self.boundary_belief[:j+1], self.x[:j+1])
-        return np.clip(p_B, 1e-10, 1 - 1e-10)
+    def _get_belief_stats(self) -> Tuple[float, float]:
+        """Compute mean and std of current boundary belief distribution."""
+        return self._state.get_belief_stats()
     
-    def _update_belief(self, s_hat: float, true_category: int):
-        """
-        Update boundary belief based on feedback.
-        
-        Uses TRUE CATEGORY (not choice) for update. This implements:
-        1. Learning update: sigmoid shift based on feedback
-        2. Relaxation: drift back toward uniform
-        
-        Args:
-            s_hat: Perceived stimulus value
-            true_category: True category (0 = A, 1 = B)
-        """
-        # C = +1 for category B, -1 for category A
-        C = 1 if true_category == 1 else -1
-        
-        # Learning update (sigmoid)
-        delta_learning = 1 / (1 + np.exp(-self.sigma_boundary * C * (self.x - s_hat)))
-        y_prime = self.boundary_belief - self.mu_learning * delta_learning
-        
-        # Relaxation toward uniform (0.5)
-        delta_relax = y_prime - 0.5
-        y_double_prime = y_prime - self.mu_relax * delta_relax
-        
-        # Ensure non-negative
-        min_val = np.min(y_double_prime)
-        if min_val < 0:
-            y_double_prime = y_double_prime + np.abs(min_val)
-        
-        # Normalise
-        self.boundary_belief = y_double_prime / trapezoid(y_double_prime, self.x)
-        
-        # Store for next trial's repulsion
-        self.s_hat_prev = s_hat
+    # =========================================================================
+    # SIMULATION
+    # =========================================================================
     
     def simulate_session(self, stimuli: np.ndarray, categories: np.ndarray,
                          no_response: Optional[np.ndarray] = None,
-                         rng: Optional[np.random.Generator] = None
+                         rng: Optional[np.random.Generator] = None,
+                         store_history: bool = False
                          ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Simulate choices for a session.
@@ -240,39 +260,38 @@ class BoundaryEstimationModel:
             categories: Array of true categories (for feedback)
             no_response: Boolean array (True = skip trial)
             rng: Numpy random generator
+            store_history: If True, store belief history for plotting
         
         Returns:
             choices: Simulated choice sequence (0 = A, 1 = B, NaN = no response)
             p_B_sequence: P(choose B) at each trial
+        
+        Note:
+            If store_history=True, also populates self._history for plot_session()
         """
         if rng is None:
             rng = np.random.default_rng()
-        if no_response is None:
-            no_response = np.zeros(len(stimuli), dtype=bool)
         
-        n = len(stimuli)
-        choices = np.full(n, np.nan)
-        p_B_sequence = np.full(n, np.nan)
+        if store_history:
+            choices, p_B, belief_mu, belief_std, self._state = \
+                BEModel.simulate_session_with_history(
+                    self._params, self._state, stimuli, categories, rng, no_response
+                )
+            
+            self._history = {
+                'stimuli': stimuli.copy(),
+                'categories': categories.copy(),
+                'choices': choices.copy(),
+                'p_B': p_B.copy(),
+                'belief_mu': belief_mu,
+                'belief_std': belief_std
+            }
+        else:
+            choices, p_B, self._state = BEModel.simulate_session(
+                self._params, self._state, stimuli, categories, rng, no_response
+            )
         
-        for t in range(n):
-            if no_response[t]:
-                continue
-            
-            # Perceive
-            s_hat = self._perceive_stimulus(stimuli[t], rng)
-            
-            # Compute choice probability
-            p_B = self._get_choice_probability(s_hat)
-            p_B_sequence[t] = p_B
-            
-            # Model makes choice
-            choice = rng.binomial(1, p_B)
-            choices[t] = choice
-            
-            # Update based on TRUE CATEGORY (not choice)
-            self._update_belief(s_hat, categories[t])
-        
-        return choices, p_B_sequence
+        return choices, p_B
     
     # =========================================================================
     # LIKELIHOOD COMPUTATION
@@ -300,82 +319,18 @@ class BoundaryEstimationModel:
         
         Returns:
             total_log_lik: Sum of log-likelihoods for evaluated trials
-            trial_log_liks: Array of per-trial log-likelihoods (only for evaluated trials)
+            trial_log_liks: Array of per-trial log-likelihoods
             n_eval: Number of evaluated trials
         """
         rng = np.random.default_rng(seed)
         
-        if no_response is None:
-            no_response = np.isnan(observed_choices)
+        total_ll, trial_lls, self._state = BEModel.compute_log_likelihood(
+            self._params, self._state, stimuli, categories, observed_choices,
+            rng, eval_mask, no_response
+        )
         
-        log_liks = []
-        n_eval = 0
-        
-        for t in range(len(stimuli)):
-            if no_response[t]:
-                continue
-            
-            # Perceive
-            s_hat = self._perceive_stimulus(stimuli[t], rng)
-            
-            # Compute choice probability
-            p_B = self._get_choice_probability(s_hat)
-            
-            # Accumulate LL if in eval set
-            if eval_mask is None or eval_mask[t]:
-                if observed_choices[t] == 1:
-                    log_liks.append(np.log(p_B))
-                else:
-                    log_liks.append(np.log(1 - p_B))
-                n_eval += 1
-            
-            # ALWAYS update belief (maintains correct state)
-            self._update_belief(s_hat, categories[t])
-        
-        log_liks = np.array(log_liks)
-        total_log_lik = np.sum(log_liks) if len(log_liks) > 0 else 0.0
-        
-        return total_log_lik, log_liks, n_eval
-    
-    # =========================================================================
-    # STATE MANAGEMENT
-    # =========================================================================
-    
-    def get_belief_copy(self) -> np.ndarray:
-        """Return copy of current boundary belief distribution."""
-        return self.boundary_belief.copy()
-    
-    def set_belief(self, belief: np.ndarray):
-        """
-        Set boundary belief distribution (for carrying across sessions).
-        
-        Args:
-            belief: New belief distribution (will be normalised)
-        """
-        self.boundary_belief = belief.copy()
-        # Normalise
-        self.boundary_belief = self.boundary_belief / trapezoid(self.boundary_belief, self.x)
-    
-    def get_params(self) -> Dict[str, float]:
-        """Return current parameters as dict."""
-        return {
-            'sigma_percep': self.sigma_percep,
-            'A_repulsion': self.A_repulsion,
-            'mu_learning': self.mu_learning,
-            'mu_relax': self.mu_relax
-        }
-    
-    def get_state(self) -> Dict:
-        """Return complete model state (for checkpointing)."""
-        return {
-            'params': self.get_params(),
-            'boundary_belief': self.boundary_belief.copy(),
-            's_hat_prev': self.s_hat_prev,
-            'x': self.x.copy(),
-            'x_min': self.x_min,
-            'x_max': self.x_max,
-            'n_points': self.n_points
-        }
+        n_eval = int(np.sum(~np.isnan(trial_lls)))
+        return total_ll, trial_lls, n_eval
     
     # =========================================================================
     # CLASS METHODS: PARAMETER INFO
@@ -384,17 +339,12 @@ class BoundaryEstimationModel:
     @classmethod
     def get_bounds(cls) -> Dict[str, Tuple[float, float]]:
         """Parameter bounds for fitting."""
-        return {
-            'sigma_percep': (0.05, 0.5),
-            'A_repulsion': (0.0, 0.5),
-            'mu_learning': (0.05, 0.9),
-            'mu_relax': (0.01, 0.4)
-        }
+        return BEParams.get_bounds()
     
     @classmethod
     def get_param_names(cls) -> List[str]:
         """Parameter names in canonical order."""
-        return ['sigma_percep', 'A_repulsion', 'mu_learning', 'mu_relax']
+        return BEParams.get_param_names()
     
     # =========================================================================
     # FITTING: MAIN ENTRY POINT
@@ -415,8 +365,7 @@ class BoundaryEstimationModel:
             method: str = 'L-BFGS-B',
             n_restarts: int = 5,
             seed: int = 42
-            ) -> Tuple['BoundaryEstimationModel', Dict]: #type: ignore
-        
+            ) -> Tuple['BoundaryEstimationModel', Dict]:
         """
         Fit model to observed data using MLE.
         
@@ -446,16 +395,7 @@ class BoundaryEstimationModel:
         
         Returns:
             best_model: Fitted model instance (belief reset to initial state)
-            results: Dict with:
-                - 'params': All parameter values
-                - 'free_params': Dict of fitted parameters
-                - 'fixed_params': Dict of fixed parameters
-                - 'train_nll': Training negative log-likelihood
-                - 'train_nll_per_trial': NLL per trial
-                - 'test_nll': Test NLL (if validation used)
-                - 'test_nll_per_trial': Test NLL per trial (if validation used)
-                - 'aic', 'bic': Information criteria
-                - 'n_train', 'n_test': Number of trials
+            results: Dict with fitting results
         """
         if validation not in [None, 'holdout', 'cv']:
             raise ValueError(f"validation must be None, 'holdout', or 'cv', got '{validation}'")
@@ -523,27 +463,25 @@ class BoundaryEstimationModel:
         
         def neg_log_likelihood(free_param_values):
             # Reconstruct full param dict
-            params = fixed_params.copy()
+            params_dict = fixed_params.copy()
             for name, val in zip(free_param_names, free_param_values):
-                params[name] = val
+                params_dict[name] = val
             
-            # Create model
-            model = cls(
-                sigma_percep=params['sigma_percep'],
-                A_repulsion=params['A_repulsion'],
-                mu_learning=params['mu_learning'],
-                mu_relax=params['mu_relax']
-            )
+            # Create params and initial state
+            params = BEParams.from_dict(params_dict)
             
-            # Set initial belief
             if initial_belief is not None:
-                model.set_belief(initial_belief)
-            elif burn_in > 0:
-                model.reset_belief(burn_in=burn_in, burn_in_seed=burn_in_seed)
+                initial_state = BEState.from_belief(initial_belief)
+            else:
+                initial_state = BEModel.create_initial_state(
+                    burn_in=burn_in, params=params, seed=burn_in_seed
+                )
             
-            ll, _, _ = model.compute_log_likelihood(
-                stimuli, categories, observed_choices,
-                no_response=no_response
+            # Compute likelihood
+            ll_rng = np.random.default_rng(42)  # Fixed for deterministic LL
+            ll, _, _ = BEModel.compute_log_likelihood(
+                params, initial_state, stimuli, categories, observed_choices,
+                ll_rng, no_response=no_response
             )
             
             return -ll
@@ -583,8 +521,8 @@ class BoundaryEstimationModel:
         best_model = cls(
             sigma_percep=best_params['sigma_percep'],
             A_repulsion=best_params['A_repulsion'],
-            mu_learning=best_params['mu_learning'],
-            mu_relax=best_params['mu_relax']
+            eta_learning=best_params['eta_learning'],
+            eta_relax=best_params['eta_relax']
         )
         
         # Set initial belief for model
@@ -657,32 +595,28 @@ class BoundaryEstimationModel:
         rng = np.random.default_rng(seed)
         
         def neg_log_likelihood_train(free_param_values):
-            """NLL on training trials only, but process all trials for correct state."""
-            params = fixed_params.copy()
+            params_dict = fixed_params.copy()
             for name, val in zip(free_param_names, free_param_values):
-                params[name] = val
+                params_dict[name] = val
             
-            model = cls(
-                sigma_percep=params['sigma_percep'],
-                A_repulsion=params['A_repulsion'],
-                mu_learning=params['mu_learning'],
-                mu_relax=params['mu_relax']
-            )
+            params = BEParams.from_dict(params_dict)
             
             if initial_belief is not None:
-                model.set_belief(initial_belief)
-            elif burn_in > 0:
-                model.reset_belief(burn_in=burn_in, burn_in_seed=burn_in_seed)
+                initial_state = BEState.from_belief(initial_belief)
+            else:
+                initial_state = BEModel.create_initial_state(
+                    burn_in=burn_in, params=params, seed=burn_in_seed
+                )
             
-            ll, _, _ = model.compute_log_likelihood(
-                stimuli, categories, observed_choices,
-                eval_mask=train_mask,
-                no_response=no_response
+            ll_rng = np.random.default_rng(42)
+            ll, _, _ = BEModel.compute_log_likelihood(
+                params, initial_state, stimuli, categories, observed_choices,
+                ll_rng, eval_mask=train_mask, no_response=no_response
             )
             
             return -ll
         
-        # Multiple restarts
+        # Optimise
         best_nll = np.inf
         best_free_params = None
         
@@ -708,45 +642,37 @@ class BoundaryEstimationModel:
         if best_free_params is None:
             raise RuntimeError("All optimisation attempts failed")
         
-        # Reconstruct full params
+        # Reconstruct params
         best_params = fixed_params.copy()
         for name, val in zip(free_param_names, best_free_params):
             best_params[name] = val
         
-        # Create fitted model and compute test NLL
-        best_model = cls(
-            sigma_percep=best_params['sigma_percep'],
-            A_repulsion=best_params['A_repulsion'],
-            mu_learning=best_params['mu_learning'],
-            mu_relax=best_params['mu_relax']
-        )
-        
+        # Compute test likelihood
+        params = BEParams.from_dict(best_params)
         if initial_belief is not None:
-            best_model.set_belief(initial_belief)
-        elif burn_in > 0:
-            best_model.reset_belief(burn_in=burn_in, burn_in_seed=burn_in_seed)
+            initial_state = BEState.from_belief(initial_belief)
+        else:
+            initial_state = BEModel.create_initial_state(
+                burn_in=burn_in, params=params, seed=burn_in_seed
+            )
         
-        # Compute test NLL (process all trials, eval only test)
-        test_ll, _, n_test = best_model.compute_log_likelihood(
-            stimuli, categories, observed_choices,
-            eval_mask=test_mask,
-            no_response=no_response
+        ll_rng = np.random.default_rng(42)
+        test_ll, _, _ = BEModel.compute_log_likelihood(
+            params, initial_state, stimuli, categories, observed_choices,
+            ll_rng, eval_mask=test_mask, no_response=no_response
         )
         test_nll = -test_ll
         
-        # Reset model for return
+        # Create model
+        best_model = cls(**best_params)
         if initial_belief is not None:
             best_model.set_belief(initial_belief)
         elif burn_in > 0:
             best_model.reset_belief(burn_in=burn_in, burn_in_seed=burn_in_seed)
-        else:
-            best_model.reset_belief()
         
-        # Compute statistics
-        n_train = int(np.sum(train_mask))
+        n_train = int(train_mask.sum())
+        n_test = int(test_mask.sum())
         n_free_params = len(free_param_names)
-        aic = 2 * best_nll + 2 * n_free_params
-        bic = 2 * best_nll + n_free_params * np.log(n_train)
         
         results = {
             'inference': 'mle',
@@ -761,48 +687,34 @@ class BoundaryEstimationModel:
             'n_train': n_train,
             'n_test': n_test,
             'n_free_params': n_free_params,
-            'aic': aic,
-            'bic': bic,
-            'split_idx': split_idx,
-            'test_fraction': test_fraction,
-            'burn_in': burn_in
+            'aic': 2 * best_nll + 2 * n_free_params,
+            'bic': 2 * best_nll + n_free_params * np.log(n_train),
+            'burn_in': burn_in,
+            'test_fraction': test_fraction
         }
         
         return best_model, results
     
     @classmethod
     def _fit_mle_cv(cls, stimuli: np.ndarray, categories: np.ndarray,
-                    observed_choices: np.ndarray,
-                    no_response: Optional[np.ndarray],
-                    fixed_params: Optional[Dict[str, float]],
-                    initial_belief: Optional[np.ndarray],
-                    burn_in: int, burn_in_seed: int,
-                    validation_config: Dict,
-                    method: str, n_restarts: int, seed: int
-                    ) -> Tuple['BoundaryEstimationModel', Dict]:
-        """MLE fitting with block-based cross-validation."""
+                     observed_choices: np.ndarray,
+                     no_response: Optional[np.ndarray],
+                     fixed_params: Optional[Dict[str, float]],
+                     initial_belief: Optional[np.ndarray],
+                     burn_in: int, burn_in_seed: int,
+                     validation_config: Dict,
+                     method: str, n_restarts: int, seed: int
+                     ) -> Tuple['BoundaryEstimationModel', Dict]:
+        """MLE fitting with cross-validation."""
         
         block_size = validation_config.get('block_size', 50)
         n_folds = validation_config.get('n_folds', 2)
         n_repetitions = validation_config.get('n_repetitions', 4)
         
+        n_trials = len(stimuli)
+        
         if no_response is None:
             no_response = np.isnan(observed_choices)
-        
-        n_trials = len(stimuli)
-        valid_trials = ~no_response
-        valid_indices = np.where(valid_trials)[0]
-        
-        # Create blocks
-        n_blocks = len(valid_indices) // block_size
-        if n_blocks < n_folds:
-            warnings.warn(f"Not enough blocks ({n_blocks}) for {n_folds}-fold CV. "
-                         f"Using holdout instead.")
-            return cls._fit_mle_holdout(
-                stimuli, categories, observed_choices, no_response,
-                fixed_params, initial_belief, burn_in, burn_in_seed,
-                {'test_fraction': 1/n_folds}, method, n_restarts, seed
-            )
         
         all_bounds = cls.get_bounds()
         all_param_names = cls.get_param_names()
@@ -815,340 +727,146 @@ class BoundaryEstimationModel:
         
         rng = np.random.default_rng(seed)
         
-        # Storage for CV results
-        all_test_nlls = []
-        all_train_nlls = []
+        # Create block indices
+        n_blocks = n_trials // block_size
+        block_indices = np.arange(n_blocks)
+        
+        cv_results = []
         
         for rep in range(n_repetitions):
-            # Shuffle blocks
-            block_indices = list(range(n_blocks))
             rng.shuffle(block_indices)
-            
-            # Split into folds
             fold_size = n_blocks // n_folds
             
             for fold in range(n_folds):
-                # Determine test blocks
-                test_block_start = fold * fold_size
-                test_block_end = test_block_start + fold_size
-                test_blocks = block_indices[test_block_start:test_block_end]
-                train_blocks = [b for b in block_indices if b not in test_blocks]
+                # Create train/test masks
+                test_blocks = block_indices[fold * fold_size:(fold + 1) * fold_size]
                 
-                # Create masks
-                train_mask = np.zeros(n_trials, dtype=bool)
                 test_mask = np.zeros(n_trials, dtype=bool)
-                
-                for b in train_blocks:
-                    start = b * block_size
-                    end = min(start + block_size, len(valid_indices))
-                    train_mask[valid_indices[start:end]] = True
-                
                 for b in test_blocks:
-                    start = b * block_size
-                    end = min(start + block_size, len(valid_indices))
-                    test_mask[valid_indices[start:end]] = True
+                    test_mask[b * block_size:(b + 1) * block_size] = True
+                test_mask = test_mask & ~no_response
                 
-                # Fit on train, evaluate on test
-                def neg_log_likelihood_train(free_param_values):
-                    params = fixed_params.copy()
+                train_mask = ~test_mask & ~no_response
+                
+                # Fit on train
+                def neg_ll_train(free_param_values):
+                    params_dict = fixed_params.copy()
                     for name, val in zip(free_param_names, free_param_values):
-                        params[name] = val
+                        params_dict[name] = val
                     
-                    model = cls(
-                        sigma_percep=params['sigma_percep'],
-                        A_repulsion=params['A_repulsion'],
-                        mu_learning=params['mu_learning'],
-                        mu_relax=params['mu_relax']
-                    )
-                    
+                    params = BEParams.from_dict(params_dict)
                     if initial_belief is not None:
-                        model.set_belief(initial_belief)
-                    elif burn_in > 0:
-                        model.reset_belief(burn_in=burn_in, burn_in_seed=burn_in_seed)
+                        initial_state = BEState.from_belief(initial_belief)
+                    else:
+                        initial_state = BEModel.create_initial_state(
+                            burn_in=burn_in, params=params, seed=burn_in_seed
+                        )
                     
-                    ll, _, _ = model.compute_log_likelihood(
-                        stimuli, categories, observed_choices,
-                        eval_mask=train_mask,
-                        no_response=no_response
+                    ll_rng = np.random.default_rng(42)
+                    ll, _, _ = BEModel.compute_log_likelihood(
+                        params, initial_state, stimuli, categories, observed_choices,
+                        ll_rng, eval_mask=train_mask, no_response=no_response
                     )
-                    
                     return -ll
                 
-                # Fit
-                best_nll_fold = np.inf
-                best_params_fold = None
+                best_nll = np.inf
+                best_free = None
                 
-                for i in range(n_restarts):
+                for restart in range(n_restarts):
                     x0 = [rng.uniform(b[0], b[1]) for b in free_bounds]
-                    
                     try:
-                        result = minimize(
-                            neg_log_likelihood_train,
-                            x0=x0,
-                            method=method,
-                            bounds=free_bounds,
-                            options={'maxiter': 500}
-                        )
-                        
-                        if result.fun < best_nll_fold:
-                            best_nll_fold = result.fun
-                            best_params_fold = result.x
-                    
+                        result = minimize(neg_ll_train, x0=x0, method=method,
+                                         bounds=free_bounds, options={'maxiter': 1000})
+                        if result.fun < best_nll:
+                            best_nll = result.fun
+                            best_free = result.x
                     except Exception:
                         continue
                 
-                if best_params_fold is not None:
-                    # Compute test NLL
-                    params = fixed_params.copy()
-                    for name, val in zip(free_param_names, best_params_fold):
-                        params[name] = val
+                if best_free is not None:
+                    # Compute test LL
+                    params_dict = fixed_params.copy()
+                    for name, val in zip(free_param_names, best_free):
+                        params_dict[name] = val
                     
-                    model = cls(
-                        sigma_percep=params['sigma_percep'],
-                        A_repulsion=params['A_repulsion'],
-                        mu_learning=params['mu_learning'],
-                        mu_relax=params['mu_relax']
-                    )
-                    
+                    params = BEParams.from_dict(params_dict)
                     if initial_belief is not None:
-                        model.set_belief(initial_belief)
-                    elif burn_in > 0:
-                        model.reset_belief(burn_in=burn_in, burn_in_seed=burn_in_seed)
+                        initial_state = BEState.from_belief(initial_belief)
+                    else:
+                        initial_state = BEModel.create_initial_state(
+                            burn_in=burn_in, params=params, seed=burn_in_seed
+                        )
                     
-                    test_ll, _, n_test = model.compute_log_likelihood(
-                        stimuli, categories, observed_choices,
-                        eval_mask=test_mask,
-                        no_response=no_response
+                    ll_rng = np.random.default_rng(42)
+                    test_ll, _, _ = BEModel.compute_log_likelihood(
+                        params, initial_state, stimuli, categories, observed_choices,
+                        ll_rng, eval_mask=test_mask, no_response=no_response
                     )
                     
-                    all_train_nlls.append(best_nll_fold / np.sum(train_mask))
-                    all_test_nlls.append(-test_ll / n_test if n_test > 0 else np.nan)
+                    cv_results.append({
+                        'rep': rep,
+                        'fold': fold,
+                        'train_nll': best_nll,
+                        'test_nll': -test_ll,
+                        'n_train': int(train_mask.sum()),
+                        'n_test': int(test_mask.sum()),
+                        'params': params_dict.copy()
+                    })
         
-        # Final fit on all data
-        best_model, final_results = cls._fit_mle_no_validation(
+        # Fit final model on all data
+        best_model, full_results = cls._fit_mle_no_validation(
             stimuli, categories, observed_choices, no_response,
             fixed_params, initial_belief, burn_in, burn_in_seed,
             method, n_restarts, seed
         )
         
-        # Add CV results
-        final_results['validation'] = 'cv'
-        final_results['cv_train_nlls'] = np.array(all_train_nlls)
-        final_results['cv_test_nlls'] = np.array(all_test_nlls)
-        final_results['cv_train_nll_mean'] = np.nanmean(all_train_nlls)
-        final_results['cv_test_nll_mean'] = np.nanmean(all_test_nlls)
-        final_results['cv_train_nll_std'] = np.nanstd(all_train_nlls)
-        final_results['cv_test_nll_std'] = np.nanstd(all_test_nlls)
-        final_results['cv_config'] = validation_config
+        # Aggregate CV results
+        cv_df = pd.DataFrame(cv_results)
         
-        return best_model, final_results
-    
-    # =========================================================================
-    # DIAGNOSTICS: SERIAL DEPENDENCE COMPARISON
-    # =========================================================================
-    
-    def compare_serial_dependence(self, stimuli: np.ndarray, categories: np.ndarray,
-                                   observed_choices: np.ndarray, rewards: np.ndarray,
-                                   no_response: np.ndarray, not_blockstart: np.ndarray,
-                                   n_simulations: int = 10,
-                                   n_bins: int = 8,
-                                   trial_filter: str = 'post_correct',
-                                   seed: int = 42) -> Dict:
-        """
-        Compare model's serial dependence pattern to observed data.
+        results = full_results.copy()
+        results['validation'] = 'cv'
+        results['cv_results'] = cv_df
+        results['cv_test_nll_mean'] = cv_df['test_nll'].mean()
+        results['cv_test_nll_std'] = cv_df['test_nll'].std()
+        results['cv_test_nll_per_trial_mean'] = (cv_df['test_nll'] / cv_df['n_test']).mean()
+        results['cv_test_nll_per_trial_std'] = (cv_df['test_nll'] / cv_df['n_test']).std()
         
-        Simulates choices from the model and computes update matrices for both
-        data and model, allowing direct comparison of serial dependence patterns.
-        
-        Args:
-            stimuli: Stimulus values
-            categories: True categories
-            observed_choices: Animal's actual choices
-            rewards: Actual rewards (1 = correct)
-            no_response: Boolean array (True = no response)
-            not_blockstart: Boolean array (True = not start of block)
-            n_simulations: Number of model simulations to average
-            n_bins: Number of bins for update matrix
-            trial_filter: 'post_correct' or 'all'
-            seed: Random seed
-        
-        Returns:
-            Dict with:
-                - data_update_matrix, data_conditional_matrix
-                - model_update_matrix (mean), model_conditional_matrix (mean)
-                - model_update_matrices (all simulations)
-                - matrix_error: MSE between data and model matrices
-                - data_info, model_info: Fitting details
-        """
-        # Store initial state
-        initial_belief = self.get_belief_copy()
-        initial_s_hat_prev = self.s_hat_prev
-        
-        # Compute data matrices
-        data_update, data_cond, data_info = compute_update_matrix(
-            stimuli, observed_choices, rewards, no_response, not_blockstart,
-            n_bins=n_bins, trial_filter=trial_filter
-        )
-        
-        # Simulate and compute model matrices
-        model_updates = []
-        model_conds = []
-        
-        for sim in range(n_simulations):
-            # Reset to initial state
-            self.set_belief(initial_belief)
-            self.s_hat_prev = initial_s_hat_prev
-            
-            # Simulate
-            sim_rng = np.random.default_rng(seed + sim * 1000)
-            sim_choices, _ = self.simulate_session(stimuli, categories, no_response, sim_rng)
-            
-            # Compute rewards for simulated choices
-            sim_rewards = (sim_choices == categories).astype(float)
-            sim_rewards[np.isnan(sim_choices)] = np.nan
-            
-            # Compute matrices
-            sim_update, sim_cond, _ = compute_update_matrix(
-                stimuli, sim_choices, sim_rewards, no_response, not_blockstart,
-                n_bins=n_bins, trial_filter=trial_filter
-            )
-            
-            model_updates.append(sim_update)
-            model_conds.append(sim_cond)
-        
-        # Restore initial state
-        self.set_belief(initial_belief)
-        self.s_hat_prev = initial_s_hat_prev
-        
-        # Average model matrices
-        model_updates = np.array(model_updates)
-        model_conds = np.array(model_conds)
-        
-        mean_model_update = np.nanmean(model_updates, axis=0)
-        mean_model_cond = np.nanmean(model_conds, axis=0)
-        std_model_update = np.nanstd(model_updates, axis=0)
-        
-        # Compute error
-        error = matrix_error(mean_model_update, data_update)
-        
-        return {
-            'data_update_matrix': data_update,
-            'data_conditional_matrix': data_cond,
-            'model_update_matrix': mean_model_update,
-            'model_conditional_matrix': mean_model_cond,
-            'model_update_std': std_model_update,
-            'model_update_matrices': model_updates,
-            'model_conditional_matrices': model_conds,
-            'matrix_error': error,
-            'data_info': data_info,
-            'n_simulations': n_simulations,
-            'n_bins': n_bins,
-            'trial_filter': trial_filter
-        }
-    
-    def compare_to_data(self, stimuli: np.ndarray, categories: np.ndarray,
-                        observed_choices: np.ndarray,
-                        n_simulations: int = 10,
-                        seed: int = 42) -> Dict:
-        """
-        Compare model psychometric predictions to actual data.
-        
-        Args:
-            stimuli: Stimulus values
-            categories: True categories
-            observed_choices: Animal's actual choices
-            n_simulations: Number of model simulations
-            seed: Random seed
-        
-        Returns:
-            Dict with psychometric comparison results
-        """
-        # Store initial state
-        initial_belief = self.get_belief_copy()
-        initial_s_hat_prev = self.s_hat_prev
-        
-        no_response = np.isnan(observed_choices)
-        
-        # Fit data psychometric
-        data_psych = fit_psychometric(stimuli[~no_response], observed_choices[~no_response])
-        
-        # Simulate and fit model psychometrics
-        model_psychs = []
-        x_eval = np.linspace(-1, 1, 100)
-        
-        for sim in range(n_simulations):
-            self.set_belief(initial_belief)
-            self.s_hat_prev = initial_s_hat_prev
-            
-            sim_rng = np.random.default_rng(seed + sim * 1000)
-            sim_choices, _ = self.simulate_session(stimuli, categories, no_response, sim_rng)
-            
-            valid = ~np.isnan(sim_choices)
-            psych = fit_psychometric(stimuli[valid], sim_choices[valid], x_eval)
-            model_psychs.append(psych)
-        
-        # Restore state
-        self.set_belief(initial_belief)
-        self.s_hat_prev = initial_s_hat_prev
-        
-        # Average model psychometric
-        model_curves = np.array([p['y_fit'] for p in model_psychs if p['success']])
-        
-        if len(model_curves) > 0:
-            mean_curve = np.mean(model_curves, axis=0)
-            std_curve = np.std(model_curves, axis=0)
-        else:
-            mean_curve = np.full(len(x_eval), np.nan)
-            std_curve = np.full(len(x_eval), np.nan)
-        
-        return {
-            'data_psychometric': data_psych,
-            'model_psychometrics': model_psychs,
-            'model_curve_mean': mean_curve,
-            'model_curve_std': std_curve,
-            'x_eval': x_eval,
-            'n_simulations': n_simulations
-        }
+        return best_model, results
     
     # =========================================================================
     # PARAMETER RECOVERY
     # =========================================================================
     
     @classmethod
-    def parameter_recovery(cls, n_tests: int = 20, n_trials: int = 300,
-                           fixed_params: Optional[Dict[str, float]] = None,
-                           burn_in: int = 0,
-                           burn_in_seed: int = 42,
-                           validation: Optional[str] = None,
-                           validation_config: Optional[Dict] = None,
-                           seed: int = 42,
-                           verbose: bool = True
-                           ) -> Tuple[Dict, Dict, Dict, Dict]:
+    def parameter_recovery_test(cls, n_tests: int = 20,
+                                 n_trials: int = 300,
+                                 fixed_params: Optional[Dict[str, float]] = None,
+                                 burn_in: int = 0,
+                                 burn_in_seed: int = 42,
+                                 validation: Optional[str] = 'holdout',
+                                 validation_config: Optional[Dict] = None,
+                                 seed: int = 42,
+                                 verbose: bool = True
+                                 ) -> Tuple[Dict, Dict, Dict, Dict]:
         """
-        Test parameter recovery on simulated data.
-        
-        For each test:
-        1. Sample true parameters from uniform prior
-        2. Simulate a session
-        3. Fit the model
-        4. Compare recovered to true parameters
+        Test parameter recovery by simulating and fitting.
         
         Args:
             n_tests: Number of recovery tests
             n_trials: Trials per simulated session
-            fixed_params: Parameters to fix (only test free parameters)
-            burn_in: Burn-in trials for simulation
-            burn_in_seed: Seed for burn-in
-            validation: Validation method for fitting
-            validation_config: Validation settings
+            fixed_params: Parameters to fix during fitting
+            burn_in: Burn-in trials
+            burn_in_seed: Burn-in seed
+            validation: Validation method
+            validation_config: Validation config
             seed: Random seed
             verbose: Print progress
         
         Returns:
-            true_params: Dict of arrays {param_name: true values}
-            recovered_params: Dict of arrays {param_name: recovered values}
-            correlations: Dict of correlations per parameter
-            diagnostics: Dict with NLLs, additional metrics
+            true_params: {param_name: array of true values}
+            recovered_params: {param_name: array of recovered values}
+            correlations: {param_name: correlation}
+            diagnostics: {train_nlls, test_nlls}
         """
         all_bounds = cls.get_bounds()
         all_param_names = cls.get_param_names()
@@ -1160,13 +878,9 @@ class BoundaryEstimationModel:
         
         rng = np.random.default_rng(seed)
         
-        # Storage
         true_params = {name: [] for name in free_param_names}
         recovered_params = {name: [] for name in free_param_names}
-        diagnostics = {
-            'train_nlls': [],
-            'test_nlls': [],
-        }
+        diagnostics = {'train_nlls': [], 'test_nlls': []}
         
         for i in range(n_tests):
             if verbose:
@@ -1181,19 +895,18 @@ class BoundaryEstimationModel:
             all_true = {**fixed_params, **true_free}
             
             # Generate stimuli
-            stimuli, categories, rng = generate_stimuli(x_min = -1,
-                                                        x_max = 1,
-                                                        n_trials = n_trials)
-
-            # Create model with true params
-            model_true = cls(**all_true)
-            if burn_in > 0:
-                model_true.reset_belief(burn_in=burn_in, burn_in_seed=burn_in_seed + i)
+            stimuli, categories, _ = generate_stimuli(
+                n_trials=n_trials, seed=seed + i * 1000
+            )
             
-            # Simulate
-            sim_seed = seed + i * 1000
-            choices_true, _ = model_true.simulate_session(
-                stimuli, categories, rng=np.random.default_rng(sim_seed)
+            # Create and simulate
+            true_model = cls(**all_true)
+            if burn_in > 0:
+                true_model.reset_belief(burn_in=burn_in, burn_in_seed=burn_in_seed + i)
+            
+            sim_rng = np.random.default_rng(seed + i * 1000 + 1)
+            choices_true, _ = true_model.simulate_session(
+                stimuli, categories, rng=sim_rng
             )
             
             # Fit
@@ -1209,7 +922,6 @@ class BoundaryEstimationModel:
                     seed=seed + i
                 )
                 
-                # Store
                 for name in free_param_names:
                     true_params[name].append(true_free[name])
                     recovered_params[name].append(results['params'][name])
@@ -1250,6 +962,127 @@ class BoundaryEstimationModel:
     # PLOTTING
     # =========================================================================
     
+    def plot_session(self, 
+                     stimuli: Optional[np.ndarray] = None,
+                     choices: Optional[np.ndarray] = None,
+                     categories: Optional[np.ndarray] = None,
+                     **kwargs):
+        """
+        Plot trial-by-trial session visualisation.
+        
+        If called after simulate_session(..., store_history=True), can be called
+        without arguments to use stored data.
+        
+        Args:
+            stimuli: Stimulus values (optional if store_history was used)
+            choices: Choice values (optional if store_history was used)
+            categories: Category values (optional if store_history was used)
+            **kwargs: Additional arguments passed to plot_session function
+        
+        Returns:
+            Matplotlib Figure
+        """
+        from Plotting.session import plot_session as _plot_session
+        
+        if stimuli is None:
+            if not self._history:
+                raise ValueError(
+                    "No data available. Run simulate_session(..., store_history=True) "
+                    "first, or provide stimuli, choices, categories explicitly."
+                )
+            stimuli = self._history['stimuli']
+            choices = self._history['choices']
+            categories = self._history['categories']
+            p_B = self._history['p_B']
+            belief_mu = self._history.get('belief_mu')
+            belief_std = self._history.get('belief_std')
+        else:
+            if choices is None or categories is None:
+                raise ValueError("Must provide stimuli, choices, and categories together")
+            p_B = kwargs.pop('p_B', None)
+            belief_mu = kwargs.pop('belief_mu', None)
+            belief_std = kwargs.pop('belief_std', None)
+        
+        return _plot_session(
+            stimuli=stimuli,
+            choices=choices,
+            categories=categories,
+            p_B=p_B,
+            belief_mu=belief_mu,
+            belief_std=belief_std,
+            **kwargs
+        )
+    
+    def plot_belief_evolution(self, stimuli: np.ndarray, categories: np.ndarray,
+                               no_response: Optional[np.ndarray] = None,
+                               n_snapshots: int = 5,
+                               seed: int = 42,
+                               figsize: Tuple[int, int] = (12, 4)) -> plt.Figure:
+        """
+        Plot how boundary belief evolves during a session.
+        
+        Args:
+            stimuli: Stimulus values
+            categories: True categories
+            no_response: No-response mask
+            n_snapshots: Number of belief snapshots to show
+            seed: Random seed
+            figsize: Figure size
+        
+        Returns:
+            Matplotlib figure
+        """
+        if no_response is None:
+            no_response = np.zeros(len(stimuli), dtype=bool)
+        
+        # Store initial state
+        initial_state = self._state.copy()
+        
+        rng = np.random.default_rng(seed)
+        n_trials = len(stimuli)
+        
+        # Determine snapshot points
+        snapshot_trials = np.linspace(0, n_trials - 1, n_snapshots + 1).astype(int)
+        
+        # Collect beliefs
+        beliefs = [self._state.boundary_belief.copy()]
+        trial_indices = [0]
+        
+        for t in range(n_trials):
+            if no_response[t]:
+                continue
+            
+            s_hat = BEModel.perceive_stimulus(
+                stimuli[t], self._params, self._state.s_hat_prev, rng
+            )
+            self._state = BEModel.update_belief(s_hat, categories[t], self._params, self._state)
+            
+            if t + 1 in snapshot_trials:
+                beliefs.append(self._state.boundary_belief.copy())
+                trial_indices.append(t + 1)
+        
+        # Restore state
+        self._state = initial_state
+        
+        # Plot
+        fig, ax = plt.subplots(figsize=figsize)
+        
+        colors = plt.cm.viridis(np.linspace(0, 1, len(beliefs)))
+        
+        for i, (belief, trial_idx) in enumerate(zip(beliefs, trial_indices)):
+            ax.plot(self._state.x, belief, color=colors[i], 
+                   label=f'Trial {trial_idx}', alpha=0.8)
+        
+        ax.axvline(0, color='k', linestyle='--', alpha=0.3, label='True boundary')
+        ax.set_xlabel('Stimulus space')
+        ax.set_ylabel('Belief density')
+        ax.set_title('Boundary belief evolution')
+        ax.legend(loc='upper right')
+        ax.set_xlim(self._x_min, self._x_max)
+        
+        plt.tight_layout()
+        return fig
+    
     @classmethod
     def plot_recovery(cls, true_params: Dict[str, np.ndarray],
                       recovered_params: Dict[str, np.ndarray],
@@ -1283,7 +1116,6 @@ class BoundaryEstimationModel:
             
             ax.scatter(true_vals, rec_vals, alpha=0.6)
             
-            # Identity line
             if name in bounds:
                 lims = list(bounds[name])
             else:
@@ -1299,79 +1131,17 @@ class BoundaryEstimationModel:
             ax.set_ylim(lims)
             ax.set_aspect('equal')
         
-        # Hide unused axes
         for i in range(n_params, len(axes)):
             axes[i].set_visible(False)
         
         plt.tight_layout()
         return fig
-    
-    def plot_belief_evolution(self, stimuli: np.ndarray, categories: np.ndarray,
-                               no_response: Optional[np.ndarray] = None,
-                               n_snapshots: int = 5,
-                               seed: int = 42,
-                               figsize: Tuple[int, int] = (12, 4)) -> plt.Figure:
-        """
-        Plot how boundary belief evolves during a session.
-        
-        Args:
-            stimuli: Stimulus values
-            categories: True categories
-            no_response: No-response mask
-            n_snapshots: Number of belief snapshots to show
-            seed: Random seed
-            figsize: Figure size
-        
-        Returns:
-            Matplotlib figure
-        """
-        if no_response is None:
-            no_response = np.zeros(len(stimuli), dtype=bool)
-        
-        # Store initial state
-        initial_belief = self.get_belief_copy()
-        initial_s_hat_prev = self.s_hat_prev
-        
-        rng = np.random.default_rng(seed)
-        n_trials = len(stimuli)
-        
-        # Determine snapshot points
-        snapshot_trials = np.linspace(0, n_trials - 1, n_snapshots + 1).astype(int)
-        
-        # Collect beliefs
-        beliefs = [self.get_belief_copy()]
-        trial_indices = [0]
-        
-        for t in range(n_trials):
-            if no_response[t]:
-                continue
-            
-            s_hat = self._perceive_stimulus(stimuli[t], rng)
-            self._update_belief(s_hat, categories[t])
-            
-            if t + 1 in snapshot_trials:
-                beliefs.append(self.get_belief_copy())
-                trial_indices.append(t + 1)
-        
-        # Restore state
-        self.set_belief(initial_belief)
-        self.s_hat_prev = initial_s_hat_prev
-        
-        # Plot
-        fig, ax = plt.subplots(figsize=figsize)
-        
-        colors = plt.cm.viridis(np.linspace(0, 1, len(beliefs)))
-        
-        for i, (belief, trial_idx) in enumerate(zip(beliefs, trial_indices)):
-            ax.plot(self.x, belief, color=colors[i], 
-                   label=f'Trial {trial_idx}', alpha=0.8)
-        
-        ax.axvline(0, color='k', linestyle='--', alpha=0.3, label='True boundary')
-        ax.set_xlabel('Stimulus space')
-        ax.set_ylabel('Belief density')
-        ax.set_title('Boundary belief evolution')
-        ax.legend(loc='upper right')
-        ax.set_xlim(self.x_min, self.x_max)
-        
-        plt.tight_layout()
-        return fig
+
+
+# =============================================================================
+# EXPORTS
+# =============================================================================
+
+__all__ = [
+    'BoundaryEstimationModel',
+]

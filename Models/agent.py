@@ -1,8 +1,20 @@
-from Models.BE_model import BoundaryEstimationModel
+"""
+Mixed Agent Model
+
+Agent that combines BE model with heuristic strategies via probabilistic mixture.
+Uses the stateless BE core for clean integration with inference frameworks.
+
+Usage:
+    agent = MixedAgent(alpha=0.7, bias=0.1, p_winstay=0.8, ...)
+    choices, rewards = agent.simulate_session(stimuli, categories)
+"""
+
+from Models.BE_core import BEParams, BEState, BEModel
 
 import numpy as np
 import pandas as pd
 from typing import Dict, Tuple, Optional
+
 
 class MixedAgent:
     """
@@ -31,8 +43,8 @@ class MixedAgent:
         # BE params
         sigma_percep: float = 0.15,
         A_repulsion: float = 0.1,
-        mu_learning: float = 0.35,
-        mu_relax: float = 0.12,
+        eta_learning: float = 0.35,
+        eta_relax: float = 0.12,
         # Mixture weight
         alpha: float = 1.0,  # BE weight; 0 = pure heuristic, 1 = pure BE
         # Heuristic params
@@ -56,8 +68,8 @@ class MixedAgent:
         Args:
             sigma_percep: Perceptual noise (BE param)
             A_repulsion: Repulsion strength (BE param)
-            mu_learning: Learning rate (BE param)
-            mu_relax: Relaxation rate (BE param)
+            eta_learning: Learning rate (BE param)
+            eta_relax: Relaxation rate (BE param)
             alpha: BE weight in mixture (0 = pure heuristic, 1 = pure BE)
             bias: Side bias, added to P(B) = 0.5 + bias
             p_winstay: Probability of repeating choice after reward
@@ -83,10 +95,12 @@ class MixedAgent:
             raise ValueError("Heuristic weights must be non-negative")
         
         # Store BE params
-        self.sigma_percep = sigma_percep
-        self.A_repulsion = A_repulsion
-        self.mu_learning = mu_learning
-        self.mu_relax = mu_relax
+        self._be_params = BEParams(
+            sigma_percep=sigma_percep,
+            A_repulsion=A_repulsion,
+            eta_learning=eta_learning,
+            eta_relax=eta_relax
+        )
         
         # Mixture weight
         self.alpha = alpha
@@ -107,17 +121,57 @@ class MixedAgent:
         self.burn_in_seed = burn_in_seed
         self.n_points = n_points
         
-        # Create internal BE model
-        self._be_model = BoundaryEstimationModel(
-            sigma_percep=sigma_percep,
-            A_repulsion=A_repulsion,
-            mu_learning=mu_learning,
-            mu_relax=mu_relax,
-            n_points=n_points
+        # Initialise BE state
+        self._be_state = BEModel.create_initial_state(
+            burn_in=burn_in,
+            params=self._be_params if burn_in > 0 else None,
+            n_points=n_points,
+            seed=burn_in_seed
         )
-        
-        # Initialise BE model
-        self._be_model.reset_belief(burn_in=burn_in, burn_in_seed=burn_in_seed)
+    
+    # =========================================================================
+    # PROPERTIES
+    # =========================================================================
+    
+    @property
+    def sigma_percep(self) -> float:
+        return self._be_params.sigma_percep
+    
+    @property
+    def A_repulsion(self) -> float:
+        return self._be_params.A_repulsion
+    
+    @property
+    def eta_learning(self) -> float:
+        return self._be_params.eta_learning
+    
+    @property
+    def eta_relax(self) -> float:
+        return self._be_params.eta_relax
+    
+    @property
+    def boundary_belief(self) -> np.ndarray:
+        """Access BE model's current boundary belief."""
+        return self._be_state.boundary_belief
+    
+    @property
+    def x(self) -> np.ndarray:
+        """Access BE model's stimulus grid."""
+        return self._be_state.x
+    
+    @property
+    def be_params(self) -> BEParams:
+        """Access underlying BEParams object."""
+        return self._be_params
+    
+    @property
+    def be_state(self) -> BEState:
+        """Access underlying BEState object."""
+        return self._be_state
+    
+    # =========================================================================
+    # STATE MANAGEMENT
+    # =========================================================================
     
     def reset(self, burn_in: Optional[int] = None, burn_in_seed: Optional[int] = None):
         """
@@ -131,7 +185,17 @@ class MixedAgent:
             self.burn_in = burn_in
         if burn_in_seed is not None:
             self.burn_in_seed = burn_in_seed
-        self._be_model.reset_belief(burn_in=self.burn_in, burn_in_seed=self.burn_in_seed)
+        
+        self._be_state = BEModel.create_initial_state(
+            burn_in=self.burn_in,
+            params=self._be_params if self.burn_in > 0 else None,
+            n_points=self.n_points,
+            seed=self.burn_in_seed
+        )
+    
+    # =========================================================================
+    # HEURISTIC COMPUTATIONS
+    # =========================================================================
     
     def _get_heuristic_p_B(
         self,
@@ -140,7 +204,7 @@ class MixedAgent:
         prev_reward: Optional[bool] = None
     ) -> float:
         """
-        Compute P(B) from heuristics using Option A (renormalise based on active).
+        Compute P(B) from heuristics using renormalisation based on active heuristics.
         
         Args:
             trial_idx: Current trial index (0-indexed)
@@ -217,7 +281,7 @@ class MixedAgent:
             p_heuristic: P(B) from heuristics only
         """
         # BE component
-        p_be = self._be_model._get_choice_probability(s_hat)
+        p_be = BEModel.get_choice_probability(s_hat, self._be_state)
         
         # Heuristic component
         p_heuristic = self._get_heuristic_p_B(trial_idx, prev_choice, prev_reward)
@@ -227,6 +291,10 @@ class MixedAgent:
         p_B = np.clip(p_B, 0, 1)
         
         return p_B, p_be, p_heuristic
+    
+    # =========================================================================
+    # SIMULATION
+    # =========================================================================
     
     def simulate_session(
         self,
@@ -257,11 +325,10 @@ class MixedAgent:
         prev_reward = None
         
         for t in range(n_trials):
-            s = stimuli[t]
-            
-            # Noisy percept
-            s_hat = s + rng.normal(0, self.sigma_percep)
-            s_hat = np.clip(s_hat, -1, 1)
+            # Perceive stimulus (using BE perceptual model)
+            s_hat = BEModel.perceive_stimulus(
+                stimuli[t], self._be_params, self._be_state.s_hat_prev, rng
+            )
             
             # Get P(B) from mixture
             p_B, _, _ = self.get_choice_probability(s_hat, t, prev_choice, prev_reward)
@@ -274,8 +341,10 @@ class MixedAgent:
             correct = (choice == categories[t])
             rewards[t] = int(correct)
             
-            # Update BE model belief (always updates, even if alpha < 1)
-            self._be_model._update_belief(s_hat, correct)
+            # Update BE model belief based on TRUE CATEGORY (not choice)
+            self._be_state = BEModel.update_belief(
+                s_hat, categories[t], self._be_params, self._be_state
+            )
             
             # Update history for next trial
             prev_choice = choice
@@ -309,9 +378,10 @@ class MixedAgent:
             s = stimuli[t]
             cat = categories[t]
             
-            # Noisy percept
-            s_hat = s + rng.normal(0, self.sigma_percep)
-            s_hat = np.clip(s_hat, -1, 1)
+            # Perceive stimulus
+            s_hat = BEModel.perceive_stimulus(
+                s, self._be_params, self._be_state.s_hat_prev, rng
+            )
             
             # Get probabilities
             p_B, p_be, p_heuristic = self.get_choice_probability(
@@ -338,7 +408,9 @@ class MixedAgent:
             })
             
             # Update BE model
-            self._be_model._update_belief(s_hat, correct)
+            self._be_state = BEModel.update_belief(
+                s_hat, cat, self._be_params, self._be_state
+            )
             
             # Update history
             prev_choice = choice
@@ -346,14 +418,18 @@ class MixedAgent:
         
         return pd.DataFrame(records)
     
+    # =========================================================================
+    # PARAMETER ACCESS
+    # =========================================================================
+    
     def get_params(self) -> Dict[str, float]:
         """Return all parameters as dictionary."""
         return {
             # BE params
             'sigma_percep': self.sigma_percep,
             'A_repulsion': self.A_repulsion,
-            'mu_learning': self.mu_learning,
-            'mu_relax': self.mu_relax,
+            'eta_learning': self.eta_learning,
+            'eta_relax': self.eta_relax,
             # Mixture
             'alpha': self.alpha,
             # Heuristics
@@ -370,12 +446,7 @@ class MixedAgent:
     
     def get_be_params(self) -> Dict[str, float]:
         """Return only BE model parameters."""
-        return {
-            'sigma_percep': self.sigma_percep,
-            'A_repulsion': self.A_repulsion,
-            'mu_learning': self.mu_learning,
-            'mu_relax': self.mu_relax
-        }
+        return self._be_params.to_dict()
     
     def get_heuristic_params(self) -> Dict[str, float]:
         """Return only heuristic parameters."""
@@ -392,19 +463,18 @@ class MixedAgent:
     @classmethod
     def from_params(cls, params: Dict[str, float]) -> 'MixedAgent':
         """Create MixedAgent from parameter dictionary."""
-        return cls(**params) #type: ignore
-    
-    @property
-    def boundary_belief(self) -> np.ndarray:
-        """Access BE model's current boundary belief."""
-        return self._be_model.boundary_belief
-    
-    @property
-    def x(self) -> np.ndarray:
-        """Access BE model's stimulus grid."""
-        return self._be_model.x
+        return cls(**params)
     
     def __repr__(self) -> str:
         return (f"MixedAgent(alpha={self.alpha}, "
                 f"bias={self.bias}, p_ws={self.p_winstay}, p_ls={self.p_loseshift}, "
-                f"mu_learning={self.mu_learning}, burn_in={self.burn_in})")
+                f"eta_learning={self.eta_learning}, burn_in={self.burn_in})")
+
+
+# =============================================================================
+# EXPORTS
+# =============================================================================
+
+__all__ = [
+    'MixedAgent',
+]

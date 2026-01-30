@@ -180,7 +180,7 @@ def compute_psychometric_gof(stimuli: np.ndarray, choices: np.ndarray,
     
     Returns:
         Dict with:
-            'r_squared': RÂ² between binned data and fitted curve
+            'r_squared': RÃ‚Â² between binned data and fitted curve
             'deviance': Binomial deviance
             'deviance_explained': Fraction of null deviance explained
             'rmse': Root mean squared error (binned)
@@ -255,7 +255,7 @@ def compute_psychometric_gof(stimuli: np.ndarray, choices: np.ndarray,
             prop_predicted[b] = cumulative_gaussian(bin_centers[b], mu, sigma, lapse_low, lapse_high)
             valid_bins[b] = True
     
-    # RÂ² on binned data
+    # RÃ‚Â² on binned data
     if np.sum(valid_bins) > 1:
         ss_res = np.sum((prop_observed[valid_bins] - prop_predicted[valid_bins])**2)
         ss_tot = np.sum((prop_observed[valid_bins] - np.mean(prop_observed[valid_bins]))**2)

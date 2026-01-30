@@ -396,7 +396,7 @@ def mixed_agent_recovery_analysis(
     
     Args:
         true_be_params: Dict of true BE parameter values used by MixedAgent
-            Required keys: 'sigma_percep', 'A_repulsion', 'mu_learning', 'mu_relax'
+            Required keys: 'sigma_percep', 'A_repulsion', 'eta_learning', 'eta_relax'
         alpha_values: List of α values to test, e.g., [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
             α=0 means pure heuristic, α=1 means pure BE
         heuristic_params: Dict of heuristic parameters for MixedAgent
@@ -503,8 +503,8 @@ def mixed_agent_recovery_analysis(
                 # BE params
                 sigma_percep=true_be_params['sigma_percep'],
                 A_repulsion=true_be_params['A_repulsion'],
-                mu_learning=true_be_params['mu_learning'],
-                mu_relax=true_be_params['mu_relax'],
+                eta_learning=true_be_params['eta_learning'],
+                eta_relax=true_be_params['eta_relax'],
                 # Mixture weight
                 alpha=alpha,
                 # Heuristic params
@@ -718,7 +718,7 @@ def mixed_agent_parameter_sweep(
     Args:
         base_be_params: Base BE parameters (one will be overwritten by sweep)
         sweep_param: Name of parameter to sweep ('sigma_percep', 'A_repulsion', 
-                     'mu_learning', 'mu_relax', or heuristic params)
+                     'eta_learning', 'eta_relax', or heuristic params)
         sweep_values: Values to test for the swept parameter
         alpha_values: α values to test for each sweep value
         heuristic_params: Heuristic parameters (or None for defaults)
@@ -870,7 +870,7 @@ def be_param_behaviour_sweep(
     Args:
         base_params: Base BE parameters (one will be swept)
         sweep_param: Parameter to sweep ('sigma_percep', 'A_repulsion', 
-                     'mu_learning', 'mu_relax')
+                     'eta_learning', 'eta_relax')
         sweep_values: Values to test
         burn_in_values: Burn-in levels to test
         n_trials: Trials per session
@@ -1917,7 +1917,7 @@ def be_behaviour_simulator(
     Designed to work with sobol_analysis.run_sobol_analysis().
     
     Args:
-        params: Dict with keys: sigma_percep, A_repulsion, mu_learning, mu_relax,
+        params: Dict with keys: sigma_percep, A_repulsion, eta_learning, eta_relax,
                 and optionally burn_in
         seed: Random seed for reproducibility
         n_trials: Number of trials to simulate
@@ -1936,8 +1936,8 @@ def be_behaviour_simulator(
     be_params = {
         'sigma_percep': params['sigma_percep'],
         'A_repulsion': params['A_repulsion'],
-        'mu_learning': params['mu_learning'],
-        'mu_relax': params['mu_relax']
+        'eta_learning': params['eta_learning'],
+        'eta_relax': params['eta_relax']
     }
     burn_in = int(params.get('burn_in', 0))
     
@@ -2016,8 +2016,8 @@ def be_recovery_simulator(
     true_params = {
         'sigma_percep': params['sigma_percep'],
         'A_repulsion': params['A_repulsion'],
-        'mu_learning': params['mu_learning'],
-        'mu_relax': params['mu_relax']
+        'eta_learning': params['eta_learning'],
+        'eta_relax': params['eta_relax']
     }
     burn_in = int(params.get('burn_in', 0))
     
@@ -2141,8 +2141,8 @@ def sobol_be_behaviour(
         param_ranges = {
             'sigma_percep': (0.05, 0.5),
             'A_repulsion': (0.0, 0.3),
-            'mu_learning': (0.1, 0.6),
-            'mu_relax': (0.05, 0.3),
+            'eta_learning': (0.1, 0.6),
+            'eta_relax': (0.05, 0.3),
         }
     
     # Create simulator with fixed n_trials
@@ -2210,8 +2210,8 @@ def sobol_be_recovery(
         param_ranges = {
             'sigma_percep': (0.05, 0.5),
             'A_repulsion': (0.0, 0.3),
-            'mu_learning': (0.1, 0.6),
-            'mu_relax': (0.05, 0.3),
+            'eta_learning': (0.1, 0.6),
+            'eta_relax': (0.05, 0.3),
         }
     
     # Create simulator with fixed settings
@@ -2223,8 +2223,8 @@ def sobol_be_recovery(
     
     # Output names
     output_names = [
-        'sigma_percep_bias', 'A_repulsion_bias', 'mu_learning_bias', 'mu_relax_bias',
-        'sigma_percep_abs_error', 'A_repulsion_abs_error', 'mu_learning_abs_error', 'mu_relax_abs_error',
+        'sigma_percep_bias', 'A_repulsion_bias', 'eta_learning_bias', 'eta_relax_bias',
+        'sigma_percep_abs_error', 'A_repulsion_abs_error', 'eta_learning_abs_error', 'eta_relax_abs_error',
         'psych_mu_error', 'psych_sigma_error', 'psych_lapse_low_error', 'psych_lapse_high_error',
         'psych_curve_mae', 'train_nll'
     ]

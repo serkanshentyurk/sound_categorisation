@@ -22,7 +22,7 @@ def plot_burn_in_recovery(
     but true model has varying experience levels.
     
     Layout:
-        Row 1: BE model parameter recovery (sigma_percep, A_repulsion, mu_learning, mu_relax)
+        Row 1: BE model parameter recovery (sigma_percep, A_repulsion, eta_learning, eta_relax)
         Row 2: Psychometric parameter recovery (Î¼, Ïƒ) + optionally (Î»_low, Î»_high)
         Row 3: Curve error + Fit quality (NLL)
     
@@ -404,7 +404,7 @@ def plot_mixed_agent_recovery(
     data with varying α values. Key diagnostic for detecting BE vs heuristic behaviour.
     
     Layout:
-        Row 1: BE model parameter recovery (sigma_percep, A_repulsion, mu_learning, mu_relax)
+        Row 1: BE model parameter recovery (sigma_percep, A_repulsion, eta_learning, eta_relax)
         Row 2: Psychometric metrics (accuracy, R², σ, NLL)
         Row 3 (optional): PSE and lapse parameters
     
@@ -719,7 +719,7 @@ def plot_mixed_agent_sweep(
     sweep_param = results['config']['sweep_param']
     sweep_values = results['config']['sweep_values']
     alpha_values = results['config']['alpha_values']
-    param_names = ['sigma_percep', 'A_repulsion', 'mu_learning', 'mu_relax']
+    param_names = ['sigma_percep', 'A_repulsion', 'eta_learning', 'eta_relax']
     
     n_rows = 2
     n_cols = 3
@@ -930,7 +930,7 @@ def plot_be_param_recovery_sweep(
     sweep_param = results['config']['sweep_param']
     sweep_values = results['config']['sweep_values']
     burn_in_values = results['config']['burn_in_values']
-    param_names = ['sigma_percep', 'A_repulsion', 'mu_learning', 'mu_relax']
+    param_names = ['sigma_percep', 'A_repulsion', 'eta_learning', 'eta_relax']
     
     n_rows, n_cols = 2, 3
     fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize)
@@ -1048,7 +1048,7 @@ def plot_mixed_agent_be_param_sweep(
             vmin, vmax = 0, 1
             cmap = 'RdYlGn'
         elif 'bias' in metric or metric in ['sigma_percep', 'A_repulsion', 
-                                             'mu_learning', 'mu_relax']:
+                                             'eta_learning', 'eta_relax']:
             vmax = np.nanmax(np.abs(matrix))
             vmin, vmax = -vmax, vmax
             cmap = 'RdBu_r'

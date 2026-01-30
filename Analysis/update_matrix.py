@@ -1,7 +1,7 @@
 from Helpers.psychometry import fit_psychometric
 
 import numpy as np
-from typing import Optional, Dict, List, Tuple, Union
+from typing import Optional, Dict, List, Tuple, Union, Literal
 import warnings
 
 def _select_trials_post_correct(stimuli: np.ndarray, choices: np.ndarray,
@@ -104,7 +104,7 @@ def compute_update_matrix(stimuli: np.ndarray, choices: np.ndarray,
                           rewards: np.ndarray, no_response: np.ndarray,
                           not_blockstart: np.ndarray,
                           n_bins: int = 8,
-                          trial_filter: str = 'post_correct'
+                          trial_filter: Literal['post_correct', 'all'] = 'post_correct'
                           ) -> Tuple[np.ndarray, np.ndarray, Dict]:
     """
     Compute update matrix and conditional psychometric matrix.
