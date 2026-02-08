@@ -327,6 +327,10 @@ def train_sbi(
         import sbi
         from sbi.inference import SNPE, SNLE, SNRE
         from sbi.utils import BoxUniform
+        try:
+            from sbi.utils.user_input_checks import process_prior
+        except ImportError:
+            from sbi.utils import process_prior
     except ImportError:
         raise ImportError("sbi package required. Install with: pip install sbi")
     
@@ -343,17 +347,21 @@ def train_sbi(
             observed_stats = torch.tensor(observed_stats, dtype=torch.float32)
         observed_stats = observed_stats.to(device)
     
-    # Setup prior
+    # Setup prior — must be a PyTorch Distribution or wrapped via process_prior
     if hasattr(prior, 'low') and hasattr(prior, 'high'):
-        # Our custom UniformPrior
+        # Our custom UniformPrior — convert to BoxUniform directly
         sbi_prior = BoxUniform(
             low=prior.low.to(device),
             high=prior.high.to(device)
         )
         if param_names is None and hasattr(prior, 'param_names'):
             param_names = prior.param_names
-    elif hasattr(prior, 'to_sbi_prior'):
-        sbi_prior = prior.to_sbi_prior()
+    elif hasattr(prior, 'sample') and hasattr(prior, 'log_prob'):
+        # Custom prior with sample/log_prob (e.g. MultiSessionPrior)
+        # Wrap via process_prior so SBI accepts it
+        result = process_prior(prior)
+        # process_prior returns (prior, n_params, numpy_flag) or just prior
+        sbi_prior = result[0] if isinstance(result, tuple) else result
         if param_names is None and hasattr(prior, 'param_names'):
             param_names = prior.param_names
     else:

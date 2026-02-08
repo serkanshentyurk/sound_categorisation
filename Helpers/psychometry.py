@@ -36,7 +36,7 @@ def _fit_psychometric_once(stimulus: np.ndarray, choices: np.ndarray,
     
     # Initial guess and bounds
     p0 = [0.0, 0.3, 0.05, 0.05]
-    bounds = [(-1.0, 1.0), (0.01, 2.0), (0.0, 0.5), (0.0, 0.5)]
+    bounds = [(-1.0, 1.0), (0.01, 10.0), (0.0, 0.5), (0.0, 0.5)]
     
     try:
         result = minimize(

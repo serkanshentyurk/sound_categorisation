@@ -1,189 +1,128 @@
+"""
+Update Matrix Computation
+
+Computes serial dependence (update) matrices from behavioural data.
+Matches the methodology of the old repo.
+"""
+
 from Helpers.psychometry import fit_psychometric
 
 import numpy as np
-from typing import Optional, Dict, List, Tuple, Union, Literal
-import warnings
+from typing import Optional, Dict, Tuple, Literal, TYPE_CHECKING
 
-def _select_trials_post_correct(stimuli: np.ndarray, choices: np.ndarray,
-                                 rewards: np.ndarray, no_response: np.ndarray,
-                                 not_blockstart: np.ndarray,
-                                 previous_bin: Optional[int] = None,
-                                 n_bins: int = 8) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Select trials following correct responses, optionally filtered by previous stimulus bin.
-    
-    Args:
-        stimuli: Stimulus values
-        choices: Binary choices (0 = A, 1 = B)
-        rewards: Binary rewards (1 = correct)
-        no_response: Boolean array (True = no response)
-        not_blockstart: Boolean array (True = not start of block)
-        previous_bin: If provided, only select trials where previous stimulus was in this bin
-        n_bins: Number of bins for stimulus discretisation
-    
-    Returns:
-        selected_stimuli, selected_choices
-    """
-    stimuli = np.asarray(stimuli)
-    choices = np.asarray(choices)
-    rewards = np.asarray(rewards)
-    no_response = np.asarray(no_response)
-    not_blockstart = np.asarray(not_blockstart)
-    
-    # Create bins
-    bin_edges = np.linspace(-1, 1, n_bins + 1)
-    bin_indices = np.digitize(stimuli, bin_edges) - 1
-    bin_indices = np.clip(bin_indices, 0, n_bins - 1)
-    
-    # Base conditions (for trial t, looking at t-1)
-    prev_correct = rewards[:-1] == 1
-    curr_responded = ~no_response[1:]
-    prev_responded = ~no_response[:-1]
-    not_block_start = not_blockstart[1:] == True
-    
-    condition = prev_correct & curr_responded & prev_responded & not_block_start
-    
-    # Optional: filter by previous stimulus bin
-    if previous_bin is not None:
-        prev_in_bin = bin_indices[:-1] == previous_bin
-        condition = condition & prev_in_bin
-    
-    selected_stimuli = stimuli[1:][condition]
-    selected_choices = choices[1:][condition]
-    
-    return selected_stimuli, selected_choices
+if TYPE_CHECKING:
+    from Models.BE_core import ModelTrace
 
 
-def _select_trials_all(stimuli: np.ndarray, choices: np.ndarray,
-                       no_response: np.ndarray, not_blockstart: np.ndarray,
-                       previous_bin: Optional[int] = None,
-                       n_bins: int = 8) -> Tuple[np.ndarray, np.ndarray]:
+def compute_update_matrix(
+    stimuli: np.ndarray,
+    choices: np.ndarray,
+    categories: np.ndarray,
+    n_bins: int = 8,
+    trial_filter: Literal['all', 'post_correct'] = 'post_correct',
+    no_response: Optional[np.ndarray] = None,
+    not_blockstart: Optional[np.ndarray] = None
+) -> Tuple[np.ndarray, np.ndarray, Dict]:
     """
-    Select all valid trials (with response), optionally filtered by previous stimulus bin.
-    
-    Args:
-        stimuli: Stimulus values
-        choices: Binary choices (0 = A, 1 = B)
-        no_response: Boolean array (True = no response)
-        not_blockstart: Boolean array (True = not start of block)
-        previous_bin: If provided, only select trials where previous stimulus was in this bin
-        n_bins: Number of bins for stimulus discretisation
-    
-    Returns:
-        selected_stimuli, selected_choices
-    """
-    stimuli = np.asarray(stimuli)
-    choices = np.asarray(choices)
-    no_response = np.asarray(no_response)
-    not_blockstart = np.asarray(not_blockstart)
-    
-    # Create bins
-    bin_edges = np.linspace(-1, 1, n_bins + 1)
-    bin_indices = np.digitize(stimuli, bin_edges) - 1
-    bin_indices = np.clip(bin_indices, 0, n_bins - 1)
-    
-    # Base conditions
-    curr_responded = ~no_response[1:]
-    prev_responded = ~no_response[:-1]
-    not_block_start = not_blockstart[1:] == True
-    
-    condition = curr_responded & prev_responded & not_block_start
-    
-    # Optional: filter by previous stimulus bin
-    if previous_bin is not None:
-        prev_in_bin = bin_indices[:-1] == previous_bin
-        condition = condition & prev_in_bin
-    
-    selected_stimuli = stimuli[1:][condition]
-    selected_choices = choices[1:][condition]
-    
-    return selected_stimuli, selected_choices
-
-
-def compute_update_matrix(stimuli: np.ndarray, choices: np.ndarray,
-                          rewards: np.ndarray, no_response: np.ndarray,
-                          not_blockstart: np.ndarray,
-                          n_bins: int = 8,
-                          trial_filter: Literal['post_correct', 'all'] = 'post_correct'
-                          ) -> Tuple[np.ndarray, np.ndarray, Dict]:
-    """
-    Compute update matrix and conditional psychometric matrix.
+    Compute update matrix from behavioural data.
     
     The update matrix captures serial dependence: how does the previous trial's
-    stimulus location shift the current psychometric curve?
+    stimulus shift the current psychometric curve?
     
     Args:
         stimuli: Stimulus values for each trial
         choices: Binary choices (0 = A, 1 = B)
-        rewards: Binary rewards (1 = correct, 0 = incorrect)
-        no_response: Boolean array (True = no response on this trial)
-        not_blockstart: Boolean array (True = not the start of a block/session)
+        categories: True categories (0 = A, 1 = B)
         n_bins: Number of bins for stimulus discretisation (default: 8)
-        trial_filter: 'post_correct' or 'all'
-            - 'post_correct': Only trials following correct responses (lab default)
-            - 'all': All valid trials with responses
+        trial_filter: 'post_correct' (only after correct trials) or 'all'
+        no_response: Optional boolean array (True = no response). 
+                     If None, inferred from np.isnan(choices)
+        not_blockstart: Optional boolean array (True = not start of block).
+                        If None, inferred as [False, True, True, ...]
     
     Returns:
-        update_matrix: (n_bins, n_bins) array where entry [i, j] is the difference
-                       between conditional P(B) and total P(B) for stimulus bin i
-                       given previous stimulus was in bin j
+        update_matrix: (n_bins, n_bins) array where entry [i, j] is the shift
+                       in P(B) at current stimulus bin i given previous stimulus
+                       was in bin j, relative to the overall psychometric
         conditional_matrix: (n_bins, n_bins) array of conditional P(B) values
-        info: Dict with fitting details (total psychometric, per-bin counts, etc.)
+        info: Dict with fitting details
     """
+    # Convert to arrays
     stimuli = np.asarray(stimuli, dtype=np.float64)
     choices = np.asarray(choices, dtype=np.float64)
-    rewards = np.asarray(rewards, dtype=np.float64)
-    no_response = np.asarray(no_response, dtype=bool)
-    not_blockstart = np.asarray(not_blockstart, dtype=bool)
+    categories = np.asarray(categories, dtype=np.float64)
+    n_trials = len(stimuli)
     
-    # Select trial filter function
+    # Infer no_response if not provided
+    if no_response is None:
+        no_response = np.isnan(choices)
+    else:
+        no_response = np.asarray(no_response, dtype=bool)
+    
+    # Infer not_blockstart if not provided (first trial is block start)
+    if not_blockstart is None:
+        not_blockstart = np.ones(n_trials, dtype=bool)
+        if n_trials > 0:
+            not_blockstart[0] = False
+    else:
+        not_blockstart = np.asarray(not_blockstart, dtype=bool)
+    
+    # Compute rewards
+    rewards = (choices == categories).astype(float)
+    rewards[np.isnan(choices)] = np.nan
+    
+    # Create bins
+    bin_edges = np.linspace(-1, 1, n_bins + 1)
+    midpoints = (bin_edges[:-1] + bin_edges[1:]) / 2
+    bin_indices = np.digitize(stimuli, bin_edges) - 1
+    bin_indices = np.clip(bin_indices, 0, n_bins - 1)
+    
+    # Build selection mask for valid trials
+    # Base conditions: current trial responded, previous trial responded, not block start
+    curr_responded = ~no_response[1:]
+    prev_responded = ~no_response[:-1]
+    is_not_blockstart = not_blockstart[1:]
+    
     if trial_filter == 'post_correct':
-        select_fn = lambda prev_bin: _select_trials_post_correct(
-            stimuli, choices, rewards, no_response, not_blockstart, prev_bin, n_bins
-        )
-        select_fn_total = lambda: _select_trials_post_correct(
-            stimuli, choices, rewards, no_response, not_blockstart, None, n_bins
-        )
+        prev_correct = rewards[:-1] == 1
+        base_condition = prev_correct & curr_responded & prev_responded & is_not_blockstart
     elif trial_filter == 'all':
-        select_fn = lambda prev_bin: _select_trials_all(
-            stimuli, choices, no_response, not_blockstart, prev_bin, n_bins
-        )
-        select_fn_total = lambda: _select_trials_all(
-            stimuli, choices, no_response, not_blockstart, None, n_bins
-        )
+        base_condition = curr_responded & prev_responded & is_not_blockstart
     else:
         raise ValueError(f"trial_filter must be 'post_correct' or 'all', got '{trial_filter}'")
     
-    # Bin midpoints for evaluation
-    bin_edges = np.linspace(-1, 1, n_bins + 1)
-    midpoints = (bin_edges[:-1] + bin_edges[1:]) / 2
+    # Get total (overall) psychometric curve
+    total_stimuli = stimuli[1:][base_condition]
+    total_choices = choices[1:][base_condition]
     
-    # Fit total psychometric (all selected trials)
-    s_total, c_total = select_fn_total()
-    total_psych = fit_psychometric(s_total, c_total, midpoints)
+    total_psych = fit_psychometric(total_stimuli, total_choices, midpoints)
     
     if total_psych['success']:
         total_curve = total_psych['y_fit']
     else:
         total_curve = np.full(n_bins, np.nan)
-        warnings.warn("Total psychometric fit failed")
     
-    # Fit conditional psychometrics for each previous-stimulus bin
+    # Compute conditional psychometrics for each previous-stimulus bin
     conditional_matrix = np.zeros((n_bins, n_bins))
     update_matrix = np.zeros((n_bins, n_bins))
     bin_counts = np.zeros(n_bins, dtype=int)
     conditional_psychs = []
     
     for j in range(n_bins):
-        s_cond, c_cond = select_fn(j)
-        bin_counts[j] = len(s_cond)
+        # Trials where previous stimulus was in bin j
+        prev_in_bin = bin_indices[:-1] == j
+        condition = base_condition & prev_in_bin
         
-        if len(s_cond) < 10:
+        cond_stimuli = stimuli[1:][condition]
+        cond_choices = choices[1:][condition]
+        bin_counts[j] = len(cond_stimuli)
+        
+        if len(cond_stimuli) < 10:
             conditional_matrix[:, j] = np.nan
             update_matrix[:, j] = np.nan
             conditional_psychs.append(None)
         else:
-            cond_psych = fit_psychometric(s_cond, c_cond, midpoints)
+            cond_psych = fit_psychometric(cond_stimuli, cond_choices, midpoints)
             conditional_psychs.append(cond_psych)
             
             if cond_psych['success']:
@@ -199,36 +138,62 @@ def compute_update_matrix(stimuli: np.ndarray, choices: np.ndarray,
         'bin_edges': bin_edges,
         'midpoints': midpoints,
         'bin_counts': bin_counts,
-        'total_trials': len(s_total),
-        'trial_filter': trial_filter
+        'total_trials': len(total_stimuli),
+        'trial_filter': trial_filter,
+        'total_curve': total_curve
     }
     
     return update_matrix, conditional_matrix, info
 
 
-def matrix_error(model_matrix: np.ndarray, data_matrix: np.ndarray) -> float:
+def compute_update_matrix_from_model_trace(
+    trace: 'ModelTrace',
+    n_bins: int = 8,
+    trial_filter: Literal['all', 'post_correct'] = 'post_correct'
+) -> Tuple[np.ndarray, np.ndarray, Dict]:
     """
-    Compute mean squared error between model and data matrices, ignoring NaNs.
+    Compute update matrix from a ModelTrace object.
+    
+    Convenience wrapper that extracts fields from ModelTrace.
     
     Args:
-        model_matrix: Model-predicted matrix
-        data_matrix: Data matrix
+        trace: ModelTrace object from simulation
+        n_bins: Number of bins for stimulus discretisation
+        trial_filter: 'post_correct' or 'all'
     
     Returns:
-        Mean squared error (normalised by number of valid entries)
+        update_matrix, conditional_matrix, info (same as compute_update_matrix)
     """
-    squared_diff = (model_matrix - data_matrix) ** 2
+    return compute_update_matrix(
+        stimuli=trace.stimuli,
+        choices=trace.choices,
+        categories=trace.categories,
+        n_bins=n_bins,
+        trial_filter=trial_filter,
+        no_response=trace.no_response,
+        not_blockstart=trace.not_blockstart
+    )
+
+
+# Backward compat alias
+compute_update_matrix_from_history = compute_update_matrix_from_model_trace
+
+
+def matrix_error(matrix1: np.ndarray, matrix2: np.ndarray) -> float:
+    """
+    Compute mean squared error between two matrices, ignoring NaNs.
     
-    # Count non-NaN entries per column
-    non_nan_per_col = np.sum(~np.isnan(squared_diff), axis=0)
-    n_valid_cols = np.sum(non_nan_per_col > 0)
+    Args:
+        matrix1: First matrix
+        matrix2: Second matrix
     
-    if n_valid_cols == 0:
+    Returns:
+        Mean squared error (ignoring NaN entries)
+    """
+    diff = matrix1 - matrix2
+    valid = ~np.isnan(diff)
+    
+    if np.sum(valid) == 0:
         return np.nan
     
-    # Sum squared differences (ignoring NaN)
-    col_sums = np.nansum(squared_diff, axis=0)
-    total_error = np.sum(col_sums) / n_valid_cols
-    
-    return total_error
-
+    return np.mean(diff[valid] ** 2)

@@ -6,6 +6,7 @@ Functions for visualising the agent's boundary belief distribution.
 
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.integrate import trapezoid
 from typing import Optional, List, Tuple, Dict
 
 
@@ -27,7 +28,7 @@ def plot_belief_distribution(
     
     Args:
         x: Stimulus space grid
-        belief: Belief density values (should sum/integrate to 1)
+        belief: Belief density values (PDF that integrates to 1)
         ax: Matplotlib axes (creates new if None)
         true_boundary: True boundary location for reference line
         color: Line colour
@@ -48,12 +49,10 @@ def plot_belief_distribution(
     if color is None:
         color = 'C0'
     
-    # Normalise belief if needed
-    belief_norm = belief / np.sum(belief) if np.sum(belief) > 0 else belief
-    
-    # Compute statistics
-    belief_mean = np.sum(x * belief_norm)
-    belief_var = np.sum((x - belief_mean)**2 * belief_norm)
+    # Belief should already be a normalised PDF from the model (integrates to 1)
+    # We use trapezoid integration for computing statistics (not np.sum!)
+    belief_mean = trapezoid(x * belief, x)
+    belief_var = trapezoid((x - belief_mean)**2 * belief, x)
     belief_std = np.sqrt(belief_var)
     
     stats = {'mean': belief_mean, 'std': belief_std}

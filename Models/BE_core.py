@@ -36,9 +36,249 @@ Usage:
 """
 
 import numpy as np
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, Dict, Tuple, List, Union
 from scipy.integrate import trapezoid
+
+
+# =============================================================================
+# TRIAL HISTORY CONTAINER
+# =============================================================================
+
+@dataclass
+class ModelTrace:
+    """
+    Record of model computation across trials (model output).
+    
+    Stores everything the BE model computed for a session, including the
+    input arrays it operated on. Used for post-hoc analysis: update matrices,
+    belief visualisation, model diagnostics.
+    
+    This is MODEL OUTPUT — created by BEModel.simulate_session or
+    BEModel.compute_log_likelihood. For experimental INPUT data, see
+    Data.structures.TrialData.
+    
+    Attributes:
+        # Input arrays (what the model received)
+        stimuli: (n_trials,) actual stimulus values
+        categories: (n_trials,) true categories (0=A, 1=B)
+        choices: (n_trials,) simulated or observed choices (0=A, 1=B, NaN=no response)
+        no_response: (n_trials,) boolean mask for no-response trials
+        not_blockstart: (n_trials,) boolean mask (True = not start of block)
+        
+        # Model outputs (what the model computed)
+        p_B: (n_trials,) model's P(choose B) at actual stimulus
+        s_hat: (n_trials,) perceived stimulus (includes noise + repulsion)
+        beliefs: (n_trials, n_points) full belief distributions before each trial
+        x: (n_points,) discretisation grid for beliefs
+    
+    Usage:
+        # After simulation
+        choices, p_B, final_state, trace = BEModel.simulate_session(
+            params, state, stimuli, categories, rng, return_history=True
+        )
+        
+        # From experimental TrialData + model outputs
+        trace = ModelTrace.from_trial_data(trial_data, p_B, s_hat, beliefs, x)
+        
+        # Compute update matrix
+        update_matrix = compute_model_update_matrix(trace, method='deterministic')
+    """
+    # Input arrays
+    stimuli: np.ndarray
+    categories: np.ndarray
+    choices: np.ndarray
+    no_response: np.ndarray
+    not_blockstart: np.ndarray = field(default_factory=lambda: np.array([]))
+    
+    # Model outputs
+    p_B: np.ndarray = field(default_factory=lambda: np.array([]))
+    s_hat: np.ndarray = field(default_factory=lambda: np.array([]))
+    beliefs: np.ndarray = field(default_factory=lambda: np.array([]))  # (n_trials, n_points)
+    x: np.ndarray = field(default_factory=lambda: np.array([]))  # (n_points,)
+    
+    def __post_init__(self):
+        """Validate and set defaults."""
+        n_trials = len(self.stimuli)
+        
+        # Default not_blockstart: first trial is block start, rest are not
+        if len(self.not_blockstart) == 0:
+            self.not_blockstart = np.ones(n_trials, dtype=bool)
+            if n_trials > 0:
+                self.not_blockstart[0] = False
+    
+    # =========================================================================
+    # FACTORY METHODS
+    # =========================================================================
+    
+    @classmethod
+    def from_trial_data(
+        cls,
+        trial_data: 'Any',
+        p_B: np.ndarray,
+        s_hat: np.ndarray,
+        beliefs: np.ndarray,
+        x: np.ndarray,
+        exclude_abort: bool = True,
+        exclude_opto: bool = True,
+    ) -> 'ModelTrace':
+        """
+        Create ModelTrace from a TrialData object and model outputs.
+        
+        Bridges experimental data (Data.structures.TrialData) with model
+        computation results.
+        
+        Args:
+            trial_data: TrialData object (from Data.structures)
+            p_B: Model's P(choose B) per trial
+            s_hat: Perceived stimulus per trial
+            beliefs: Belief distributions (n_trials, n_points)
+            x: Discretisation grid
+            exclude_abort: Whether aborts were excluded (affects array alignment)
+            exclude_opto: Whether opto trials were excluded
+        
+        Returns:
+            ModelTrace with matched input and output arrays
+        """
+        arrays = trial_data.get_model_arrays(
+            exclude_abort=exclude_abort,
+            exclude_opto=exclude_opto,
+        )
+        
+        return cls(
+            stimuli=arrays['stimuli'],
+            categories=arrays['categories'],
+            choices=arrays['choices'],
+            no_response=arrays['no_response'],
+            not_blockstart=arrays['not_blockstart'],
+            p_B=p_B,
+            s_hat=s_hat,
+            beliefs=beliefs,
+            x=x,
+        )
+    
+    @classmethod
+    def from_arrays(
+        cls,
+        stimuli: np.ndarray,
+        categories: np.ndarray,
+        choices: np.ndarray,
+        p_B: np.ndarray,
+        s_hat: np.ndarray,
+        beliefs: np.ndarray,
+        x: np.ndarray,
+        no_response: Optional[np.ndarray] = None,
+        not_blockstart: Optional[np.ndarray] = None,
+    ) -> 'ModelTrace':
+        """
+        Create ModelTrace from raw arrays (e.g., from simulation).
+        
+        Convenience constructor for when you have arrays but not a TrialData object.
+        """
+        n_trials = len(stimuli)
+        if no_response is None:
+            no_response = np.isnan(choices)
+        if not_blockstart is None:
+            not_blockstart = np.ones(n_trials, dtype=bool)
+            if n_trials > 0:
+                not_blockstart[0] = False
+        
+        return cls(
+            stimuli=stimuli,
+            categories=categories,
+            choices=choices,
+            no_response=no_response,
+            not_blockstart=not_blockstart,
+            p_B=p_B,
+            s_hat=s_hat,
+            beliefs=beliefs,
+            x=x,
+        )
+    
+    # =========================================================================
+    # PROPERTIES
+    # =========================================================================
+    
+    @property
+    def n_trials(self) -> int:
+        return len(self.stimuli)
+    
+    @property
+    def n_points(self) -> int:
+        return len(self.x)
+    
+    @property
+    def has_beliefs(self) -> bool:
+        """Whether full belief distributions are stored."""
+        return self.beliefs.ndim == 2 and self.beliefs.shape[0] > 0
+    
+    @property
+    def rewards(self) -> np.ndarray:
+        """Compute rewards (1 if choice == category, 0 otherwise)."""
+        rewards = (self.choices == self.categories).astype(float)
+        rewards[np.isnan(self.choices)] = np.nan
+        return rewards
+    
+    # =========================================================================
+    # BELIEF QUERIES
+    # =========================================================================
+    
+    def get_p_B_at_stimulus(self, s: float, trial_idx: int) -> float:
+        """
+        Compute P(choose B | stimulus=s) using belief at given trial.
+        
+        This is the CDF of the belief distribution at point s.
+        """
+        belief = self.beliefs[trial_idx]
+        j = np.abs(self.x - s).argmin()
+        return trapezoid(belief[:j+1], self.x[:j+1])
+    
+    def get_p_B_at_midpoints(self, midpoints: np.ndarray, trial_idx: int) -> np.ndarray:
+        """
+        Compute P(choose B) at multiple stimulus values for a given trial.
+        
+        Args:
+            midpoints: Array of stimulus values to evaluate
+            trial_idx: Which trial's belief to use
+        
+        Returns:
+            Array of P(B) values at each midpoint
+        """
+        belief = self.beliefs[trial_idx]
+        p_B_values = np.zeros(len(midpoints))
+        
+        for i, s in enumerate(midpoints):
+            j = np.abs(self.x - s).argmin()
+            p_B_values[i] = trapezoid(belief[:j+1], self.x[:j+1])
+        
+        return np.clip(p_B_values, 1e-10, 1 - 1e-10)
+    
+    def copy(self) -> 'ModelTrace':
+        """Create independent copy."""
+        return ModelTrace(
+            stimuli=self.stimuli.copy(),
+            categories=self.categories.copy(),
+            choices=self.choices.copy(),
+            no_response=self.no_response.copy(),
+            not_blockstart=self.not_blockstart.copy(),
+            p_B=self.p_B.copy(),
+            s_hat=self.s_hat.copy(),
+            beliefs=self.beliefs.copy(),
+            x=self.x.copy(),
+        )
+
+
+def _deprecated_trial_history(*args, **kwargs):
+    """Backward-compatible alias for ModelTrace."""
+    import warnings
+    warnings.warn(
+        "TrialHistory is deprecated, use ModelTrace instead.",
+        DeprecationWarning, stacklevel=2
+    )
+    return ModelTrace(*args, **kwargs)
+
+# Backward compatibility alias
+TrialHistory = ModelTrace
 
 
 # =============================================================================
@@ -72,15 +312,49 @@ class BEParams:
         return 1.0 / self.sigma_percep
     
     def __post_init__(self):
-        """Validate parameters on creation."""
+        """Validate and clamp parameters on creation.
+        
+        Posterior samples from SBI can slightly exceed bounds,
+        so we clamp with a warning rather than raising.
+        Uses object.__setattr__ because this is a frozen dataclass.
+        """
+        import warnings
+        
+        # sigma_percep: must be > 0
         if self.sigma_percep <= 0:
-            raise ValueError(f"sigma_percep must be positive, got {self.sigma_percep}")
+            clamped = max(self.sigma_percep, 1e-6)
+            warnings.warn(
+                f"sigma_percep={self.sigma_percep:.6f} clamped to {clamped:.6f}",
+                stacklevel=2,
+            )
+            object.__setattr__(self, 'sigma_percep', clamped)
+        
+        # A_repulsion: must be >= 0
         if self.A_repulsion < 0:
-            raise ValueError(f"A_repulsion must be non-negative, got {self.A_repulsion}")
-        if not 0 < self.eta_learning <= 1:
-            raise ValueError(f"eta_learning must be in (0, 1], got {self.eta_learning}")
-        if not 0 <= self.eta_relax < 1:
-            raise ValueError(f"eta_relax must be in [0, 1), got {self.eta_relax}")
+            clamped = max(self.A_repulsion, 0.0)
+            warnings.warn(
+                f"A_repulsion={self.A_repulsion:.6f} clamped to {clamped:.6f}",
+                stacklevel=2,
+            )
+            object.__setattr__(self, 'A_repulsion', clamped)
+        
+        # eta_learning: must be in (0, 1]
+        if self.eta_learning <= 0 or self.eta_learning > 1:
+            clamped = float(np.clip(self.eta_learning, 1e-6, 1.0))
+            warnings.warn(
+                f"eta_learning={self.eta_learning:.6f} clamped to {clamped:.6f}",
+                stacklevel=2,
+            )
+            object.__setattr__(self, 'eta_learning', clamped)
+        
+        # eta_relax: must be in [0, 1)
+        if self.eta_relax < 0 or self.eta_relax >= 1:
+            clamped = float(np.clip(self.eta_relax, 0.0, 1.0 - 1e-6))
+            warnings.warn(
+                f"eta_relax={self.eta_relax:.6f} clamped to {clamped:.6f}",
+                stacklevel=2,
+            )
+            object.__setattr__(self, 'eta_relax', clamped)
     
     @classmethod
     def from_dict(cls, d: Dict[str, float]) -> 'BEParams':
@@ -367,8 +641,10 @@ class BEModel:
         stimuli: np.ndarray,
         categories: np.ndarray,
         rng: np.random.Generator,
-        no_response: Optional[np.ndarray] = None
-    ) -> Tuple[np.ndarray, np.ndarray, BEState]:
+        no_response: Optional[np.ndarray] = None,
+        not_blockstart: Optional[np.ndarray] = None,
+        return_history: bool = False
+    ) -> Tuple[np.ndarray, np.ndarray, BEState, Optional['ModelTrace']]:
         """
         Simulate choices for a full session.
         
@@ -379,22 +655,40 @@ class BEModel:
             categories: Array of true categories (for feedback)
             rng: Random number generator
             no_response: Optional boolean array (True = skip trial)
+            not_blockstart: Optional boolean array (True = not start of block/session)
+                           Used for update matrix computation. Default: first trial is block start.
+            return_history: If True, return full ModelTrace for update matrix analysis
         
         Returns:
             choices: Simulated choices (0 = A, 1 = B, NaN = no response)
             p_B: Choice probabilities at each trial
             final_state: State after session (for chaining)
+            history: ModelTrace if return_history=True, else None
         """
         n_trials = len(stimuli)
         choices = np.full(n_trials, np.nan)
         p_B = np.full(n_trials, np.nan)
+        s_hat_arr = np.full(n_trials, np.nan)
         
         if no_response is None:
             no_response = np.zeros(n_trials, dtype=bool)
         
+        if not_blockstart is None:
+            not_blockstart = np.ones(n_trials, dtype=bool)
+            if n_trials > 0:
+                not_blockstart[0] = False
+        
+        # Storage for full history if requested
+        if return_history:
+            beliefs = np.zeros((n_trials, initial_state.n_points))
+        
         state = initial_state.copy()
         
         for t in range(n_trials):
+            # Store belief BEFORE this trial (for update matrix computation)
+            if return_history:
+                beliefs[t] = state.boundary_belief.copy()
+            
             if no_response[t]:
                 continue
             
@@ -402,6 +696,7 @@ class BEModel:
             s_hat = BEModel.perceive_stimulus(
                 stimuli[t], params, state.s_hat_prev, rng
             )
+            s_hat_arr[t] = s_hat
             
             # Choice probability
             p_B[t] = BEModel.get_choice_probability(s_hat, state)
@@ -412,7 +707,23 @@ class BEModel:
             # Update belief based on TRUE CATEGORY
             state = BEModel.update_belief(s_hat, categories[t], params, state)
         
-        return choices, p_B, state
+        # Build history if requested
+        if return_history:
+            history = ModelTrace(
+                stimuli=stimuli.copy(),
+                categories=categories.copy(),
+                choices=choices.copy(),
+                p_B=p_B.copy(),
+                s_hat=s_hat_arr.copy(),
+                beliefs=beliefs,
+                x=state.x.copy(),
+                no_response=no_response.copy(),
+                not_blockstart=not_blockstart.copy()
+            )
+        else:
+            history = None
+        
+        return choices, p_B, state, history
     
     @staticmethod
     def simulate_session_with_history(
@@ -421,10 +732,11 @@ class BEModel:
         stimuli: np.ndarray,
         categories: np.ndarray,
         rng: np.random.Generator,
-        no_response: Optional[np.ndarray] = None
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, BEState]:
+        no_response: Optional[np.ndarray] = None,
+        not_blockstart: Optional[np.ndarray] = None
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, BEState, 'ModelTrace']:
         """
-        Simulate session with full belief history for plotting.
+        Simulate session with full belief history for plotting and analysis.
         
         Returns:
             choices: Simulated choices
@@ -432,21 +744,30 @@ class BEModel:
             belief_mu: Belief mean at each trial
             belief_std: Belief std at each trial
             final_state: State after session
+            history: Full ModelTrace for update matrix analysis
         """
         n_trials = len(stimuli)
         choices = np.full(n_trials, np.nan)
         p_B = np.full(n_trials, np.nan)
+        s_hat_arr = np.full(n_trials, np.nan)
         belief_mu = np.full(n_trials, np.nan)
         belief_std = np.full(n_trials, np.nan)
+        beliefs = np.zeros((n_trials, initial_state.n_points))
         
         if no_response is None:
             no_response = np.zeros(n_trials, dtype=bool)
         
+        if not_blockstart is None:
+            not_blockstart = np.ones(n_trials, dtype=bool)
+            if n_trials > 0:
+                not_blockstart[0] = False
+        
         state = initial_state.copy()
         
         for t in range(n_trials):
-            # Store belief stats before trial
+            # Store belief stats and full belief before trial
             belief_mu[t], belief_std[t] = state.get_belief_stats()
+            beliefs[t] = state.boundary_belief.copy()
             
             if no_response[t]:
                 continue
@@ -454,11 +775,24 @@ class BEModel:
             s_hat = BEModel.perceive_stimulus(
                 stimuli[t], params, state.s_hat_prev, rng
             )
+            s_hat_arr[t] = s_hat
             p_B[t] = BEModel.get_choice_probability(s_hat, state)
             choices[t] = rng.binomial(1, p_B[t])
             state = BEModel.update_belief(s_hat, categories[t], params, state)
         
-        return choices, p_B, belief_mu, belief_std, state
+        history = ModelTrace(
+            stimuli=stimuli.copy(),
+            categories=categories.copy(),
+            choices=choices.copy(),
+            p_B=p_B.copy(),
+            s_hat=s_hat_arr.copy(),
+            beliefs=beliefs,
+            x=state.x.copy(),
+            no_response=no_response.copy(),
+            not_blockstart=not_blockstart.copy()
+        )
+        
+        return choices, p_B, belief_mu, belief_std, state, history
     
     # =========================================================================
     # LIKELIHOOD COMPUTATION
@@ -473,8 +807,10 @@ class BEModel:
         observed_choices: np.ndarray,
         rng: np.random.Generator,
         eval_mask: Optional[np.ndarray] = None,
-        no_response: Optional[np.ndarray] = None
-    ) -> Tuple[float, np.ndarray, BEState]:
+        no_response: Optional[np.ndarray] = None,
+        not_blockstart: Optional[np.ndarray] = None,
+        return_history: bool = False
+    ) -> Tuple[float, np.ndarray, BEState, Optional['ModelTrace']]:
         """
         Compute log-likelihood of observed choices.
         
@@ -490,23 +826,41 @@ class BEModel:
             rng: Random number generator (for perceptual noise)
             eval_mask: Boolean array - True = include in LL (default: all)
             no_response: Boolean array - True = skip trial
+            not_blockstart: Boolean array (True = not start of block/session)
+            return_history: If True, return ModelTrace with observed choices
         
         Returns:
             total_ll: Total log-likelihood
             trial_lls: Per-trial log-likelihoods (NaN for skipped/masked)
             final_state: State after processing
+            history: ModelTrace if return_history=True, else None
+                    Note: history.choices contains OBSERVED choices, not simulated
         """
         n_trials = len(stimuli)
         trial_lls = np.full(n_trials, np.nan)
+        p_B_arr = np.full(n_trials, np.nan)
+        s_hat_arr = np.full(n_trials, np.nan)
         
         if no_response is None:
             no_response = np.isnan(observed_choices)
         if eval_mask is None:
             eval_mask = np.ones(n_trials, dtype=bool)
+        if not_blockstart is None:
+            not_blockstart = np.ones(n_trials, dtype=bool)
+            if n_trials > 0:
+                not_blockstart[0] = False
+        
+        # Storage for full history if requested
+        if return_history:
+            beliefs = np.zeros((n_trials, initial_state.n_points))
         
         state = initial_state.copy()
         
         for t in range(n_trials):
+            # Store belief BEFORE this trial
+            if return_history:
+                beliefs[t] = state.boundary_belief.copy()
+            
             if no_response[t]:
                 continue
             
@@ -514,9 +868,11 @@ class BEModel:
             s_hat = BEModel.perceive_stimulus(
                 stimuli[t], params, state.s_hat_prev, rng
             )
+            s_hat_arr[t] = s_hat
             
             # Choice probability
             p_B = BEModel.get_choice_probability(s_hat, state)
+            p_B_arr[t] = p_B
             
             # Accumulate LL if in eval set
             if eval_mask[t]:
@@ -529,7 +885,24 @@ class BEModel:
             state = BEModel.update_belief(s_hat, categories[t], params, state)
         
         total_ll = np.nansum(trial_lls)
-        return total_ll, trial_lls, state
+        
+        # Build history if requested
+        if return_history:
+            history = ModelTrace(
+                stimuli=stimuli.copy(),
+                categories=categories.copy(),
+                choices=observed_choices.copy(),  # OBSERVED choices
+                p_B=p_B_arr.copy(),
+                s_hat=s_hat_arr.copy(),
+                beliefs=beliefs,
+                x=state.x.copy(),
+                no_response=no_response.copy(),
+                not_blockstart=not_blockstart.copy()
+            )
+        else:
+            history = None
+        
+        return total_ll, trial_lls, state, history
     
     @staticmethod
     def compute_log_likelihood_mc(
@@ -570,9 +943,10 @@ class BEModel:
         
         for mc_idx in range(n_mc_samples):
             rng = np.random.default_rng(seed + mc_idx)
-            ll, _, final_state = BEModel.compute_log_likelihood(
+            ll, _, final_state, _ = BEModel.compute_log_likelihood(
                 params, initial_state, stimuli, categories,
-                observed_choices, rng, eval_mask, no_response
+                observed_choices, rng, eval_mask, no_response,
+                return_history=False
             )
             lls.append(ll)
         
@@ -588,8 +962,9 @@ class BEModel:
         params_per_session: List[BEParams],
         initial_state: BEState,
         session_data: List[Tuple[np.ndarray, np.ndarray]],
-        rng: np.random.Generator
-    ) -> Tuple[List[np.ndarray], List[np.ndarray], List[BEState]]:
+        rng: np.random.Generator,
+        return_history: bool = False
+    ) -> Tuple[List[np.ndarray], List[np.ndarray], List[BEState], Optional[List['ModelTrace']]]:
         """
         Simulate multiple sessions with state chaining.
         
@@ -598,36 +973,43 @@ class BEModel:
             initial_state: Starting state (before first session)
             session_data: List of (stimuli, categories) for each session
             rng: Random number generator
+            return_history: If True, return list of ModelTrace per session
         
         Returns:
             all_choices: List of choice arrays
             all_p_B: List of probability arrays
             states: List of states after each session
+            histories: List of ModelTrace if return_history=True, else None
         """
         all_choices = []
         all_p_B = []
         states = []
+        histories = [] if return_history else None
         
         state = initial_state.copy()
         
         for session_idx, (stimuli, categories) in enumerate(session_data):
             params = params_per_session[session_idx]
-            choices, p_B, state = BEModel.simulate_session(
-                params, state, stimuli, categories, rng
+            choices, p_B, state, history = BEModel.simulate_session(
+                params, state, stimuli, categories, rng,
+                return_history=return_history
             )
             all_choices.append(choices)
             all_p_B.append(p_B)
             states.append(state.copy())
+            if return_history:
+                histories.append(history)
         
-        return all_choices, all_p_B, states
+        return all_choices, all_p_B, states, histories
     
     @staticmethod
     def compute_log_likelihood_multisession(
         params_per_session: List[BEParams],
         initial_state: BEState,
         session_data: List[Tuple[np.ndarray, np.ndarray, np.ndarray]],
-        rng: np.random.Generator
-    ) -> Tuple[float, List[np.ndarray], List[BEState]]:
+        rng: np.random.Generator,
+        return_history: bool = False
+    ) -> Tuple[float, List[np.ndarray], List[BEState], Optional[List['ModelTrace']]]:
         """
         Compute log-likelihood across multiple sessions.
         
@@ -636,28 +1018,34 @@ class BEModel:
             initial_state: Starting state
             session_data: List of (stimuli, categories, choices) per session
             rng: Random number generator
+            return_history: If True, return list of ModelTrace per session
         
         Returns:
             total_ll: Sum of log-likelihoods across all sessions
             session_lls: List of per-trial LL arrays
             states: List of states after each session
+            histories: List of ModelTrace if return_history=True, else None
         """
         total_ll = 0.0
         session_lls = []
         states = []
+        histories = [] if return_history else None
         
         state = initial_state.copy()
         
         for session_idx, (stimuli, categories, choices) in enumerate(session_data):
             params = params_per_session[session_idx]
-            ll, trial_lls, state = BEModel.compute_log_likelihood(
-                params, state, stimuli, categories, choices, rng
+            ll, trial_lls, state, history = BEModel.compute_log_likelihood(
+                params, state, stimuli, categories, choices, rng,
+                return_history=return_history
             )
             total_ll += ll
             session_lls.append(trial_lls)
             states.append(state.copy())
+            if return_history:
+                histories.append(history)
         
-        return total_ll, session_lls, states
+        return total_ll, session_lls, states, histories
     
     # =========================================================================
     # BURN-IN SIMULATION
@@ -695,8 +1083,9 @@ class BEModel:
         categories = (stimuli > 0).astype(int)  # Boundary at 0
         
         # Simulate (don't need choices, just state evolution)
-        _, _, final_state = BEModel.simulate_session(
-            params, initial_state, stimuli, categories, rng
+        _, _, final_state, _ = BEModel.simulate_session(
+            params, initial_state, stimuli, categories, rng,
+            return_history=False
         )
         
         return final_state
@@ -765,8 +1154,9 @@ def simulate_for_sbi(
     )
     rng = np.random.default_rng(seed + 1000)
     
-    choices, p_B, _ = BEModel.simulate_session(
-        params, initial_state, stimuli, categories, rng
+    choices, p_B, _, _ = BEModel.simulate_session(
+        params, initial_state, stimuli, categories, rng,
+        return_history=False
     )
     
     if return_choices:
@@ -821,6 +1211,7 @@ def compute_summary_stats(choices: np.ndarray, stimuli: np.ndarray) -> np.ndarra
 # =============================================================================
 
 __all__ = [
+    'ModelTrace',
     'BEParams',
     'BEState',
     'BEModel',

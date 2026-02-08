@@ -245,8 +245,8 @@ class RandomWalkLink:
     """
     Random walk prior across sessions.
     
-    θ_0 ~ Uniform(low, high)
-    θ_{t+1} | θ_t ~ N(θ_t, σ_drift²)  truncated to [low, high]
+    Î¸_0 ~ Uniform(low, high)
+    Î¸_{t+1} | Î¸_t ~ N(Î¸_t, Ïƒ_driftÂ²)  truncated to [low, high]
     
     Args:
         base_bounds: (low, high) for the parameter
@@ -340,10 +340,10 @@ class GaussianProcessLink:
     
     Provides smooth trajectories with controllable correlation structure.
     
-    θ ~ GP(mean_fn, kernel)
+    Î¸ ~ GP(mean_fn, kernel)
     
     Default kernel: RBF (squared exponential)
-    k(t, t') = amplitude² * exp(-0.5 * (t-t')² / lengthscale²)
+    k(t, t') = amplitudeÂ² * exp(-0.5 * (t-t')Â² / lengthscaleÂ²)
     
     Args:
         base_bounds: (low, high) for the parameter
@@ -466,7 +466,7 @@ class HierarchicalLink:
     """
     Hierarchical prior across sessions.
     
-    θ_session ~ N(μ_group, σ_group²)  truncated to [low, high]
+    Î¸_session ~ N(Î¼_group, Ïƒ_groupÂ²)  truncated to [low, high]
     
     Useful when sessions are exchangeable (no temporal order).
     
@@ -669,7 +669,8 @@ class MultiSessionPrior(BasePrior):
         """Sample from multi-session prior."""
         if isinstance(sample_shape, int):
             sample_shape = (sample_shape,)
-        n_samples = sample_shape[0]
+        # SBI calls sample(torch.Size()) to check dtype — treat empty shape as 1
+        n_samples = sample_shape[0] if len(sample_shape) > 0 else 1
         
         samples = torch.zeros(n_samples, self._dim)
         idx = 0
@@ -705,6 +706,9 @@ class MultiSessionPrior(BasePrior):
                 samples[:, idx] = torch.rand(n_samples) * (high - low) + low
                 idx += 1
         
+        # If sample_shape was empty, return 1D (single sample)
+        if len(sample_shape) == 0:
+            return samples.squeeze(0)
         return samples
     
     def log_prob(self, theta: torch.Tensor) -> torch.Tensor:
