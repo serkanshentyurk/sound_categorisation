@@ -1,5 +1,5 @@
 """
-SBI Simulator for BE and MixedAgent models.
+SBI Simulator for BE and SC(#TODO) models.
 
 Wraps models for use with simulation-based inference.
 Supports single-session and multi-session with state chaining.
@@ -9,8 +9,9 @@ import numpy as np
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Optional, Callable, Union, Any
 from enum import Enum
+from scipy.integrate import trapezoid
 
-from Inference.summary_stats import compute_summary_stats, DEFAULT_STATS
+from Analysis.summary_stats import compute_summary_stats, DEFAULT_STATS
 
 
 # =============================================================================
@@ -20,7 +21,6 @@ from Inference.summary_stats import compute_summary_stats, DEFAULT_STATS
 class ModelType(Enum):
     """Supported model types."""
     BE = "be"
-    MIXED = "mixed"
 
 
 # =============================================================================
@@ -42,27 +42,15 @@ class ParamConfig:
         """Clip value to bounds."""
         return float(np.clip(value, self.bounds[0], self.bounds[1]))
 
+from Models.BE_core import BEParams
 
-# Default parameter configurations for each model type
+_be_bounds = BEParams.get_bounds()
+
 BE_PARAM_CONFIGS = {
-    'sigma_percep': ParamConfig('sigma_percep', bounds=(0.05, 0.5), default=0.15),
-    'A_repulsion': ParamConfig('A_repulsion', bounds=(0.0, 0.5), default=0.1),
-    'eta_learning': ParamConfig('eta_learning', bounds=(0.05, 0.9), default=0.35),
-    'eta_relax': ParamConfig('eta_relax', bounds=(0.01, 0.4), default=0.12),
-}
-
-MIXED_PARAM_CONFIGS = {
-    # BE params
-    'sigma_percep': ParamConfig('sigma_percep', bounds=(0.05, 0.5), default=0.15),
-    'A_repulsion': ParamConfig('A_repulsion', bounds=(0.0, 0.5), default=0.1),
-    'eta_learning': ParamConfig('eta_learning', bounds=(0.05, 0.9), default=0.35),
-    'eta_relax': ParamConfig('eta_relax', bounds=(0.01, 0.4), default=0.12),
-    # Mixture weight
-    'alpha': ParamConfig('alpha', bounds=(0.0, 1.0), default=0.8),
-    # Heuristic params
-    'bias': ParamConfig('bias', bounds=(-0.3, 0.3), default=0.0),
-    'p_winstay': ParamConfig('p_winstay', bounds=(0.0, 1.0), default=0.5),
-    'p_loseshift': ParamConfig('p_loseshift', bounds=(0.0, 1.0), default=0.5),
+    'sigma_percep': ParamConfig('sigma_percep', bounds=_be_bounds['sigma_percep'], default=0.15),
+    'A_repulsion': ParamConfig('A_repulsion', bounds=_be_bounds['A_repulsion'], default=0.1),
+    'eta_learning': ParamConfig('eta_learning', bounds=_be_bounds['eta_learning'], default=0.35),
+    'eta_relax': ParamConfig('eta_relax', bounds=_be_bounds['eta_relax'], default=0.12),
 }
 
 
@@ -71,9 +59,6 @@ def get_default_param_configs(model_type: ModelType) -> Dict[str, ParamConfig]:
     if model_type == ModelType.BE:
         return {k: ParamConfig(v.name, v.bounds, v.default) 
                 for k, v in BE_PARAM_CONFIGS.items()}
-    elif model_type == ModelType.MIXED:
-        return {k: ParamConfig(v.name, v.bounds, v.default) 
-                for k, v in MIXED_PARAM_CONFIGS.items()}
     else:
         raise ValueError(f"Unknown model type: {model_type}")
 
@@ -100,7 +85,7 @@ def state_transition_decay(state: Any, decay_rate: float = 0.1, **kwargs) -> Any
     
     uniform = np.ones_like(state.boundary_belief) / len(state.boundary_belief)
     new_belief = (1 - decay_rate) * state.boundary_belief + decay_rate * uniform
-    new_belief = new_belief / new_belief.sum()
+    new_belief = new_belief / trapezoid(new_belief, state.x)
     
     # Create new state with updated belief
     new_state = state.copy()
@@ -114,7 +99,8 @@ def state_transition_reset(state: Any, **kwargs) -> Any:
         return state
     
     new_state = state.copy()
-    new_state.boundary_belief = np.ones_like(state.boundary_belief) / len(state.boundary_belief)
+    uniform = np.ones_like(state.boundary_belief)
+    new_state.boundary_belief = uniform / trapezoid(uniform, state.x)
     return new_state
 
 
@@ -194,24 +180,22 @@ class SimulatorConfig:
 
 class Simulator:
     """
-    SBI-compatible simulator for BE and MixedAgent models.
+    SBI-compatible simulator for BE and SC (TODO) models.
     
     Handles:
     - Single and multi-session simulation
     - Parameter array <-> dict conversion  
     - State chaining between sessions
     - Summary statistic computation
-    - Both BE and MixedAgent models
+    - Both BE and SC models
     
     Usage (single-session BE):
         config = SimulatorConfig(model_type=ModelType.BE)
         sim = Simulator(config, stimuli, categories)
         summary_stats = sim(theta_array)
         
-    Usage (single-session MixedAgent):
-        config = SimulatorConfig(model_type=ModelType.MIXED)
-        sim = Simulator(config, stimuli, categories)
-        summary_stats = sim(theta_array)
+    Usage (single-session SC):
+        #TODO
         
     Usage (multi-session with varying eta):
         config = SimulatorConfig(
@@ -265,7 +249,6 @@ class Simulator:
         
         # Try to import models (defer to allow flexibility)
         self._be_model_class = None
-        self._mixed_agent_class = None
         self._import_models()
     
     def _import_models(self):
@@ -277,12 +260,7 @@ class Simulator:
         except ImportError:
             pass
         
-        try:
-            from Models.agent import MixedAgent
-            self._mixed_agent_class = MixedAgent
-        except ImportError:
-            pass
-    
+
     def _compute_n_free_params(self) -> int:
         """Compute total number of free parameters in theta array."""
         n = 0
@@ -375,7 +353,7 @@ class Simulator:
             )
         
         # Simulate session using functional API
-        choices, p_B, final_state = BEModel.simulate_session(
+        choices, p_B, final_state, _ = BEModel.simulate_session(
             params=be_params,
             initial_state=state,
             stimuli=stimuli,
@@ -385,60 +363,6 @@ class Simulator:
         
         return choices.astype(int), final_state.boundary_belief.copy()
     
-    def _simulate_mixed_session(
-        self,
-        params: Dict[str, float],
-        stimuli: np.ndarray,
-        categories: np.ndarray,
-        rng: np.random.Generator,
-        initial_belief: Optional[np.ndarray] = None
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Simulate one session with MixedAgent.
-        
-        Returns:
-            choices: Array of choices
-            final_belief: Belief distribution at end of session
-        """
-        if self._mixed_agent_class is None:
-            raise ImportError("MixedAgent not available")
-        
-        # Set default heuristic weights if not provided
-        model_params = params.copy()
-        for w_name in ['w_bias', 'w_winstay', 'w_loseshift', 'w_random']:
-            if w_name not in model_params:
-                model_params[w_name] = 1.0
-        
-        # Create agent
-        agent = self._mixed_agent_class(
-            sigma_percep=model_params.get('sigma_percep', 0.15),
-            A_repulsion=model_params.get('A_repulsion', 0.1),
-            eta_learning=model_params.get('eta_learning', 0.35),
-            eta_relax=model_params.get('eta_relax', 0.12),
-            alpha=model_params.get('alpha', 1.0),
-            bias=model_params.get('bias', 0.0),
-            p_winstay=model_params.get('p_winstay', 0.5),
-            p_loseshift=model_params.get('p_loseshift', 0.5),
-            w_bias=model_params.get('w_bias', 1.0),
-            w_winstay=model_params.get('w_winstay', 1.0),
-            w_loseshift=model_params.get('w_loseshift', 1.0),
-            w_random=model_params.get('w_random', 1.0),
-            burn_in=0,  # Handle burn-in via initial_belief
-        )
-        
-        # Set initial belief if provided
-        if initial_belief is not None:
-            agent._be_model.boundary_belief = initial_belief.copy()
-        elif self.config.burn_in > 0:
-            agent.reset(
-                burn_in=self.config.burn_in,
-                burn_in_seed=self.config.burn_in_seed or rng.integers(0, 2**31)
-            )
-        
-        # Simulate
-        choices, _ = agent.simulate_session(stimuli, categories, rng=rng)
-        
-        return choices, agent.boundary_belief.copy()
     
     def simulate(
         self,
@@ -478,14 +402,6 @@ class Simulator:
             # Simulate based on model type
             if self.config.model_type == ModelType.BE:
                 choices, final_belief = self._simulate_be_session(
-                    session_params,
-                    self.stimuli[:, s],
-                    self.categories[:, s],
-                    rng,
-                    initial_belief=current_belief
-                )
-            elif self.config.model_type == ModelType.MIXED:
-                choices, final_belief = self._simulate_mixed_session(
                     session_params,
                     self.stimuli[:, s],
                     self.categories[:, s],
@@ -616,41 +532,6 @@ def create_be_simulator(
     return Simulator(config, stimuli, categories, seed=seed)
 
 
-def create_mixed_simulator(
-    stimuli: np.ndarray,
-    categories: np.ndarray,
-    fixed_params: Optional[Dict[str, float]] = None,
-    varying_params: Optional[List[str]] = None,
-    stat_names: Optional[List[str]] = None,
-    burn_in: int = 0,
-    state_transition: str = 'identity',
-    seed: Optional[int] = None
-) -> Simulator:
-    """
-    Create a MixedAgent simulator.
-    
-    Args:
-        stimuli: Shape (n_trials,) or (n_trials, n_sessions)
-        categories: Same shape as stimuli
-        fixed_params: Parameters to fix (not infer)
-        varying_params: Parameters that vary across sessions
-        stat_names: Summary statistics to compute
-        burn_in: Burn-in trials for initial belief
-        state_transition: How to transition state between sessions
-        seed: Random seed
-    
-    Returns:
-        Configured Simulator
-    """
-    config = SimulatorConfig(
-        model_type=ModelType.MIXED,
-        fixed_params=fixed_params or {},
-        varying_params=varying_params or [],
-        stat_names=stat_names or DEFAULT_STATS.copy(),
-        burn_in=burn_in,
-        state_transition=state_transition,
-    )
-    return Simulator(config, stimuli, categories, seed=seed)
 
 
 # =============================================================================

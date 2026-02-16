@@ -3,7 +3,6 @@ Stateless Boundary Estimation Model Core
 
 This module provides the core computational components for the BE model
 in a stateless, functional style that supports:
-- MCMC inference (single-session)
 - SBI inference (single and multi-session)
 - Clean session chaining for longitudinal analysis
 
@@ -219,6 +218,23 @@ class ModelTrace:
         rewards[np.isnan(self.choices)] = np.nan
         return rewards
     
+    @property
+    def belief_means(self) -> np.ndarray:
+        """Mean of boundary belief at each trial."""
+        if not self.has_beliefs:
+            return np.full(self.n_trials, np.nan)
+        return trapezoid(self.beliefs * self.x[np.newaxis, :], self.x, axis=1)
+    
+    @property
+    def belief_stds(self) -> np.ndarray:
+        """Std of boundary belief at each trial."""
+        if not self.has_beliefs:
+            return np.full(self.n_trials, np.nan)
+        means = self.belief_means
+        deviations = (self.x[np.newaxis, :] - means[:, np.newaxis]) ** 2
+        variances = trapezoid(self.beliefs * deviations, self.x, axis=1)
+        return np.sqrt(variances)
+    
     # =========================================================================
     # BELIEF QUERIES
     # =========================================================================
@@ -233,9 +249,31 @@ class ModelTrace:
         j = np.abs(self.x - s).argmin()
         return trapezoid(belief[:j+1], self.x[:j+1])
     
+    # def get_p_B_at_midpoints(self, midpoints: np.ndarray, trial_idx: int) -> np.ndarray:
+    #     """
+    #     Compute P(choose B) at multiple stimulus values for a given trial.
+        
+    #     Args:
+    #         midpoints: Array of stimulus values to evaluate
+    #         trial_idx: Which trial's belief to use
+        
+    #     Returns:
+    #         Array of P(B) values at each midpoint
+    #     """
+    #     belief = self.beliefs[trial_idx]
+    #     p_B_values = np.zeros(len(midpoints))
+        
+    #     for i, s in enumerate(midpoints):
+    #         j = np.abs(self.x - s).argmin()
+    #         p_B_values[i] = trapezoid(belief[:j+1], self.x[:j+1])
+        
+    #     return np.clip(p_B_values, 1e-10, 1 - 1e-10)
+    
     def get_p_B_at_midpoints(self, midpoints: np.ndarray, trial_idx: int) -> np.ndarray:
         """
         Compute P(choose B) at multiple stimulus values for a given trial.
+        
+        Uses cumulative trapezoid to compute the CDF once, then interpolates.
         
         Args:
             midpoints: Array of stimulus values to evaluate
@@ -244,13 +282,15 @@ class ModelTrace:
         Returns:
             Array of P(B) values at each midpoint
         """
+        from scipy.integrate import cumulative_trapezoid
+        
         belief = self.beliefs[trial_idx]
-        p_B_values = np.zeros(len(midpoints))
+        # Compute full CDF via cumulative integration
+        cdf = np.zeros(len(self.x))
+        cdf[1:] = cumulative_trapezoid(belief, self.x)
         
-        for i, s in enumerate(midpoints):
-            j = np.abs(self.x - s).argmin()
-            p_B_values[i] = trapezoid(belief[:j+1], self.x[:j+1])
-        
+        # Interpolate at requested points
+        p_B_values = np.interp(midpoints, self.x, cdf)
         return np.clip(p_B_values, 1e-10, 1 - 1e-10)
     
     def copy(self) -> 'ModelTrace':
@@ -610,8 +650,9 @@ class BEModel:
         delta_learning = 1 / (1 + np.exp(-params.sigma_boundary * C * (state.x - s_hat)))
         y_prime = state.boundary_belief - params.eta_learning * delta_learning
         
-        # Relaxation toward uniform (0.5)
-        delta_relax = y_prime - 0.5
+        # Relaxation toward uniform density
+        uniform_density = 1.0 / (state.x_max - state.x_min)
+        delta_relax = y_prime - uniform_density
         y_double_prime = y_prime - params.eta_relax * delta_relax
         
         # Ensure non-negative
@@ -629,6 +670,39 @@ class BEModel:
             x_min=state.x_min,
             x_max=state.x_max
         )
+        
+    @staticmethod
+    def _update_belief_inplace(
+        s_hat: float, true_category: int,
+        params: BEParams,
+        belief: np.ndarray, x: np.ndarray,
+        x_min: float, x_max: float,
+    ) -> None:
+        """
+        Update boundary belief IN-PLACE. For tight simulation loops only.
+        
+        The public update_belief() returns a new BEState and is used for
+        external calls. This avoids allocation overhead in simulate_session
+        and compute_log_likelihood.
+        """
+        C = 1 if true_category == 1 else -1
+        sigma_boundary = 1.0 / params.sigma_percep
+        uniform_density = 1.0 / (x_max - x_min)
+        
+        # Learning update
+        delta_learning = 1.0 / (1.0 + np.exp(-sigma_boundary * C * (x - s_hat)))
+        belief -= params.eta_learning * delta_learning
+        
+        # Relaxation toward uniform
+        belief -= params.eta_relax * (belief - uniform_density)
+        
+        # Ensure non-negative
+        min_val = belief.min()
+        if min_val < 0:
+            belief += np.abs(min_val)
+        
+        # Normalise
+        belief /= trapezoid(belief, x)
     
     # =========================================================================
     # SESSION SIMULATION
@@ -683,29 +757,48 @@ class BEModel:
             beliefs = np.zeros((n_trials, initial_state.n_points))
         
         state = initial_state.copy()
+        belief = state.boundary_belief  # Work with the array directly
+        x = state.x
+        s_hat_prev = state.s_hat_prev
         
         for t in range(n_trials):
             # Store belief BEFORE this trial (for update matrix computation)
             if return_history:
-                beliefs[t] = state.boundary_belief.copy()
+                beliefs[t] = belief.copy()
             
             if no_response[t]:
                 continue
             
             # Perceive
             s_hat = BEModel.perceive_stimulus(
-                stimuli[t], params, state.s_hat_prev, rng
+                stimuli[t], params, s_hat_prev, rng
             )
             s_hat_arr[t] = s_hat
             
-            # Choice probability
-            p_B[t] = BEModel.get_choice_probability(s_hat, state)
+            # Choice probability (inline to avoid method call overhead)
+            j = np.abs(x - s_hat).argmin()
+            p_B[t] = np.clip(
+                trapezoid(belief[:j + 1], x[:j + 1]), 1e-10, 1 - 1e-10
+            )
             
             # Make choice
             choices[t] = rng.binomial(1, p_B[t])
             
-            # Update belief based on TRUE CATEGORY
-            state = BEModel.update_belief(s_hat, categories[t], params, state)
+            # Update belief in-place
+            BEModel._update_belief_inplace(
+                s_hat, categories[t], params, belief, x,
+                state.x_min, state.x_max
+            )
+            s_hat_prev = s_hat
+        
+        # Build final state (snapshot current belief)
+        final_state = BEState(
+            boundary_belief=belief.copy(),
+            s_hat_prev=s_hat_prev,
+            x=x,
+            x_min=state.x_min,
+            x_max=state.x_max,
+        )
         
         # Build history if requested
         if return_history:
@@ -716,83 +809,15 @@ class BEModel:
                 p_B=p_B.copy(),
                 s_hat=s_hat_arr.copy(),
                 beliefs=beliefs,
-                x=state.x.copy(),
+                x=x.copy(),
                 no_response=no_response.copy(),
                 not_blockstart=not_blockstart.copy()
             )
         else:
             history = None
         
-        return choices, p_B, state, history
+        return choices, p_B, final_state, history
     
-    @staticmethod
-    def simulate_session_with_history(
-        params: BEParams,
-        initial_state: BEState,
-        stimuli: np.ndarray,
-        categories: np.ndarray,
-        rng: np.random.Generator,
-        no_response: Optional[np.ndarray] = None,
-        not_blockstart: Optional[np.ndarray] = None
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, BEState, 'ModelTrace']:
-        """
-        Simulate session with full belief history for plotting and analysis.
-        
-        Returns:
-            choices: Simulated choices
-            p_B: Choice probabilities
-            belief_mu: Belief mean at each trial
-            belief_std: Belief std at each trial
-            final_state: State after session
-            history: Full ModelTrace for update matrix analysis
-        """
-        n_trials = len(stimuli)
-        choices = np.full(n_trials, np.nan)
-        p_B = np.full(n_trials, np.nan)
-        s_hat_arr = np.full(n_trials, np.nan)
-        belief_mu = np.full(n_trials, np.nan)
-        belief_std = np.full(n_trials, np.nan)
-        beliefs = np.zeros((n_trials, initial_state.n_points))
-        
-        if no_response is None:
-            no_response = np.zeros(n_trials, dtype=bool)
-        
-        if not_blockstart is None:
-            not_blockstart = np.ones(n_trials, dtype=bool)
-            if n_trials > 0:
-                not_blockstart[0] = False
-        
-        state = initial_state.copy()
-        
-        for t in range(n_trials):
-            # Store belief stats and full belief before trial
-            belief_mu[t], belief_std[t] = state.get_belief_stats()
-            beliefs[t] = state.boundary_belief.copy()
-            
-            if no_response[t]:
-                continue
-            
-            s_hat = BEModel.perceive_stimulus(
-                stimuli[t], params, state.s_hat_prev, rng
-            )
-            s_hat_arr[t] = s_hat
-            p_B[t] = BEModel.get_choice_probability(s_hat, state)
-            choices[t] = rng.binomial(1, p_B[t])
-            state = BEModel.update_belief(s_hat, categories[t], params, state)
-        
-        history = ModelTrace(
-            stimuli=stimuli.copy(),
-            categories=categories.copy(),
-            choices=choices.copy(),
-            p_B=p_B.copy(),
-            s_hat=s_hat_arr.copy(),
-            beliefs=beliefs,
-            x=state.x.copy(),
-            no_response=no_response.copy(),
-            not_blockstart=not_blockstart.copy()
-        )
-        
-        return choices, p_B, belief_mu, belief_std, state, history
     
     # =========================================================================
     # LIKELIHOOD COMPUTATION
@@ -855,103 +880,74 @@ class BEModel:
             beliefs = np.zeros((n_trials, initial_state.n_points))
         
         state = initial_state.copy()
+        belief = state.boundary_belief
+        x = state.x
+        s_hat_prev = state.s_hat_prev
         
         for t in range(n_trials):
             # Store belief BEFORE this trial
             if return_history:
-                beliefs[t] = state.boundary_belief.copy()
+                beliefs[t] = belief.copy()
             
             if no_response[t]:
                 continue
             
             # Perceive
             s_hat = BEModel.perceive_stimulus(
-                stimuli[t], params, state.s_hat_prev, rng
+                stimuli[t], params, s_hat_prev, rng
             )
             s_hat_arr[t] = s_hat
             
             # Choice probability
-            p_B = BEModel.get_choice_probability(s_hat, state)
-            p_B_arr[t] = p_B
+            j = np.abs(x - s_hat).argmin()
+            p_B_t = np.clip(
+                trapezoid(belief[:j + 1], x[:j + 1]), 1e-10, 1 - 1e-10
+            )
+            p_B_arr[t] = p_B_t
             
             # Accumulate LL if in eval set
             if eval_mask[t]:
                 if observed_choices[t] == 1:
-                    trial_lls[t] = np.log(p_B)
+                    trial_lls[t] = np.log(p_B_t)
                 else:
-                    trial_lls[t] = np.log(1 - p_B)
+                    trial_lls[t] = np.log(1 - p_B_t)
             
-            # ALWAYS update belief
-            state = BEModel.update_belief(s_hat, categories[t], params, state)
+            # ALWAYS update belief in-place
+            BEModel._update_belief_inplace(
+                s_hat, categories[t], params, belief, x,
+                state.x_min, state.x_max
+            )
+            s_hat_prev = s_hat
         
         total_ll = np.nansum(trial_lls)
+        
+        # Build final state
+        final_state = BEState(
+            boundary_belief=belief.copy(),
+            s_hat_prev=s_hat_prev,
+            x=x,
+            x_min=state.x_min,
+            x_max=state.x_max,
+        )
         
         # Build history if requested
         if return_history:
             history = ModelTrace(
                 stimuli=stimuli.copy(),
                 categories=categories.copy(),
-                choices=observed_choices.copy(),  # OBSERVED choices
+                choices=observed_choices.copy(),
                 p_B=p_B_arr.copy(),
                 s_hat=s_hat_arr.copy(),
                 beliefs=beliefs,
-                x=state.x.copy(),
+                x=x.copy(),
                 no_response=no_response.copy(),
                 not_blockstart=not_blockstart.copy()
             )
         else:
             history = None
         
-        return total_ll, trial_lls, state, history
+        return total_ll, trial_lls, final_state, history
     
-    @staticmethod
-    def compute_log_likelihood_mc(
-        params: BEParams,
-        initial_state: BEState,
-        stimuli: np.ndarray,
-        categories: np.ndarray,
-        observed_choices: np.ndarray,
-        n_mc_samples: int = 10,
-        seed: int = 42,
-        eval_mask: Optional[np.ndarray] = None,
-        no_response: Optional[np.ndarray] = None
-    ) -> Tuple[float, float, BEState]:
-        """
-        Compute log-likelihood with Monte Carlo marginalisation over perceptual noise.
-        
-        For MCMC inference where we want to marginalise out the stochastic
-        perceptual noise rather than condition on a single realisation.
-        
-        Args:
-            params: Model parameters
-            initial_state: Starting state
-            stimuli: Stimulus values
-            categories: True categories
-            observed_choices: Observed choices
-            n_mc_samples: Number of MC samples for marginalisation
-            seed: Base random seed
-            eval_mask: Boolean mask for LL evaluation
-            no_response: Boolean mask for no-response trials
-        
-        Returns:
-            mean_ll: Mean log-likelihood across MC samples
-            std_ll: Standard deviation of log-likelihood
-            final_state: State after processing (from last MC sample)
-        """
-        lls = []
-        final_state = None
-        
-        for mc_idx in range(n_mc_samples):
-            rng = np.random.default_rng(seed + mc_idx)
-            ll, _, final_state, _ = BEModel.compute_log_likelihood(
-                params, initial_state, stimuli, categories,
-                observed_choices, rng, eval_mask, no_response,
-                return_history=False
-            )
-            lls.append(ll)
-        
-        lls = np.array(lls)
-        return np.mean(lls), np.std(lls), final_state
     
     # =========================================================================
     # MULTI-SESSION OPERATIONS
@@ -1132,6 +1128,7 @@ def simulate_for_sbi(
     categories: np.ndarray,
     seed: int,
     burn_in: int = 0,
+    stats_fn: 'Optional[Callable]' = None,
     return_choices: bool = False
 ) -> np.ndarray:
     """
@@ -1143,10 +1140,12 @@ def simulate_for_sbi(
         categories: Category array
         seed: Random seed
         burn_in: Burn-in trials
-        return_choices: If True, return raw choices; else return summary stats
+        stats_fn: Callable(choices, stimuli, categories) -> np.ndarray.
+                  If None, must pass return_choices=True.
+        return_choices: If True, return raw choices instead of stats
     
     Returns:
-        Summary statistics or raw choices
+        Summary statistics array or raw choices
     """
     params = BEParams.from_array(param_array)
     initial_state = BEModel.create_initial_state(
@@ -1162,48 +1161,15 @@ def simulate_for_sbi(
     if return_choices:
         return choices
     
-    # Default summary statistics
-    return compute_summary_stats(choices, stimuli)
-
-
-def compute_summary_stats(choices: np.ndarray, stimuli: np.ndarray) -> np.ndarray:
-    """
-    Compute summary statistics for SBI.
+    if stats_fn is None:
+        raise ValueError(
+            "stats_fn is required when return_choices=False. "
+            "Pass a function from Analysis.summary_stats, e.g.:\n"
+            "  from Analysis.summary_stats import compute_stats_for_sbi\n"
+            "  simulate_for_sbi(..., stats_fn=compute_stats_for_sbi)"
+        )
     
-    Returns vector of statistics that capture behavioural patterns.
-    """
-    valid = ~np.isnan(choices)
-    choices_valid = choices[valid]
-    stimuli_valid = stimuli[valid]
-    
-    # Basic stats
-    mean_choice = np.mean(choices_valid)
-    accuracy = np.mean(choices_valid == (stimuli_valid > 0).astype(int))
-    
-    # Binned choice proportions (coarse psychometric)
-    n_bins = 5
-    bin_edges = np.linspace(-1, 1, n_bins + 1)
-    bin_props = np.zeros(n_bins)
-    for i in range(n_bins):
-        mask = (stimuli_valid >= bin_edges[i]) & (stimuli_valid < bin_edges[i+1])
-        if mask.sum() > 0:
-            bin_props[i] = np.mean(choices_valid[mask])
-    
-    # Serial dependence (choice autocorrelation)
-    if len(choices_valid) > 1:
-        autocorr = np.corrcoef(choices_valid[:-1], choices_valid[1:])[0, 1]
-        if np.isnan(autocorr):
-            autocorr = 0.0
-    else:
-        autocorr = 0.0
-    
-    # Combine
-    stats = np.concatenate([
-        [mean_choice, accuracy, autocorr],
-        bin_props
-    ])
-    
-    return stats
+    return stats_fn(choices, stimuli, categories)
 
 
 # =============================================================================
@@ -1216,5 +1182,4 @@ __all__ = [
     'BEState',
     'BEModel',
     'simulate_for_sbi',
-    'compute_summary_stats',
 ]

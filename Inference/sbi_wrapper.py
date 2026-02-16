@@ -1,5 +1,5 @@
 """
-SBI Wrapper for BE and MixedAgent Models.
+SBI Wrapper for BE and SC Models.
 
 High-level interface for running simulation-based inference:
 - Training neural density estimators (NPE, NLE, NRE)

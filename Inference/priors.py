@@ -40,21 +40,10 @@ from abc import ABC, abstractmethod
 # =============================================================================
 
 # Default bounds for BE model
-DEFAULT_BE_BOUNDS = {
-    'sigma_percep': (0.05, 0.5),
-    'A_repulsion': (0.0, 0.5),
-    'eta_learning': (0.05, 0.9),
-    'eta_relax': (0.01, 0.4),
-}
+from Models.BE_core import BEParams
 
-# Default bounds for MixedAgent (includes BE + heuristics)
-DEFAULT_MIXED_BOUNDS = {
-    **DEFAULT_BE_BOUNDS,
-    'alpha': (0.0, 1.0),
-    'bias': (-0.3, 0.3),
-    'p_winstay': (0.0, 1.0),
-    'p_loseshift': (0.0, 1.0),
-}
+DEFAULT_BE_BOUNDS = BEParams.get_bounds()
+
 
 
 # =============================================================================
@@ -821,13 +810,16 @@ def create_prior(
     
     Args:
         param_bounds: Parameter bounds (if None, uses defaults for model_type)
-        model_type: 'be' or 'mixed'
+        model_type: 'be' or 'sc'
     
     Returns:
         UniformPrior instance
     """
     if param_bounds is None:
-        param_bounds = DEFAULT_BE_BOUNDS if model_type == 'be' else DEFAULT_MIXED_BOUNDS
+        if model_type == 'be':
+            param_bounds = DEFAULT_BE_BOUNDS
+        else:
+            raise ValueError(f"Unknown model_type: {model_type}")
     
     return UniformPrior(param_bounds)
 
@@ -851,7 +843,7 @@ def create_multisession_prior(
                    'hierarchical') or dict mapping param names to types
         linking_config: Configuration for linking (passed to all varying params,
                        or dict mapping param names to configs)
-        model_type: 'be' or 'mixed'
+        model_type: 'be' or 'sc'
     
     Returns:
         MultiSessionPrior instance
@@ -866,7 +858,10 @@ def create_multisession_prior(
         )
     """
     if param_bounds is None:
-        param_bounds = DEFAULT_BE_BOUNDS if model_type == 'be' else DEFAULT_MIXED_BOUNDS
+        if model_type == 'be':
+            param_bounds = DEFAULT_BE_BOUNDS
+        else:
+            raise ValueError(f"Unknown model_type: {model_type}")
     
     if varying_params is None:
         varying_params = ['eta_learning']
@@ -911,7 +906,6 @@ def create_multisession_prior(
 __all__ = [
     # Bounds
     'DEFAULT_BE_BOUNDS',
-    'DEFAULT_MIXED_BOUNDS',
     # Base class
     'BasePrior',
     # Single-session

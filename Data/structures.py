@@ -5,11 +5,11 @@ Containers for loading, organising, and extracting behavioural data
 from the sound categorisation task. Provides a hierarchical structure:
 
     ExperimentData
-    └── AnimalData  (one per animal, unit of model fitting)
-        └── SessionData  (ordered chronologically)
-            ├── SessionMetadata  (constant within session)
-            ├── BlockInfo  (one per distribution epoch)
-            └── TrialData  (flat arrays, all trials in session)
+    â””â”€â”€ AnimalData  (one per animal, unit of model fitting)
+        â””â”€â”€ SessionData  (ordered chronologically)
+            â”œâ”€â”€ SessionMetadata  (constant within session)
+            â”œâ”€â”€ BlockInfo  (one per distribution epoch)
+            â””â”€â”€ TrialData  (flat arrays, all trials in session)
 
 Key design principles:
     - Store everything at loading, filter at fitting time
@@ -50,8 +50,8 @@ Note:
         choices: -1 = left, 1 = right, 0 = no response
     
     Conversion from spatial to category space requires Sound_Contingency:
-        Low_Left_High_Right: left=-1 → A=0, right=1 → B=1 (direct mapping)
-        Low_Right_High_Left: left=-1 → B=1, right=1 → A=0 (flipped)
+        Low_Left_High_Right: left=-1 â†’ A=0, right=1 â†’ B=1 (direct mapping)
+        Low_Right_High_Left: left=-1 â†’ B=1, right=1 â†’ A=0 (flipped)
 """
 
 import numpy as np
@@ -98,7 +98,7 @@ SESSION_COLUMNS = [
 ]
 
 # Default contingency: low freq = left, high freq = right
-# In this mapping: stimulus > 0 → category B → right side
+# In this mapping: stimulus > 0 â†’ category B â†’ right side
 DEFAULT_CONTINGENCY = 'Low_Left_High_Right'
 
 
@@ -342,7 +342,7 @@ class TrialData:
         Returns:
             ModelTrace with matched input and output arrays
         """
-        from model_BE_core import ModelTrace
+        from Models.BE_core import ModelTrace
         return ModelTrace.from_trial_data(
             self, p_B, s_hat, beliefs, x,
             exclude_abort=exclude_abort,
@@ -805,8 +805,8 @@ def _parse_date_from_path(session_dir: str) -> Optional[date]:
     """
     Extract date from session directory name.
     
-    Expected format: SOUND_CAT_SS05_2026_1_27 → 2026-01-27
-    Also handles: trial_summary_SS05_20260127.csv → 2026-01-27
+    Expected format: SOUND_CAT_SS05_2026_1_27 â†’ 2026-01-27
+    Also handles: trial_summary_SS05_20260127.csv â†’ 2026-01-27
     """
     # Try directory name pattern: ..._YYYY_M_D
     match = re.search(r'(\d{4})_(\d{1,2})_(\d{1,2})$', session_dir)
@@ -1016,10 +1016,10 @@ def load_animal(
     
     Expected structure:
         base_path/
-        ├── SESSION_DIR_1/
-        │   └── trial_summary_ANIMAL_DATE.csv
-        ├── SESSION_DIR_2/
-        │   └── trial_summary_ANIMAL_DATE.csv
+        â”œâ”€â”€ SESSION_DIR_1/
+        â”‚   â””â”€â”€ trial_summary_ANIMAL_DATE.csv
+        â”œâ”€â”€ SESSION_DIR_2/
+        â”‚   â””â”€â”€ trial_summary_ANIMAL_DATE.csv
         ...
     
     Args:
@@ -1073,11 +1073,11 @@ def load_experiment(
     
     Expected structure:
         base_path/
-        ├── SS05/
-        │   ├── SESSION_DIR_1/ ...
-        │   └── SESSION_DIR_2/ ...
-        ├── SS06/
-        │   ├── ...
+        â”œâ”€â”€ SS05/
+        â”‚   â”œâ”€â”€ SESSION_DIR_1/ ...
+        â”‚   â””â”€â”€ SESSION_DIR_2/ ...
+        â”œâ”€â”€ SS06/
+        â”‚   â”œâ”€â”€ ...
         ...
     
     Args:
@@ -1116,6 +1116,152 @@ def load_experiment(
 
 
 # =============================================================================
+# STIMULUS DISTRIBUTION SAMPLING
+# =============================================================================
+
+def _solve_hard_dist_lambda() -> float:
+    """
+    Solve e^{-lam} + lam = 2 for the default asymmetric distribution parameter.
+    
+    The density on [0,1] is f(x) = lam*e^{-lam*x} + e^{-lam}, which integrates
+    to 1 for ANY lam > 0. The constraint lam + e^{-lam} = 2 gives the default
+    where peak density is exactly 2x edge density.
+    """
+    from scipy.optimize import brentq
+    return brentq(lambda x: x + np.exp(-x) - 2, 0.1, 5.0)
+
+# Solve once at import time
+_HARD_LAMBDA_DEFAULT = _solve_hard_dist_lambda()
+
+
+def _sample_hard_B_side(
+    n: int,
+    rng: np.random.Generator,
+    lam: Optional[float] = None,
+) -> np.ndarray:
+    """
+    Sample from f(x) = lam*e^{-lam*x} + e^{-lam} on [0, 1].
+    
+    Boundary-heavy on B side: density peaks at x=0 (boundary) and
+    decays toward x=1. Vectorised rejection sampling.
+    
+    The density integrates to 1 for any lam > 0. Higher lam = more
+    trials near boundary. lam ~ 1.84 (default) gives moderate asymmetry;
+    lam = 3 gives strong boundary bias; lam -> 0 approaches uniform.
+    
+    Args:
+        n: Number of samples
+        rng: Random generator
+        lam: Exponential rate parameter. None = default (~1.84).
+    """
+    if lam is None:
+        lam = _HARD_LAMBDA_DEFAULT
+    k = np.exp(-lam)
+    M = lam + k  # Maximum of f on [0,1], at x=0
+    
+    samples = np.empty(n)
+    filled = 0
+    while filled < n:
+        batch_size = int((n - filled) * (M + 0.5)) + 64
+        x = rng.uniform(0.0, 1.0, batch_size)
+        u = rng.uniform(0.0, 1.0, batch_size)
+        f_x = lam * np.exp(-lam * x) + k
+        accepted = x[u * M <= f_x]
+        take = min(len(accepted), n - filled)
+        samples[filled:filled + take] = accepted[:take]
+        filled += take
+    return samples
+
+
+def _sample_hard_A_side(
+    n: int,
+    rng: np.random.Generator,
+    lam: Optional[float] = None,
+) -> np.ndarray:
+    """
+    Sample from f(x) = lam*e^{lam*x} + e^{-lam} on [-1, 0].
+    
+    Boundary-heavy on A side: density peaks at x=0 (boundary) and
+    decays toward x=-1. Vectorised rejection sampling.
+    
+    Args:
+        n: Number of samples
+        rng: Random generator
+        lam: Exponential rate parameter. None = default (~1.84).
+    """
+    if lam is None:
+        lam = _HARD_LAMBDA_DEFAULT
+    k = np.exp(-lam)
+    M = lam + k
+    
+    samples = np.empty(n)
+    filled = 0
+    while filled < n:
+        batch_size = int((n - filled) * (M + 0.5)) + 64
+        x = rng.uniform(-1.0, 0.0, batch_size)
+        u = rng.uniform(0.0, 1.0, batch_size)
+        f_x = lam * np.exp(lam * x) + k
+        accepted = x[u * M <= f_x]
+        take = min(len(accepted), n - filled)
+        samples[filled:filled + take] = accepted[:take]
+        filled += take
+    return samples
+
+
+def sample_stimuli(
+    n_trials: int,
+    distribution: str,
+    rng: np.random.Generator,
+    exp_rate: Optional[float] = None,
+) -> np.ndarray:
+
+    """
+    Sample stimulus values from a named distribution on [-1, 1].
+    
+    Each trial: 50/50 chance of sampling from A side [-1,0] or B side [0,1],
+    with the density on each side determined by the distribution type.
+    
+    Distributions:
+        'Uniform': Uniform on both sides
+        'Hard-A':  Boundary-heavy on A side, uniform on B side
+                   (more hard trials where stimulus is near 0 on the A side)
+        'Hard-B':  Uniform on A side, boundary-heavy on B side
+                   (more hard trials where stimulus is near 0 on the B side)
+    
+    Mapping to old Sampling.py:
+        Hard-A = Asym_right (HardA [-1,0] + Uniform [0,1])
+        Hard-B = Asym_left  (Uniform [-1,0] + HardB [0,1])
+    """
+    # Determine which side each trial is drawn from
+    is_B_side = rng.random(n_trials) < 0.5
+    n_A = int(np.sum(~is_B_side))
+    n_B = int(np.sum(is_B_side))
+    
+    stimuli = np.empty(n_trials)
+    
+    if distribution == 'Uniform':
+        stimuli[~is_B_side] = rng.uniform(-1.0, 0.0, n_A)
+        stimuli[is_B_side] = rng.uniform(0.0, 1.0, n_B)
+    
+    elif distribution == 'Hard-A':
+        # A side: boundary-heavy; B side: uniform
+        stimuli[~is_B_side] = _sample_hard_A_side(n_A, rng, lam=exp_rate)
+        stimuli[is_B_side] = rng.uniform(0.0, 1.0, n_B)
+    
+    elif distribution == 'Hard-B':
+        # A side: uniform; B side: boundary-heavy
+        stimuli[~is_B_side] = rng.uniform(-1.0, 0.0, n_A)
+        stimuli[is_B_side] = _sample_hard_B_side(n_B, rng, lam=exp_rate)
+    
+    else:
+        raise ValueError(
+            f"Unknown distribution: '{distribution}'. "
+            f"Expected one of: 'Uniform', 'Hard-A', 'Hard-B'"
+        )
+    
+    return stimuli
+
+# =============================================================================
 # SYNTHETIC DATA GENERATION
 # =============================================================================
 
@@ -1143,25 +1289,14 @@ def generate_synthetic_session(
         rng: Random generator (created from seed if None)
     
     Returns:
-        SessionData with synthetic trial data (no choices yet — use
+        SessionData with synthetic trial data (no choices yet â€” use
         generate_synthetic_animal for full simulation with BE model)
     """
     if rng is None:
         rng = np.random.default_rng(seed)
     
-    # Generate stimuli
-    if distribution == 'Uniform':
-        stimuli = rng.uniform(-1.0, 1.0, n_trials)
-    elif distribution in ('Hard-A', 'Hard-B'):
-        # TODO: implement hard distributions from old repo
-        # For now, uniform as placeholder
-        warnings.warn(
-            f"Distribution '{distribution}' not yet implemented. "
-            "Using Uniform as placeholder."
-        )
-        stimuli = rng.uniform(-1.0, 1.0, n_trials)
-    else:
-        raise ValueError(f"Unknown distribution: {distribution}")
+    # Generate stimuli from named distribution
+    stimuli = sample_stimuli(n_trials, distribution, rng, exp_rate=exp_rate)
     
     categories = stimulus_to_category(stimuli)
     
@@ -1176,14 +1311,8 @@ def generate_synthetic_session(
     choice_category = np.full(n_trials, np.nan)
     
     # Session date (synthetic: day 0 + session_idx days)
-    base_date = date(2026, 1, 1)
-    session_date = date(
-        base_date.year, 
-        base_date.month, 
-        base_date.day + session_idx  # Simple: one session per day
-    )
-    # Handle month overflow
     from datetime import timedelta
+    base_date = date(2026, 1, 1)
     session_date = base_date + timedelta(days=session_idx)
     
     metadata = SessionMetadata(
@@ -1239,12 +1368,246 @@ def generate_synthetic_session(
     )
 
 
+
+# =============================================================================
+# DISTRIBUTION SCHEDULE
+# =============================================================================
+
+@dataclass
+class DistributionEpoch:
+    """
+    A distribution epoch specification for synthetic data generation.
+    
+    Attributes:
+        distribution: 'Uniform', 'Hard-A', or 'Hard-B'
+        exp_rate: Exponential rate for Hard distributions (None = default ~1.15)
+        n_sessions: Number of sessions with this distribution
+    """
+    distribution: str
+    n_sessions: int
+    exp_rate: Optional[float] = None
+    
+    def __post_init__(self):
+        valid = {'Uniform', 'Hard-A', 'Hard-B'}
+        if self.distribution not in valid:
+            raise ValueError(
+                f"Unknown distribution: '{self.distribution}'. "
+                f"Expected one of: {valid}"
+            )
+
+
+def make_distribution_schedule(
+    epochs: List[DistributionEpoch],
+) -> List[Tuple[str, Optional[float]]]:
+    """
+    Expand a list of distribution epochs into a per-session schedule.
+    
+    Args:
+        epochs: List of DistributionEpoch specifications.
+    
+    Returns:
+        List of (distribution, exp_rate) tuples, one per session.
+    
+    Example:
+        # Naive (10 Uniform) -> Expert (10 Uniform) -> Shift (10 Hard-A)
+        schedule = make_distribution_schedule([
+            DistributionEpoch('Uniform', 20),
+            DistributionEpoch('Hard-A', 10),
+        ])
+        
+        # Cycling: A -> B -> A -> B (5 sessions each)
+        schedule = make_distribution_schedule([
+            DistributionEpoch('Uniform', 10),  # baseline training
+            DistributionEpoch('Hard-A', 5),
+            DistributionEpoch('Hard-B', 5),
+            DistributionEpoch('Hard-A', 5),
+            DistributionEpoch('Hard-B', 5),
+        ])
+    """
+    schedule = []
+    for epoch in epochs:
+        for _ in range(epoch.n_sessions):
+            schedule.append((epoch.distribution, epoch.exp_rate))
+    return schedule
+
+
+# =============================================================================
+# PARAMETER TRAJECTORY PRESETS
+# =============================================================================
+
+def param_trajectory_naive_to_expert(
+    n_sessions: int,
+    eta_start: float = 0.45,
+    eta_end: float = 0.08,
+    decay_rate: float = 0.12,
+    sigma_percep: float = 0.15,
+    A_repulsion: float = 0.10,
+    eta_relax: float = 0.12,
+) -> Dict[str, Union[float, List[float]]]:
+    """
+    Exponentially declining eta_learning trajectory.
+    
+    eta(s) = (eta_start - eta_end) * exp(-decay_rate * s) + eta_end
+    
+    All other parameters held constant.
+    
+    Args:
+        n_sessions: Number of sessions
+        eta_start: Initial learning rate (naive)
+        eta_end: Asymptotic learning rate (expert)
+        decay_rate: Exponential decay rate (higher = faster learning)
+        sigma_percep: Perceptual noise (constant)
+        A_repulsion: Serial dependence (constant)
+        eta_relax: Relaxation rate (constant)
+    
+    Returns:
+        Dict suitable for generate_synthetic_animal(true_params=...)
+    """
+    s = np.arange(n_sessions)
+    eta = (eta_start - eta_end) * np.exp(-decay_rate * s) + eta_end
+    
+    return {
+        'sigma_percep': sigma_percep,
+        'A_repulsion': A_repulsion,
+        'eta_learning': eta.tolist(),
+        'eta_relax': eta_relax,
+    }
+
+
+def param_trajectory_full(
+    n_sessions_naive: int = 15,
+    n_sessions_expert: int = 5,
+    n_sessions_post_shift: int = 10,
+    eta_naive_start: float = 0.45,
+    eta_expert: float = 0.08,
+    eta_post_shift_peak: float = 0.25,
+    naive_decay_rate: float = 0.15,
+    post_shift_decay_rate: float = 0.20,
+    sigma_percep: float = 0.15,
+    A_repulsion: float = 0.10,
+    eta_relax: float = 0.12,
+) -> Dict[str, Union[float, List[float]]]:
+    """
+    Full trajectory: naive -> expert -> distribution shift -> readaptation.
+    
+    Naive phase: exponential decline from eta_naive_start to eta_expert.
+    Expert phase: constant at eta_expert.
+    Post-shift phase: jumps to eta_post_shift_peak, decays back toward eta_expert.
+    
+    Returns:
+        Dict suitable for generate_synthetic_animal(true_params=...)
+    """
+    n_total = n_sessions_naive + n_sessions_expert + n_sessions_post_shift
+    eta = np.empty(n_total)
+    
+    # Naive phase
+    s = np.arange(n_sessions_naive)
+    eta[:n_sessions_naive] = (
+        (eta_naive_start - eta_expert) * np.exp(-naive_decay_rate * s) + eta_expert
+    )
+    
+    # Expert phase
+    eta[n_sessions_naive:n_sessions_naive + n_sessions_expert] = eta_expert
+    
+    # Post-shift phase
+    s = np.arange(n_sessions_post_shift)
+    eta[n_sessions_naive + n_sessions_expert:] = (
+        (eta_post_shift_peak - eta_expert) * np.exp(-post_shift_decay_rate * s) + eta_expert
+    )
+    
+    return {
+        'sigma_percep': sigma_percep,
+        'A_repulsion': A_repulsion,
+        'eta_learning': eta.tolist(),
+        'eta_relax': eta_relax,
+    }
+
+
+def param_trajectory_cycling(
+    n_sessions_baseline: int = 15,
+    n_sessions_per_cycle: int = 5,
+    n_cycles: int = 4,
+    eta_expert: float = 0.08,
+    eta_first_shift: float = 0.30,
+    eta_later_shift: float = 0.18,
+    meta_learning_rate: float = 0.15,
+    shift_decay_rate: float = 0.30,
+    sigma_percep: float = 0.15,
+    A_repulsion: float = 0.10,
+    eta_relax: float = 0.12,
+    eta_baseline_start: float = 0.45,
+    baseline_decay_rate: float = 0.15,
+) -> Dict[str, Union[float, List[float]]]:
+    """
+    Cycling trajectory with meta-learning: A -> B -> A -> B...
+    
+    Baseline phase: exponential decline to expert.
+    Each cycle: eta jumps then decays back within the cycle.
+    Meta-learning: successive shift peaks decrease (faster adaptation).
+    
+    Args:
+        n_sessions_baseline: Sessions before first shift
+        n_sessions_per_cycle: Sessions per distribution epoch in cycling
+        n_cycles: Number of shift cycles
+        eta_expert: Baseline expert learning rate
+        eta_first_shift: eta peak at first distribution shift
+        eta_later_shift: eta peak for later shifts (before meta-learning reduction)
+        meta_learning_rate: How fast shift peaks decrease across cycles
+        shift_decay_rate: Within-cycle decay back to expert
+        sigma_percep, A_repulsion, eta_relax: Constant parameters
+        eta_baseline_start: Starting eta for baseline phase
+        baseline_decay_rate: Decay during baseline training
+    
+    Returns:
+        Dict suitable for generate_synthetic_animal(true_params=...)
+    """
+    n_total = n_sessions_baseline + n_cycles * n_sessions_per_cycle
+    eta = np.empty(n_total)
+    
+    # Baseline phase
+    s = np.arange(n_sessions_baseline)
+    eta[:n_sessions_baseline] = (
+        (eta_baseline_start - eta_expert) * np.exp(-baseline_decay_rate * s) + eta_expert
+    )
+    
+    # Cycling phase
+    offset = n_sessions_baseline
+    for c in range(n_cycles):
+        # Meta-learning: shift peak decreases with cycle number
+        if c == 0:
+            shift_peak = eta_first_shift
+        else:
+            shift_peak = (
+                (eta_later_shift - eta_expert)
+                * np.exp(-meta_learning_rate * c)
+                + eta_expert
+            )
+        
+        s = np.arange(n_sessions_per_cycle)
+        eta[offset:offset + n_sessions_per_cycle] = (
+            (shift_peak - eta_expert) * np.exp(-shift_decay_rate * s) + eta_expert
+        )
+        offset += n_sessions_per_cycle
+    
+    return {
+        'sigma_percep': sigma_percep,
+        'A_repulsion': A_repulsion,
+        'eta_learning': eta.tolist(),
+        'eta_relax': eta_relax,
+    }
+
+
+# =============================================================================
+# SYNTHETIC ANIMAL GENERATION
+# =============================================================================
+
 def generate_synthetic_animal(
     animal_id: str = 'SYN01',
-    n_sessions: int = 20,
+    n_sessions: Optional[int] = None,
     trials_per_session: Union[int, List[int]] = 300,
     true_params: Optional[Dict[str, Union[float, List[float]]]] = None,
     distribution: str = 'Uniform',
+    distribution_schedule: Optional[List[Tuple[str, Optional[float]]]] = None,
     distribution_shift_session: Optional[int] = None,
     shift_distribution: str = 'Uniform',
     abort_rate: float = 0.05,
@@ -1257,57 +1620,144 @@ def generate_synthetic_animal(
     Simulates the full trajectory: generates stimuli, runs the BE model
     across sessions with state chaining, and fills in choices.
     
+    Distribution control (in order of precedence):
+        1. distribution_schedule: Full per-session list of (dist_name, exp_rate).
+           Use make_distribution_schedule() or build manually.
+        2. distribution_shift_session + shift_distribution: Single shift point.
+        3. distribution: Constant distribution for all sessions.
+    
+    Parameter trajectories:
+        Use preset functions for common patterns:
+            param_trajectory_naive_to_expert(n_sessions)
+            param_trajectory_full(...)
+            param_trajectory_cycling(...)
+        Or pass a custom dict with scalar (constant) or list (per-session) values.
+    
     Args:
         animal_id: Animal identifier
-        n_sessions: Number of sessions
+        n_sessions: Number of sessions. If None, inferred from true_params
+                    or distribution_schedule length. Default: 20.
         trials_per_session: Trials per session (int for constant, list for variable)
         true_params: BE parameters per session. Keys are param names, values are
             either a single float (constant across sessions) or a list of floats
-            (one per session). Default: typical learning trajectory.
-        distribution: Base stimulus distribution
-        distribution_shift_session: Session index where distribution changes (None = no shift)
-        shift_distribution: Distribution after shift
+            (one per session). If None, uses naive-to-expert default.
+        distribution: Base stimulus distribution (used if no schedule provided)
+        distribution_schedule: Per-session list of (distribution, exp_rate) tuples.
+            Overrides distribution and distribution_shift_session.
+        distribution_shift_session: Session index where distribution changes (legacy)
+        shift_distribution: Distribution after shift (legacy, used with
+            distribution_shift_session)
         abort_rate: Fraction of abort trials
         burn_in: Number of burn-in trials for initial belief
         seed: Random seed
     
     Returns:
         Tuple of (AnimalData, ground_truth_dict) where ground_truth_dict
-        contains the true parameters and any other generation metadata
+        contains the true parameters and any other generation metadata.
+    
+    Examples:
+        # Simple: 20 sessions, default declining eta
+        animal, gt = generate_synthetic_animal()
+        
+        # Full trajectory with shift
+        params = param_trajectory_full(
+            n_sessions_naive=15, n_sessions_expert=5, n_sessions_post_shift=10
+        )
+        schedule = make_distribution_schedule([
+            DistributionEpoch('Uniform', 20),
+            DistributionEpoch('Hard-A', 10),
+        ])
+        animal, gt = generate_synthetic_animal(
+            true_params=params,
+            distribution_schedule=schedule,
+        )
+        
+        # Cycling design with meta-learning
+        params = param_trajectory_cycling(
+            n_sessions_baseline=15, n_sessions_per_cycle=5, n_cycles=4
+        )
+        schedule = make_distribution_schedule([
+            DistributionEpoch('Uniform', 15),
+            DistributionEpoch('Hard-A', 5),
+            DistributionEpoch('Hard-B', 5),
+            DistributionEpoch('Hard-A', 5),
+            DistributionEpoch('Hard-B', 5),
+        ])
+        animal, gt = generate_synthetic_animal(
+            true_params=params,
+            distribution_schedule=schedule,
+        )
     """
     # Lazy import to avoid circular dependency
     from Models.BE_core import BEParams, BEState, BEModel
     
     rng = np.random.default_rng(seed)
     
-    # Handle trials_per_session
+    # --- Determine n_sessions ---
+    # Infer from whichever source provides it
+    inferred_n = None
+    if true_params is not None:
+        for val in true_params.values():
+            if isinstance(val, (list, np.ndarray)):
+                inferred_n = len(val)
+                break
+    if distribution_schedule is not None:
+        sched_n = len(distribution_schedule)
+        if inferred_n is not None and inferred_n != sched_n:
+            raise ValueError(
+                f"true_params implies {inferred_n} sessions but "
+                f"distribution_schedule has {sched_n} entries"
+            )
+        inferred_n = sched_n
+    
+    if n_sessions is None:
+        n_sessions = inferred_n or 20
+    elif inferred_n is not None and n_sessions != inferred_n:
+        raise ValueError(
+            f"n_sessions={n_sessions} but data implies {inferred_n} sessions"
+        )
+    
+    # --- Build distribution schedule ---
+    if distribution_schedule is not None:
+        if len(distribution_schedule) != n_sessions:
+            raise ValueError(
+                f"distribution_schedule has {len(distribution_schedule)} entries "
+                f"but n_sessions={n_sessions}"
+            )
+        dist_schedule = distribution_schedule
+    elif distribution_shift_session is not None:
+        dist_schedule = []
+        for s in range(n_sessions):
+            if s < distribution_shift_session:
+                dist_schedule.append((distribution, None))
+            else:
+                dist_schedule.append((shift_distribution, None))
+    else:
+        dist_schedule = [(distribution, None)] * n_sessions
+    
+    # --- Handle trials_per_session ---
     if isinstance(trials_per_session, int):
         tps = [trials_per_session] * n_sessions
     else:
         assert len(trials_per_session) == n_sessions
         tps = trials_per_session
     
-    # Default params: learning rate trajectory (high → low)
+    # --- Default params: learning rate trajectory (high -> low) ---
     if true_params is None:
-        true_params = {
-            'sigma_percep': 0.15,
-            'A_repulsion': 0.1,
-            'eta_learning': [
-                0.35 * np.exp(-0.1 * i) + 0.08 for i in range(n_sessions)
-            ],
-            'eta_relax': 0.12,
-        }
+        true_params = param_trajectory_naive_to_expert(n_sessions)
     
     # Expand constant params to per-session
     params_per_session = {}
     for key, val in true_params.items():
         if isinstance(val, (list, np.ndarray)):
-            assert len(val) == n_sessions, f"{key}: expected {n_sessions} values, got {len(val)}"
+            assert len(val) == n_sessions, (
+                f"{key}: expected {n_sessions} values, got {len(val)}"
+            )
             params_per_session[key] = list(val)
         else:
             params_per_session[key] = [val] * n_sessions
     
-    # Generate sessions
+    # --- Generate sessions ---
     sessions = []
     
     # Initial state with burn-in
@@ -1315,7 +1765,6 @@ def generate_synthetic_animal(
     if burn_in > 0:
         burn_stim = rng.uniform(-1.0, 1.0, burn_in)
         burn_cats = stimulus_to_category(burn_stim)
-        # Use first session's params for burn-in
         burn_params = BEParams(
             sigma_percep=params_per_session['sigma_percep'][0],
             A_repulsion=params_per_session['A_repulsion'][0],
@@ -1327,17 +1776,14 @@ def generate_synthetic_animal(
         )
     
     for s_idx in range(n_sessions):
-        # Determine distribution for this session
-        if distribution_shift_session is not None and s_idx >= distribution_shift_session:
-            sess_dist = shift_distribution
-        else:
-            sess_dist = distribution
+        sess_dist, sess_exp_rate = dist_schedule[s_idx]
         
-        # Create session (with placeholder choices)
+        # Create session
         session = generate_synthetic_session(
             session_idx=s_idx,
             n_trials=tps[s_idx],
             distribution=sess_dist,
+            exp_rate=sess_exp_rate,
             abort_rate=abort_rate,
             rng=rng,
         )
@@ -1352,7 +1798,7 @@ def generate_synthetic_animal(
             eta_relax=params_per_session['eta_relax'][s_idx],
         )
         
-        # Get non-abort stimuli and categories
+        # Get stimuli and categories
         stimuli = session.trials.stimulus
         categories = session.trials.category
         no_response = session.trials.abort
@@ -1364,7 +1810,6 @@ def generate_synthetic_animal(
         )
         
         # Fill in trial data
-        # choices_01: 0=A, 1=B, NaN=no response
         session.trials.choice_category = choices_01
         
         # Convert back to spatial for consistency
@@ -1398,11 +1843,11 @@ def generate_synthetic_animal(
     # Ground truth for recovery testing
     ground_truth = {
         'params_per_session': params_per_session,
+        'distribution_schedule': dist_schedule,
         'burn_in': burn_in,
         'seed': seed,
-        'distribution': distribution,
-        'distribution_shift_session': distribution_shift_session,
-        'shift_distribution': shift_distribution,
+        'n_sessions': n_sessions,
+        'trials_per_session': tps,
     }
     
     return animal, ground_truth

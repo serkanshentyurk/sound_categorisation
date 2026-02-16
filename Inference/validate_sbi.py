@@ -81,7 +81,7 @@ def main():
     try:
         from Inference.simulator import create_be_simulator
         from Inference.priors import create_prior, DEFAULT_BE_BOUNDS
-        from Inference.summary_stats import compute_summary_stats, get_stat_names_expanded, DEFAULT_STATS
+        from Analysis.summary_stats import compute_summary_stats, get_stat_names_expanded, DEFAULT_STATS
         from Inference.sbi_wrapper import train_sbi, sample_posterior
         from Inference.diagnostics import (
             run_sbc, parameter_recovery, posterior_predictive_check,

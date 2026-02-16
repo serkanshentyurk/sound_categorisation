@@ -230,18 +230,12 @@ class BoundaryEstimationModel:
         if rng is None:
             rng = np.random.default_rng()
         
-        if store_history:
-            choices, p_B, belief_mu, belief_std, self._state, trace = \
-                BEModel.simulate_session_with_history(
-                    self._params, self._state, stimuli, categories, rng, 
-                    no_response, not_blockstart
+        choices, p_B, self._state, trace = BEModel.simulate_session(
+                    self._params, self._state, stimuli, categories, rng,
+                    no_response, not_blockstart, return_history=store_history
                 )
+        if store_history:
             self._trace = trace
-        else:
-            choices, p_B, self._state, _ = BEModel.simulate_session(
-                self._params, self._state, stimuli, categories, rng, 
-                no_response, not_blockstart, return_history=False
-            )
         
         return choices, p_B
     

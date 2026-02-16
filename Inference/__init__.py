@@ -32,7 +32,7 @@ Note:
 """
 
 # Summary statistics (no torch dependency)
-from Inference.summary_stats import (
+from Analysis.summary_stats import (
     compute_summary_stats,
     compute_stats_for_sbi,
     list_available_stats,
@@ -43,7 +43,6 @@ from Inference.summary_stats import (
 # Simulator (no torch dependency at import)
 from Inference.simulator import (
     create_be_simulator,
-    create_mixed_simulator,
     Simulator,
     SimulatorConfig,
     ModelType,
@@ -66,7 +65,6 @@ if _TORCH_AVAILABLE:
         MultiSessionPrior,
         LinkingConfig,
         DEFAULT_BE_BOUNDS,
-        DEFAULT_MIXED_BOUNDS,
     )
     
     # SBI wrapper (requires torch + sbi)
@@ -84,14 +82,11 @@ if _TORCH_AVAILABLE:
         from Inference.diagnostics import (
             run_sbc,
             parameter_recovery,
-            posterior_predictive_check,
-            run_all_diagnostics,
             plot_sbc_ranks,
+            plot_sbc_ecdf,
             plot_recovery_scatter,
-            plot_posterior_predictive,
-            SBCResult,
-            RecoveryResult,
-            PosteriorPredictiveResult,
+            plot_recovery_bias,
+            recovery_summary_table,
         )
     except ImportError as e:
         import warnings
@@ -107,13 +102,11 @@ __all__ = [
     'DEFAULT_N_BINS',
     # Simulator (always available)
     'create_be_simulator',
-    'create_mixed_simulator',
     'Simulator',
     'SimulatorConfig',
     'ModelType',
 ]
 
-# Add torch-dependent exports if available
 if _TORCH_AVAILABLE:
     __all__.extend([
         # Priors
@@ -123,7 +116,6 @@ if _TORCH_AVAILABLE:
         'MultiSessionPrior',
         'LinkingConfig',
         'DEFAULT_BE_BOUNDS',
-        'DEFAULT_MIXED_BOUNDS',
         # SBI
         'train_sbi',
         'sample_posterior',
@@ -134,12 +126,9 @@ if _TORCH_AVAILABLE:
         # Diagnostics
         'run_sbc',
         'parameter_recovery',
-        'posterior_predictive_check',
-        'run_all_diagnostics',
         'plot_sbc_ranks',
+        'plot_sbc_ecdf',
         'plot_recovery_scatter',
-        'plot_posterior_predictive',
-        'SBCResult',
-        'RecoveryResult',
-        'PosteriorPredictiveResult',
+        'plot_recovery_bias',
+        'recovery_summary_table',
     ])
