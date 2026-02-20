@@ -30,7 +30,7 @@ from Helpers.utils import cumulative_gaussian
 # =============================================================================
 
 DEFAULT_N_BINS = 8  # Default number of bins for binned statistics
-PSYCHOMETRIC_SLOPE_THRESHOLD = 3.0  # Slope (σ) above this = fit failure → NaN
+PSYCHOMETRIC_SLOPE_THRESHOLD = 5.0  # Slope  above this = fit failure --> NaN
 LOGISTIC_L2_PENALTY = 0.1  # L2 regularisation strength for logistic history regression
 
 
@@ -135,7 +135,7 @@ def compute_psychometric_params(choices: np.ndarray, stimuli: np.ndarray,
     """
     Fit psychometric curve and return parameters.
 
-    When the fit produces slope (σ) above slope_threshold, PSE and slope are
+    When the fit produces slope (Ïƒ) above slope_threshold, PSE and slope are
     replaced with NaN because the psychometric curve is too flat for reliable
     parameter estimation (animal near chance or strong side bias).
     Lapse parameters are preserved since they can still be meaningful.
@@ -594,7 +594,7 @@ def compute_logistic_history_weights(
     which occurs when animals discriminate well or have strong side biases.
 
     The penalty is applied to all weights EXCEPT the intercept:
-        loss = -log_likelihood + (l2_penalty / 2) * Σ β_i²
+        loss = -log_likelihood + (l2_penalty / 2) * Î£ Î²_iÂ²
 
     Returns dict with:
         'w_stimulus': weight of current stimulus (sensitivity)
@@ -874,161 +874,179 @@ def _fit_pse_only(current_stim: np.ndarray, current_choices: np.ndarray,
     return np.nan
 
 
-@register_stat('update_matrix')
-def compute_update_matrix(
+@register_stat('conditional_psychometric')
+def compute_conditional_psychometric(
     choices: np.ndarray, stimuli: np.ndarray,
     categories: np.ndarray,
     n_bins: int = DEFAULT_N_BINS,
-    min_trials_per_bin: int = 10,
+    min_trials_per_bin: int = 15,
 ) -> Union[Dict[str, float], np.ndarray]:
     """
-    Conditional psychometry: PSE shift as a function of previous stimulus.
+    Conditional psychometric curves: fit a full cumulative Gaussian for each
+    previous-stimulus bin.
 
-    Method (Option B): Fits the unconditional psychometric curve to get slope
-    and lapses, then for each previous-stimulus bin, fits PSE only with
-    shape parameters fixed. The difference from unconditional PSE gives the
-    update matrix profile.
+    Bins trials by the previous stimulus (n_bins bins), then fits a separate
+    psychometric curve (mu, sigma, lapse_low, lapse_high) within each bin.
 
-    Also computes a logistic shortcut (Option D): single regression of
-    choice ~ current_stim + previous_stim to get the shift coefficient
-    directly, without binning.
-
-    Returns dict with:
-        'update_slope': regression of ΔPSE ~ prev_stim_bin_centre (key number:
-                        positive = attractive serial dependence, magnitude ∝ learning rate)
-        'update_magnitude': mean |ΔPSE| across bins (overall serial dependence strength)
-        'update_asymmetry': |mean ΔPSE for prev-A| - |mean ΔPSE for prev-B|
-                            (positive = stronger pull from A-side previous stimuli)
-        'update_logistic_prevstim': coefficient on previous stimulus from
-                                    choice ~ current_stim + prev_stim logistic regression
-                                    (quick scalar shortcut, should agree with update_slope)
+    Returns dict with keys:
+        'cond_pse_0'..'cond_pse_7': PSE per previous-stimulus bin
+        'cond_slope_0'..'cond_slope_7': slope per previous-stimulus bin
+        'cond_lapse_low_0'..'cond_lapse_low_7': lower lapse per bin
+        'cond_lapse_high_0'..'cond_lapse_high_7': upper lapse per bin
+    Total: 4 * n_bins values.
     """
     def _compute_single(c, s, cat):
         c = _ensure_1d(c).astype(float)
         s = _ensure_1d(s).astype(float)
-        cat = _ensure_1d(cat).astype(float)
         valid = _valid_trials(c)
 
-        # Build NaN result with per-bin entries
-        nan_result = {
-            'update_slope': np.nan,
-            'update_magnitude': np.nan,
-            'update_asymmetry': np.nan,
-            'update_logistic_prevstim': np.nan,
-        }
+        # Build NaN result
+        nan_result = {}
         for b in range(n_bins):
-            nan_result[f'update_pse_bin_{b}'] = np.nan
-            nan_result[f'update_dpse_bin_{b}'] = np.nan
+            nan_result[f'cond_pse_{b}'] = np.nan
+            nan_result[f'cond_slope_{b}'] = np.nan
+            nan_result[f'cond_lapse_low_{b}'] = np.nan
+            nan_result[f'cond_lapse_high_{b}'] = np.nan
 
         if valid.sum() < 50:
             return nan_result
 
         c_v, s_v = c[valid], s[valid]
 
-        # ── Step 1: Unconditional psychometric fit ──
-        psych = fit_psychometric(s_v, c_v)
-        if not psych.get('success', False):
+        # Unconditional fit as fallback (null: prev_stim has no effect)
+        uncond = fit_psychometric(s_v, c_v)
+        if not uncond.get('success', False):
             return nan_result
+        fallback_pse = uncond['mu']
+        fallback_slope = uncond['sigma']
+        fallback_ll = uncond['lapse_low']
+        fallback_lh = uncond['lapse_high']
 
-        sigma = psych['sigma']
-        lapse_low = psych['lapse_low']
-        lapse_high = psych['lapse_high']
-        pse_uncond = psych['mu']
-
-        # Guard: if unconditional fit is unreliable, bail
-        if sigma > PSYCHOMETRIC_SLOPE_THRESHOLD or abs(pse_uncond) > 0.99:
-            return nan_result
-
-        # ── Step 2: Bin by previous stimulus, fit PSE per bin ──
+        # Bin by previous stimulus (skip first trial - no previous)
         bin_edges = np.linspace(-1, 1, n_bins + 1)
-        bin_centres = (bin_edges[:-1] + bin_edges[1:]) / 2
-
-        # Previous stimulus for each trial (skip first trial)
         prev_stim = s_v[:-1]
         curr_stim = s_v[1:]
         curr_choices = c_v[1:]
         prev_bin_idx = np.clip(np.digitize(prev_stim, bin_edges) - 1, 0, n_bins - 1)
 
-        pse_per_bin = np.full(n_bins, np.nan)
+        result = {}
         for b in range(n_bins):
             mask = prev_bin_idx == b
             if mask.sum() < min_trials_per_bin:
+                # Not enough trials: fall back to unconditional
+                result[f'cond_pse_{b}'] = fallback_pse
+                result[f'cond_slope_{b}'] = fallback_slope
+                result[f'cond_lapse_low_{b}'] = fallback_ll
+                result[f'cond_lapse_high_{b}'] = fallback_lh
                 continue
-            pse_per_bin[b] = _fit_pse_only(
-                curr_stim[mask], curr_choices[mask],
-                sigma, lapse_low, lapse_high,
-            )
 
-        # ── Step 3: Compute ΔPSE and scalar summaries ──
-        delta_pse = pse_per_bin - pse_uncond
-        valid_bins = ~np.isnan(delta_pse)
-
-        if valid_bins.sum() < 3:
-            # Not enough bins for meaningful summaries
-            result = nan_result.copy()
-            # Still try logistic shortcut below
-        else:
-            # Slope of shift profile: ΔPSE ~ bin_centre
-            # Negate so positive = attractive serial dependence
-            # (raw slope is negative for attractive because PSE shifts opposite
-            #  to the bias direction; negating aligns with recency and
-            #  logistic_prevstim sign conventions)
-            bc_valid = bin_centres[valid_bins]
-            dp_valid = delta_pse[valid_bins]
-            slope_coeffs = np.polyfit(bc_valid, dp_valid, 1)
-            update_slope = float(-slope_coeffs[0])
-
-            # Magnitude: mean |ΔPSE|
-            update_magnitude = float(np.mean(np.abs(dp_valid)))
-
-            # Asymmetry: |mean shift for A-side bins| - |mean shift for B-side bins|
-            a_mask = bc_valid < 0
-            b_mask = bc_valid > 0
-            if a_mask.any() and b_mask.any():
-                update_asymmetry = float(
-                    np.abs(np.mean(dp_valid[a_mask])) - np.abs(np.mean(dp_valid[b_mask]))
+            psych = fit_psychometric(curr_stim[mask], curr_choices[mask])
+            if psych.get('success', False):
+                pse_val = psych['mu']
+                slope_val = psych['sigma']
+                unreliable = (
+                    slope_val > PSYCHOMETRIC_SLOPE_THRESHOLD
+                    or abs(pse_val) > 0.99
                 )
+                if unreliable:
+                    result[f'cond_pse_{b}'] = fallback_pse
+                    result[f'cond_slope_{b}'] = fallback_slope
+                else:
+                    result[f'cond_pse_{b}'] = pse_val
+                    result[f'cond_slope_{b}'] = slope_val
+                result[f'cond_lapse_low_{b}'] = psych['lapse_low']
+                result[f'cond_lapse_high_{b}'] = psych['lapse_high']
             else:
-                update_asymmetry = np.nan
+                # Fit failed: fall back to unconditional
+                result[f'cond_pse_{b}'] = fallback_pse
+                result[f'cond_slope_{b}'] = fallback_slope
+                result[f'cond_lapse_low_{b}'] = fallback_ll
+                result[f'cond_lapse_high_{b}'] = fallback_lh
 
-            result = {
-                'update_slope': update_slope,
-                'update_magnitude': update_magnitude,
-                'update_asymmetry': update_asymmetry,
-                'update_logistic_prevstim': np.nan,  # filled below
-            }
+        return result
 
-        # Per-bin values (always populate, even if scalars failed)
-        for b in range(n_bins):
-            result[f'update_pse_bin_{b}'] = float(pse_per_bin[b]) if not np.isnan(pse_per_bin[b]) else np.nan
-            result[f'update_dpse_bin_{b}'] = float(delta_pse[b]) if not np.isnan(delta_pse[b]) else np.nan
+    choices = np.asarray(choices)
+    stimuli = np.asarray(stimuli)
 
-        # ── Step 4: Logistic shortcut (Option D) ──
-        # choice ~ current_stim + previous_stim (L2-regularised)
-        if len(curr_stim) >= 30:
-            try:
-                from scipy.optimize import minimize as sp_minimize
+    if _is_multisession(choices):
+        n_sessions = choices.shape[1]
+        all_results = []
+        for i in range(n_sessions):
+            all_results.append(
+                _compute_single(choices[:, i], stimuli[:, i], categories[:, i])
+            )
+        keys = all_results[0].keys()
+        return {k: np.array([r[k] for r in all_results]) for k in keys}
+    else:
+        return _compute_single(choices, stimuli, categories)
 
-                X = np.column_stack([
-                    np.ones(len(curr_stim)),
-                    curr_stim,
-                    prev_stim,
-                ])
 
-                def neg_ll_l2(beta):
-                    logits = X @ beta
-                    logits = np.clip(logits, -20, 20)
-                    p = 1 / (1 + np.exp(-logits))
-                    p = np.clip(p, 1e-10, 1 - 1e-10)
-                    nll = -np.sum(curr_choices * np.log(p)
-                                  + (1 - curr_choices) * np.log(1 - p))
-                    return nll + (LOGISTIC_L2_PENALTY / 2) * np.sum(beta[1:] ** 2)
+@register_stat('update_matrix')
+def compute_update_matrix(
+    choices: np.ndarray, stimuli: np.ndarray,
+    categories: np.ndarray,
+    n_bins: int = DEFAULT_N_BINS,
+    min_trials_per_cell: int = 3,
+) -> Union[Dict[str, float], np.ndarray]:
+    """
+    Empirical update matrix: serial dependence in choice probability.
 
-                res = sp_minimize(neg_ll_l2, np.zeros(3), method='L-BFGS-B')
-                if res.success:
-                    result['update_logistic_prevstim'] = float(res.x[2])
-            except Exception:
-                pass
+    For each (current_stim_bin, prev_stim_bin) pair, computes:
+        P(choose B | stim_t in bin_i, stim_{t-1} in bin_j) - P(choose B | stim_t in bin_i)
+
+    Positive values = previous stimulus in bin_j biased current choice
+    toward B relative to the marginal. The matrix captures how the
+    previous stimulus modulates the current psychometric curve.
+
+    Returns dict with keys 'um_i_j' for i in [0, n_bins), j in [0, n_bins),
+    where i = current stimulus bin, j = previous stimulus bin.
+    Total: n_bins * n_bins values (64 for default n_bins=8).
+    """
+    def _compute_single(c, s, cat):
+        c = _ensure_1d(c).astype(float)
+        s = _ensure_1d(s).astype(float)
+        valid = _valid_trials(c)
+
+        # Zero result: no detectable serial dependence
+        zero_result = {}
+        for i in range(n_bins):
+            for j in range(n_bins):
+                zero_result[f'um_{i}_{j}'] = 0.0
+
+        if valid.sum() < 50:
+            return zero_result
+
+        c_v, s_v = c[valid], s[valid]
+
+        bin_edges = np.linspace(-1, 1, n_bins + 1)
+
+        # Previous and current trial pairing (skip first trial)
+        prev_stim = s_v[:-1]
+        curr_stim = s_v[1:]
+        curr_choices = c_v[1:]
+
+        prev_bin_idx = np.clip(np.digitize(prev_stim, bin_edges) - 1, 0, n_bins - 1)
+        curr_bin_idx = np.clip(np.digitize(curr_stim, bin_edges) - 1, 0, n_bins - 1)
+
+        # Marginal P(B | current_stim_bin)
+        marginal_pB = np.full(n_bins, np.nan)
+        for i in range(n_bins):
+            mask = curr_bin_idx == i
+            if mask.sum() > 0:
+                marginal_pB[i] = float(np.mean(curr_choices[mask]))
+
+        # Conditional P(B | current_bin, prev_bin) - marginal
+        # Cells with too few trials get 0.0 (not NaN): the null hypothesis
+        # is no serial dependence, i.e. zero shift from marginal.
+        result = {}
+        for i in range(n_bins):
+            for j in range(n_bins):
+                mask = (curr_bin_idx == i) & (prev_bin_idx == j)
+                if mask.sum() >= min_trials_per_cell and not np.isnan(marginal_pB[i]):
+                    cond_pB = float(np.mean(curr_choices[mask]))
+                    result[f'um_{i}_{j}'] = cond_pB - marginal_pB[i]
+                else:
+                    result[f'um_{i}_{j}'] = 0.0
 
         return result
 
@@ -1060,20 +1078,20 @@ def compute_conditional_psychometry_full(
     on a single session for visualisation.
 
     Returns dict with:
-        'pB_matrix': (n_bins, n_bins) array — P(choose B | prev_stim_bin, curr_stim_bin)
+        'pB_matrix': (n_bins, n_bins) array â€” P(choose B | prev_stim_bin, curr_stim_bin)
                      Rows = previous stimulus bin, columns = current stimulus bin.
                      This is the classic update matrix heatmap.
-        'counts_matrix': (n_bins, n_bins) — trial counts per cell
-        'pse_per_bin': (n_bins,) — conditional PSE per previous-stimulus bin
+        'counts_matrix': (n_bins, n_bins) â€” trial counts per cell
+        'pse_per_bin': (n_bins,) â€” conditional PSE per previous-stimulus bin
                        (PSE-only fit with fixed shape)
-        'dpse_per_bin': (n_bins,) — ΔPSE = conditional PSE - unconditional PSE
+        'dpse_per_bin': (n_bins,) â€” Î”PSE = conditional PSE - unconditional PSE
         'psych_curves_per_bin': dict mapping bin_idx -> {'x': array, 'y': array}
                                 fitted psychometric curve per prev-stim bin
                                 (for overlay plotting)
-        'pse_uncond': float — unconditional PSE
-        'sigma': float — unconditional slope (fixed for conditional fits)
-        'lapse_low': float — unconditional lower lapse
-        'lapse_high': float — unconditional upper lapse
+        'pse_uncond': float â€” unconditional PSE
+        'sigma': float â€” unconditional slope (fixed for conditional fits)
+        'lapse_low': float â€” unconditional lower lapse
+        'lapse_high': float â€” unconditional upper lapse
         'bin_edges': (n_bins+1,) array
         'bin_centres': (n_bins,) array
         'success': bool
@@ -1105,7 +1123,7 @@ def compute_conditional_psychometry_full(
     if valid.sum() < 50:
         return fail_result
 
-    # ── Unconditional psychometric fit ──
+    # â”€â”€ Unconditional psychometric fit â”€â”€
     psych = fit_psychometric(s_v, c_v)
     if not psych.get('success', False):
         return fail_result
@@ -1118,7 +1136,7 @@ def compute_conditional_psychometry_full(
     if sigma > PSYCHOMETRIC_SLOPE_THRESHOLD or abs(pse_uncond) > 0.99:
         return fail_result
 
-    # ── Raw 8×8 P(B) matrix ──
+    # â”€â”€ Raw 8Ã—8 P(B) matrix â”€â”€
     prev_stim = s_v[:-1]
     curr_stim = s_v[1:]
     curr_choices = c_v[1:]
@@ -1136,7 +1154,7 @@ def compute_conditional_psychometry_full(
             if mask.sum() >= min_trials_per_bin:
                 pB_matrix[pb, cb] = float(np.mean(curr_choices[mask]))
 
-    # ── Per-bin conditional PSE (fixed shape) ──
+    # â”€â”€ Per-bin conditional PSE (fixed shape) â”€â”€
     pse_per_bin = np.full(n_bins, np.nan)
     for b in range(n_bins):
         mask = prev_bin_idx == b
@@ -1148,7 +1166,7 @@ def compute_conditional_psychometry_full(
 
     dpse_per_bin = pse_per_bin - pse_uncond
 
-    # ── Per-bin psychometric curves (for overlay plotting) ──
+    # â”€â”€ Per-bin psychometric curves (for overlay plotting) â”€â”€
     x_eval = np.linspace(-1, 1, 100)
     psych_curves = {}
     for b in range(n_bins):
@@ -1386,6 +1404,16 @@ def get_stat_names_expanded(stat_names: Optional[List[str]] = None) -> List[str]
                              'w_prev_choice_2', 'w_prev_outcome_2',
                              'w_prev_choice_3', 'w_prev_outcome_3',
                              'history_decay'])
+        elif name == 'conditional_psychometric':
+            for b in range(DEFAULT_N_BINS):
+                expanded.extend([
+                    f'cond_pse_{b}', f'cond_slope_{b}',
+                    f'cond_lapse_low_{b}', f'cond_lapse_high_{b}',
+                ])
+        elif name == 'update_matrix':
+            for i in range(DEFAULT_N_BINS):
+                for j in range(DEFAULT_N_BINS):
+                    expanded.append(f'um_{i}_{j}')
         else:
             expanded.append(name)
 

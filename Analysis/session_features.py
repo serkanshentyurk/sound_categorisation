@@ -60,7 +60,7 @@ def default_rt_extractor(trials: 'TrialData') -> np.ndarray:
     pass a custom function to build_feature_matrix(rt_extractor=my_func).
     """
     rt = trials.reaction_time.copy().astype(float)
-
+    
     # Mark aborts and no-response as NaN
     rt[trials.abort] = np.nan
     rt[trials.no_response] = np.nan
@@ -68,34 +68,34 @@ def default_rt_extractor(trials: 'TrialData') -> np.ndarray:
     return rt
 
 
-def trial_end_time_rt_extractor(trials: 'TrialData') -> np.ndarray:
-    """
-    Alternative RT extractor using inter-trial-end intervals.
+# def trial_end_time_rt_extractor(trials: 'TrialData') -> np.ndarray:
+#     """
+#     Alternative RT extractor using inter-trial-end intervals.
 
-    Computes time between consecutive Trial_End_Time values.
-    This captures total trial duration (including ITI, sound, response)
-    rather than true reaction time, but tracks relative speed changes
-    across sessions even if absolute calibration is uncertain.
+#     Computes time between consecutive Trial_End_Time values.
+#     This captures total trial duration (including ITI, sound, response)
+#     rather than true reaction time, but tracks relative speed changes
+#     across sessions even if absolute calibration is uncertain.
 
-    Returns array of shape (n_trials,) with NaN for first trial and
-    abort/no-response trials.
-    """
-    if not hasattr(trials, 'extra') or 'Trial_End_Time' not in trials.extra:
-        warnings.warn(
-            "Trial_End_Time not found in trials.extra. "
-            "Falling back to default_rt_extractor."
-        )
-        return default_rt_extractor(trials)
+#     Returns array of shape (n_trials,) with NaN for first trial and
+#     abort/no-response trials.
+#     """
+#     if not hasattr(trials, 'extra') or 'Trial_End_Time' not in trials.extra:
+#         warnings.warn(
+#             "Trial_End_Time not found in trials.extra. "
+#             "Falling back to default_rt_extractor."
+#         )
+#         return default_rt_extractor(trials)
 
-    tet = trials.extra['Trial_End_Time'].astype(float)
-    rt = np.full(len(tet), np.nan)
-    rt[1:] = (np.diff(tet) - 2.6) * 1000  # convert seconds to ms
+#     tet = trials.extra['Trial_End_Time'].astype(float)
+#     rt = np.full(len(tet), np.nan)
+#     rt[1:] = (np.diff(tet) - 2.6) * 1000  # convert seconds to ms
 
-    # Mark aborts and no-response
-    rt[trials.abort] = np.nan
-    rt[trials.no_response] = np.nan
+#     # Mark aborts and no-response
+#     rt[trials.abort] = np.nan
+#     rt[trials.no_response] = np.nan
 
-    return rt
+#     return rt
 
 
 # =============================================================================
@@ -185,7 +185,7 @@ def compute_rt_features(
 
 def compute_session_features(
     session: 'SessionData',
-    rt_extractor: Callable = trial_end_time_rt_extractor,
+    rt_extractor: Callable = default_rt_extractor,
     stat_names: Optional[List[str]] = None,
     exclude_abort: bool = True,
     exclude_opto: bool = True,
@@ -285,7 +285,7 @@ def compute_session_features(
 
 def build_feature_matrix(
     animal: 'AnimalData',
-    rt_extractor: Callable = trial_end_time_rt_extractor,
+    rt_extractor: Callable = default_rt_extractor,
     stat_names: Optional[List[str]] = None,
     stage: Optional[str] = 'Full_Task_Cont',
     exclude_abort: bool = True,
@@ -353,7 +353,7 @@ def build_feature_matrix(
 
 def build_feature_matrix_multi(
     animals: List['AnimalData'],
-    rt_extractor: Callable = trial_end_time_rt_extractor,
+    rt_extractor: Callable = default_rt_extractor,
     stat_names: Optional[List[str]] = None,
     stage: Optional[str] = 'Full_Task_Cont',
     exclude_abort: bool = True,

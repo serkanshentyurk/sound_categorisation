@@ -34,7 +34,7 @@ def plot_session(
     Plot trial-by-trial session visualisation.
     
     Main panel shows:
-        - Stimuli as triangles (▲ chose B, ▼ chose A)
+        - Stimuli as triangles (â–² chose B, â–¼ chose A)
         - Coloured green (correct) / red (error)
         - P(B) as semi-transparent line (right y-axis)
         - True category boundary at y=0
@@ -116,7 +116,7 @@ def plot_session(
     # Plot boundary belief if provided
     if belief_mu is not None:
         ax_main.plot(trials, belief_mu, color='purple', linestyle='--', 
-                     alpha=0.7, linewidth=1.5, label='Boundary belief (μ)', zorder=2)
+                     alpha=0.7, linewidth=1.5, label='Boundary belief (Î¼)', zorder=2)
     
     # True category boundary
     ax_main.axhline(0, color='black', linestyle='-', linewidth=1.5, 
@@ -131,7 +131,7 @@ def plot_session(
             if not mask.any():
                 continue
             
-            marker = '^' if chose_B else 'v'  # ▲ for B, ▼ for A
+            marker = '^' if chose_B else 'v'  # â–² for B, â–¼ for A
             color = 'green' if is_correct else 'red'
             
             ax_main.scatter(
@@ -366,12 +366,114 @@ def plot_session_segment(
     )
 
 
+def plot_session_trials(
+    session,
+    window: int = 20,
+    figsize: Optional[Tuple[float, float]] = None,
+    title: Optional[str] = None,
+    exclude_abort: bool = True,
+    exclude_opto: bool = True,
+) -> plt.Figure:
+    """
+    Trial-by-trial diagnostic plot from a SessionData object.
+
+    Three panels:
+        Top:    stimulus values as scatter (colour = category, marker = correct/error)
+        Middle: rolling accuracy
+        Bottom: rolling P(choose B) — side bias
+
+    No model output needed. Pure behavioural data exploration.
+
+    Args:
+        session: SessionData object
+        window: Rolling window size for accuracy and bias
+        figsize: Figure size (default: (14, 8))
+        title: Plot title (default: session_id)
+        exclude_abort: Remove abort trials
+        exclude_opto: Remove opto trials
+
+    Returns:
+        Matplotlib Figure
+    """
+    arrays = session.trials.get_model_arrays(
+        exclude_abort=exclude_abort, exclude_opto=exclude_opto,
+    )
+    valid = ~arrays['no_response']
+    stim = arrays['stimuli'][valid]
+    choices = arrays['choices'][valid]
+    cats = arrays['categories'][valid]
+    correct = (choices == cats).astype(float)
+
+    n = len(stim)
+    trials = np.arange(n)
+
+    if figsize is None:
+        figsize = (14, 8)
+
+    fig, axes = plt.subplots(3, 1, figsize=figsize, sharex=True,
+                             gridspec_kw={'height_ratios': [2, 1, 1]})
+
+    # --- Top: stimulus + choice ---
+    ax = axes[0]
+    ax.axhspan(-1, 0, color='#1976d2', alpha=0.04)
+    ax.axhspan(0, 1, color='#d32f2f', alpha=0.04)
+    ax.axhline(0, color='k', linewidth=0.8, alpha=0.4)
+
+    for t in trials:
+        marker = 'o' if correct[t] else 'x'
+        if not correct[t]:
+            colour = 'k'
+        elif cats[t]:
+            colour = '#d32f2f'
+        else:
+            colour = '#1976d2'
+        kw = dict(marker=marker, c=colour, s=25, alpha=0.5)
+        if marker != 'x':
+            kw['edgecolors'] = 'none'
+        ax.scatter(t, stim[t], **kw)
+
+    ax.set_ylabel('Stimulus')
+    ax.set_ylim(-1.05, 1.05)
+    ax.set_title(title or f'{session.session_id}')
+
+    # --- Middle: running accuracy ---
+    ax = axes[1]
+    running_acc = _rolling_mean(correct, window)
+    ax.plot(trials, running_acc, color='steelblue', linewidth=1.5)
+    ax.axhline(0.5, color='red', linewidth=0.5, linestyle='--', alpha=0.5)
+    ax.set_ylabel(f'Accuracy\n(rolling {window})')
+    ax.set_ylim(0, 1)
+
+    # --- Bottom: choice bias ---
+    ax = axes[2]
+    running_bias = _rolling_mean(choices, window)
+    ax.plot(trials, running_bias, color='darkorange', linewidth=1.5)
+    ax.axhline(0.5, color='gray', linewidth=0.5, linestyle='--', alpha=0.5)
+    ax.set_ylabel('P(choose B)\n(rolling)')
+    ax.set_ylim(0, 1)
+    ax.set_xlabel('Trial')
+
+    plt.tight_layout()
+    return fig
+
+
+def _rolling_mean(arr: np.ndarray, window: int) -> np.ndarray:
+    """Causal rolling mean with expanding window at edges."""
+    n = len(arr)
+    out = np.zeros(n)
+    for i in range(n):
+        start = max(0, i - window + 1)
+        out[i] = arr[start:i + 1].mean()
+    return out
+
+
 # =============================================================================
 # EXPORTS
 # =============================================================================
 
 __all__ = [
     'plot_session',
+    'plot_session_trials',
     'plot_session_comparison',
     'plot_session_segment',
 ]

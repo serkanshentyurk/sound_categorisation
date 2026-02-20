@@ -209,6 +209,25 @@ class SessionMetadata:
                     return default
             return val
         
+        def parse_timespan_s(key, default=None):
+            """Parse Bonsai TimeSpan string (HH:MM:SS.fff) to seconds."""
+            val = row.get(key, default)
+            if pd.isna(val) or val is None:
+                return default
+            # Already numeric?
+            try:
+                return float(val)
+            except (ValueError, TypeError):
+                pass
+            # Parse HH:MM:SS or HH:MM:SS.fffffff
+            try:
+                parts = str(val).split(':')
+                h, m = float(parts[0]), float(parts[1])
+                s = float(parts[2]) if len(parts) > 2 else 0.0
+                return h * 3600 + m * 60 + s
+            except (ValueError, IndexError):
+                return default
+        
         return cls(
             animal_id=str(safe_get('Animal_ID', '')),
             protocol=str(safe_get('Protocol', '')),
@@ -219,14 +238,14 @@ class SessionMetadata:
             stim_range_max=safe_get('Stim_Range_Max', 1.0, float),
             anti_bias=safe_get('Anti_Bias'),
             nb_of_stim=safe_get('Nb_Of_Stim', dtype=int),
-            response_window=safe_get('Response_Window', dtype=float),
-            timeout_duration=safe_get('Timeout_Duration', dtype=float),
-            sound_duration=safe_get('Sound_Duration', dtype=float),
-            go_cue_duration=safe_get('Go_Cue_Duration', dtype=float),
-            iti=safe_get('Inter_Trial_Interval', dtype=float),
-            left_valve_time=safe_get('Left_Valve_Time', dtype=float),
-            right_valve_time=safe_get('Right_Valve_Time', dtype=float),
-            working_memory_delay=safe_get('Working_Memory_Delay', dtype=float),
+            response_window=parse_timespan_s('Response_Window'),
+            timeout_duration=parse_timespan_s('Timeout_Duration'),
+            sound_duration=parse_timespan_s('Sound_Duration'),
+            go_cue_duration=parse_timespan_s('Go_Cue_Duration'),
+            iti=parse_timespan_s('Inter_Trial_Interval'),
+            left_valve_time=parse_timespan_s('Left_Valve_Time'),
+            right_valve_time=parse_timespan_s('Right_Valve_Time'),
+            working_memory_delay=parse_timespan_s('Working_Memory_Delay'),
             window_perf_size=safe_get('Window_Perf_Size', dtype=int),
             min_block_length=safe_get('Min_Block_Length', dtype=int),
             block_performance_threshold=safe_get('Block_Performance_Threshold', dtype=float),
@@ -461,7 +480,38 @@ class SessionData:
             'perf': float(self.trials.correct[valid].mean()) if n_valid > 0 else np.nan,
             'bias': float(self.trials.choice_category[valid].mean()) if n_valid > 0 else np.nan,
         }
-
+    
+    def compute_session_features(
+        self,
+        stat_names: Optional[List[str]] = None,
+        exclude_abort: bool = True,
+        exclude_opto: bool = True,
+        hard_threshold: float = 0.3,
+        fast_threshold: float = 50.0,
+    ) -> Dict[str, float]:
+        """
+        Compute behavioural session features for this session.
+        
+        Convenience wrapper around Analysis.session_features.compute_session_features.
+        
+        Args:
+            stat_names: List of stat names (default: all registered stats)
+            return_dict: If True return dict, if False return array for SBI
+            exclude_abort: Remove abort trials
+            exclude_opto: Remove opto trials
+        
+        Returns:
+            Dict or array of summary statistics
+        """
+        from Analysis.session_features import compute_session_features
+        
+        return compute_session_features(
+            session = self, 
+            stat_names = stat_names,
+            exclude_abort = exclude_abort,
+            exclude_opto= exclude_opto,
+            hard_threshold = hard_threshold,
+            fast_threshold = fast_threshold)
 
 # =============================================================================
 # ANIMAL DATA
@@ -536,8 +586,11 @@ class AnimalData:
         if distribution is not None:
             sessions = [s for s in sessions if s.distribution == distribution]
         if idx_range is not None:
-            sessions = [s for s in sessions 
-                       if idx_range[0] <= s.session_idx <= idx_range[1]]
+            if isinstance(idx_range, int):
+                sessions = sessions[idx_range]
+            else:
+                sessions = [s for s in sessions 
+                        if idx_range[0] <= s.session_idx <= idx_range[1]]
         if date_range is not None:
             sessions = [s for s in sessions 
                        if date_range[0] <= s.date <= date_range[1]]
