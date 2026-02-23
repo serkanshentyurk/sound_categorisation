@@ -57,7 +57,9 @@ class BoundaryEstimationModel:
     
     def __init__(self, sigma_percep: float, A_repulsion: float,
                  eta_learning: float, eta_relax: float,
-                 x_min: float = -1, x_max: float = 1, n_points: int = 500):
+                 x_min: float = None,
+                 x_max: float = None,
+                 n_points: int = None):
         """
         Initialise model with parameters.
         
@@ -66,8 +68,9 @@ class BoundaryEstimationModel:
             A_repulsion: Strength of serial dependence (repulsion)
             eta_learning: Learning rate for boundary belief updates
             eta_relax: Relaxation rate toward uniform distribution
-            x_min, x_max: Stimulus space bounds
-            n_points: Discretisation resolution for belief distribution
+            x_min, x_max, n_points: Stimulus space bounds and resolution.
+                If not provided, computed automatically from params via
+                BEParams.stimulus_space_bounds() to match original BE convention.
         """
         self._params = BEParams(
             sigma_percep=sigma_percep,
@@ -75,6 +78,13 @@ class BoundaryEstimationModel:
             eta_learning=eta_learning,
             eta_relax=eta_relax
         )
+        
+        # Compute grid from params if not explicitly provided
+        if x_min is None or x_max is None or n_points is None:
+            _x_min, _x_max, _n_pts = self._params.stimulus_space_bounds()
+            x_min    = x_min    if x_min    is not None else _x_min
+            x_max    = x_max    if x_max    is not None else _x_max
+            n_points = n_points if n_points is not None else _n_pts
         
         self._x_min = x_min
         self._x_max = x_max

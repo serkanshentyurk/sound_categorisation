@@ -53,7 +53,7 @@ class ModelTrace:
     input arrays it operated on. Used for post-hoc analysis: update matrices,
     belief visualisation, model diagnostics.
     
-    This is MODEL OUTPUT — created by BEModel.simulate_session or
+    This is MODEL OUTPUT â€” created by BEModel.simulate_session or
     BEModel.compute_log_likelihood. For experimental INPUT data, see
     Data.structures.TrialData.
     
@@ -467,6 +467,41 @@ class BEParams:
             eta_learning=rng.uniform(*bounds['eta_learning']),
             eta_relax=rng.uniform(*bounds['eta_relax'])
         )
+    
+    def stimulus_space_bounds(
+        self,
+        stim_half_range: float = 1.0,
+        n_sigma: float = 6.0,
+    ) -> Tuple[float, float, int]:
+        """
+        Compute stimulus space bounds matching the original BE model convention.
+        
+        The old code extended the grid beyond the nominal [-1, 1] stimulus range
+        to accommodate perceptual noise and repulsion, using:
+            max_range = 1 + n_sigma*sigma + 2*A*(1 + n_sigma*sigma)
+            num_points = round((max_range - min_range) * 1000)
+        
+        This matters because s_hat values (after noise + repulsion) can exceed
+        [-1, 1], and truncating them to the grid edge distorts the CDF and the
+        belief update sigmoid.
+        
+        Args:
+            stim_half_range: Half-width of nominal stimulus range (default 1.0,
+                             i.e. stimuli drawn from [-1, 1])
+            n_sigma: Number of sigma to extend beyond nominal range (default 6)
+        
+        Returns:
+            x_min, x_max, n_points  — where n_points = round((x_max-x_min)*1000)
+        
+        Example:
+            x_min, x_max, n_pts = params.stimulus_space_bounds()
+            state = BEState.initial_uniform(x_min, x_max, n_pts)
+        """
+        extension = n_sigma * self.sigma_percep
+        half = stim_half_range + extension + 2 * self.A_repulsion * (stim_half_range + extension)
+        x_min, x_max = -half, half
+        n_points = round((x_max - x_min) * 1000)
+        return x_min, x_max, n_points
 
 
 # =============================================================================
@@ -494,11 +529,29 @@ class BEState:
     x: np.ndarray
     x_min: float
     x_max: float
-    
+    relax_target: float = 0.5  # uniform density over NOMINAL stimulus range [-1, 1]
+
     @classmethod
-    def initial_uniform(cls, x_min: float = -1.0, x_max: float = 1.0,
-                        n_points: int = 500) -> 'BEState':
-        """Create initial state with uniform belief distribution."""
+    def initial_uniform(
+        cls,
+        x_min: float = -1.0,
+        x_max: float = 1.0,
+        n_points: int = 500,
+        stim_half_range: float = 1.0,
+    ) -> 'BEState':
+        """
+        Create initial state with uniform belief distribution.
+
+        Args:
+            x_min, x_max: Grid bounds (should be wider than stim_half_range to
+                          accommodate noise and repulsion — see
+                          BEParams.stimulus_space_bounds())
+            n_points: Grid resolution
+            stim_half_range: Half-width of the NOMINAL stimulus range.
+                             Relaxation pulls toward a uniform density over
+                             [-stim_half_range, stim_half_range], NOT over the
+                             extended grid. Default 1.0 matches old code behaviour.
+        """
         x = np.linspace(x_min, x_max, n_points)
         belief = np.ones(n_points) / (x_max - x_min)
         belief = belief / trapezoid(belief, x)  # Normalise
@@ -507,24 +560,31 @@ class BEState:
             s_hat_prev=None,
             x=x,
             x_min=x_min,
-            x_max=x_max
+            x_max=x_max,
+            relax_target=1.0 / (2.0 * stim_half_range),
         )
     
     @classmethod
-    def from_belief(cls, belief: np.ndarray, x_min: float = -1.0,
-                    x_max: float = 1.0, s_hat_prev: Optional[float] = None) -> 'BEState':
+    def from_belief(
+        cls,
+        belief: np.ndarray,
+        x_min: float = -1.0,
+        x_max: float = 1.0,
+        s_hat_prev: Optional[float] = None,
+        stim_half_range: float = 1.0,
+    ) -> 'BEState':
         """Create state from existing belief distribution."""
         x = np.linspace(x_min, x_max, len(belief))
-        # Normalise
         belief_norm = belief / trapezoid(belief, x)
         return cls(
             boundary_belief=belief_norm,
             s_hat_prev=s_hat_prev,
             x=x,
             x_min=x_min,
-            x_max=x_max
+            x_max=x_max,
+            relax_target=1.0 / (2.0 * stim_half_range),
         )
-    
+
     def copy(self) -> 'BEState':
         """Create independent copy of state."""
         return BEState(
@@ -532,7 +592,8 @@ class BEState:
             s_hat_prev=self.s_hat_prev,
             x=self.x,  # Can share - never mutated
             x_min=self.x_min,
-            x_max=self.x_max
+            x_max=self.x_max,
+            relax_target=self.relax_target,
         )
     
     @property
@@ -650,9 +711,8 @@ class BEModel:
         delta_learning = 1 / (1 + np.exp(-params.sigma_boundary * C * (state.x - s_hat)))
         y_prime = state.boundary_belief - params.eta_learning * delta_learning
         
-        # Relaxation toward uniform density
-        uniform_density = 1.0 / (state.x_max - state.x_min)
-        delta_relax = y_prime - uniform_density
+        # Relaxation toward uniform density over NOMINAL stimulus range
+        delta_relax = y_prime - state.relax_target
         y_double_prime = y_prime - params.eta_relax * delta_relax
         
         # Ensure non-negative
@@ -668,7 +728,8 @@ class BEModel:
             s_hat_prev=s_hat,
             x=state.x,
             x_min=state.x_min,
-            x_max=state.x_max
+            x_max=state.x_max,
+            relax_target=state.relax_target,
         )
         
     @staticmethod
@@ -677,6 +738,7 @@ class BEModel:
         params: BEParams,
         belief: np.ndarray, x: np.ndarray,
         x_min: float, x_max: float,
+        relax_target: float = 0.5,
     ) -> None:
         """
         Update boundary belief IN-PLACE. For tight simulation loops only.
@@ -687,14 +749,13 @@ class BEModel:
         """
         C = 1 if true_category == 1 else -1
         sigma_boundary = 1.0 / params.sigma_percep
-        uniform_density = 1.0 / (x_max - x_min)
         
         # Learning update
         delta_learning = 1.0 / (1.0 + np.exp(-sigma_boundary * C * (x - s_hat)))
         belief -= params.eta_learning * delta_learning
         
-        # Relaxation toward uniform
-        belief -= params.eta_relax * (belief - uniform_density)
+        # Relaxation toward uniform density over NOMINAL stimulus range
+        belief -= params.eta_relax * (belief - relax_target)
         
         # Ensure non-negative
         min_val = belief.min()
@@ -787,7 +848,8 @@ class BEModel:
             # Update belief in-place
             BEModel._update_belief_inplace(
                 s_hat, categories[t], params, belief, x,
-                state.x_min, state.x_max
+                state.x_min, state.x_max,
+                state.relax_target,
             )
             s_hat_prev = s_hat
         
@@ -798,6 +860,7 @@ class BEModel:
             x=x,
             x_min=state.x_min,
             x_max=state.x_max,
+            relax_target=state.relax_target,
         )
         
         # Build history if requested
@@ -915,7 +978,8 @@ class BEModel:
             # ALWAYS update belief in-place
             BEModel._update_belief_inplace(
                 s_hat, categories[t], params, belief, x,
-                state.x_min, state.x_max
+                state.x_min, state.x_max,
+                state.relax_target,
             )
             s_hat_prev = s_hat
         
@@ -928,6 +992,7 @@ class BEModel:
             x=x,
             x_min=state.x_min,
             x_max=state.x_max,
+            relax_target=state.relax_target,
         )
         
         # Build history if requested
@@ -1090,9 +1155,9 @@ class BEModel:
     def create_initial_state(
         burn_in: int = 0,
         params: Optional[BEParams] = None,
-        x_min: float = -1.0,
-        x_max: float = 1.0,
-        n_points: int = 500,
+        x_min: float = None,
+        x_max: float = None,
+        n_points: int = None,
         seed: int = 42
     ) -> BEState:
         """
@@ -1100,14 +1165,25 @@ class BEModel:
         
         Args:
             burn_in: Number of burn-in trials (0 = naive/uniform)
-            params: Model parameters (required if burn_in > 0)
-            x_min, x_max: Stimulus space bounds
-            n_points: Discretisation resolution
+            params: Model parameters (required if burn_in > 0, and used to
+                    compute x_min/x_max/n_points if not explicitly provided)
+            x_min, x_max: Stimulus space bounds. If None, computed from params
+                          via BEParams.stimulus_space_bounds().
+            n_points: Discretisation resolution. If None, computed from params.
             seed: Random seed for burn-in
         
         Returns:
             Initial state (uniform if burn_in=0, experienced otherwise)
         """
+        # Compute grid from params if not explicitly provided
+        if (x_min is None or x_max is None or n_points is None):
+            if params is None:
+                raise ValueError("params required to compute grid bounds when x_min/x_max/n_points not provided")
+            _x_min, _x_max, _n_pts = params.stimulus_space_bounds()
+            x_min    = x_min    if x_min    is not None else _x_min
+            x_max    = x_max    if x_max    is not None else _x_max
+            n_points = n_points if n_points is not None else _n_pts
+
         state = BEState.initial_uniform(x_min, x_max, n_points)
         
         if burn_in > 0:
