@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from typing import Optional, Dict, Tuple, List, Union
 
+from Data.structures import SessionData
 from Helpers.psychometry import fit_psychometric, compute_psychometric_gof
 
 
@@ -227,9 +228,9 @@ def _extract_valid_trials(sessions, exclude_abort=True, exclude_opto=True,
 
 
 def plot_session_psychometrics(
-    sessions: list,
+    sessions: Union[list, SessionData],
     mode: str = 'grid',
-    n_max: int = 12,
+    n_max: int = 20,
     ncols: int = 4,
     n_bins: int = 8,
     n_bootstrap: int = 0,
@@ -276,6 +277,10 @@ def plot_session_psychometrics(
     Returns:
         (fig, infos) - infos is list of dicts (grid) or single dict (pooled)
     """
+    if isinstance(sessions, SessionData):
+        sessions = [sessions]
+        mode = 'grid'  # Force grid for single session
+        
     if len(sessions) == 0:
         raise ValueError("No sessions provided")
 
