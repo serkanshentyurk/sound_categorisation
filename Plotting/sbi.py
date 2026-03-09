@@ -391,7 +391,7 @@ def plot_psychometric_overlay(
     Returns:
         Matplotlib figure
     """
-    from Helpers.psychometry import fit_psychometric
+    from behav_utils.analysis.psychometry import fit_psychometric
     
     n_sessions = len(stimuli_per_session)
     

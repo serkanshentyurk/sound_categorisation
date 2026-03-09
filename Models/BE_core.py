@@ -39,6 +39,9 @@ from dataclasses import dataclass, field
 from typing import Optional, Dict, Tuple, List, Union
 from scipy.integrate import trapezoid
 
+from Models.perception import perceive_stimulus as _perceive_stimulus
+from Models.perception import stimulus_space_bounds as _stimulus_space_bounds
+
 
 # =============================================================================
 # TRIAL HISTORY CONTAINER
@@ -95,6 +98,10 @@ class ModelTrace:
     s_hat: np.ndarray = field(default_factory=lambda: np.array([]))
     beliefs: np.ndarray = field(default_factory=lambda: np.array([]))  # (n_trials, n_points)
     x: np.ndarray = field(default_factory=lambda: np.array([]))  # (n_points,)
+    
+    # SC-specific (populated by SCModel, empty for BE)
+    beliefs_A: np.ndarray = field(default_factory=lambda: np.array([]))
+    beliefs_B: np.ndarray = field(default_factory=lambda: np.array([]))
     
     def __post_init__(self):
         """Validate and set defaults."""
@@ -208,8 +215,13 @@ class ModelTrace:
     
     @property
     def has_beliefs(self) -> bool:
-        """Whether full belief distributions are stored."""
+        """Whether full BE belief distributions are stored."""
         return self.beliefs.ndim == 2 and self.beliefs.shape[0] > 0
+    
+    @property
+    def has_sc_beliefs(self) -> bool:
+        """Whether SC category distributions are stored."""
+        return self.beliefs_A.ndim == 2 and self.beliefs_A.shape[0] > 0
     
     @property
     def rewards(self) -> np.ndarray:
@@ -249,26 +261,6 @@ class ModelTrace:
         j = np.abs(self.x - s).argmin()
         return trapezoid(belief[:j+1], self.x[:j+1])
     
-    # def get_p_B_at_midpoints(self, midpoints: np.ndarray, trial_idx: int) -> np.ndarray:
-    #     """
-    #     Compute P(choose B) at multiple stimulus values for a given trial.
-        
-    #     Args:
-    #         midpoints: Array of stimulus values to evaluate
-    #         trial_idx: Which trial's belief to use
-        
-    #     Returns:
-    #         Array of P(B) values at each midpoint
-    #     """
-    #     belief = self.beliefs[trial_idx]
-    #     p_B_values = np.zeros(len(midpoints))
-        
-    #     for i, s in enumerate(midpoints):
-    #         j = np.abs(self.x - s).argmin()
-    #         p_B_values[i] = trapezoid(belief[:j+1], self.x[:j+1])
-        
-    #     return np.clip(p_B_values, 1e-10, 1 - 1e-10)
-    
     def get_p_B_at_midpoints(self, midpoints: np.ndarray, trial_idx: int) -> np.ndarray:
         """
         Compute P(choose B) at multiple stimulus values for a given trial.
@@ -305,20 +297,9 @@ class ModelTrace:
             s_hat=self.s_hat.copy(),
             beliefs=self.beliefs.copy(),
             x=self.x.copy(),
+            beliefs_A=self.beliefs_A.copy(),
+            beliefs_B=self.beliefs_B.copy(),
         )
-
-
-def _deprecated_trial_history(*args, **kwargs):
-    """Backward-compatible alias for ModelTrace."""
-    import warnings
-    warnings.warn(
-        "TrialHistory is deprecated, use ModelTrace instead.",
-        DeprecationWarning, stacklevel=2
-    )
-    return ModelTrace(*args, **kwargs)
-
-# Backward compatibility alias
-TrialHistory = ModelTrace
 
 
 # =============================================================================
@@ -473,35 +454,10 @@ class BEParams:
         stim_half_range: float = 1.0,
         n_sigma: float = 6.0,
     ) -> Tuple[float, float, int]:
-        """
-        Compute stimulus space bounds matching the original BE model convention.
-        
-        The old code extended the grid beyond the nominal [-1, 1] stimulus range
-        to accommodate perceptual noise and repulsion, using:
-            max_range = 1 + n_sigma*sigma + 2*A*(1 + n_sigma*sigma)
-            num_points = round((max_range - min_range) * 1000)
-        
-        This matters because s_hat values (after noise + repulsion) can exceed
-        [-1, 1], and truncating them to the grid edge distorts the CDF and the
-        belief update sigmoid.
-        
-        Args:
-            stim_half_range: Half-width of nominal stimulus range (default 1.0,
-                             i.e. stimuli drawn from [-1, 1])
-            n_sigma: Number of sigma to extend beyond nominal range (default 6)
-        
-        Returns:
-            x_min, x_max, n_points  — where n_points = round((x_max-x_min)*1000)
-        
-        Example:
-            x_min, x_max, n_pts = params.stimulus_space_bounds()
-            state = BEState.initial_uniform(x_min, x_max, n_pts)
-        """
-        extension = n_sigma * self.sigma_percep
-        half = stim_half_range + extension + 2 * self.A_repulsion * (stim_half_range + extension)
-        x_min, x_max = -half, half
-        n_points = round((x_max - x_min) * 1000)
-        return x_min, x_max, n_points
+        """Compute stimulus grid bounds (delegates to shared perception module)."""
+        return _stimulus_space_bounds(
+            self.sigma_percep, self.A_repulsion, stim_half_range, n_sigma,
+        )
 
 
 # =============================================================================
@@ -643,31 +599,10 @@ class BEModel:
     def perceive_stimulus(s_t: float, params: BEParams,
                           s_hat_prev: Optional[float],
                           rng: np.random.Generator) -> float:
-        """
-        Apply perceptual noise and serial dependence.
-        
-        Args:
-            s_t: True stimulus value
-            params: Model parameters
-            s_hat_prev: Previous perceived stimulus (or None for first trial)
-            rng: Random number generator
-        
-        Returns:
-            s_hat: Perceived stimulus value
-        """
-        # Perceptual noise
-        noise = rng.normal(0, params.sigma_percep)
-        s_tilde = s_t + noise
-        
-        # Repulsion from previous trial
-        if s_hat_prev is not None:
-            diff = s_tilde - s_hat_prev
-            repulsion = params.A_repulsion * diff * np.exp(-np.abs(diff))
-            s_hat = s_tilde + repulsion
-        else:
-            s_hat = s_tilde
-        
-        return s_hat
+        """Apply perceptual noise and serial dependence."""
+        return _perceive_stimulus(
+            s_t, params.sigma_percep, params.A_repulsion, s_hat_prev, rng,
+        )
     
     @staticmethod
     def get_choice_probability(s_hat: float, state: BEState) -> float:

@@ -1,5 +1,5 @@
 """
-SBI Simulator for BE and SC(#TODO) models.
+SBI Simulator for BE and SC models.
 
 Wraps models for use with simulation-based inference.
 Supports single-session and multi-session with state chaining.
@@ -11,8 +11,7 @@ from typing import Dict, List, Tuple, Optional, Callable, Union, Any
 from enum import Enum
 from scipy.integrate import trapezoid
 
-from Analysis.summary_stats import compute_summary_stats, DEFAULT_STATS
-
+from behav_utils.analysis.summary_stats import compute_summary_stats, DEFAULT_STATS
 
 # =============================================================================
 # MODEL TYPE ENUM
@@ -21,6 +20,7 @@ from Analysis.summary_stats import compute_summary_stats, DEFAULT_STATS
 class ModelType(Enum):
     """Supported model types."""
     BE = "be"
+    SC = "sc"
 
 
 # =============================================================================
@@ -53,12 +53,26 @@ BE_PARAM_CONFIGS = {
     'eta_relax': ParamConfig('eta_relax', bounds=_be_bounds['eta_relax'], default=0.12),
 }
 
+from Models.SC_core import SCParams
+
+_sc_bounds = SCParams.get_bounds()
+
+SC_PARAM_CONFIGS = {
+    'sigma_percep': ParamConfig('sigma_percep', bounds=_sc_bounds['sigma_percep'], default=0.15),
+    'A_repulsion': ParamConfig('A_repulsion', bounds=_sc_bounds['A_repulsion'], default=0.10),
+    'gamma': ParamConfig('gamma', bounds=_sc_bounds['gamma'], default=0.95),
+    'sigma_update': ParamConfig('sigma_update', bounds=_sc_bounds['sigma_update'], default=0.30),
+}
+
 
 def get_default_param_configs(model_type: ModelType) -> Dict[str, ParamConfig]:
     """Get default parameter configs for model type."""
     if model_type == ModelType.BE:
         return {k: ParamConfig(v.name, v.bounds, v.default) 
                 for k, v in BE_PARAM_CONFIGS.items()}
+    elif model_type == ModelType.SC:
+        return {k: ParamConfig(v.name, v.bounds, v.default) 
+                for k, v in SC_PARAM_CONFIGS.items()}
     else:
         raise ValueError(f"Unknown model type: {model_type}")
 
@@ -78,30 +92,43 @@ def state_transition_decay(state: Any, decay_rate: float = 0.1, **kwargs) -> Any
     """
     Decay belief toward uniform between sessions.
     
-    Only works with states that have a 'boundary_belief' attribute.
+    Works with both BE states (boundary_belief) and SC states
+    (A_distribution, B_distribution).
     """
-    if not hasattr(state, 'boundary_belief'):
-        return state
-    
-    uniform = np.ones_like(state.boundary_belief) / len(state.boundary_belief)
-    new_belief = (1 - decay_rate) * state.boundary_belief + decay_rate * uniform
-    new_belief = new_belief / trapezoid(new_belief, state.x)
-    
-    # Create new state with updated belief
     new_state = state.copy()
-    new_state.boundary_belief = new_belief
+    
+    if hasattr(state, 'boundary_belief'):
+        # BE model
+        uniform = np.ones_like(state.boundary_belief) / len(state.boundary_belief)
+        new_belief = (1 - decay_rate) * state.boundary_belief + decay_rate * uniform
+        new_belief = new_belief / trapezoid(new_belief, state.x)
+        new_state.boundary_belief = new_belief
+    elif hasattr(state, 'A_distribution'):
+        # SC model
+        uniform = np.ones_like(state.A_distribution) / len(state.A_distribution)
+        A_new = (1 - decay_rate) * state.A_distribution + decay_rate * uniform
+        B_new = (1 - decay_rate) * state.B_distribution + decay_rate * uniform
+        A_new = A_new / trapezoid(A_new, state.x)
+        B_new = B_new / trapezoid(B_new, state.x)
+        new_state.A_distribution = A_new
+        new_state.B_distribution = B_new
+    
     return new_state
 
 
 def state_transition_reset(state: Any, **kwargs) -> Any:
-    """Reset to uniform belief between sessions."""
-    if not hasattr(state, 'boundary_belief'):
-        return state
-    
-    new_state = state.copy()
-    uniform = np.ones_like(state.boundary_belief)
-    new_state.boundary_belief = uniform / trapezoid(uniform, state.x)
-    return new_state
+    """Reset to uniform/default belief between sessions."""
+    if hasattr(state, 'boundary_belief'):
+        # BE model
+        new_state = state.copy()
+        uniform = np.ones_like(state.boundary_belief)
+        new_state.boundary_belief = uniform / trapezoid(uniform, state.x)
+        return new_state
+    elif hasattr(state, 'A_distribution'):
+        # SC model — reset to default Gaussians
+        from Models.SC_core import SCState
+        return SCState.initial_default(state.x_min, state.x_max, state.n_points)
+    return state.copy() if hasattr(state, 'copy') else state
 
 
 # Registry of state transition functions
@@ -180,7 +207,7 @@ class SimulatorConfig:
 
 class Simulator:
     """
-    SBI-compatible simulator for BE and SC (TODO) models.
+    SBI-compatible simulator for BE and SC models.
     
     Handles:
     - Single and multi-session simulation
@@ -195,7 +222,9 @@ class Simulator:
         summary_stats = sim(theta_array)
         
     Usage (single-session SC):
-        #TODO
+        config = SimulatorConfig(model_type=ModelType.SC)
+        sim = Simulator(config, stimuli, categories)
+        summary_stats = sim(theta_array)
         
     Usage (multi-session with varying eta):
         config = SimulatorConfig(
@@ -249,14 +278,19 @@ class Simulator:
         
         # Try to import models (defer to allow flexibility)
         self._be_model_class = None
+        self._sc_model_class = None
         self._import_models()
     
     def _import_models(self):
         """Import model classes."""
-        # Try different import paths
         try:
             from Models.BE_model import BoundaryEstimationModel
             self._be_model_class = BoundaryEstimationModel
+        except ImportError:
+            pass
+        try:
+            from Models.SC_model import StimulusCategoryModel
+            self._sc_model_class = StimulusCategoryModel
         except ImportError:
             pass
         
@@ -316,24 +350,17 @@ class Simulator:
         stimuli: np.ndarray,
         categories: np.ndarray,
         rng: np.random.Generator,
-        initial_belief: Optional[np.ndarray] = None
-    ) -> Tuple[np.ndarray, np.ndarray]:
+        initial_state: Optional[Any] = None
+    ) -> Tuple[np.ndarray, Any]:
         """
         Simulate one session with BE model.
         
-        Uses the functional BEModel API from BE_core.py.
-        
         Returns:
             choices: Array of choices
-            final_belief: Belief distribution at end of session
+            final_state: BEState at end of session
         """
-        # Import BE_core components
-        try:
-            from Models.BE_core import BEParams, BEState, BEModel
-        except ImportError:
-            raise ImportError("Models.BE_core not available")
+        from Models.BE_core import BEParams, BEState, BEModel
         
-        # Create parameter object
         be_params = BEParams(
             sigma_percep=params.get('sigma_percep', 0.15),
             A_repulsion=params.get('A_repulsion', 0.1),
@@ -341,27 +368,64 @@ class Simulator:
             eta_relax=params.get('eta_relax', 0.12),
         )
         
-        # Initialise state
-        if initial_belief is not None:
-            state = BEState.from_belief(initial_belief)
-        else:
-            # Run burn-in to get initial state
-            state = BEModel.create_initial_state(
+        if initial_state is None:
+            initial_state = BEModel.create_initial_state(
                 params=be_params,
                 burn_in=self.config.burn_in,
                 seed=self.config.burn_in_seed or rng.integers(0, 2**31)
             )
         
-        # Simulate session using functional API
         choices, p_B, final_state, _ = BEModel.simulate_session(
             params=be_params,
-            initial_state=state,
+            initial_state=initial_state,
             stimuli=stimuli,
             categories=categories,
             rng=rng
         )
         
-        return choices.astype(int), final_state.boundary_belief.copy()
+        return choices.astype(int), final_state
+    
+    
+    def _simulate_sc_session(
+        self,
+        params: Dict[str, float],
+        stimuli: np.ndarray,
+        categories: np.ndarray,
+        rng: np.random.Generator,
+        initial_state: Optional[Any] = None
+    ) -> Tuple[np.ndarray, Any]:
+        """
+        Simulate one session with SC model.
+        
+        Returns:
+            choices: Array of choices
+            final_state: SCState at end of session
+        """
+        from Models.SC_core import SCParams, SCState, SCModel
+        
+        sc_params = SCParams(
+            sigma_percep=params.get('sigma_percep', 0.15),
+            A_repulsion=params.get('A_repulsion', 0.1),
+            gamma=params.get('gamma', 0.95),
+            sigma_update=params.get('sigma_update', 0.3),
+        )
+        
+        if initial_state is None:
+            initial_state = SCModel.create_initial_state(
+                params=sc_params,
+                burn_in=self.config.burn_in,
+                seed=self.config.burn_in_seed or rng.integers(0, 2**31),
+            )
+        
+        choices, p_B, final_state, _ = SCModel.simulate_session(
+            params=sc_params,
+            initial_state=initial_state,
+            stimuli=stimuli,
+            categories=categories,
+            rng=rng,
+        )
+        
+        return choices.astype(int), final_state
     
     
     def simulate(
@@ -392,7 +456,7 @@ class Simulator:
         
         # Storage
         all_choices = np.zeros((self.n_trials, self.n_sessions), dtype=int)
-        current_belief = None
+        current_state = None
         
         # Simulate each session
         for s in range(self.n_sessions):
@@ -401,12 +465,20 @@ class Simulator:
             
             # Simulate based on model type
             if self.config.model_type == ModelType.BE:
-                choices, final_belief = self._simulate_be_session(
+                choices, current_state = self._simulate_be_session(
                     session_params,
                     self.stimuli[:, s],
                     self.categories[:, s],
                     rng,
-                    initial_belief=current_belief
+                    initial_state=current_state
+                )
+            elif self.config.model_type == ModelType.SC:
+                choices, current_state = self._simulate_sc_session(
+                    session_params,
+                    self.stimuli[:, s],
+                    self.categories[:, s],
+                    rng,
+                    initial_state=current_state
                 )
             else:
                 raise ValueError(f"Unknown model type: {self.config.model_type}")
@@ -415,16 +487,9 @@ class Simulator:
             
             # Apply state transition for next session
             if s < self.n_sessions - 1:
-                # Wrap belief in simple namespace for transition function
-                class BeliefState:
-                    def __init__(self, belief):
-                        self.boundary_belief = belief
-                    def copy(self):
-                        return BeliefState(self.boundary_belief.copy())
-                
-                state = BeliefState(final_belief)
-                new_state = self.state_transition_fn(state, **self.config.state_transition_kwargs)
-                current_belief = new_state.boundary_belief
+                current_state = self.state_transition_fn(
+                    current_state, **self.config.state_transition_kwargs
+                )
         
         # Compute summary statistics
         summary_stats = compute_summary_stats(
@@ -532,8 +597,41 @@ def create_be_simulator(
     return Simulator(config, stimuli, categories, seed=seed)
 
 
-
-
+def create_sc_simulator(
+    stimuli: np.ndarray,
+    categories: np.ndarray,
+    fixed_params: Optional[Dict[str, float]] = None,
+    varying_params: Optional[List[str]] = None,
+    stat_names: Optional[List[str]] = None,
+    burn_in: int = 0,
+    state_transition: str = 'identity',
+    seed: Optional[int] = None
+) -> Simulator:
+    """
+    Create an SC model simulator.
+    
+    Args:
+        stimuli: Shape (n_trials,) or (n_trials, n_sessions)
+        categories: Same shape as stimuli
+        fixed_params: Parameters to fix (not infer)
+        varying_params: Parameters that vary across sessions
+        stat_names: Summary statistics to compute
+        burn_in: Burn-in trials for initial belief
+        state_transition: How to transition state between sessions
+        seed: Random seed
+    
+    Returns:
+        Configured Simulator
+    """
+    config = SimulatorConfig(
+        model_type=ModelType.SC,
+        fixed_params=fixed_params or {},
+        varying_params=varying_params or [],
+        stat_names=stat_names or DEFAULT_STATS.copy(),
+        burn_in=burn_in,
+        state_transition=state_transition,
+    )
+    return Simulator(config, stimuli, categories, seed=seed)
 # =============================================================================
 # SBI INTEGRATION HELPERS
 # =============================================================================

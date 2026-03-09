@@ -9,7 +9,7 @@ simulation-based inference. Handles:
 - Extracting per-session parameter trajectories from posterior samples
 
 Usage:
-    from Data.structures import AnimalData
+    from behav_utils.data.structures import AnimalData
     from Inference.sbi_fitter import SBIFitter, GPLink, ConstantLink
     
     animal = load_animal(...)
@@ -360,7 +360,7 @@ def build_simulator(
         Callable: theta (np.ndarray) -> summary_stats (np.ndarray)
     """
     from Models.BE_core import BEParams, BEState, BEModel
-    from Analysis.summary_stats import compute_summary_stats, flatten_stats
+    from behav_utils.analysis.summary_stats import compute_summary_stats, flatten_stats    
     
     n_sessions = layout.n_sessions
     
@@ -438,7 +438,7 @@ def compute_observed_stats(
     Returns:
         Flat 1D array matching simulator output format
     """
-    from Analysis.summary_stats import compute_summary_stats
+    from behav_utils.analysis.summary_stats import compute_summary_stats
     
     all_stats = []
     for s in range(fitting_data.n_sessions):
@@ -865,7 +865,7 @@ class SBIFitter:
                 'p_values': Bayesian p-value per stat
                 'stat_names': expanded stat names
         """
-        from Analysis.summary_stats import get_stat_names_expanded
+        from behav_utils.analysis.summary_stats import get_stat_names_expanded
         
         samples = result.sample(n_simulations).numpy()
         

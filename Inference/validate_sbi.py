@@ -81,13 +81,13 @@ def main():
     try:
         from Inference.simulator import create_be_simulator
         from Inference.priors import create_prior, DEFAULT_BE_BOUNDS
-        from Analysis.summary_stats import compute_summary_stats, get_stat_names_expanded, DEFAULT_STATS
+        from behav_utils.analysis.summary_stats import compute_summary_stats, get_stat_names_expanded, DEFAULT_STATS
         from Inference.sbi_wrapper import train_sbi, sample_posterior
         from Inference.diagnostics import (
             run_sbc, parameter_recovery, posterior_predictive_check,
             plot_sbc_ranks, plot_recovery_scatter, plot_posterior_predictive
         )
-        from Helpers.utils import generate_stimuli
+        from behav_utils.analysis.utils import generate_stimuli
     except ImportError as e:
         print(f"Import error: {e}")
         print("\nTrying alternative imports...")
@@ -98,7 +98,7 @@ def main():
             run_sbc, parameter_recovery, posterior_predictive_check,
             plot_sbc_ranks, plot_recovery_scatter, plot_posterior_predictive
         )
-        from Helpers.utils import generate_stimuli
+        from behav_utils.analysis.utils import generate_stimuli
     
     # Generate stimuli
     stimuli, categories, _ = generate_stimuli(

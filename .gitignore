@@ -3,5 +3,8 @@ logs/
 __pycache__/
 .idea/
 .vscode/
-Research_Proposal_PPC_Dynamic_Engagement.md
 old/
+Results/
+notes.txt
+Proposal.pdf
+behav_utils/
