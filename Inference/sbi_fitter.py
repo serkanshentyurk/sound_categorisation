@@ -123,12 +123,23 @@ class HierarchicalLink:
 
 
 # Default link specifications for BE model
-DEFAULT_PARAM_LINKS = {
+DEFAULT_BE_PARAM_LINKS = {
     'sigma_percep': ConstantLink(bounds=(0.05, 0.5)),
     'A_repulsion': ConstantLink(bounds=(0.0, 0.5)),
     'eta_learning': GPLink(bounds=(0.05, 0.9), lengthscale=5.0, amplitude=0.1),
     'eta_relax': GPLink(bounds=(0.01, 0.4), lengthscale=5.0, amplitude=0.1),
 }
+
+# Default link specifications for SC model
+DEFAULT_SC_PARAM_LINKS = {
+    'sigma_percep': ConstantLink(bounds=(0.05, 0.5)),
+    'A_repulsion': ConstantLink(bounds=(0.0, 0.5)),
+    'gamma': GPLink(bounds=(0.1, 1.0), lengthscale=5.0, amplitude=0.1),
+    'sigma_update': ConstantLink(bounds=(0.1, 1.0)),
+}
+
+# Backwards compatibility alias
+DEFAULT_PARAM_LINKS = DEFAULT_BE_PARAM_LINKS
 
 
 # =============================================================================
@@ -143,9 +154,10 @@ class ThetaLayout:
     Constructed from param_links and n_sessions. Handles packing/unpacking
     between flat theta (for SBI) and per-session parameter dicts (for simulator).
     """
-    param_names: List[str]           # Canonical order of BE params
+    param_names: List[str]           # Canonical order of model params
     n_sessions: int
     links: Dict[str, Any]            # param_name -> link spec
+    model_type: str = 'be'           # 'be' or 'sc'
     
     # Computed layout
     slices: Dict[str, slice] = field(init=False)
@@ -173,14 +185,30 @@ class ThetaLayout:
         
         self.total_dim = idx
     
-    # Validation bounds for BEParams (hard constraints from model)
-    # Posterior samples can slightly exceed prior bounds
-    _PARAM_CLAMP = {
-        'sigma_percep': (1e-6, None),    # must be > 0
-        'A_repulsion':  (0.0, None),     # must be >= 0
-        'eta_learning': (1e-6, 1.0),     # must be in (0, 1]
-        'eta_relax':    (0.0, 1.0 - 1e-6),  # must be in [0, 1)
+    # Validation bounds (hard constraints from model)
+    # Posterior samples can slightly exceed prior bounds.
+    # Populated from model-specific defaults via class method.
+    _PARAM_CLAMP_BE = {
+        'sigma_percep': (1e-6, None),
+        'A_repulsion':  (0.0, None),
+        'eta_learning': (1e-6, 1.0),
+        'eta_relax':    (0.0, 1.0 - 1e-6),
     }
+    _PARAM_CLAMP_SC = {
+        'sigma_percep': (1e-6, None),
+        'A_repulsion':  (0.0, None),
+        'gamma':        (1e-6, 1.0),
+        'sigma_update': (1e-6, None),
+    }
+    
+    # Set from model_type at construction (defaults to BE for backwards compat)
+    model_type: str = 'be'
+    
+    @property
+    def _PARAM_CLAMP(self) -> Dict[str, Tuple]:
+        if self.model_type == 'sc':
+            return self._PARAM_CLAMP_SC
+        return self._PARAM_CLAMP_BE
     
     def theta_to_session_params(self, theta: np.ndarray) -> List[Dict[str, float]]:
         """
@@ -335,12 +363,13 @@ def build_simulator(
     summary_stat_names: List[str],
     burn_in: int = 0,
     burn_in_seed: int = 42,
+    model_type: str = 'be',
 ) -> callable:
     """
     Build a simulator function: theta -> summary_stats.
     
     The returned function:
-    1. Unpacks theta into per-session BEParams
+    1. Unpacks theta into per-session parameter dicts
     2. Simulates each session with real stimuli/categories
     3. Chains belief state across sessions
     4. Computes summary statistics
@@ -355,67 +384,106 @@ def build_simulator(
         summary_stat_names: Which summary stats to compute
         burn_in: Burn-in trials before first session
         burn_in_seed: Seed for burn-in
+        model_type: 'be' or 'sc'
     
     Returns:
         Callable: theta (np.ndarray) -> summary_stats (np.ndarray)
     """
-    from Models.BE_core import BEParams, BEState, BEModel
     from behav_utils.analysis.summary_stats import compute_summary_stats, flatten_stats    
     
     n_sessions = layout.n_sessions
     
-    def simulate(theta: np.ndarray, seed: Optional[int] = None) -> np.ndarray:
-        """Simulate and return summary statistics."""
-        if seed is None:
-            seed = np.random.randint(0, 2**31)
-        rng = np.random.default_rng(seed)
-        
-        # Unpack theta to per-session params
-        session_params = layout.theta_to_session_params(theta)
-        
-        # Initial state
-        be_params_0 = BEParams(**session_params[0])
-        if burn_in > 0:
-            state = BEModel.run_burn_in(
-                be_params_0,
-                BEState.initial_uniform(),
-                burn_in,
-                burn_in_seed
-            )
-        else:
-            state = BEState.initial_uniform()
-        
-        # Simulate each session, chain state
-        all_choices = []
-        for s in range(n_sessions):
-            be_params = BEParams(**session_params[s])
+    if model_type == 'be':
+        from Models.BE_core import BEParams, BEState, BEModel
+
+        def simulate(theta: np.ndarray, seed: Optional[int] = None) -> np.ndarray:
+            if seed is None:
+                seed = np.random.randint(0, 2**31)
+            rng = np.random.default_rng(seed)
             
-            choices, p_B, state, _ = BEModel.simulate_session(
-                params=be_params,
-                initial_state=state,
-                stimuli=stimuli_per_session[s],
-                categories=categories_per_session[s],
-                rng=rng,
-                no_response=no_response_per_session[s],
-                not_blockstart=not_blockstart_per_session[s],
-                return_history=False,
-            )
-            all_choices.append(choices)
-            # state carries forward automatically
-        
-        # Compute summary stats per session, then concatenate
-        all_stats = []
-        for s in range(n_sessions):
-            stats = compute_summary_stats(
-                choices=all_choices[s],
-                stimuli=stimuli_per_session[s],
-                categories=categories_per_session[s],
-                stat_names=summary_stat_names,
-                return_dict=False,
-            )
-            all_stats.append(stats)
-        
-        return np.concatenate(all_stats)
+            session_params = layout.theta_to_session_params(theta)
+            
+            be_params_0 = BEParams(**session_params[0])
+            if burn_in > 0:
+                state = BEModel.run_burn_in(
+                    be_params_0, BEState.initial_uniform(),
+                    burn_in, burn_in_seed,
+                )
+            else:
+                state = BEState.initial_uniform()
+            
+            all_choices = []
+            for s in range(n_sessions):
+                be_params = BEParams(**session_params[s])
+                choices, p_B, state, _ = BEModel.simulate_session(
+                    params=be_params, initial_state=state,
+                    stimuli=stimuli_per_session[s],
+                    categories=categories_per_session[s],
+                    rng=rng,
+                    no_response=no_response_per_session[s],
+                    not_blockstart=not_blockstart_per_session[s],
+                    return_history=False,
+                )
+                all_choices.append(choices)
+            
+            all_stats = []
+            for s in range(n_sessions):
+                stats = compute_summary_stats(
+                    choices=all_choices[s],
+                    stimuli=stimuli_per_session[s],
+                    categories=categories_per_session[s],
+                    stat_names=summary_stat_names,
+                    return_dict=False,
+                )
+                all_stats.append(stats)
+            return np.concatenate(all_stats)
+
+    elif model_type == 'sc':
+        from Models.SC_core import SCParams, SCState, SCModel
+
+        def simulate(theta: np.ndarray, seed: Optional[int] = None) -> np.ndarray:
+            if seed is None:
+                seed = np.random.randint(0, 2**31)
+            rng = np.random.default_rng(seed)
+            
+            session_params = layout.theta_to_session_params(theta)
+            
+            sc_params_0 = SCParams(**session_params[0])
+            if burn_in > 0:
+                state = SCModel.create_initial_state(
+                    params=sc_params_0, burn_in=burn_in, seed=burn_in_seed,
+                )
+            else:
+                state = SCState.initial_default()
+            
+            all_choices = []
+            for s in range(n_sessions):
+                sc_params = SCParams(**session_params[s])
+                choices, p_B, state, _ = SCModel.simulate_session(
+                    params=sc_params, initial_state=state,
+                    stimuli=stimuli_per_session[s],
+                    categories=categories_per_session[s],
+                    rng=rng,
+                    no_response=no_response_per_session[s],
+                    not_blockstart=not_blockstart_per_session[s],
+                    return_history=False,
+                )
+                all_choices.append(choices)
+            
+            all_stats = []
+            for s in range(n_sessions):
+                stats = compute_summary_stats(
+                    choices=all_choices[s],
+                    stimuli=stimuli_per_session[s],
+                    categories=categories_per_session[s],
+                    stat_names=summary_stat_names,
+                    return_dict=False,
+                )
+                all_stats.append(stats)
+            return np.concatenate(all_stats)
+
+    else:
+        raise ValueError(f"Unknown model_type: {model_type!r}. Must be 'be' or 'sc'.")
     
     return simulate
 
@@ -467,7 +535,7 @@ DEFAULT_SUMMARY_STATS = [
 
 class SBIFitter:
     """
-    Top-level SBI fitting interface for BE model.
+    Top-level SBI fitting interface for BE and SC models.
     
     Takes experimental data (FittingData) and parameter link specifications,
     builds all necessary components, and provides methods to train and
@@ -475,16 +543,18 @@ class SBIFitter:
     
     Args:
         fitting_data: FittingData from AnimalData.get_fitting_data()
+        model_type: 'be' or 'sc'
         param_links: Dict mapping param names to link specs.
-                     If None, uses DEFAULT_PARAM_LINKS.
+                     If None, uses model-specific defaults.
         summary_stats: List of summary stat names.
                        If None, uses DEFAULT_SUMMARY_STATS.
         burn_in: Burn-in trials before first session
         burn_in_seed: Seed for burn-in simulation
     
-    Example:
+    Example (BE):
         fitter = SBIFitter(
             fitting_data=animal.get_fitting_data(stage='Full_Task_Cont'),
+            model_type='be',
             param_links={
                 'sigma_percep': ConstantLink(bounds=(0.05, 0.5)),
                 'A_repulsion': ConstantLink(bounds=(0.0, 0.5)),
@@ -492,41 +562,70 @@ class SBIFitter:
                 'eta_relax': GPLink(bounds=(0.01, 0.4), lengthscale=5.0),
             },
         )
-        
-        result = fitter.train(n_simulations=50_000)
-        trajectories = fitter.extract_trajectories(result, n_samples=5000)
+    
+    Example (SC):
+        fitter = SBIFitter(
+            fitting_data=animal.get_fitting_data(stage='Full_Task_Cont'),
+            model_type='sc',
+            param_links={
+                'sigma_percep': ConstantLink(bounds=(0.05, 0.5)),
+                'A_repulsion': ConstantLink(bounds=(0.0, 0.5)),
+                'gamma': GPLink(bounds=(0.1, 1.0), lengthscale=5.0),
+                'sigma_update': ConstantLink(bounds=(0.1, 1.0)),
+            },
+        )
     """
     
-    # Canonical parameter order for BE model
+    # Canonical parameter orders per model
     BE_PARAM_ORDER = ['sigma_percep', 'A_repulsion', 'eta_learning', 'eta_relax']
+    SC_PARAM_ORDER = ['sigma_percep', 'A_repulsion', 'gamma', 'sigma_update']
+    
+    _DEFAULT_LINKS = {
+        'be': DEFAULT_BE_PARAM_LINKS,
+        'sc': DEFAULT_SC_PARAM_LINKS,
+    }
     
     def __init__(
         self,
         fitting_data: Any,
+        model_type: str = 'be',
         param_links: Optional[Dict[str, Any]] = None,
         summary_stats: Optional[List[str]] = None,
         burn_in: int = 0,
         burn_in_seed: int = 42,
     ):
         self.fitting_data = fitting_data
-        self.param_links = param_links or dict(DEFAULT_PARAM_LINKS)
-        self.summary_stats = summary_stats or list(DEFAULT_SUMMARY_STATS)
+        self.model_type = model_type.lower()
         self.burn_in = burn_in
         self.burn_in_seed = burn_in_seed
         
-        # Validate param_links covers all BE params
-        for name in self.BE_PARAM_ORDER:
+        # Resolve model-specific defaults
+        if self.model_type == 'be':
+            self._param_order = self.BE_PARAM_ORDER
+        elif self.model_type == 'sc':
+            self._param_order = self.SC_PARAM_ORDER
+        else:
+            raise ValueError(
+                f"Unknown model_type: {self.model_type!r}. Must be 'be' or 'sc'."
+            )
+        
+        self.param_links = param_links or dict(self._DEFAULT_LINKS[self.model_type])
+        self.summary_stats = summary_stats or list(DEFAULT_SUMMARY_STATS)
+        
+        # Validate param_links covers all required params
+        for name in self._param_order:
             if name not in self.param_links:
                 raise ValueError(
                     f"Missing link spec for '{name}'. "
-                    f"All BE params required: {self.BE_PARAM_ORDER}"
+                    f"All {self.model_type.upper()} params required: {self._param_order}"
                 )
         
         # Build layout
         self.layout = ThetaLayout(
-            param_names=self.BE_PARAM_ORDER,
+            param_names=self._param_order,
             n_sessions=fitting_data.n_sessions,
             links=self.param_links,
+            model_type=self.model_type,
         )
         
         # Extract per-session arrays from FittingData
@@ -549,6 +648,7 @@ class SBIFitter:
             summary_stat_names=self.summary_stats,
             burn_in=self.burn_in,
             burn_in_seed=self.burn_in_seed,
+            model_type=self.model_type,
         )
         
         # Compute observed stats
@@ -556,14 +656,39 @@ class SBIFitter:
             fitting_data, self.summary_stats
         )
         
-        # Check for NaN in observed stats
-        n_nan = np.sum(np.isnan(self.observed_stats))
-        if n_nan > 0:
+        # ── NaN safety net ─────────────────────────────────────────────
+        # If any observed stat is NaN (e.g. psychometric fit failure on a
+        # session with chance-level performance), mask those dimensions
+        # from both the observation vector and the simulator output.
+        #
+        # This is a FALLBACK — the root cause should be fixed upstream
+        # (e.g. psychometric fitter should return finite values for flat
+        # curves). The mask is frozen at construction time, so held-out
+        # data conditioned on this fitter will also drop these dims even
+        # if they are valid there.
+        self._valid_dims = np.isfinite(self.observed_stats)
+        self._n_masked = int((~self._valid_dims).sum())
+        
+        if self._n_masked > 0:
             warnings.warn(
-                f"{n_nan}/{len(self.observed_stats)} observed summary stats are NaN. "
-                f"This may cause SBI training issues. Consider adjusting "
-                f"summary_stats or filtering sessions."
+                f"NaN MASKING: {self._n_masked}/{len(self.observed_stats)} "
+                f"observed stats are NaN/inf and will be masked from the "
+                f"observation vector AND simulator output. This means the "
+                f"density estimator cannot see these dimensions. Fix the "
+                f"upstream cause (e.g. psychometric fitter) to avoid this."
             )
+            # Mask observed stats
+            self.observed_stats = self.observed_stats[self._valid_dims]
+            
+            # Wrap simulator to drop the same dims
+            _raw_simulator = self.simulator
+            _mask = self._valid_dims  # capture in closure
+            
+            def _masked_simulator(theta, seed=None):
+                stats = _raw_simulator(theta, seed=seed)
+                return stats[_mask]
+            
+            self.simulator = _masked_simulator
     
     # =========================================================================
     # PRIOR (lazy, requires torch)
@@ -597,13 +722,14 @@ class SBIFitter:
         lines = [
             f"SBIFitter Configuration",
             f"{'=' * 50}",
+            f"Model: {self.model_type.upper()}",
             f"Animal: {self.fitting_data.animal_id}",
             f"Sessions: {self.n_sessions}",
             f"Trials per session: {[len(s) for s in self._stimuli]}",
             f"",
             f"Parameter links:",
         ]
-        for name in self.BE_PARAM_ORDER:
+        for name in self._param_order:
             link = self.param_links[name]
             link_type = type(link).__name__
             bounds = link.bounds
@@ -622,7 +748,14 @@ class SBIFitter:
             f"",
             f"Summary stats: {self.summary_stats}",
             f"Stats vector length: {self.n_summary_stats}",
-            f"  Per session: {self.n_summary_stats // self.n_sessions}",
+            f"  Per session (raw): {len(self._valid_dims) // self.n_sessions}",
+        ])
+        if self._n_masked > 0:
+            lines.append(
+                f"  ⚠ Masked dims: {self._n_masked} "
+                f"(NaN in observed stats — fix upstream!)"
+            )
+        lines.extend([
             f"",
             f"Burn-in: {self.burn_in} trials",
         ])
@@ -673,7 +806,7 @@ class SBIFitter:
     def _sample_theta_numpy(self, rng: np.random.Generator) -> np.ndarray:
         """Sample a single theta from uniform within bounds (no torch)."""
         theta = np.zeros(self.layout.total_dim)
-        for name in self.BE_PARAM_ORDER:
+        for name in self._param_order:
             link = self.param_links[name]
             sl = self.layout.slices[name]
             n_vals = sl.stop - sl.start
@@ -775,7 +908,7 @@ class SBIFitter:
         session_idx = self.fitting_data.time_axis
         
         summaries = {}
-        for name in self.BE_PARAM_ORDER:
+        for name in self._param_order:
             vals = trajectories[name]  # (n_samples,) or (n_samples, n_sessions)
             
             if isinstance(self.param_links[name], ConstantLink):
@@ -827,7 +960,7 @@ class SBIFitter:
         session_params = []
         for s in range(self.n_sessions):
             params = {}
-            for name in self.BE_PARAM_ORDER:
+            for name in self._param_order:
                 traj = trajectories[name]
                 if traj['link_type'] == 'constant':
                     params[name] = traj[point_estimate]
@@ -889,16 +1022,22 @@ class SBIFitter:
         
         # Expanded stat names (one per dimension)
         per_session_names = get_stat_names_expanded(self.summary_stats)
-        stat_names = []
+        all_stat_names = []
         for s in range(self.n_sessions):
             for name in per_session_names:
-                stat_names.append(f"s{s}_{name}")
+                all_stat_names.append(f"s{s}_{name}")
+        
+        # Apply masking if active
+        if self._n_masked > 0:
+            all_stat_names = [
+                n for n, v in zip(all_stat_names, self._valid_dims) if v
+            ]
         
         return {
             'observed': self.observed_stats,
             'simulated': simulated_stats,
             'p_values': p_values,
-            'stat_names': stat_names,
+            'stat_names': all_stat_names,
         }
 
 
@@ -908,6 +1047,7 @@ class SBIFitter:
 
 def quick_fit(
     fitting_data: Any,
+    model_type: str = 'be',
     n_simulations: int = 30_000,
     varying_params: Optional[List[str]] = None,
     method: str = 'NPE',
@@ -916,25 +1056,34 @@ def quick_fit(
     """
     Quick-start fitting with sensible defaults.
     
-    By default, eta_learning and eta_relax vary (GP-linked),
-    sigma_percep and A_repulsion are constant.
+    For BE: eta_learning and eta_relax vary (GP-linked) by default.
+    For SC: gamma varies (GP-linked) by default.
+    sigma_percep and A_repulsion are constant for both.
     
     Args:
         fitting_data: FittingData object
+        model_type: 'be' or 'sc'
         n_simulations: Training simulations
-        varying_params: Which params to GP-link. Default: ['eta_learning', 'eta_relax']
+        varying_params: Which params to GP-link. If None, uses model defaults.
         method: SBI method
         seed: Random seed
     
     Returns:
         (fitter, result, trajectories)
     """
+    model_type = model_type.lower()
+    default_links = SBIFitter._DEFAULT_LINKS[model_type]
+    param_order = SBIFitter.BE_PARAM_ORDER if model_type == 'be' else SBIFitter.SC_PARAM_ORDER
+    
     if varying_params is None:
-        varying_params = ['eta_learning', 'eta_relax']
+        if model_type == 'be':
+            varying_params = ['eta_learning', 'eta_relax']
+        else:
+            varying_params = ['gamma']
     
     param_links = {}
-    for name in SBIFitter.BE_PARAM_ORDER:
-        bounds = DEFAULT_PARAM_LINKS[name].bounds
+    for name in param_order:
+        bounds = default_links[name].bounds
         if name in varying_params:
             param_links[name] = GPLink(bounds=bounds, lengthscale=5.0, amplitude=0.1)
         else:
@@ -942,6 +1091,7 @@ def quick_fit(
     
     fitter = SBIFitter(
         fitting_data=fitting_data,
+        model_type=model_type,
         param_links=param_links,
         burn_in=100,
     )
@@ -977,6 +1127,8 @@ __all__ = [
     'IndependentLink',
     'HierarchicalLink',
     'DEFAULT_PARAM_LINKS',
+    'DEFAULT_BE_PARAM_LINKS',
+    'DEFAULT_SC_PARAM_LINKS',
     # Layout
     'ThetaLayout',
     # Fitter

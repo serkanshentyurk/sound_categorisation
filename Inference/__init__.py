@@ -32,7 +32,7 @@ Note:
 """
 
 # Summary statistics (no torch dependency)
-from Analysis.summary_stats import (
+from behav_utils.analysis.summary_stats import (
     compute_summary_stats,
     compute_stats_for_sbi,
     list_available_stats,
