@@ -352,6 +352,7 @@ def cv_um_comparison(
     n_stochastic_reps: int = 10,
     n_bins: int = 8,
     seed: int = 42,
+    sample_timeout: int = 200,
 ) -> Dict[str, Any]:
     """
     Cross-validated UM comparison.
@@ -403,10 +404,11 @@ def cv_um_comparison(
             x_train = torch.tensor(train_obs, dtype=torch.float32)
             try:
                 post_samples = snpe_result['posterior'].sample(
-                    (n_posterior_samples,), x=x_train
+                    (n_posterior_samples,), x=x_train,
+                    max_sampling_batch_size=sample_timeout,
                 ).numpy()
             except Exception:
-                continue
+                continue  # skip this fold
 
             fold_params = {
                 name: float(np.median(post_samples[:, i]))
@@ -653,6 +655,7 @@ def plot_cv_comparison(
 
     fig.suptitle(f'{animal_id} — CV {title_suffix}', fontsize=13, fontweight='bold')
     plt.tight_layout(); plt.show()
+    return fig
 
 
 # =============================================================================
