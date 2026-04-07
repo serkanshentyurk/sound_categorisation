@@ -17,65 +17,7 @@ from behav_utils.analysis.summary_stats import compute_summary_stats, DEFAULT_ST
 # MODEL TYPE ENUM
 # =============================================================================
 
-class ModelType(Enum):
-    """Supported model types."""
-    BE = "be"
-    SC = "sc"
-
-
-# =============================================================================
-# PARAMETER CONFIGURATION
-# =============================================================================
-
-@dataclass
-class ParamConfig:
-    """Configuration for a single parameter."""
-    name: str
-    bounds: Tuple[float, float]
-    default: Optional[float] = None
-    
-    def sample_uniform(self, rng: np.random.Generator) -> float:
-        """Sample from uniform prior within bounds."""
-        return rng.uniform(self.bounds[0], self.bounds[1])
-    
-    def clip(self, value: float) -> float:
-        """Clip value to bounds."""
-        return float(np.clip(value, self.bounds[0], self.bounds[1]))
-
-from Models.BE_core import BEParams
-
-_be_bounds = BEParams.get_bounds()
-
-BE_PARAM_CONFIGS = {
-    'sigma_percep': ParamConfig('sigma_percep', bounds=_be_bounds['sigma_percep'], default=0.15),
-    'A_repulsion': ParamConfig('A_repulsion', bounds=_be_bounds['A_repulsion'], default=0.1),
-    'eta_learning': ParamConfig('eta_learning', bounds=_be_bounds['eta_learning'], default=0.35),
-    'eta_relax': ParamConfig('eta_relax', bounds=_be_bounds['eta_relax'], default=0.12),
-}
-
-from Models.SC_core import SCParams
-
-_sc_bounds = SCParams.get_bounds()
-
-SC_PARAM_CONFIGS = {
-    'sigma_percep': ParamConfig('sigma_percep', bounds=_sc_bounds['sigma_percep'], default=0.15),
-    'A_repulsion': ParamConfig('A_repulsion', bounds=_sc_bounds['A_repulsion'], default=0.10),
-    'gamma': ParamConfig('gamma', bounds=_sc_bounds['gamma'], default=0.95),
-    'sigma_update': ParamConfig('sigma_update', bounds=_sc_bounds['sigma_update'], default=0.30),
-}
-
-
-def get_default_param_configs(model_type: ModelType) -> Dict[str, ParamConfig]:
-    """Get default parameter configs for model type."""
-    if model_type == ModelType.BE:
-        return {k: ParamConfig(v.name, v.bounds, v.default) 
-                for k, v in BE_PARAM_CONFIGS.items()}
-    elif model_type == ModelType.SC:
-        return {k: ParamConfig(v.name, v.bounds, v.default) 
-                for k, v in SC_PARAM_CONFIGS.items()}
-    else:
-        raise ValueError(f"Unknown model type: {model_type}")
-
+from inference.types import ModelType, ParamConfig, get_default_param_configs
 
 # =============================================================================
 # STATE TRANSITION FUNCTIONS
@@ -126,7 +68,7 @@ def state_transition_reset(state: Any, **kwargs) -> Any:
         return new_state
     elif hasattr(state, 'A_distribution'):
         # SC model — reset to default Gaussians
-        from Models.SC_core import SCState
+        from models.SC_core import SCState
         return SCState.initial_default(state.x_min, state.x_max, state.n_points)
     return state.copy() if hasattr(state, 'copy') else state
 
@@ -284,12 +226,12 @@ class Simulator:
     def _import_models(self):
         """Import model classes."""
         try:
-            from Models.BE_model import BoundaryEstimationModel
+            from models.BE_model import BoundaryEstimationModel
             self._be_model_class = BoundaryEstimationModel
         except ImportError:
             pass
         try:
-            from Models.SC_model import StimulusCategoryModel
+            from models.SC_model import StimulusCategoryModel
             self._sc_model_class = StimulusCategoryModel
         except ImportError:
             pass
@@ -359,7 +301,7 @@ class Simulator:
             choices: Array of choices
             final_state: BEState at end of session
         """
-        from Models.BE_core import BEParams, BEState, BEModel
+        from models.BE_core import BEParams, BEState, BEModel
         
         be_params = BEParams(
             sigma_percep=params.get('sigma_percep', 0.15),
@@ -401,7 +343,7 @@ class Simulator:
             choices: Array of choices
             final_state: SCState at end of session
         """
-        from Models.SC_core import SCParams, SCState, SCModel
+        from models.SC_core import SCParams, SCState, SCModel
         
         sc_params = SCParams(
             sigma_percep=params.get('sigma_percep', 0.15),

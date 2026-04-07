@@ -21,9 +21,6 @@ import argparse
 import sys
 import os
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 
 def main():
     parser = argparse.ArgumentParser(description='Validate SBI for BE model')
@@ -79,11 +76,11 @@ def main():
     
     # Import modules
     try:
-        from Inference.simulator import create_be_simulator
-        from Inference.priors import create_prior, DEFAULT_BE_BOUNDS
+        from inference.simulator import create_be_simulator
+        from inference.priors import create_prior, DEFAULT_BE_BOUNDS
         from behav_utils.analysis.summary_stats import compute_summary_stats, get_stat_names_expanded, DEFAULT_STATS
-        from Inference.sbi_wrapper import train_sbi, sample_posterior
-        from Inference.diagnostics import (
+        from inference.sbi_wrapper import train_sbi, sample_posterior
+        from inference.diagnostics import (
             run_sbc, parameter_recovery, posterior_predictive_check,
             plot_sbc_ranks, plot_recovery_scatter, plot_posterior_predictive
         )
@@ -92,7 +89,7 @@ def main():
         print(f"Import error: {e}")
         print("\nTrying alternative imports...")
         # For standalone testing
-        from Inference import (
+        from inference import (
             create_be_simulator, create_prior, DEFAULT_BE_BOUNDS,
             compute_summary_stats, train_sbi, sample_posterior,
             run_sbc, parameter_recovery, posterior_predictive_check,

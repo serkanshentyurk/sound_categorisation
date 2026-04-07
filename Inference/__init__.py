@@ -9,7 +9,7 @@ Provides simulation-based inference infrastructure:
 - Diagnostics (SBC, parameter recovery, posterior predictive)
 
 Quick Start:
-    from Inference import (
+    from inference import (
         create_be_simulator,
         create_prior,
         train_sbi,
@@ -41,7 +41,7 @@ from behav_utils.analysis.summary_stats import (
 )
 
 # Simulator (no torch dependency at import)
-from Inference.simulator import (
+from inference.simulator import (
     create_be_simulator,
     Simulator,
     SimulatorConfig,
@@ -58,7 +58,7 @@ except ImportError:
 
 if _TORCH_AVAILABLE:
     # Priors (requires torch)
-    from Inference.priors import (
+    from inference.priors import (
         create_prior,
         create_multisession_prior,
         UniformPrior,
@@ -69,7 +69,7 @@ if _TORCH_AVAILABLE:
     
     # SBI wrapper (requires torch + sbi)
     try:
-        from Inference.sbi_wrapper import (
+        from inference.sbi_wrapper import (
             train_sbi,
             sample_posterior,
             quick_posterior,
@@ -79,7 +79,7 @@ if _TORCH_AVAILABLE:
         )
         
         # Diagnostics (requires torch)
-        from Inference.diagnostics import (
+        from inference.diagnostics import (
             run_sbc,
             parameter_recovery,
             plot_sbc_ranks,

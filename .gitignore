@@ -3,10 +3,11 @@ logs/
 __pycache__/
 .idea/
 .vscode/
-Results/
-notes.txt
 Proposal.pdf
 .DS_Store
-Notebooks/cv_results/
-manuscript_figures.py
 feature_analysis.ipynb
+results/
+logs/
+*.pkl
+fitter_errors.log
+.ipynb_checkpoints/

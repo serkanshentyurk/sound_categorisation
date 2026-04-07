@@ -33,17 +33,15 @@ from torch.distributions import Distribution, Uniform, Normal, MultivariateNorma
 from typing import Dict, List, Tuple, Optional, Callable, Union, Any
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
-
+from inference.types import ModelType, ParamConfig
 
 # =============================================================================
 # PARAMETER BOUNDS
 # =============================================================================
 
-# Default bounds for BE model
-from Models.BE_core import BEParams
-
-DEFAULT_BE_BOUNDS = BEParams.get_bounds()
-
+from inference.types import get_default_param_configs, ModelType
+_be_configs = get_default_param_configs(ModelType.BE)
+DEFAULT_BE_BOUNDS = {name: cfg.bounds for name, cfg in _be_configs.items()}
 
 
 # =============================================================================
@@ -180,6 +178,8 @@ class UniformPrior(BasePrior):
 # =============================================================================
 # LINKING FUNCTIONS FOR MULTI-SESSION
 # =============================================================================
+
+
 
 @dataclass
 class LinkingConfig:
@@ -321,7 +321,6 @@ class RandomWalkLink:
     @property
     def hyperparameter_names(self) -> List[str]:
         return ['sigma_drift'] if self.infer_drift else []
-
 
 class GaussianProcessLink:
     """

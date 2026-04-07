@@ -7,9 +7,9 @@ High-level interface for running simulation-based inference:
 - Multi-round (sequential) inference
 
 Usage:
-    from Inference.sbi_wrapper import train_sbi, sample_posterior
-    from Inference.simulator import create_be_simulator
-    from Inference.priors import create_prior
+    from inference.sbi_wrapper import train_sbi, sample_posterior
+    from inference.simulator import create_be_simulator
+    from inference.priors import create_prior
     
     # Setup
     simulator = create_be_simulator(stimuli, categories, burn_in=100)

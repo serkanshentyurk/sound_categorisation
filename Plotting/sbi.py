@@ -9,7 +9,7 @@ Visualisation functions for multi-session SBI inference results:
 - Performance and learning rate trajectories
 
 Usage:
-    from Plotting.sbi import (
+    from plotting.sbi import (
         plot_parameter_trajectories,
         plot_marginal_posteriors,
         plot_psychometric_overlay,

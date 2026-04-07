@@ -21,7 +21,7 @@ summary statistics, and analysis code can swap between models
 transparently.
 
 Usage:
-    from Models.SC_core import SCParams, SCState, SCModel
+    from models.SC_core import SCParams, SCState, SCModel
 
     params = SCParams(sigma_percep=0.15, A_repulsion=0.1,
                       gamma=0.95, sigma_update=0.3)
@@ -37,7 +37,7 @@ from typing import Optional, Dict, Tuple, List, Union
 from scipy.integrate import trapezoid
 from scipy.stats import norm as sp_norm
 
-from Models.perception import perceive_stimulus, stimulus_space_bounds
+from models.perception import perceive_stimulus, stimulus_space_bounds
 
 
 # =============================================================================
@@ -503,7 +503,7 @@ class SCModel:
             history: ModelTrace if return_history, else None
         """
         # Lazy import to avoid circular dependency
-        from Models.BE_core import ModelTrace
+        from models.BE_core import ModelTrace
 
         n_trials = len(stimuli)
         choices = np.full(n_trials, np.nan)
@@ -590,7 +590,20 @@ class SCModel:
             history = None
 
         return choices, p_B, final_state, history
-
+    
+    @staticmethod
+    def make_simulator(params: SCParams, burn_in: int = 1000, seed: int = 42):
+        """Return a stateful simulator callable for generate_synthetic_animal."""
+        state = SCModel.create_initial_state(params=params, burn_in=burn_in, seed=seed)
+        
+        def simulator(stimuli, categories, rng, **kwargs):
+            nonlocal state
+            choices, _, state, _ = SCModel.simulate_session(
+                params, state, stimuli, categories, rng, return_history=False,
+            )
+            return choices
+        
+        return simulator
     # =================================================================
     # LIKELIHOOD COMPUTATION
     # =================================================================
@@ -628,7 +641,7 @@ class SCModel:
             final_state: State after processing
             history: ModelTrace if return_history, else None
         """
-        from Models.BE_core import ModelTrace
+        from models.BE_core import ModelTrace
 
         n_trials = len(stimuli)
         trial_lls = np.full(n_trials, np.nan)

@@ -12,7 +12,7 @@ This module extracts that shared computation so changes to perception
 perception) propagate to all models automatically.
 
 Usage:
-    from Models.perception import perceive_stimulus, stimulus_space_bounds
+    from models.perception import perceive_stimulus, stimulus_space_bounds
 
     s_hat = perceive_stimulus(s_t, sigma_percep, A_repulsion, s_hat_prev, rng)
     x_min, x_max, n_points = stimulus_space_bounds(sigma_percep, A_repulsion)

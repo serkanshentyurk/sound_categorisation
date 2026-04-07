@@ -49,6 +49,37 @@ if TYPE_CHECKING:
     from behav_utils.config.schema import ProjectConfig
 
 
+_STAT_PARENT = {
+    'pse': 'psychometric',
+    'slope': 'psychometric',
+    'lapse_low': 'psychometric',
+    'lapse_high': 'psychometric',
+    'win_stay_rate': 'win_stay',
+    'lose_shift_rate': 'lose_shift',
+    'w_stimulus': 'logistic_history',
+    'w_prev_choice_1': 'logistic_history',
+    'w_prev_choice_2': 'logistic_history',
+    'w_prev_choice_3': 'logistic_history',
+    'psychometric_gof': 'psychometric',
+}
+
+
+def _flatten_stats_dict(stats_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """Flatten nested stat dicts into a single-level dict.
+
+    {'psychometric': {'pse': 0.01, 'slope': 0.3}} → {'pse': 0.01, 'slope': 0.3}
+    {'accuracy': 0.85} → {'accuracy': 0.85}
+    Arrays are left as-is (e.g. update_matrix).
+    """
+    flat = {}
+    for key, value in stats_dict.items():
+        if isinstance(value, dict):
+            for k, v in value.items():
+                flat[k] = v
+        else:
+            flat[key] = value
+    return flat
+
 # =============================================================================
 # SESSION METADATA
 # =============================================================================
@@ -274,13 +305,19 @@ class TrialData:
         """
         Compute summary statistics for this session's trials.
 
+        Accepts both registered stat names ('psychometric', 'accuracy')
+        and sub-field names ('pse', 'slope', 'lapse_low').
+        Always returns a flat dict (nested dicts from compound stats
+        are expanded).
+
         Args:
-            stat_names: Which stats to compute (default: all registered)
+            stat_names: Which stats to compute (default: all registered).
+                        Can include sub-field names like 'pse', 'slope'.
             exclude_abort: Remove abort trials
             exclude_opto: Remove opto trials
 
         Returns:
-            Dict of stat_name → value
+            Flat dict of stat_name → value
         """
         from behav_utils.analysis.summary_stats import compute_summary_stats
 
@@ -293,11 +330,20 @@ class TrialData:
         if valid.sum() < 5:
             warnings.warn(f"Only {valid.sum()} valid trials — stats may be unreliable")
 
-        return compute_summary_stats(
+        # Resolve user-friendly names to registered parent stats
+        if stat_names is not None:
+            registered = list({_STAT_PARENT.get(s, s) for s in stat_names})
+        else:
+            registered = stat_names
+
+        raw = compute_summary_stats(
             arrays['choices'], arrays['stimuli'], arrays['categories'],
-            stat_names=stat_names,
+            stat_names=registered,
             return_dict=True,
         )
+
+        return _flatten_stats_dict(raw)
+
 
 
 # =============================================================================

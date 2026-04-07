@@ -1630,7 +1630,9 @@ FEATURE_MATRIX_STATS = [
     'win_stay', 'lose_shift',
     'stimulus_sensitivity', 'side_bias', 'choice_autocorr', 'choice_entropy',
     'perseveration', 'hard_easy_ratio', 'hard_accuracy', 'easy_accuracy',
-    'history_interaction_r2', 'sd_profile',
+    'history_interaction_r2',
+    # NOTE: 'sd_profile' excluded — produces NaN on short sessions, which
+    # corrupts HMM/SLDS feature matrices.  Use explicitly if needed.
     'logistic_history',
     'update_matrix',
     'conditional_psychometric',

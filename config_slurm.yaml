@@ -358,3 +358,19 @@ plotting:
     BE: "steelblue"
     SC: "darkorange"
     default: "grey"
+
+session_presets:
+  expert_uniform:
+    stage: "Full_Task_Cont"
+    distribution: "Uniform"
+    min_accuracy: 0.70
+    last_fraction: 0.50
+  all_uniform:
+    stage: "Full_Task_Cont"
+    distribution: "Uniform"
+  post_shift_hard_a:
+    stage: "Full_Task_Cont"
+    distribution: "Hard-A"
+  post_shift_hard_b:
+    stage: "Full_Task_Cont"
+    distribution: "Hard-B"

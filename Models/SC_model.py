@@ -5,10 +5,10 @@ Stateful wrapper around the stateless SCModel core for convenient
 interactive use: holds parameters and belief state, provides simulation.
 
 For inference (SBI), use the core directly:
-    from Models.SC_core import SCParams, SCState, SCModel
+    from models.SC_core import SCParams, SCState, SCModel
 
 For interactive use and exploration:
-    from Models.SC_model import StimulusCategoryModel
+    from models.SC_model import StimulusCategoryModel
 
 Usage:
     model = StimulusCategoryModel(
@@ -22,8 +22,8 @@ Usage:
 import numpy as np
 from typing import Optional, Dict, Tuple
 
-from Models.SC_core import SCParams, SCState, SCModel
-from Models.BE_core import ModelTrace
+from models.SC_core import SCParams, SCState, SCModel
+from models.BE_core import ModelTrace
 
 
 class StimulusCategoryModel:

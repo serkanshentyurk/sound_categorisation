@@ -5,10 +5,10 @@ Stateful wrapper around the stateless BEModel core for convenient
 interactive use: holds parameters and belief state, provides simulation.
 
 For inference (SBI), use the core directly:
-    from Models.BE_core import BEParams, BEState, BEModel
+    from models.BE_core import BEParams, BEState, BEModel
 
 For interactive use and exploration:
-    from Models.BE_model import BoundaryEstimationModel
+    from models.BE_model import BoundaryEstimationModel
 
 Usage:
     # Simulation
@@ -26,7 +26,7 @@ Usage:
 import numpy as np
 from typing import Optional, Dict, Tuple
 
-from Models.BE_core import BEParams, BEState, BEModel, ModelTrace
+from models.BE_core import BEParams, BEState, BEModel, ModelTrace
 
 
 # =============================================================================

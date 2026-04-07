@@ -39,8 +39,8 @@ from dataclasses import dataclass, field
 from typing import Optional, Dict, Tuple, List, Union
 from scipy.integrate import trapezoid
 
-from Models.perception import perceive_stimulus as _perceive_stimulus
-from Models.perception import stimulus_space_bounds as _stimulus_space_bounds
+from models.perception import perceive_stimulus as _perceive_stimulus
+from models.perception import stimulus_space_bounds as _stimulus_space_bounds
 
 
 # =============================================================================
@@ -703,7 +703,7 @@ class BEModel:
     # =========================================================================
     # SESSION SIMULATION
     # =========================================================================
-    
+
     @staticmethod
     def simulate_session(
         params: BEParams,
@@ -816,6 +816,20 @@ class BEModel:
         
         return choices, p_B, final_state, history
     
+    
+    @staticmethod
+    def make_simulator(params: BEParams, burn_in: int = 1000, seed: int = 42):
+        """Return a stateful simulator callable for generate_synthetic_animal."""
+        state = BEModel.create_initial_state(params=params, burn_in=burn_in, seed=seed)
+        
+        def simulator(stimuli, categories, rng, **kwargs):
+            nonlocal state
+            choices, _, state, _ = BEModel.simulate_session(
+                params, state, stimuli, categories, rng, return_history=False,
+            )
+            return choices
+        
+        return simulator
     
     # =========================================================================
     # LIKELIHOOD COMPUTATION
@@ -1175,8 +1189,8 @@ def simulate_for_sbi(
     if stats_fn is None:
         raise ValueError(
             "stats_fn is required when return_choices=False. "
-            "Pass a function from Analysis.summary_stats, e.g.:\n"
-            "  from Analysis.summary_stats import compute_stats_for_sbi\n"
+            "Pass a function from behav_utils.analysis.summary_stats, e.g.:\n"
+            "  from behav_utils.analysis.summary_stats import compute_summary_stats\n"
             "  simulate_for_sbi(..., stats_fn=compute_stats_for_sbi)"
         )
     

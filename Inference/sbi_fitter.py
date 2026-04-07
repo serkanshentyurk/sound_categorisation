@@ -10,7 +10,7 @@ simulation-based inference. Handles:
 
 Usage:
     from behav_utils.data.structures import AnimalData
-    from Inference.sbi_fitter import SBIFitter, GPLink, ConstantLink
+    from inference.sbi_fitter import SBIFitter, GPLink, ConstantLink
     
     animal = load_animal(...)
     fitting_data = animal.get_fitting_data(stage='Full_Task_Cont')
@@ -42,106 +42,11 @@ import warnings
 # =============================================================================
 # PARAMETER LINK SPECIFICATIONS
 # =============================================================================
-
-@dataclass(frozen=True)
-class ConstantLink:
-    """
-    Parameter is constant across all sessions.
-    
-    Prior: Uniform(bounds[0], bounds[1])
-    Contributes 1 dimension to theta.
-    """
-    bounds: Tuple[float, float]
-
-
-@dataclass(frozen=True)
-class GPLink:
-    """
-    Parameter varies smoothly across sessions via Gaussian Process prior.
-    
-    Prior: GP(mean, RBF kernel) truncated to bounds.
-    Contributes n_sessions dimensions to theta.
-    
-    Args:
-        bounds: (low, high) hard bounds
-        lengthscale: GP lengthscale in session-index units.
-                     ~5 means parameters correlated over ~5 sessions.
-        amplitude: GP amplitude (std of function values).
-                   Controls how much the parameter varies.
-        mean: Mean of GP. If None, uses midpoint of bounds.
-    """
-    bounds: Tuple[float, float]
-    lengthscale: float = 5.0
-    amplitude: float = 0.1
-    mean: Optional[float] = None
-
-
-@dataclass(frozen=True)
-class RandomWalkLink:
-    """
-    Parameter drifts across sessions via random walk.
-    
-    Prior: theta_0 ~ Uniform, theta_{t+1} ~ N(theta_t, sigma_drift^2)
-    Contributes n_sessions dimensions to theta.
-    
-    Args:
-        bounds: (low, high) hard bounds
-        sigma_drift: Step size std per session
-    """
-    bounds: Tuple[float, float]
-    sigma_drift: float = 0.05
-
-
-@dataclass(frozen=True)
-class IndependentLink:
-    """
-    Parameter varies independently per session (no temporal structure).
-    
-    Prior: Uniform(bounds[0], bounds[1]) per session, independently.
-    Contributes n_sessions dimensions to theta.
-    """
-    bounds: Tuple[float, float]
-
-
-@dataclass(frozen=True)
-class HierarchicalLink:
-    """
-    Parameter drawn from shared group distribution per session.
-    
-    Prior: theta_s ~ N(mu_group, sigma_group^2) truncated to bounds.
-    Sessions are exchangeable (no temporal order).
-    Contributes n_sessions dimensions to theta.
-    
-    Args:
-        bounds: (low, high) hard bounds
-        group_mean: Mean of group distribution. If None, uses midpoint.
-        group_std: Std of group distribution.
-    """
-    bounds: Tuple[float, float]
-    group_mean: Optional[float] = None
-    group_std: float = 0.1
-
-
-# Default link specifications for BE model
-DEFAULT_BE_PARAM_LINKS = {
-    'sigma_percep': ConstantLink(bounds=(0.05, 0.5)),
-    'A_repulsion': ConstantLink(bounds=(0.0, 0.5)),
-    'eta_learning': GPLink(bounds=(0.05, 0.9), lengthscale=5.0, amplitude=0.1),
-    'eta_relax': GPLink(bounds=(0.01, 0.4), lengthscale=5.0, amplitude=0.1),
-}
-
-# Default link specifications for SC model
-DEFAULT_SC_PARAM_LINKS = {
-    'sigma_percep': ConstantLink(bounds=(0.05, 0.5)),
-    'A_repulsion': ConstantLink(bounds=(0.0, 0.5)),
-    'gamma': GPLink(bounds=(0.1, 1.0), lengthscale=5.0, amplitude=0.1),
-    'sigma_update': ConstantLink(bounds=(0.1, 1.0)),
-}
-
-# Backwards compatibility alias
-DEFAULT_PARAM_LINKS = DEFAULT_BE_PARAM_LINKS
-
-
+from inference.types import (
+    ConstantLink, GPLink, RandomWalkLink,
+    IndependentLink, HierarchicalLink,
+    PARAM_CLAMP,
+)
 # =============================================================================
 # THETA LAYOUT
 # =============================================================================
@@ -185,30 +90,12 @@ class ThetaLayout:
         
         self.total_dim = idx
     
-    # Validation bounds (hard constraints from model)
-    # Posterior samples can slightly exceed prior bounds.
-    # Populated from model-specific defaults via class method.
-    _PARAM_CLAMP_BE = {
-        'sigma_percep': (1e-6, None),
-        'A_repulsion':  (0.0, None),
-        'eta_learning': (1e-6, 1.0),
-        'eta_relax':    (0.0, 1.0 - 1e-6),
-    }
-    _PARAM_CLAMP_SC = {
-        'sigma_percep': (1e-6, None),
-        'A_repulsion':  (0.0, None),
-        'gamma':        (1e-6, 1.0),
-        'sigma_update': (1e-6, None),
-    }
-    
     # Set from model_type at construction (defaults to BE for backwards compat)
     model_type: str = 'be'
     
     @property
     def _PARAM_CLAMP(self) -> Dict[str, Tuple]:
-        if self.model_type == 'sc':
-            return self._PARAM_CLAMP_SC
-        return self._PARAM_CLAMP_BE
+        return PARAM_CLAMP.get(self.model_type, PARAM_CLAMP['be'])
     
     def theta_to_session_params(self, theta: np.ndarray) -> List[Dict[str, float]]:
         """
@@ -298,7 +185,7 @@ def build_prior(layout: ThetaLayout) -> Any:
     
     Returns an object with .sample() and .log_prob() methods.
     """
-    from Inference.priors import (
+    from inference.priors import (
         MultiSessionPrior, LinkingConfig, UniformPrior
     )
     
@@ -394,7 +281,7 @@ def build_simulator(
     n_sessions = layout.n_sessions
     
     if model_type == 'be':
-        from Models.BE_core import BEParams, BEState, BEModel
+        from models.BE_core import BEParams, BEState, BEModel
 
         def simulate(theta: np.ndarray, seed: Optional[int] = None) -> np.ndarray:
             if seed is None:
@@ -439,7 +326,7 @@ def build_simulator(
             return np.concatenate(all_stats)
 
     elif model_type == 'sc':
-        from Models.SC_core import SCParams, SCState, SCModel
+        from models.SC_core import SCParams, SCState, SCModel
 
         def simulate(theta: np.ndarray, seed: Optional[int] = None) -> np.ndarray:
             if seed is None:
@@ -848,7 +735,7 @@ class SBIFitter:
         Returns:
             SBIResult with trained posterior
         """
-        from Inference.sbi_wrapper import train_sbi
+        from inference.sbi_wrapper import train_sbi
         import torch
         
         observed_tensor = torch.tensor(
