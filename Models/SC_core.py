@@ -480,6 +480,7 @@ class SCModel:
         no_response: Optional[np.ndarray] = None,
         not_blockstart: Optional[np.ndarray] = None,
         return_history: bool = False,
+        update_mask: Optional[np.ndarray] = None,
     ) -> Tuple[np.ndarray, np.ndarray, SCState, Optional['ModelTrace']]:
         """
         Simulate choices for a full session.
@@ -495,6 +496,10 @@ class SCModel:
             no_response: Optional boolean array (True = skip trial)
             not_blockstart: Optional boolean array (True = not block start)
             return_history: If True, return full ModelTrace
+            update_mask: Optional boolean array (True = update normally,
+                         False = skip belief update for this trial).
+                         Simulates opto inactivation during the update window.
+                         If None, all trials update normally.
 
         Returns:
             choices: Simulated choices (0=A, 1=B, NaN=no response)
@@ -554,11 +559,12 @@ class SCModel:
             choice = rng.binomial(1, p_B_t)
             choices[t] = choice
 
-            # Update beliefs in-place
-            SCModel._update_beliefs_inplace(
-                s_hat, categories[t], choice, params,
-                A_dist, B_dist, x,
-            )
+            # Update beliefs in-place (skip if opto inactivation)
+            if update_mask is None or update_mask[t]:
+                SCModel._update_beliefs_inplace(
+                    s_hat, categories[t], choice, params,
+                    A_dist, B_dist, x,
+                )
             s_hat_prev = s_hat
 
         # Build final state
@@ -620,6 +626,7 @@ class SCModel:
         no_response: Optional[np.ndarray] = None,
         not_blockstart: Optional[np.ndarray] = None,
         return_history: bool = False,
+        update_mask: Optional[np.ndarray] = None,
     ) -> Tuple[float, np.ndarray, SCState, Optional['ModelTrace']]:
         """
         Compute log-likelihood of observed choices under SC model.
@@ -697,12 +704,13 @@ class SCModel:
                 else:
                     trial_lls[t] = np.log(1 - p_B_t)
 
-            # ALWAYS update belief using OBSERVED choice
-            obs_choice = int(observed_choices[t])
-            SCModel._update_beliefs_inplace(
-                s_hat, categories[t], obs_choice, params,
-                A_dist, B_dist, x,
-            )
+            # Update belief using OBSERVED choice (skip if opto inactivation)
+            if update_mask is None or update_mask[t]:
+                obs_choice = int(observed_choices[t])
+                SCModel._update_beliefs_inplace(
+                    s_hat, categories[t], obs_choice, params,
+                    A_dist, B_dist, x,
+                )
             s_hat_prev = s_hat
 
         total_ll = np.nansum(trial_lls)

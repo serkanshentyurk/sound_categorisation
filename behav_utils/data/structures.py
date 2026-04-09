@@ -1398,7 +1398,7 @@ class ExperimentData:
     def plot_overview(
         self,
         animals: Union[str, List[str]] = 'all',
-        sessions: str = 'all',
+        sessions: Union[str, List[int]] = 'all',
         stage: Optional[str] = None,
         min_sessions: int = 5,
         psych_mode: str = 'session_mean',

@@ -766,8 +766,8 @@ def simulate_example_session(
     burn_in: int = 1000, n_reps: int = 20, seed: int = 42,
 ) -> Dict[str, Any]:
     """Simulate BE and SC on one real session for visualisation."""
-    from Models.BE_core import BEParams, BEModel
-    from Models.SC_core import SCParams, SCModel
+    from models.BE_core import BEParams, BEModel
+    from models.SC_core import SCParams, SCModel
 
     sessions = animal.get_sessions(stage=stage, distribution=distribution)
     sess = sessions[session_idx]

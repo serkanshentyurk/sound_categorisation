@@ -883,3 +883,207 @@ def plot_psychometric_compare(
 
     plt.tight_layout()
     return fig, axes, infos
+
+
+def plot_psychometric_overlay(
+    session_groups: Dict[str, List['SessionData']],
+    ax: Optional[plt.Axes] = None,
+    mode: str = 'pooled',
+    n_bins: int = 8,
+    n_bootstrap: int = 200,
+    show_ci: bool = True,
+    show_params: bool = True,
+    colours: Optional[Dict[str, str]] = None,
+    title: str = '',
+    exclude_abort: bool = True,
+    exclude_opto: bool = True,
+    **kwargs,
+) -> Tuple[plt.Figure, plt.Axes, Dict[str, Dict]]:
+    """
+    Overlay psychometric curves from multiple session groups on one axes.
+
+    Unlike plot_psychometric_compare (side-by-side subplots), this puts
+    all curves on the same axes for direct visual comparison of PSE,
+    slope, and lapse changes.
+
+    Args:
+        session_groups: Dict mapping labels to lists of SessionData.
+            Insertion order determines draw order (and legend order).
+        ax: Existing axes (creates new figure if None).
+        mode:
+            'pooled' — pool trials per group, fit one psychometric per group.
+                Bootstrap CI if n_bootstrap > 0.
+            'session_mean' — per-session binned P(B), then mean ± SEM.
+        n_bins: Stimulus bins for data points.
+        n_bootstrap: Bootstrap samples for CI (pooled mode).
+        show_ci: Show CI band (pooled) or SEM band (session_mean).
+        show_params: Include PSE and σ in legend labels.
+        colours: Dict mapping labels to colour strings. If None, uses
+            default palette.
+        title: Plot title.
+        exclude_abort: Exclude abort trials.
+        exclude_opto: Exclude opto trials.
+
+    Returns:
+        (fig, ax, infos) where infos maps labels to fit_psychometric dicts.
+
+    Usage:
+        from behav_utils.plotting.psychometric import plot_psychometric_overlay
+
+        groups = {
+            'Expert Uniform (last 5)': baseline[-5:],
+            'Early Hard-A (first 3)':  post[:3],
+            'Late Hard-A (last 3)':    post[-3:],
+        }
+        fig, ax, infos = plot_psychometric_overlay(groups, title='SS05')
+    """
+    from behav_utils.analysis.psychometry import fit_psychometric
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(7, 5))
+    else:
+        fig = ax.get_figure()
+
+    if colours is None:
+        default_palette = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728',
+                           '#9467bd', '#8c564b', '#e377c2', '#7f7f7f']
+        colours = {lab: default_palette[i % len(default_palette)]
+                   for i, lab in enumerate(session_groups.keys())}
+
+    bin_edges = np.linspace(-1, 1, n_bins + 1)
+    midpoints = (bin_edges[:-1] + bin_edges[1:]) / 2
+
+    infos = {}
+
+    for label, sessions in session_groups.items():
+        # Pool trials
+        all_stim, all_choice = [], []
+        for sess in sessions:
+            arrays = sess.trials.get_arrays(
+                exclude_abort=exclude_abort,
+                exclude_opto=exclude_opto,
+            )
+            valid = ~arrays['no_response']
+            all_stim.append(arrays['stimuli'][valid])
+            all_choice.append(arrays['choices'][valid])
+
+        if not all_stim:
+            infos[label] = {'success': False, 'n_trials': 0}
+            continue
+
+        stim_pooled = np.concatenate(all_stim)
+        choice_pooled = np.concatenate(all_choice)
+        color = colours.get(label, '#333333')
+
+        if mode == 'pooled':
+            # Fit psychometric on pooled data
+            info = fit_psychometric(
+                stim_pooled, choice_pooled, midpoints,
+                n_bootstrap=n_bootstrap if show_ci else 0,
+            )
+            info['n_trials'] = len(stim_pooled)
+            info['n_sessions'] = len(sessions)
+
+            # Binned data points
+            bins = np.clip(np.digitize(stim_pooled, bin_edges) - 1, 0, n_bins - 1)
+            for b in range(n_bins):
+                mask = bins == b
+                if mask.sum() > 0:
+                    p_b = np.nanmean(choice_pooled[mask])
+                    ax.plot(midpoints[b], p_b, 'o', color=color, ms=5,
+                            alpha=0.6, zorder=3)
+
+            # Fitted curve
+            if info.get('success', False):
+                x_fine = np.linspace(-1, 1, 200)
+                from behav_utils.analysis.utils import cumulative_gaussian
+                y_fit = cumulative_gaussian(
+                    x_fine, info['mu'], info['sigma'],
+                    info['lapse_low'], info['lapse_high'],
+                )
+
+                legend_label = label
+                if show_params:
+                    legend_label = (f"{label} "
+                                    f"(PSE={info['mu']:.3f}, "
+                                    f"\u03c3={info['sigma']:.3f})")
+
+                ax.plot(x_fine, y_fit, '-', color=color, lw=2,
+                        label=legend_label, zorder=5)
+
+                # CI band
+                if show_ci and 'y_fit_ci' in info and info['y_fit_ci'][0] is not None:
+                    lo, hi = info['y_fit_ci']
+                    ax.fill_between(info['x_fit'], lo, hi,
+                                    color=color, alpha=0.15, zorder=2)
+            else:
+                ax.plot([], [], '-', color=color, label=f"{label} (fit failed)")
+
+        elif mode == 'session_mean':
+            # Per-session binned P(B), then mean ± SEM
+            session_curves = []
+            for sess in sessions:
+                arrays = sess.trials.get_arrays(
+                    exclude_abort=exclude_abort,
+                    exclude_opto=exclude_opto,
+                )
+                valid = ~arrays['no_response']
+                s_v = arrays['stimuli'][valid]
+                c_v = arrays['choices'][valid]
+
+                if len(s_v) < 10:
+                    continue
+
+                s_bins = np.clip(np.digitize(s_v, bin_edges) - 1, 0, n_bins - 1)
+                curve = np.array([
+                    np.nanmean(c_v[s_bins == b]) if np.sum(s_bins == b) > 0 else np.nan
+                    for b in range(n_bins)
+                ])
+                session_curves.append(curve)
+
+            if not session_curves:
+                infos[label] = {'success': False, 'n_trials': 0}
+                continue
+
+            curves = np.array(session_curves)
+            mean_curve = np.nanmean(curves, axis=0)
+            n_valid = np.sum(~np.isnan(curves), axis=0)
+            sem_curve = np.nanstd(curves, axis=0) / np.sqrt(np.maximum(n_valid, 1))
+
+            # Fit on pooled for param annotation
+            info = fit_psychometric(stim_pooled, choice_pooled, midpoints)
+            info['n_trials'] = len(stim_pooled)
+            info['n_sessions'] = len(sessions)
+
+            legend_label = label
+            if show_params and info.get('success', False):
+                legend_label = (f"{label} "
+                                f"(PSE={info['mu']:.3f}, "
+                                f"\u03c3={info['sigma']:.3f})")
+
+            ax.plot(midpoints, mean_curve, 'o-', color=color, ms=5,
+                    lw=1.5, label=legend_label, zorder=5)
+
+            if show_ci:
+                ax.fill_between(midpoints,
+                                mean_curve - sem_curve,
+                                mean_curve + sem_curve,
+                                color=color, alpha=0.15, zorder=2)
+
+        else:
+            raise ValueError(f"mode must be 'pooled' or 'session_mean', got '{mode}'")
+
+        infos[label] = info
+
+    # Reference lines
+    ax.axhline(0.5, color='grey', ls=':', lw=0.8, alpha=0.5)
+    ax.axvline(0.0, color='grey', ls=':', lw=0.8, alpha=0.5)
+    ax.set_xlabel('Stimulus')
+    ax.set_ylabel('P(choose B)')
+    ax.set_xlim(-1.05, 1.05)
+    ax.set_ylim(-0.05, 1.05)
+    ax.legend(fontsize=8, loc='lower right')
+    if title:
+        ax.set_title(title, fontsize=11)
+
+    return fig, ax, infos

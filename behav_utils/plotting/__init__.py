@@ -24,7 +24,10 @@ try:
     from behav_utils.plotting.psychometric import (
         plot_psychometric,
         plot_session_psychometrics,
+        plot_psychometric_overlay,
+        plot_psychometric_compare
     )
+
 except ImportError:
     pass
 
@@ -36,6 +39,7 @@ except ImportError:
 try:
     from behav_utils.plotting.update_matrix import (
         plot_update_matrix,
+        plot_phase_update_matrices,
         plot_conditional_psychometrics,
     )
 except ImportError:
@@ -54,11 +58,14 @@ __all__ = [
     # Psychometric (available after migration)
     'plot_psychometric',
     'plot_session_psychometrics',
+    'plot_psychometric_overlay',
+    'plot_psychometric_compare',
 
     # Session (available after migration)
     'plot_session_trials',
 
     # Update matrix (available after migration)
     'plot_update_matrix',
+    'plot_phase_update_matrices',
     'plot_conditional_psychometrics',
 ]

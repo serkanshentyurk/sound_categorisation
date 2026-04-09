@@ -415,28 +415,39 @@ def rolling_PSE_time_series(s, chooseB, No_response, m, overlap_pct=80):
 
 
 
+# def matrix_error(Model_matrix, data_matrix):
+#     # Inputs:
+#     # Model_matrix: Update matrix obtained from the model.
+#     # data_matrix: Update matrix obtained from the actual data.
+
+#     # Calculate the squared differences between the two matrices
+#     squared_diff = (Model_matrix - data_matrix) ** 2
+
+#     # Count the number of non-NaN elements in the squared differences for each column
+#     non_nan_count = np.sum(~np.isnan(squared_diff), axis=0)
+
+#     # Calculate the number of columns that contain at least one non-NaN value
+#     non_nan_columns = np.sum(non_nan_count > 0)
+
+#     # Compute the sum of squared differences column-wise, ignoring NaN elements
+#     columnwise_sum = np.nansum(squared_diff, axis=0)
+
+#     # Calculate the total least square error by summing the column-wise sums
+#     # and normalizing by the number of columns with non-NaN elements
+#     cost = np.sum(columnwise_sum) / non_nan_columns
+
+#     return cost
+
 def matrix_error(Model_matrix, data_matrix):
-    # Inputs:
-    # Model_matrix: Update matrix obtained from the model.
-    # data_matrix: Update matrix obtained from the actual data.
+    """Mean squared error between two matrices, ignoring NaNs.
 
-    # Calculate the squared differences between the two matrices
-    squared_diff = (Model_matrix - data_matrix) ** 2
-
-    # Count the number of non-NaN elements in the squared differences for each column
-    non_nan_count = np.sum(~np.isnan(squared_diff), axis=0)
-
-    # Calculate the number of columns that contain at least one non-NaN value
-    non_nan_columns = np.sum(non_nan_count > 0)
-
-    # Compute the sum of squared differences column-wise, ignoring NaN elements
-    columnwise_sum = np.nansum(squared_diff, axis=0)
-
-    # Calculate the total least square error by summing the column-wise sums
-    # and normalizing by the number of columns with non-NaN elements
-    cost = np.sum(columnwise_sum) / non_nan_columns
-
-    return cost
+    Matches behav_utils.analysis.update_matrix.matrix_error.
+    """
+    diff = Model_matrix - data_matrix
+    valid = ~np.isnan(diff)
+    if np.sum(valid) == 0:
+        return np.nan
+    return np.mean(diff[valid] ** 2)
 
 
 def cost_function(data_matrix, model, func, x, y, s, s_hat, categories, sigma_noise, A_repulsion, y_axis_value,

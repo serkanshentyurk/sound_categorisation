@@ -5,15 +5,19 @@ Heatmaps, serial dependence profiles, conditional psychometrics.
 All functions return (fig, ax) or (fig, axes).
 
 Usage:
-    from behav_utils.plotting.update_matrix import plot_update_matrix
-
-    fig, ax = plot_update_matrix(um)
-    fig, axes = plot_update_matrix_comparison(um_data, um_model)
+    from behav_utils.plotting.update_matrix import (
+        plot_update_matrix,
+        plot_update_matrix_comparison,
+        plot_phase_update_matrices,
+        plot_sd_profile,
+        plot_conditional_psychometrics,
+        plot_update_matrix_summary,
+    )
 """
 
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import Optional, List, Tuple, Dict
+from typing import Optional, List, Tuple, Dict, Union
 
 from behav_utils.plotting.styles import UM_CMAP, get_bin_colours, COLOURS
 from behav_utils.analysis.utils import cumulative_gaussian
@@ -85,7 +89,7 @@ def plot_update_matrix(
 
 
 # =============================================================================
-# UPDATE MATRIX COMPARISON (data vs model)
+# UPDATE MATRIX COMPARISON (data vs model, 2 panels + difference)
 # =============================================================================
 
 def plot_update_matrix_comparison(
@@ -123,6 +127,121 @@ def plot_update_matrix_comparison(
     if suptitle:
         fig.suptitle(suptitle, fontsize=12, y=1.02)
     plt.tight_layout()
+
+    return fig, axes
+
+
+# =============================================================================
+# N-PHASE UPDATE MATRIX COMPARISON
+# =============================================================================
+
+def plot_phase_update_matrices(
+    phase_matrices: Dict[str, np.ndarray],
+    suptitle: str = '',
+    vmax: Optional[float] = None,
+    show_colorbar: bool = True,
+    figsize_per_panel: Tuple[float, float] = (3.5, 3.5),
+    cmap=None,
+    annotations: Optional[Dict[str, str]] = None,
+) -> Tuple[plt.Figure, np.ndarray]:
+    """
+    Plot update matrices for multiple phases side-by-side.
+
+    Shared colour scale across all panels for direct comparison.
+
+    Args:
+        phase_matrices: Dict of {label: (n_bins, n_bins) array}.
+            Insertion order determines panel order.
+        suptitle: Figure title
+        vmax: Symmetric colour limit. If None, computed from data.
+        show_colorbar: Add shared colourbar
+        figsize_per_panel: (width, height) per panel
+        cmap: Colourmap (default: UM_CMAP)
+        annotations: Optional dict {label: annotation_string} shown
+            below each panel (e.g., trial counts, session info)
+
+    Returns:
+        (fig, axes) where axes is 1D array
+
+    Usage:
+        from behav_utils.analysis.update_matrix import (
+            compute_update_matrix_from_sessions,
+        )
+
+        phases = {
+            'Baseline (expert)': compute_update_matrix_from_sessions(baseline[-5:])[0],
+            'Early post-shift':  compute_update_matrix_from_sessions(post[:3])[0],
+            'Late post-shift':   compute_update_matrix_from_sessions(post[-3:])[0],
+        }
+        plot_phase_update_matrices(phases, suptitle='SS05: Distribution Shift')
+    """
+    if cmap is None:
+        cmap = UM_CMAP
+
+    labels = list(phase_matrices.keys())
+    n = len(labels)
+
+    if vmax is None:
+        all_vals = [np.nanmax(np.abs(m)) for m in phase_matrices.values()
+                    if not np.all(np.isnan(m))]
+        vmax = max(all_vals) if all_vals else 0.3
+        if np.isnan(vmax) or vmax == 0:
+            vmax = 0.3
+
+    from matplotlib.gridspec import GridSpec
+
+    # GridSpec: n columns for panels + 1 narrow column for colorbar
+    if show_colorbar:
+        width_ratios = [1] * n + [0.05]
+        gs = GridSpec(1, n + 1, width_ratios=width_ratios, wspace=0.25)
+        fig = plt.figure(figsize=(figsize_per_panel[0] * n + 1.5,
+                                  figsize_per_panel[1]))
+        axes = np.array([fig.add_subplot(gs[0, i]) for i in range(n)])
+        cbar_ax = fig.add_subplot(gs[0, n])
+    else:
+        fig, axes = plt.subplots(
+            1, n, figsize=(figsize_per_panel[0] * n, figsize_per_panel[1]),
+        )
+        cbar_ax = None
+    if n == 1:
+        axes = np.array([axes])
+
+    im = None
+    for idx, (ax, label) in enumerate(zip(axes, labels)):
+        um = phase_matrices[label]
+        n_bins = um.shape[0]
+
+        im_obj = ax.imshow(
+            um, cmap=cmap, vmin=-vmax, vmax=vmax,
+            origin='lower', aspect='equal',
+        )
+        ax.set_title(label, fontsize=9, pad=4)
+        ax.set_xticks([0, (n_bins - 1) / 2, n_bins - 1])
+        ax.set_xticklabels(['-1', '0', '1'], fontsize=8)
+        ax.set_yticks([0, (n_bins - 1) / 2, n_bins - 1])
+
+        if idx == 0:
+            ax.set_yticklabels(['-1', '0', '1'], fontsize=8)
+            ax.set_ylabel('Current stim bin', fontsize=8)
+        else:
+            ax.set_yticklabels([])
+            ax.set_ylabel('')
+        ax.set_xlabel('')
+
+        im = im_obj
+
+        if annotations and label in annotations:
+            ax.annotate(
+                annotations[label], xy=(0.5, -0.12),
+                xycoords='axes fraction', ha='center', va='top',
+                fontsize=7, color='grey',
+            )
+
+    if show_colorbar and im is not None and cbar_ax is not None:
+        fig.colorbar(im, cax=cbar_ax, label='\u0394P(B)')
+
+    if suptitle:
+        fig.suptitle(suptitle, fontsize=12, fontweight='bold')
 
     return fig, axes
 

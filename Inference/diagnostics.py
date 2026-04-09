@@ -137,7 +137,7 @@ def run_sbc(
         x_tensor = torch.tensor(x_star, dtype=torch.float32).unsqueeze(0)
         
         # Check for NaN/inf
-        if not np.all(np.isfinite(x_star)):
+        if not np.all(np.isfinite(np.asarray(x_star))):
             ranks[i] = -1  # Mark as invalid
             continue
         
@@ -438,6 +438,7 @@ def parameter_recovery(
         
         # Simulate
         x_sim = simulator(theta_true)
+        x_sim = np.asarray(x_sim)
         if not np.all(np.isfinite(x_sim)):
             valid_mask[i] = False
             continue

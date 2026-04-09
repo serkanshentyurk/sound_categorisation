@@ -713,7 +713,8 @@ class BEModel:
         rng: np.random.Generator,
         no_response: Optional[np.ndarray] = None,
         not_blockstart: Optional[np.ndarray] = None,
-        return_history: bool = False
+        return_history: bool = False,
+        update_mask: Optional[np.ndarray] = None,
     ) -> Tuple[np.ndarray, np.ndarray, BEState, Optional['ModelTrace']]:
         """
         Simulate choices for a full session.
@@ -728,6 +729,10 @@ class BEModel:
             not_blockstart: Optional boolean array (True = not start of block/session)
                            Used for update matrix computation. Default: first trial is block start.
             return_history: If True, return full ModelTrace for update matrix analysis
+            update_mask: Optional boolean array (True = update normally,
+                         False = skip belief update for this trial).
+                         Simulates opto inactivation during the update window.
+                         If None, all trials update normally.
         
         Returns:
             choices: Simulated choices (0 = A, 1 = B, NaN = no response)
@@ -780,12 +785,13 @@ class BEModel:
             # Make choice
             choices[t] = rng.binomial(1, p_B[t])
             
-            # Update belief in-place
-            BEModel._update_belief_inplace(
-                s_hat, categories[t], params, belief, x,
-                state.x_min, state.x_max,
-                state.relax_target,
-            )
+            # Update belief in-place (skip if opto inactivation)
+            if update_mask is None or update_mask[t]:
+                BEModel._update_belief_inplace(
+                    s_hat, categories[t], params, belief, x,
+                    state.x_min, state.x_max,
+                    state.relax_target,
+                )
             s_hat_prev = s_hat
         
         # Build final state (snapshot current belief)
@@ -846,7 +852,8 @@ class BEModel:
         eval_mask: Optional[np.ndarray] = None,
         no_response: Optional[np.ndarray] = None,
         not_blockstart: Optional[np.ndarray] = None,
-        return_history: bool = False
+        return_history: bool = False,
+        update_mask: Optional[np.ndarray] = None,
     ) -> Tuple[float, np.ndarray, BEState, Optional['ModelTrace']]:
         """
         Compute log-likelihood of observed choices.
@@ -924,12 +931,13 @@ class BEModel:
                 else:
                     trial_lls[t] = np.log(1 - p_B_t)
             
-            # ALWAYS update belief in-place
-            BEModel._update_belief_inplace(
-                s_hat, categories[t], params, belief, x,
-                state.x_min, state.x_max,
-                state.relax_target,
-            )
+            # Update belief in-place (skip if opto inactivation)
+            if update_mask is None or update_mask[t]:
+                BEModel._update_belief_inplace(
+                    s_hat, categories[t], params, belief, x,
+                    state.x_min, state.x_max,
+                    state.relax_target,
+                )
             s_hat_prev = s_hat
         
         total_ll = np.nansum(trial_lls)

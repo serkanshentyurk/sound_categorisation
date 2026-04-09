@@ -27,6 +27,7 @@ from behav_utils.analysis.summary_stats import (
 )
 from behav_utils.analysis.update_matrix import (
     compute_update_matrix,
+    compute_update_matrix_from_sessions,
     matrix_error,
 )
 from behav_utils.analysis.session_features import (
@@ -60,6 +61,7 @@ __all__ = [
 
     # Update matrix
     'compute_update_matrix',
+    'compute_update_matrix_from_sessions',
     'matrix_error',
 
     # Session features
