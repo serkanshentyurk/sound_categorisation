@@ -1,9 +1,9 @@
 """
-Inference Module for BE Model.
+Inference Module for BE and SC Models.
 
 Provides simulation-based inference infrastructure:
 - Summary statistics computation
-- SBI-compatible simulators  
+- SBI-compatible simulators (BE and SC)
 - Prior definitions (single and multi-session)
 - SBI training and posterior sampling
 - Diagnostics (SBC, parameter recovery, posterior predictive)
@@ -13,18 +13,14 @@ Quick Start:
         create_be_simulator,
         create_prior,
         train_sbi,
-        run_all_diagnostics
     )
-    
+
     # Setup
     simulator = create_be_simulator(stimuli, categories, burn_in=100)
     prior = create_prior()
-    
+
     # Train
     result = train_sbi(simulator, prior, observed_stats, method='NPE')
-    
-    # Validate
-    diagnostics = run_all_diagnostics(simulator, prior, result.posterior, observed_stats)
 
 Note:
     Full functionality requires: pip install torch sbi
@@ -69,7 +65,7 @@ if _TORCH_AVAILABLE:
     
     # SBI wrapper (requires torch + sbi)
     try:
-        from inference.sbi_wrapper import (
+        from inference.fitting import (
             train_sbi,
             sample_posterior,
             quick_posterior,

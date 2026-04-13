@@ -47,7 +47,6 @@ from analysis.fold_utils import split_folds_by_block
 if TYPE_CHECKING:
     from behav_utils.data.structures import SessionData
 
-
 # =============================================================================
 # PARAMETER GRID DEFINITIONS
 # =============================================================================
@@ -485,3 +484,300 @@ def run_cv_both_models(
             n_folds, seed, burn_in, n_bins, n_jobs,
         )
     return results
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PHASE-BLOCKED FITTING
+# ─────────────────────────────────────────────────────────────────────────────
+
+def fit_sessions_blocked(
+    phase_blocks: Dict[str, List['SessionData']],
+    model_type: str,
+    grid: 'ParameterGrid' = None,
+    burn_in: int = 1000,
+    seed: int = 42,
+    n_seeds: int = 5,
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Fit model parameters to phase-blocked groups of sessions.
+
+    Each block is a named group of sessions (e.g. 'naive', 'expert',
+    'early_post', 'late_post'). Parameters are fit independently per
+    block by pooling sessions within each block.
+
+    Args:
+        phase_blocks: {phase_name: [SessionData, ...]}
+        model_type: 'BE' or 'SC'
+        grid: Parameter grid (default: DEFAULT_GRID[model_type])
+        burn_in: Burn-in trials for simulation
+        seed: Base random seed
+        n_seeds: Number of seeds to average over
+
+    Returns:
+        {phase_name: {
+            'best_params': dict,
+            'train_error': float,
+            'n_sessions': int,
+            'n_trials': int,
+            'session_indices': list,
+            'per_seed_errors': list,
+            'per_seed_params': list,
+        }}
+    """
+    from analysis.grid_search import (
+        grid_search_cv, _sessions_to_arrays, DEFAULT_GRID, ParameterGrid,
+        _simulate_um, parameter_sweep,
+    )
+    from behav_utils.analysis.update_matrix import (
+        compute_update_matrix, matrix_error,
+    )
+
+    if grid is None:
+        grid = DEFAULT_GRID[model_type]
+
+    results = {}
+
+    for phase_name, sessions in phase_blocks.items():
+        if not sessions:
+            results[phase_name] = {
+                'best_params': {}, 'train_error': np.nan,
+                'n_sessions': 0, 'n_trials': 0,
+                'session_indices': [],
+            }
+            continue
+
+        # Pool sessions into flat arrays
+        stimuli, choices, categories, block_ids = _sessions_to_arrays(sessions)
+        n_trials = len(stimuli)
+
+        if n_trials < 50:
+            results[phase_name] = {
+                'best_params': {}, 'train_error': np.nan,
+                'n_sessions': len(sessions), 'n_trials': n_trials,
+                'session_indices': [s.session_idx for s in sessions],
+            }
+            continue
+
+        # Compute empirical UM
+        emp_um, _, _ = compute_update_matrix(stimuli, choices, categories)
+
+        # Grid search (no CV — fit to all data in this block)
+        best_error = np.inf
+        best_params = None
+        per_seed_errors = []
+        per_seed_params = []
+
+        for s_offset in range(n_seeds):
+            sweep_result = parameter_sweep(
+                model_type=model_type,
+                grid=grid,
+                stimuli=stimuli,
+                categories=categories,
+                empirical_um=emp_um,
+                burn_in=burn_in,
+                seed=seed + s_offset,
+            )
+            per_seed_errors.append(sweep_result['best_error'])
+            per_seed_params.append(sweep_result['best_params'])
+
+            if sweep_result['best_error'] < best_error:
+                best_error = sweep_result['best_error']
+                best_params = sweep_result['best_params']
+
+        results[phase_name] = {
+            'best_params': best_params,
+            'train_error': float(best_error),
+            'mean_error': float(np.mean(per_seed_errors)),
+            'n_sessions': len(sessions),
+            'n_trials': n_trials,
+            'session_indices': [s.session_idx for s in sessions],
+            'per_seed_errors': per_seed_errors,
+            'per_seed_params': per_seed_params,
+        }
+
+    return results
+
+
+def fit_sessions_individual(
+    sessions: List['SessionData'],
+    model_type: str,
+    grid: 'ParameterGrid' = None,
+    burn_in: int = 1000,
+    seed: int = 42,
+) -> List[Dict[str, Any]]:
+    """
+    Fit model parameters to each session independently.
+
+    Noisy but assumption-free — gives the raw per-session parameter
+    trajectory. Sessions with too few trials return NaN.
+
+    Args:
+        sessions: List of SessionData
+        model_type: 'BE' or 'SC'
+        grid: Parameter grid (default: DEFAULT_GRID[model_type])
+        burn_in: Burn-in trials for simulation
+        seed: Random seed
+
+    Returns:
+        List of dicts (one per session), each with:
+            'session_idx', 'session_id', 'best_params', 'error',
+            'n_trials', 'converged'
+    """
+    results = []
+
+    for sess in sessions:
+        result = {
+            'session_idx': sess.session_idx,
+            'session_id': sess.session_id,
+            'date': sess.date,
+        }
+
+        # Use fit_sessions_blocked with a single-session block
+        block_result = fit_sessions_blocked(
+            phase_blocks={'single': [sess]},
+            model_type=model_type,
+            grid=grid,
+            burn_in=burn_in,
+            seed=seed,
+            n_seeds=1,
+        )
+        r = block_result['single']
+        result.update({
+            'best_params': r['best_params'],
+            'error': r['train_error'],
+            'n_trials': r['n_trials'],
+            'converged': not np.isnan(r['train_error']),
+        })
+        results.append(result)
+
+    return results
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STATIC VS DYNAMIC COMPARISON
+# ─────────────────────────────────────────────────────────────────────────────
+
+def compare_static_vs_dynamic(
+    sessions: List['SessionData'],
+    model_type: str,
+    phase_blocks: Dict[str, List['SessionData']],
+    grid: 'ParameterGrid' = None,
+    burn_in: int = 1000,
+    seed: int = 42,
+    n_seeds: int = 5,
+) -> Dict[str, Any]:
+    """
+    Compare a single static fit (all sessions pooled) against
+    phase-blocked fits. Tests whether allowing parameters to vary
+    across phases improves fit quality.
+
+    Args:
+        sessions: All sessions (for the static fit)
+        model_type: 'BE' or 'SC'
+        phase_blocks: {phase_name: [SessionData, ...]} for dynamic fit
+        grid: Parameter grid
+        burn_in: Burn-in trials
+        seed: Random seed
+        n_seeds: Seeds to average
+
+    Returns:
+        {
+            'static': {fit results for all-sessions-pooled},
+            'dynamic': {phase_name: {fit results}, ...},
+            'static_total_error': float,
+            'dynamic_total_error': float,
+            'improvement_ratio': float,  # dynamic/static (< 1 means dynamic is better)
+            'per_phase_comparison': [{phase, static_error, dynamic_error, ...}],
+        }
+    """
+    from behav_utils.analysis.update_matrix import (
+        compute_update_matrix, matrix_error,
+    )
+
+    # Static fit: pool everything
+    static_result = fit_sessions_blocked(
+        phase_blocks={'all': sessions},
+        model_type=model_type,
+        grid=grid,
+        burn_in=burn_in,
+        seed=seed,
+        n_seeds=n_seeds,
+    )['all']
+
+    # Dynamic fit: per phase
+    dynamic_results = fit_sessions_blocked(
+        phase_blocks=phase_blocks,
+        model_type=model_type,
+        grid=grid,
+        burn_in=burn_in,
+        seed=seed,
+        n_seeds=n_seeds,
+    )
+
+    # Evaluate static params on each phase separately
+    from analysis.grid_search import _sessions_to_arrays, _simulate_um
+
+    per_phase_comparison = []
+    dynamic_total_weighted_error = 0.0
+    static_total_weighted_error = 0.0
+    total_trials = 0
+
+    for phase_name, phase_sessions in phase_blocks.items():
+        if not phase_sessions:
+            continue
+
+        stimuli, choices, categories, _ = _sessions_to_arrays(phase_sessions)
+        n_trials = len(stimuli)
+        if n_trials < 50:
+            continue
+
+        emp_um, _, _ = compute_update_matrix(stimuli, choices, categories)
+
+        # Static params evaluated on this phase
+        if static_result['best_params']:
+            static_um = _simulate_um(
+                model_type=model_type,
+                params=static_result['best_params'],
+                stimuli=stimuli,
+                categories=categories,
+                burn_in=burn_in,
+                seed=seed,
+            )
+            static_phase_error = matrix_error(static_um, emp_um)
+        else:
+            static_phase_error = np.nan
+
+        # Dynamic params for this phase
+        dyn_r = dynamic_results.get(phase_name, {})
+        dynamic_phase_error = dyn_r.get('train_error', np.nan)
+
+        per_phase_comparison.append({
+            'phase': phase_name,
+            'n_trials': n_trials,
+            'static_error': static_phase_error,
+            'dynamic_error': dynamic_phase_error,
+            'static_params': static_result['best_params'],
+            'dynamic_params': dyn_r.get('best_params', {}),
+        })
+
+        if not np.isnan(static_phase_error) and not np.isnan(dynamic_phase_error):
+            static_total_weighted_error += static_phase_error * n_trials
+            dynamic_total_weighted_error += dynamic_phase_error * n_trials
+            total_trials += n_trials
+
+    if total_trials > 0:
+        static_total = static_total_weighted_error / total_trials
+        dynamic_total = dynamic_total_weighted_error / total_trials
+        improvement = dynamic_total / static_total if static_total > 0 else np.nan
+    else:
+        static_total = np.nan
+        dynamic_total = np.nan
+        improvement = np.nan
+
+    return {
+        'static': static_result,
+        'dynamic': dynamic_results,
+        'static_total_error': static_total,
+        'dynamic_total_error': dynamic_total,
+        'improvement_ratio': improvement,
+        'per_phase_comparison': per_phase_comparison,
+    }

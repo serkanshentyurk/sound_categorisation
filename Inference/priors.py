@@ -24,6 +24,18 @@ Usage:
         linking_fn='gp',
         linking_config={'lengthscale': 5.0, 'amplitude': 0.1}
     )
+
+Note on naming:
+    This module defines torch implementation classes (IndependentLink,
+    RandomWalkLink, GaussianProcessLink, HierarchicalLink) that share
+    names with the specification dataclasses in inference/types.py
+    (IndependentSpec, RandomWalkSpec, GPSpec, HierarchicalSpec).
+    
+    The specs are lightweight, frozen descriptions of desired behaviour.
+    The classes here are the torch implementations with sample()/log_prob().
+    
+    Users interact with the *Spec types from types.py.
+    The build_prior() function in fitting.py bridges specs → implementations.
 """
 
 import numpy as np

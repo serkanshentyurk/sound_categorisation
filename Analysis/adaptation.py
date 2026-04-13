@@ -596,3 +596,199 @@ def aggregate_trajectories(
             })
 
     return pd.DataFrame(rows)
+
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SHIFT TYPE CLASSIFICATION
+# ─────────────────────────────────────────────────────────────────────────────
+
+def classify_shift_type(
+    manipulations: List[Dict],
+) -> List[Dict]:
+    """
+    Label each manipulation with a shift_type based on its position
+    in the sequence and the distribution transition.
+
+    Types:
+        'first_novel'         — first shift the animal experiences
+        'second_experienced'  — second shift (animal has prior experience of change)
+        'familiar_return'     — returning to a previously experienced distribution
+
+    Args:
+        manipulations: Output of detect_all_manipulations()
+
+    Returns:
+        Same list of dicts, each augmented with 'shift_type' key
+    """
+    seen_distributions = set()
+    classified = []
+
+    for i, manip in enumerate(manipulations):
+        manip = dict(manip)  # don't mutate original
+        details = manip.get('details', {})
+        before = details.get('before', '')
+        after = details.get('after', '')
+
+        if manip['type'] != 'distribution_shift':
+            manip['shift_type'] = 'other'
+            classified.append(manip)
+            seen_distributions.add(before)
+            continue
+
+        if i == 0:
+            # First shift the animal has experienced
+            manip['shift_type'] = 'first_novel'
+        elif after in seen_distributions:
+            # Returning to a distribution the animal has seen before
+            manip['shift_type'] = 'familiar_return'
+        else:
+            # New distribution, but animal has experienced a shift before
+            manip['shift_type'] = 'second_experienced'
+
+        seen_distributions.add(before)
+        classified.append(manip)
+
+    return classified
+
+
+def group_shifts_by_type(
+    animals_with_shifts: Dict[str, Dict],
+) -> Dict[str, List[Dict]]:
+    """
+    Group all detected shifts across animals by shift_type.
+
+    Args:
+        animals_with_shifts: Dict of {animal_id: {'animal': AnimalData,
+            'manips': [...], 'baseline': [...], 'post': [...]}}
+
+    Returns:
+        Dict of {shift_type: [{'animal_id': str, 'animal': AnimalData,
+            'shift': dict, 'baseline': [...], 'post': [...]}]}
+    """
+    grouped = {}
+
+    for aid, info in animals_with_shifts.items():
+        animal = info['animal']
+        all_sessions = animal.get_sessions(stage=info.get('stage'))
+        classified = classify_shift_type(info['manips'])
+
+        for manip in classified:
+            if manip['type'] != 'distribution_shift':
+                continue
+
+            shift_type = manip['shift_type']
+            shift_idx = manip['session_idx']
+
+            if all_sessions is None:
+                # Fall back to using the stored baseline/post if available
+                baseline = info.get('baseline', [])
+                post = info.get('post', [])
+            else:
+                baseline = all_sessions[:shift_idx]
+                # Find next shift to bound the post period
+                later_shifts = [
+                    m for m in classified
+                    if m['session_idx'] > shift_idx
+                    and m['type'] == 'distribution_shift'
+                ]
+                if later_shifts:
+                    next_idx = later_shifts[0]['session_idx']
+                    post = all_sessions[shift_idx:next_idx]
+                else:
+                    post = all_sessions[shift_idx:]
+
+            entry = {
+                'animal_id': aid,
+                'animal': animal,
+                'shift': manip,
+                'baseline': baseline,
+                'post': post,
+            }
+
+            if shift_type not in grouped:
+                grouped[shift_type] = []
+            grouped[shift_type].append(entry)
+
+    return grouped
+
+
+# =============================================================================
+# PHASE BLOCK CONSTRUCTION
+# =============================================================================
+
+DEFAULT_PHASE_DEFINITIONS = {
+    'naive': {'n': 5},
+    'expert': {'n': 5},
+    'early_post': {'n': 5},
+    'late_post': {'skip': 8},
+}
+
+
+def build_phase_blocks(
+    animal: 'AnimalData',
+    stage: Optional[str] = 'Full_Task_Cont',
+    phase_definitions: Optional[Dict] = None,
+) -> Dict[str, list]:
+    """
+    Split an animal's sessions into named phase blocks.
+
+    Phases are defined relative to the first detected distribution shift:
+    - naive: first N sessions
+    - expert: last N sessions before the shift
+    - early_post: first N sessions after the shift
+    - late_post: sessions after a skip period post-shift
+
+    If no shift is detected, returns just naive and expert halves.
+
+    Args:
+        animal: AnimalData object
+        stage: Task stage to filter sessions
+        phase_definitions: Dict with phase names as keys. Each value is a dict
+            with 'n' (number of sessions) or 'skip' (sessions to skip before
+            starting the block). Defaults to DEFAULT_PHASE_DEFINITIONS.
+
+    Returns:
+        Dict of {phase_name: List[SessionData]}. Empty phases are excluded
+        (minimum 2 sessions per block).
+    """
+    if phase_definitions is None:
+        phase_definitions = DEFAULT_PHASE_DEFINITIONS
+
+    sessions = animal.get_sessions(stage=stage)
+    manips = detect_all_manipulations(animal, stage=stage)
+    n = len(sessions)
+
+    if not manips:
+        mid = n // 2
+        blocks = {
+            'naive': sessions[:min(5, mid)],
+            'expert': sessions[max(mid, n - 5):],
+        }
+        return {k: v for k, v in blocks.items() if len(v) >= 2}
+
+    shift_idx = manips[0]['session_idx']
+    blocks = {}
+
+    # Naive
+    naive_n = phase_definitions.get('naive', {}).get('n', 5)
+    naive_end = min(naive_n, shift_idx)
+    blocks['naive'] = sessions[:naive_end]
+
+    # Expert: last N sessions before shift
+    expert_n = phase_definitions.get('expert', {}).get('n', 5)
+    expert_start = max(naive_end, shift_idx - expert_n)
+    blocks['expert'] = sessions[expert_start:shift_idx]
+
+    # Early post
+    early_n = phase_definitions.get('early_post', {}).get('n', 5)
+    early_end = min(shift_idx + early_n, n)
+    blocks['early_post'] = sessions[shift_idx:early_end]
+
+    # Late post
+    skip = phase_definitions.get('late_post', {}).get('skip', 8)
+    late_start = shift_idx + skip
+    if late_start < n:
+        blocks['late_post'] = sessions[late_start:]
+
+    return {k: v for k, v in blocks.items() if len(v) >= 2}
