@@ -215,7 +215,7 @@ def condition_on_animal(
 # =============================================================================
 
 
-def cv_um_comparison(
+def cv_comparison(
     snpe_result: Dict[str, Any],
     fitting_data: FittingData,
     n_folds: int = 2,
@@ -225,9 +225,10 @@ def cv_um_comparison(
     n_bins: int = 8,
     seed: int = 42,
     sample_timeout: int = 200,
+    method: str = 'update_matrix',
 ) -> Dict[str, Any]:
     """
-    Cross-validated UM comparison using trained SNPE posterior.
+    Cross-validated matrix comparison using trained SNPE posterior.
 
     FIXED: splits by SESSION (block), not by trial.
 
@@ -236,7 +237,7 @@ def cv_um_comparison(
         2. For each fold:
             a. Condition posterior on training-fold observed stats
             b. Simulate on test-fold stimuli with posterior median params
-            c. Compute UM MSE on test fold
+            c. Compute matrix MSE on test fold (UM or conditional psych)
         3. Average across folds
 
     Args:
@@ -246,17 +247,25 @@ def cv_um_comparison(
         n_repeats: Number of repetitions with different fold splits
         n_posterior_samples: Samples from posterior for parameter estimation
         n_stochastic_reps: Stochastic simulations per fold
-        n_bins: Bins for update matrix
+        n_bins: Bins for matrices
         seed: Base random seed
         sample_timeout: Max sampling batch size for posterior
+        method: 'update_matrix' or 'conditional_psych' — which matrix
+                to use for the MSE score.
 
     Returns:
-        {'test_errors': array, 'mean_error': float, 'std_error': float}
+        {'test_errors': array, 'mean_error': float, 'std_error': float, 'method': str}
     """
     import torch
     from inference.simulator import (
         create_be_simulator, create_sc_simulator,
     )
+
+    if method not in ('update_matrix', 'conditional_psych'):
+        raise ValueError(
+            f"Unknown method '{method}'. "
+            f"Use 'update_matrix' or 'conditional_psych'."
+        )
 
     n_sessions = fitting_data.n_sessions
     model_type = snpe_result['model_type']
@@ -280,6 +289,7 @@ def cv_um_comparison(
             'test_errors': np.array([]),
             'mean_error': np.nan,
             'std_error': np.nan,
+            'method': method,
         }
 
     # Pre-compute per-session arrays
@@ -351,7 +361,7 @@ def cv_um_comparison(
                 for i, name in enumerate(param_names)
             }
 
-            # Test fold: pool trials, compute empirical UM
+            # Test fold: pool trials, compute empirical matrices
             test_stim = np.concatenate([session_stim[i] for i in test_sessions])
             test_cat = np.concatenate([session_cat[i] for i in test_sessions])
             test_ch = np.concatenate([session_choices[i] for i in test_sessions])
@@ -359,9 +369,10 @@ def cv_um_comparison(
             if len(test_stim) < 50:
                 continue
 
-            emp_um, _, _ = compute_update_matrix(
+            emp_um, emp_cm, _ = compute_update_matrix(
                 test_stim, test_ch, test_cat, n_bins=n_bins,
             )
+            emp_target = emp_um if method == 'update_matrix' else emp_cm
 
             # Simulate on test fold stimuli with posterior median params
             sim = creator(
@@ -371,7 +382,7 @@ def cv_um_comparison(
                 burn_in=burn_in,
             )
 
-            sim_ums = []
+            sim_targets = []
             for j in range(n_stochastic_reps):
                 try:
                     _, sim_ch = sim.simulate(
@@ -381,18 +392,19 @@ def cv_um_comparison(
                         seed=rep * 1000 + fold_idx * 100 + j,
                         return_choices=True,
                     )
-                    um_j, _, _ = compute_update_matrix(
+                    sim_um, sim_cm, _ = compute_update_matrix(
                         test_stim, sim_ch.flatten(), test_cat,
                         n_bins=n_bins,
                     )
-                    if not np.all(np.isnan(um_j)):
-                        sim_ums.append(um_j)
+                    sim_target = sim_um if method == 'update_matrix' else sim_cm
+                    if not np.all(np.isnan(sim_target)):
+                        sim_targets.append(sim_target)
                 except Exception:
                     continue
 
-            if sim_ums:
+            if sim_targets:
                 fold_errors.append(
-                    matrix_error(np.nanmean(sim_ums, axis=0), emp_um)
+                    matrix_error(np.nanmean(sim_targets, axis=0), emp_target)
                 )
 
         if fold_errors:
@@ -403,7 +415,15 @@ def cv_um_comparison(
         'test_errors': test_errors,
         'mean_error': float(np.nanmean(test_errors)) if len(test_errors) > 0 else np.nan,
         'std_error': float(np.nanstd(test_errors)) if len(test_errors) > 0 else np.nan,
+        'method': method,
     }
+
+
+# Backwards-compatible wrapper
+def cv_um_comparison(*args, **kwargs) -> Dict[str, Any]:
+    """Backwards-compatible wrapper: calls cv_comparison with method='update_matrix'."""
+    kwargs.pop('method', None)  # ignore if passed
+    return cv_comparison(*args, method='update_matrix', **kwargs)
 
 
 # =============================================================================
@@ -452,9 +472,14 @@ def run_animal_pipeline(
     n_cv_repeats: int = 64,
     seed: int = 42,
     verbose: bool = True,
+    method: str = 'update_matrix',
 ) -> Dict[str, Any]:
     """
     Full comparison for one animal using pre-trained amortised SNPE.
+
+    Args:
+        method: 'update_matrix' or 'conditional_psych' — which matrix
+                to score BE vs SC against during CV.
     """
     aid = fitting_data.animal_id
     if verbose:
@@ -468,16 +493,16 @@ def run_animal_pipeline(
         _print_params(be_cond['median_params'], 'BE')
         _print_params(sc_cond['median_params'], 'SC')
 
-    be_cv = cv_um_comparison(
-        be_snpe, fitting_data, n_repeats=n_cv_repeats, seed=seed,
+    be_cv = cv_comparison(
+        be_snpe, fitting_data, n_repeats=n_cv_repeats, seed=seed, method=method,
     )
-    sc_cv = cv_um_comparison(
-        sc_snpe, fitting_data, n_repeats=n_cv_repeats, seed=seed,
+    sc_cv = cv_comparison(
+        sc_snpe, fitting_data, n_repeats=n_cv_repeats, seed=seed, method=method,
     )
     comp = compare_models(be_cv, sc_cv)
 
     if verbose:
-        print(f"    CV: BE={comp['be_mean']:.5f} SC={comp['sc_mean']:.5f} "
+        print(f"    CV ({method}): BE={comp['be_mean']:.5f} SC={comp['sc_mean']:.5f} "
               f"p={comp['p_value']:.3g} → {comp['winner']}")
 
     return {
@@ -488,6 +513,7 @@ def run_animal_pipeline(
         'winner': comp['winner'], 'p': comp['p_value'],
         'be_mean': comp['be_mean'], 'sc_mean': comp['sc_mean'],
         'be_cv': be_cv, 'sc_cv': sc_cv,
+        'method': method,
     }
 
 
@@ -499,9 +525,14 @@ def run_animal_pipeline_part2(
     burn_in: int = 1000,
     seed: int = 42,
     verbose: bool = True,
+    method: str = 'update_matrix',
 ) -> Dict[str, Any]:
     """
     Full comparison for one animal using per-animal SNPE with UM.
+
+    Args:
+        method: 'update_matrix' or 'conditional_psych' — which matrix
+                to score BE vs SC against during CV.
     """
     aid = fitting_data.animal_id
     if verbose:
@@ -521,16 +552,16 @@ def run_animal_pipeline_part2(
     be_cond = condition_on_animal(be_snpe, fitting_data)
     sc_cond = condition_on_animal(sc_snpe, fitting_data)
 
-    be_cv = cv_um_comparison(
-        be_snpe, fitting_data, n_repeats=n_cv_repeats, seed=seed,
+    be_cv = cv_comparison(
+        be_snpe, fitting_data, n_repeats=n_cv_repeats, seed=seed, method=method,
     )
-    sc_cv = cv_um_comparison(
-        sc_snpe, fitting_data, n_repeats=n_cv_repeats, seed=seed,
+    sc_cv = cv_comparison(
+        sc_snpe, fitting_data, n_repeats=n_cv_repeats, seed=seed, method=method,
     )
     comp = compare_models(be_cv, sc_cv)
 
     if verbose:
-        print(f"    CV: BE={comp['be_mean']:.5f} SC={comp['sc_mean']:.5f} "
+        print(f"    CV ({method}): BE={comp['be_mean']:.5f} SC={comp['sc_mean']:.5f} "
               f"p={comp['p_value']:.3g} → {comp['winner']}")
 
     return {
@@ -541,6 +572,7 @@ def run_animal_pipeline_part2(
         'winner': comp['winner'], 'p': comp['p_value'],
         'be_mean': comp['be_mean'], 'sc_mean': comp['sc_mean'],
         'be_cv': be_cv, 'sc_cv': sc_cv,
+        'method': method,
     }
 
 

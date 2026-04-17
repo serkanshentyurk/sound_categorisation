@@ -113,7 +113,7 @@ COARSE_GRID = {
 # CORE: SIMULATE → UPDATE MATRIX
 # =============================================================================
 
-def _simulate_um(
+def _simulate_matrices(
     model_type: str,
     stimuli: np.ndarray,
     categories: np.ndarray,
@@ -128,14 +128,12 @@ def _simulate_um(
     seed: int,
     burn_in: int = 1000,
     n_bins: int = 8,
-) -> np.ndarray:
+) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Simulate model and compute update matrix.
-
-    This is the core bridge: new-architecture model → behav_utils UM.
+    Simulate model and compute both update matrix and conditional psychometric matrix.
 
     Returns:
-        update_matrix: (n_bins, n_bins) array
+        (update_matrix, conditional_matrix): each (n_bins, n_bins)
     """
     rng = np.random.default_rng(seed)
 
@@ -177,8 +175,8 @@ def _simulate_um(
     else:
         raise ValueError(f"Unknown model_type: {model_type}")
 
-    # Compute update matrix using behav_utils
-    um, _, _ = compute_update_matrix(
+    # Compute both matrices using behav_utils
+    um, cm, _ = compute_update_matrix(
         stimuli, choices, categories,
         n_bins=n_bins,
         trial_filter='post_correct',
@@ -186,6 +184,13 @@ def _simulate_um(
         not_blockstart=not_blockstart,
     )
 
+    return um, cm
+
+
+# Backwards-compatible wrapper
+def _simulate_um(*args, **kwargs) -> np.ndarray:
+    """Backwards-compatible wrapper returning only the update matrix."""
+    um, _ = _simulate_matrices(*args, **kwargs)
     return um
 
 
@@ -199,7 +204,7 @@ def _evaluate_single_point(
     categories: np.ndarray,
     no_response: np.ndarray,
     not_blockstart: np.ndarray,
-    target_um: np.ndarray,
+    target_matrix: np.ndarray,
     sigma_percep: float,
     A_repulsion: float,
     param1: float,
@@ -209,15 +214,29 @@ def _evaluate_single_point(
     seed: int,
     burn_in: int,
     n_bins: int,
+    fit_target: str = 'update_matrix',
 ) -> float:
-    """Evaluate one grid point: simulate → UM → MSE against target."""
+    """Evaluate one grid point: simulate → select matrix → MSE against target.
+
+    Args:
+        fit_target: 'update_matrix' or 'conditional_psych'.
+    """
     try:
-        model_um = _simulate_um(
+        um, cm = _simulate_matrices(
             model_type, stimuli, categories, no_response, not_blockstart,
             sigma_percep, A_repulsion, param1, param2,
             param1_name, param2_name, seed, burn_in, n_bins,
         )
-        return matrix_error(model_um, target_um)
+        if fit_target == 'update_matrix':
+            model_matrix = um
+        elif fit_target == 'conditional_psych':
+            model_matrix = cm
+        else:
+            raise ValueError(
+                f"Unknown fit_target '{fit_target}'. "
+                f"Use 'update_matrix' or 'conditional_psych'."
+            )
+        return matrix_error(model_matrix, target_matrix)
     except Exception:
         return np.nan
 
@@ -229,22 +248,29 @@ def parameter_sweep(
     categories: np.ndarray,
     no_response: np.ndarray,
     not_blockstart: np.ndarray,
-    target_um: np.ndarray,
+    target_matrix: np.ndarray,
     seed: int,
     burn_in: int = 1000,
     n_bins: int = 8,
     n_jobs: int = -1,
+    fit_target: str = 'update_matrix',
 ) -> Dict[str, Any]:
     """
     Grid search over all parameter combinations.
 
     Parallelised via joblib. Returns the best parameters and their error.
 
+    Args:
+        target_matrix: The empirical matrix to fit against (UM or conditional).
+                       Must match fit_target.
+        fit_target: 'update_matrix' or 'conditional_psych'.
+
     Returns:
         {
             'best_params': dict of named parameters,
             'best_error': float,
             'errors': 4D array (sigma × A × param1 × param2),
+            'fit_target': str,
         }
     """
     sp_vals = grid.sigma_percep_values
@@ -264,9 +290,9 @@ def parameter_sweep(
     results = Parallel(n_jobs=n_jobs)(
         delayed(_evaluate_single_point)(
             model_type, stimuli, categories, no_response, not_blockstart,
-            target_um, sp, ar, p1, p2,
+            target_matrix, sp, ar, p1, p2,
             grid.model_param1_name, grid.model_param2_name,
-            seed, burn_in, n_bins,
+            seed, burn_in, n_bins, fit_target,
         )
         for _, _, _, _, sp, ar, p1, p2 in jobs
     )
@@ -294,6 +320,7 @@ def parameter_sweep(
         'best_params': best_params,
         'best_error': float(best_error),
         'errors': errors,
+        'fit_target': fit_target,
     }
 
 
@@ -358,6 +385,7 @@ def grid_search_cv(
     burn_in: int = 1000,
     n_bins: int = 8,
     n_jobs: int = -1,
+    fit_target: str = 'update_matrix',
 ) -> Dict[str, Any]:
     """
     Full grid-search cross-validation for one model, one seed.
@@ -376,6 +404,9 @@ def grid_search_cv(
         burn_in: Burn-in trials for model initialisation
         n_bins: Number of bins for update matrix
         n_jobs: Parallelism for grid search (-1 = all cores)
+        fit_target: 'update_matrix' or 'conditional_psych'.
+                    Determines which matrix is used as the fitting target
+                    and the test-fold error metric.
 
     Returns:
         {
@@ -385,11 +416,18 @@ def grid_search_cv(
             'best_params_single': best params from best fold,
             'model': model_type,
             'seed': seed,
+            'fit_target': str,
         }
     """
-        
+
     if grid is None:
         grid = DEFAULT_GRID[model_type]
+
+    if fit_target not in ('update_matrix', 'conditional_psych'):
+        raise ValueError(
+            f"Unknown fit_target '{fit_target}'. "
+            f"Use 'update_matrix' or 'conditional_psych'."
+        )
 
     data = _sessions_to_arrays(sessions)
     stim = data['stimuli']
@@ -405,34 +443,36 @@ def grid_search_cv(
     fold_params = []
 
     for train_mask, test_mask in folds:
-        # Empirical UM on training data
-        train_um, _, _ = compute_update_matrix(
+        # Empirical matrices on training data
+        train_um, train_cm, _ = compute_update_matrix(
             stim[train_mask], choices[train_mask], cat[train_mask],
             n_bins=n_bins, trial_filter='post_correct',
             no_response=no_resp[train_mask],
             not_blockstart=nbs[train_mask],
         )
+        train_target = train_um if fit_target == 'update_matrix' else train_cm
 
         # Grid search on training data
         sweep = parameter_sweep(
             model_type, grid,
             stim[train_mask], cat[train_mask],
             no_resp[train_mask], nbs[train_mask],
-            train_um, seed, burn_in, n_bins, n_jobs,
+            train_target, seed, burn_in, n_bins, n_jobs,
+            fit_target=fit_target,
         )
 
         best = sweep['best_params']
         fold_params.append(best)
 
-        # Evaluate on test fold
-        test_um_emp, _, _ = compute_update_matrix(
+        # Evaluate on test fold: simulate both matrices, pick the right one
+        test_um_emp, test_cm_emp, _ = compute_update_matrix(
             stim[test_mask], choices[test_mask], cat[test_mask],
             n_bins=n_bins, trial_filter='post_correct',
             no_response=no_resp[test_mask],
             not_blockstart=nbs[test_mask],
         )
 
-        test_um_model = _simulate_um(
+        test_um_model, test_cm_model = _simulate_matrices(
             model_type,
             stim[test_mask], cat[test_mask],
             no_resp[test_mask], nbs[test_mask],
@@ -442,7 +482,10 @@ def grid_search_cv(
             seed, burn_in, n_bins,
         )
 
-        test_errors.append(matrix_error(test_um_model, test_um_emp))
+        if fit_target == 'update_matrix':
+            test_errors.append(matrix_error(test_um_model, test_um_emp))
+        else:
+            test_errors.append(matrix_error(test_cm_model, test_cm_emp))
 
     avg_error = float(np.mean(test_errors))
     best_fold_idx = int(np.argmin(test_errors))
@@ -454,6 +497,7 @@ def grid_search_cv(
         'best_params_single': fold_params[best_fold_idx],
         'model': model_type,
         'seed': seed,
+        'fit_target': fit_target,
     }
 
 
@@ -470,9 +514,13 @@ def run_cv_both_models(
     burn_in: int = 1000,
     n_bins: int = 8,
     n_jobs: int = -1,
+    fit_target: str = 'update_matrix',
 ) -> Dict[str, Dict]:
     """
     Run grid-search CV for both BE and SC on the same data.
+
+    Args:
+        fit_target: 'update_matrix' or 'conditional_psych'.
 
     Returns:
         {'BE': {cv_result_dict}, 'SC': {cv_result_dict}}
@@ -482,6 +530,7 @@ def run_cv_both_models(
         results[model_type] = grid_search_cv(
             sessions, model_type, grid,
             n_folds, seed, burn_in, n_bins, n_jobs,
+            fit_target=fit_target,
         )
     return results
 
@@ -496,6 +545,7 @@ def fit_sessions_blocked(
     burn_in: int = 1000,
     seed: int = 42,
     n_seeds: int = 5,
+    fit_target: str = 'update_matrix',
 ) -> Dict[str, Dict[str, Any]]:
     """
     Fit model parameters to phase-blocked groups of sessions.
@@ -511,6 +561,7 @@ def fit_sessions_blocked(
         burn_in: Burn-in trials for simulation
         seed: Base random seed
         n_seeds: Number of seeds to average over
+        fit_target: 'update_matrix' or 'conditional_psych'.
 
     Returns:
         {phase_name: {
@@ -521,18 +572,22 @@ def fit_sessions_blocked(
             'session_indices': list,
             'per_seed_errors': list,
             'per_seed_params': list,
+            'fit_target': str,
         }}
     """
     from analysis.grid_search import (
-        grid_search_cv, _sessions_to_arrays, DEFAULT_GRID, ParameterGrid,
-        _simulate_um, parameter_sweep,
+        _sessions_to_arrays, DEFAULT_GRID, parameter_sweep,
     )
-    from behav_utils.analysis.update_matrix import (
-        compute_update_matrix, matrix_error,
-    )
+    from behav_utils.analysis.update_matrix import compute_update_matrix
 
     if grid is None:
         grid = DEFAULT_GRID[model_type]
+
+    if fit_target not in ('update_matrix', 'conditional_psych'):
+        raise ValueError(
+            f"Unknown fit_target '{fit_target}'. "
+            f"Use 'update_matrix' or 'conditional_psych'."
+        )
 
     results = {}
 
@@ -541,12 +596,17 @@ def fit_sessions_blocked(
             results[phase_name] = {
                 'best_params': {}, 'train_error': np.nan,
                 'n_sessions': 0, 'n_trials': 0,
-                'session_indices': [],
+                'session_indices': [], 'fit_target': fit_target,
             }
             continue
 
         # Pool sessions into flat arrays
-        stimuli, choices, categories, block_ids = _sessions_to_arrays(sessions)
+        data = _sessions_to_arrays(sessions)
+        stimuli = data['stimuli']
+        categories = data['categories']
+        choices = data['choices']
+        no_resp = data['no_response']
+        nbs = data['not_blockstart']
         n_trials = len(stimuli)
 
         if n_trials < 50:
@@ -554,11 +614,16 @@ def fit_sessions_blocked(
                 'best_params': {}, 'train_error': np.nan,
                 'n_sessions': len(sessions), 'n_trials': n_trials,
                 'session_indices': [s.session_idx for s in sessions],
+                'fit_target': fit_target,
             }
             continue
 
-        # Compute empirical UM
-        emp_um, _, _ = compute_update_matrix(stimuli, choices, categories)
+        # Compute empirical matrices
+        emp_um, emp_cm, _ = compute_update_matrix(
+            stimuli, choices, categories,
+            no_response=no_resp, not_blockstart=nbs,
+        )
+        target = emp_um if fit_target == 'update_matrix' else emp_cm
 
         # Grid search (no CV — fit to all data in this block)
         best_error = np.inf
@@ -572,9 +637,12 @@ def fit_sessions_blocked(
                 grid=grid,
                 stimuli=stimuli,
                 categories=categories,
-                empirical_um=emp_um,
-                burn_in=burn_in,
+                no_response=no_resp,
+                not_blockstart=nbs,
+                target_matrix=target,
                 seed=seed + s_offset,
+                burn_in=burn_in,
+                fit_target=fit_target,
             )
             per_seed_errors.append(sweep_result['best_error'])
             per_seed_params.append(sweep_result['best_params'])
@@ -592,6 +660,7 @@ def fit_sessions_blocked(
             'session_indices': [s.session_idx for s in sessions],
             'per_seed_errors': per_seed_errors,
             'per_seed_params': per_seed_params,
+            'fit_target': fit_target,
         }
 
     return results
@@ -603,6 +672,7 @@ def fit_sessions_individual(
     grid: 'ParameterGrid' = None,
     burn_in: int = 1000,
     seed: int = 42,
+    fit_target: str = 'update_matrix',
 ) -> List[Dict[str, Any]]:
     """
     Fit model parameters to each session independently.
@@ -616,11 +686,12 @@ def fit_sessions_individual(
         grid: Parameter grid (default: DEFAULT_GRID[model_type])
         burn_in: Burn-in trials for simulation
         seed: Random seed
+        fit_target: 'update_matrix' or 'conditional_psych'.
 
     Returns:
         List of dicts (one per session), each with:
             'session_idx', 'session_id', 'best_params', 'error',
-            'n_trials', 'converged'
+            'n_trials', 'converged', 'fit_target'
     """
     results = []
 
@@ -639,6 +710,7 @@ def fit_sessions_individual(
             burn_in=burn_in,
             seed=seed,
             n_seeds=1,
+            fit_target=fit_target,
         )
         r = block_result['single']
         result.update({
@@ -646,6 +718,7 @@ def fit_sessions_individual(
             'error': r['train_error'],
             'n_trials': r['n_trials'],
             'converged': not np.isnan(r['train_error']),
+            'fit_target': fit_target,
         })
         results.append(result)
 
@@ -664,6 +737,7 @@ def compare_static_vs_dynamic(
     burn_in: int = 1000,
     seed: int = 42,
     n_seeds: int = 5,
+    fit_target: str = 'update_matrix',
 ) -> Dict[str, Any]:
     """
     Compare a single static fit (all sessions pooled) against
@@ -678,6 +752,7 @@ def compare_static_vs_dynamic(
         burn_in: Burn-in trials
         seed: Random seed
         n_seeds: Seeds to average
+        fit_target: 'update_matrix' or 'conditional_psych'.
 
     Returns:
         {
@@ -687,11 +762,18 @@ def compare_static_vs_dynamic(
             'dynamic_total_error': float,
             'improvement_ratio': float,  # dynamic/static (< 1 means dynamic is better)
             'per_phase_comparison': [{phase, static_error, dynamic_error, ...}],
+            'fit_target': str,
         }
     """
     from behav_utils.analysis.update_matrix import (
         compute_update_matrix, matrix_error,
     )
+
+    if fit_target not in ('update_matrix', 'conditional_psych'):
+        raise ValueError(
+            f"Unknown fit_target '{fit_target}'. "
+            f"Use 'update_matrix' or 'conditional_psych'."
+        )
 
     # Static fit: pool everything
     static_result = fit_sessions_blocked(
@@ -701,6 +783,7 @@ def compare_static_vs_dynamic(
         burn_in=burn_in,
         seed=seed,
         n_seeds=n_seeds,
+        fit_target=fit_target,
     )['all']
 
     # Dynamic fit: per phase
@@ -711,10 +794,11 @@ def compare_static_vs_dynamic(
         burn_in=burn_in,
         seed=seed,
         n_seeds=n_seeds,
+        fit_target=fit_target,
     )
 
     # Evaluate static params on each phase separately
-    from analysis.grid_search import _sessions_to_arrays, _simulate_um
+    from analysis.grid_search import _sessions_to_arrays, _simulate_matrices
 
     per_phase_comparison = []
     dynamic_total_weighted_error = 0.0
@@ -725,24 +809,53 @@ def compare_static_vs_dynamic(
         if not phase_sessions:
             continue
 
-        stimuli, choices, categories, _ = _sessions_to_arrays(phase_sessions)
+        data = _sessions_to_arrays(phase_sessions)
+        stimuli = data['stimuli']
+        categories = data['categories']
+        choices = data['choices']
+        no_resp = data['no_response']
+        nbs = data['not_blockstart']
         n_trials = len(stimuli)
         if n_trials < 50:
             continue
 
-        emp_um, _, _ = compute_update_matrix(stimuli, choices, categories)
+        emp_um, emp_cm, _ = compute_update_matrix(
+            stimuli, choices, categories,
+            no_response=no_resp, not_blockstart=nbs,
+        )
+        emp_target = emp_um if fit_target == 'update_matrix' else emp_cm
 
         # Static params evaluated on this phase
-        if static_result['best_params']:
-            static_um = _simulate_um(
+        sp = static_result.get('best_params', {})
+        if sp:
+            # Determine param names from grid
+            if grid is None:
+                from analysis.grid_search import DEFAULT_GRID
+                _grid = DEFAULT_GRID[model_type]
+            else:
+                _grid = grid
+            p1_name = _grid.model_param1_name
+            p2_name = _grid.model_param2_name
+
+            static_um, static_cm = _simulate_matrices(
                 model_type=model_type,
-                params=static_result['best_params'],
                 stimuli=stimuli,
                 categories=categories,
-                burn_in=burn_in,
+                no_response=no_resp,
+                not_blockstart=nbs,
+                sigma_percep=sp['sigma_percep'],
+                A_repulsion=sp['A_repulsion'],
+                param1=sp[p1_name],
+                param2=sp[p2_name],
+                param1_name=p1_name,
+                param2_name=p2_name,
                 seed=seed,
+                burn_in=burn_in,
             )
-            static_phase_error = matrix_error(static_um, emp_um)
+            static_model_matrix = (
+                static_um if fit_target == 'update_matrix' else static_cm
+            )
+            static_phase_error = matrix_error(static_model_matrix, emp_target)
         else:
             static_phase_error = np.nan
 
@@ -780,4 +893,5 @@ def compare_static_vs_dynamic(
         'dynamic_total_error': dynamic_total,
         'improvement_ratio': improvement,
         'per_phase_comparison': per_phase_comparison,
+        'fit_target': fit_target,
     }

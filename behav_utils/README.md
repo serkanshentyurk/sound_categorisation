@@ -1,265 +1,269 @@
-# Behaviour Utils
+# behav_utils
 
-**Config-driven behavioural data analysis for neuroscience.**
+Config-driven Python library for loading, analysing, and plotting trial-based behavioural data from head-fixed rodent experiments.
 
-If you run trial-based behavioural experiments — 2-AFC discrimination, go/no-go, forced choice — you've written the same data loading, psychometric fitting, and plotting code for every project. Column names change, file structures differ, choice encodings vary, but the underlying analysis is the same: stimuli go in, choices come out, and you want to know how the animal's behaviour evolves across sessions.
+## Overview
 
-behav_utils solves this with a single YAML config file. Map your CSV columns once, and the entire analysis pipeline works — summary statistics, psychometric curves, serial dependence matrices, learning trajectories, multi-animal comparisons. Move to a new experiment or a new lab, write a new config, and everything keeps working.
-
-## What It Does
-
-```
-Your CSV files          →  config.yaml  →  behav_utils  →  Analysis & Plots
-(any column names,         (column map,     (loading,       (psychometric curves,
- any file structure,        task params,      stats,          trajectories,
- any choice encoding)       analysis          plotting)       feature matrices,
-                            defaults)                         update matrices)
-```
-
-### Data hierarchy
-
-```
-ExperimentData                    ← all animals
-  └── AnimalData                  ← one animal, all sessions
-        └── SessionData           ← one session
-              ├── SessionMetadata ← task parameters
-              └── TrialData       ← trial-by-trial arrays
-                    ├── stimulus, choice, outcome, correct, category
-                    ├── reaction_time, abort, opto_on, ...
-                    └── any additional columns you define
-```
-
-Every level has **stats**, **plotting**, and **filtering** methods. Plot a psychometric curve for one session, overlay curves across an animal's learning, or show group-mean accuracy trajectories across 40 animals — same API, different level.
-
-### Key features
-
-- **Config-driven** — one YAML file maps your CSV columns. No library code changes between projects.
-- **Stats at every level** — `session.stats()`, `animal.stat_trajectory()`, `experiment.feature_matrix()`
-- **20+ summary statistics** — accuracy, psychometric parameters, recency, serial dependence, history regression, choice entropy, and more. All via a registry pattern — add your own with `@register_stat`.
-- **Plotting at every level** — psychometric curves (single, overlay, grid, pooled with bootstrap CIs), trial rasters, stat trajectories, update matrices. All return `(fig, ax)` for customisation.
-- **Query API** — `experiment.plot_trajectory('accuracy', combine='mean_sem', stage='Full_Task_Cont')` handles animal selection, session filtering, and aggregation in one call.
-- **Model-agnostic synthetic data** — bring your own simulator or use built-in ones. Test your pipeline without real data.
-- **Flexible column access** — any column in your CSV is accessible. Define custom column groups for your specific model inputs.
-- **Neural data ready** — interface defined for trial-aligned calcium imaging and electrophysiology.
-
----
+`behav_utils` provides a clean data class hierarchy and a registry of summary statistics for 2-AFC behavioural tasks. It is designed to be reusable across projects in the lab — the library knows nothing about specific computational models (BE, SC, etc.) and contains no project-specific analysis code.
 
 ## Installation
 
 ```bash
-git clone https://github.com/yourusername/behav_utils.git
-cd behav_utils
+# Development mode (recommended during active use)
 pip install -e .
+
+# Or standard install
+pip install .
 ```
 
-Dependencies: `numpy`, `pandas`, `matplotlib`, `scipy`, `pyyaml`
-
----
+Requires Python 3.10+.
 
 ## Quick Start
 
-### 1. Write a config
-
-Your CSV has columns called `Stim_Relative`, `Choice`, `Trial_Outcome`. Your behav_utils config maps them:
-
-```yaml
-# config.yaml
-project:
-  name: "My Experiment"
-
-file_structure:
-  data_dir: "/path/to/data"
-  behaviour_file: "trial_summary*.csv"
-
-task:
-  boundary: 0.0
-  stimulus_range: [-1.0, 1.0]
-  choice_mapping:
-    type: "spatial_to_category"
-    no_response_value: 0
-    contingency_field: "sound_contingency"
-    contingency_rules:
-      Standard:
-        -1: 0    # left → category A
-        1: 1     # right → category B
-
-columns:
-  trial_number: { csv_name: "Trial_Number", dtype: int }
-  stimulus:     { csv_name: "Stim_Relative", dtype: float }
-  choice:       { csv_name: "Choice", dtype: int }
-  outcome:      { csv_name: "Trial_Outcome", dtype: str }
-  correct:      { csv_name: "Correct", dtype: bool }
-  reaction_time: { csv_name: "Response_Latency", dtype: float, optional: true }
-
-session_metadata:
-  stage: { csv_name: "Stage", dtype: str }
-
-analysis:
-  default_stage: "Full_Task_Cont"
-```
-
-See the [Configuration Guide](docs/config_guide.md) for all options and examples for different experiment types.
-
-### 2. Load and explore
-
 ```python
-from behav_utils import load_experiment, apply_style
-apply_style()
+from behav_utils import load_experiment
 
+# Load from a YAML config that maps CSV columns to internal names
 experiment = load_experiment('config.yaml')
 animal = experiment.get_animal('SS05')
-session = animal.sessions[-1]
+session = animal.sessions[0]
 
-# Stats
-stats = session.stats(['accuracy', 'recency', 'psychometric'])
-print(f"Accuracy: {stats['accuracy']:.3f}")
-print(f"Recency: {stats['recency']:.3f}")
+# Per-session summary statistics
+session.stats(['accuracy', 'recency', 'win_stay'])
+# → {'accuracy': 0.82, 'recency': 0.15, 'win_stay': 0.71}
 
-# Psychometric curve
-fig, ax, info = session.plot_psychometric(show_params=True)
+# Stat trajectory across sessions
+animal.stat_trajectory('accuracy')
+# → array([0.54, 0.61, 0.68, 0.75, 0.82, ...])
+
+# Plotting
+session.plot_psychometric()
+animal.plot_trajectory('accuracy')
+experiment.plot_trajectory('accuracy', combine='mean_sem')
 ```
 
-### 3. Learning trajectories
+## Data Classes
 
-```python
-# One animal
-fig, ax = animal.plot_trajectory('accuracy')
+```
+ExperimentData
+  └── AnimalData (one per animal)
+        └── SessionData (one per session)
+              ├── SessionMetadata (fields dict: animal_id, stage, protocol, ...)
+              └── TrialData (arrays: stimulus, choice, correct, outcome, ...)
 
-# All animals, mean ± SEM
-fig, ax = experiment.plot_trajectory(
-    'accuracy', combine='mean_sem', stage='Full_Task_Cont',
-)
+FittingData    (flat arrays pooled from sessions, for model fitting)
 ```
 
-### 4. Feature matrix
+**`TrialData`** holds per-trial numpy arrays. Required: `stimulus`, `choice`, `correct`, `outcome`, `trial_number`. Optional: `reaction_time`, `abort`, `opto_on`, `category`.
 
-```python
-# All stats × all sessions for one animal
-df = animal.feature_matrix()
+**`SessionData`** wraps `TrialData` with metadata and provides `.stats()` for computing summary statistics. Also exposes `.plot_psychometric()` and `.plot_trials()`.
 
-# Pooled across all animals
-df = experiment.feature_matrix(min_sessions=10)
+**`AnimalData`** holds a list of sessions and provides `.get_sessions(stage=...)` for filtering, `.stat_trajectory(stat_name)` for tracking a statistic across sessions, and plotting methods.
+
+**`SessionMetadata`** is a flexible dict wrapper. Fields are populated from the YAML config's column mappings. Common properties (`animal_id`, `stage`, `date`) are exposed as attributes.
+
+## Config-Driven Loading
+
+A YAML config file defines how CSV columns map to internal field names:
+
+```yaml
+project:
+  name: "My Experiment"
+  data_dir: "/path/to/data"
+
+session_metadata:
+  animal_id:
+    csv_name: "Subject"
+    dtype: str
+  stage:
+    csv_name: "Training_Stage"
+    dtype: str
+
+trial_data:
+  stimulus:
+    csv_name: "Stimulus_Value"
+    dtype: float
+  choice:
+    csv_name: "Response_Side"
+    dtype: float
+    mapping: {"Left": 0, "Right": 1}
 ```
 
-### 5. Access any column
+This means `behav_utils` works with any lab's CSV format without code changes — just update the config.
 
-```python
-# Standard arrays
-arrays = session.trials.get_arrays()
-stimuli = arrays['stimuli']
-choices = arrays['choices']
+## Summary Statistics
 
-# Any column from your CSV
-rt = session.trials.get_field('reaction_time')
-location = session.trials.get_field('location_x')
+Over 20 registered statistics, computed via `session.stats()` or `compute_summary_stats()`:
 
-# Multiple fields across sessions (for model fitting)
-data = animal.get_trial_data(
-    fields=['stimuli', 'choices', 'categories', 'reaction_times'],
-    stage='Full_Task_Cont',
-)
-# Returns per-session arrays ready for your model
-```
+| Category | Stats |
+|---|---|
+| Performance | `accuracy`, `hard_accuracy`, `easy_accuracy`, `hard_easy_ratio`, `binned_accuracy` |
+| Psychometric | `psychometric` (PSE, slope, lapse), `conditional_psychometric`, `psychometric_gof` |
+| History effects | `recency`, `stimulus_recency`, `recency_divergence`, `history_interaction_r2` |
+| Choice patterns | `win_stay`, `lose_shift`, `choice_autocorr`, `perseveration`, `choice_entropy` |
+| Bias | `side_bias` |
+| Sensitivity | `stimulus_sensitivity`, `sd_profile`, `binned_choice_prob` |
+| Sequential | `update_matrix` (8×8 conditional P(choice) matrix) |
+| History model | `logistic_history` (GLM weights for recent stimuli/choices) |
 
-### 6. Without real data
-
-```python
-from behav_utils import generate_synthetic_animal
-from behav_utils.data.synthetic import noisy_psychometric_simulator
-
-animal, info = generate_synthetic_animal(
-    n_sessions=20,
-    simulator=noisy_psychometric_simulator,
-    simulator_kwargs={'sigma': 0.3, 'lapse': 0.05},
-)
-
-# Everything works the same
-fig, ax, info = animal.sessions[10].plot_psychometric()
-df = animal.feature_matrix()
-```
-
-### 7. Custom model as simulator
-
-```python
-def my_model(stimuli, categories, rng, learning_rate=0.1, **kwargs):
-    """Your model here — returns choices as 0/1 array."""
-    ...
-    return choices
-
-animal, info = generate_synthetic_animal(
-    simulator=my_model,
-    per_session_simulator_kwargs=[
-        {'learning_rate': 0.5 - i * 0.02} for i in range(20)
-    ],
-)
-```
-
-### 8. Custom summary statistic
+### Adding a new statistic
 
 ```python
 from behav_utils.analysis.summary_stats import register_stat
 
-@register_stat('my_metric')
-def compute_my_metric(choices, stimuli, categories):
-    valid = ~np.isnan(choices)
-    return float(np.mean(choices[valid] == categories[valid]))
-
-# Immediately available everywhere
-session.stats(['my_metric'])
-df = animal.feature_matrix()  # includes my_metric
+@register_stat('my_stat')
+def compute_my_stat(choices, stimuli, categories, **kwargs):
+    """Compute something from trial arrays."""
+    return {'my_value': float(np.mean(choices))}
 ```
 
----
+The function receives filtered trial arrays and returns a dict of named values. It is then available via `session.stats(['my_stat'])`.
+
+## Update Matrix
+
+The update matrix quantifies how the previous stimulus influences the current choice, conditioned on stimulus bins:
+
+```python
+from behav_utils.analysis.update_matrix import compute_update_matrix
+
+um, conditional_matrix, info = compute_update_matrix(
+    stimuli, choices, categories,
+    n_bins=8,
+    trial_filter='post_correct',
+)
+# um: (8, 8) — shift in P(Right) relative to marginal
+# conditional_matrix: (8, 8) — absolute P(Right) per condition
+```
+
+Pooling across sessions:
+
+```python
+from behav_utils.analysis.update_matrix import compute_update_matrix_from_sessions
+
+um = compute_update_matrix_from_sessions(sessions, method='pool')
+```
+
+## Session Selection
+
+Preset filters for common session subsets:
+
+```python
+from behav_utils.data.selection import select_sessions
+
+expert_sessions = select_sessions(animal, 'expert_uniform')
+all_task_sessions = select_sessions(animal, 'all_task')
+```
+
+Custom filters via `SessionFilter` frozen dataclass.
+
+## Synthetic Data
+
+Generate synthetic animals and sessions for validation:
+
+```python
+from behav_utils import generate_synthetic_animal, sample_stimuli
+
+# With a custom simulator
+def my_simulator(stimuli, categories, rng):
+    # Your model here
+    return choices
+
+animal, sessions = generate_synthetic_animal(
+    animal_id='SYN01',
+    n_sessions=20,
+    trials_per_session=350,
+    simulator=my_simulator,
+)
+```
+
+## Plotting
+
+```python
+# Session-level
+session.plot_psychometric(ax=ax)
+
+# Animal-level
+animal.plot_trajectory('accuracy')
+animal.plot_psychometric()  # pooled across sessions
+
+# Experiment-level
+experiment.plot_trajectory('accuracy', combine='mean_sem')
+
+# Update matrices
+from behav_utils.plotting.update_matrix import plot_phase_update_matrices
+plot_phase_update_matrices({'expert': um_expert, 'post_shift': um_post})
+
+# Direct function access
+from behav_utils.plotting.psychometric import plot_psychometric_curve
+from behav_utils.plotting.trajectory import plot_stat_trajectory
+```
 
 ## Package Structure
 
 ```
 behav_utils/
+├── __init__.py
 ├── config/
-│   └── schema.py              # Config dataclass, YAML loading, validation
+│   ├── __init__.py
+│   └── schema.py           # YAML config loading and validation
 ├── data/
-│   ├── structures.py          # ExperimentData, AnimalData, SessionData, TrialData
-│   ├── loading.py             # Config-driven CSV loading
-│   ├── synthetic.py           # Synthetic data generation
-│   └── neural.py              # Neural data container (stub)
+│   ├── __init__.py
+│   ├── structures.py        # TrialData, SessionData, AnimalData, FittingData
+│   ├── loading.py           # CSV → data classes
+│   ├── selection.py         # SessionFilter, select_sessions
+│   ├── synthetic.py         # Synthetic data generation
+│   └── neural.py            # NeuralData, Epoch (stub for imaging data)
 ├── analysis/
-│   ├── utils.py               # cumulative_gaussian, generate_stimuli
-│   ├── psychometry.py         # Psychometric curve fitting + bootstrap
-│   ├── summary_stats.py       # Registry of 20+ summary statistics
-│   ├── update_matrix.py       # Serial dependence matrices
-│   └── session_features.py    # Session-level feature matrix builder
-├── plotting/
-│   ├── styles.py              # Colours, themes, defaults
-│   ├── psychometric.py        # Psychometric curves (single, overlay, grid, pooled)
-│   ├── session.py             # Trial rasters
-│   ├── trajectory.py          # Stat trajectories across sessions/animals
-│   └── update_matrix.py       # Update matrix heatmaps + profiles
-└── configs/
-    └── sound_categorisation.yaml  # Example config
+│   ├── __init__.py
+│   ├── summary_stats.py     # Stat registry + 20+ registered stats
+│   ├── update_matrix.py     # Update matrix computation
+│   ├── psychometry.py       # Psychometric curve fitting
+│   ├── session_features.py  # Feature matrix construction
+│   └── utils.py             # Shared helpers
+└── plotting/
+    ├── __init__.py
+    ├── psychometric.py      # Psychometric curve plots
+    ├── update_matrix.py     # Update matrix heatmaps
+    ├── session.py           # Per-session visualisations
+    ├── trajectory.py        # Stat trajectory plots
+    └── styles.py            # Colours, style constants
 ```
 
-## Documentation
+## Scope
 
-| Document | What it covers |
-|----------|---------------|
-| [Configuration Guide](docs/config_guide.md) | How to write a config. Column mapping, choice encoding, file structure. Three worked examples for different experiment types. |
-| [Data Structures Reference](docs/data_structures.md) | Class hierarchy, every field and method, data flow diagram. |
-| [Summary Statistics Reference](docs/summary_stats.md) | All 20+ stats with formulas, interpretation, and usage. |
-| [Example Notebook](notebooks/example_workflow.ipynb) | Full workflow on synthetic data. Anyone can run it. |
+`behav_utils` deliberately excludes:
 
-## Design Principles
+- Computational models (BE, SC, or any other model)
+- Simulation-based inference (SBI, SNPE, posterior estimation)
+- Adaptation/learning analysis
+- SLDS or HMM state inference
+- Optogenetic analysis
+- Any project-specific code
 
-1. **Config over code** — column names in YAML, not scattered through analysis scripts
-2. **Methods at every level** — session, animal, and experiment all have `.stats()` and `.plot_*()`
-3. **Dual access** — `session.plot_psychometric()` calls `plot_psychometric(stimuli, choices)` internally. Use either.
-4. **Always return `(fig, ax)`** — every plot function. No exceptions.
-5. **Raw arrays underneath** — all analysis functions take plain numpy arrays. Data classes are convenience, not lock-in.
-6. **Register to extend** — `@register_stat('name')` and your stat works everywhere instantly.
+These belong in the project repository that imports `behav_utils`.
 
-## Status
+## Dependencies
 
-Core modules (loading, analysis, plotting) are stable and tested. Neural data support is stubbed. Not yet pip-published but installable from source.
+- numpy
+- scipy
+- pandas
+- matplotlib
+- scikit-learn
+- pyyaml
+
+## Roadmap
+
+- [ ] PyPI release (`pip install behav_utils`)
+- [ ] Full test suite with pytest
+- [ ] Formal documentation (Sphinx or MkDocs)
+- [ ] Type annotations throughout
+- [ ] Neural data integration (calcium imaging, spike data)
+- [ ] Multi-animal batch analysis utilities
 
 ## Licence
 
-MIT
+TBD
+
+## Citation
+
+If you use `behav_utils` in published work, please cite this repository.
