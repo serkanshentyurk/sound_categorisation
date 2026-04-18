@@ -29,7 +29,7 @@ REPO_ROOT = SCRIPT_DIR.parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.config import (
-    GS_N_SEEDS, GS_BURN_IN, GS_N_BINS, GS_N_FOLDS,
+    SYNTH_GS_N_SEEDS, GS_BURN_IN, GS_N_BINS, GS_N_FOLDS,
     VALIDATION_DIR, SYNTH_COHORTS_DIR, BASE_SEED, FIT_TARGETS,
     SMOKE_GS_N_SEEDS,
     build_metadata,
@@ -51,7 +51,7 @@ def main():
     parser.add_argument('--smoke-test', action='store_true')
     args = parser.parse_args()
 
-    n_seeds = args.n_seeds or (SMOKE_GS_N_SEEDS if args.smoke_test else GS_N_SEEDS)
+    n_seeds = args.n_seeds or (SMOKE_GS_N_SEEDS if args.smoke_test else SYNTH_GS_N_SEEDS)
 
     # Load cohort
     cohort_path = SYNTH_COHORTS_DIR / f'{args.cohort}.pkl'

@@ -73,6 +73,7 @@ SBI_STATS = [
 # Grid search
 GS_N_FOLDS = 2
 GS_N_SEEDS = 64
+SYNTH_GS_N_SEEDS = 8        # Synthetic validation needs fewer seeds than real data
 GS_BURN_IN = 1000
 GS_N_BINS = 8
 
@@ -228,3 +229,65 @@ def apply_smoke_test_overrides(config_dict: dict) -> dict:
     out = dict(config_dict)
     out.update(overrides)
     return out
+
+
+# =============================================================================
+# DATA LOADING HELPERS
+# =============================================================================
+
+# Default config files — scripts use --config to override
+DEFAULT_CONFIG = REPO_ROOT / 'config.yaml'
+CLUSTER_CONFIG = REPO_ROOT / 'config_slurm.yaml'
+
+
+def load_project_config(config_path=None):
+    """Load ProjectConfig from YAML. Auto-detects cluster vs local."""
+    from behav_utils.config.schema import load_config
+
+    if config_path is not None:
+        return load_config(str(config_path))
+
+    # Auto-detect: use config_slurm.yaml if it exists and we're on the cluster
+    if CLUSTER_CONFIG.exists():
+        import socket
+        hostname = socket.gethostname()
+        if 'hpc' in hostname or 'gpu' in hostname or 'enc' in hostname:
+            return load_config(str(CLUSTER_CONFIG))
+
+    return load_config(str(DEFAULT_CONFIG))
+
+
+def load_animal_data(animal_id, config=None, config_path=None):
+    """
+    Load one animal's data, handling path construction.
+
+    Args:
+        animal_id: e.g. 'SS01'
+        config: ProjectConfig (if already loaded)
+        config_path: Path to config YAML (loads if config is None)
+
+    Returns:
+        AnimalData
+    """
+    from behav_utils.data.loading import load_animal
+
+    if config is None:
+        config = load_project_config(config_path)
+
+    data_dir = Path(config.file_structure.data_dir)
+    return load_animal(data_dir / animal_id, config)
+
+
+def list_animal_ids(config=None, config_path=None):
+    """List available animal IDs from the data directory."""
+    if config is None:
+        config = load_project_config(config_path)
+
+    data_dir = Path(config.file_structure.data_dir)
+    if not data_dir.exists():
+        return []
+
+    return sorted([
+        d.name for d in data_dir.iterdir()
+        if d.is_dir() and not d.name.startswith('.')
+    ])

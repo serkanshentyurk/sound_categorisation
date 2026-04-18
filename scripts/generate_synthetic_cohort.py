@@ -82,6 +82,10 @@ def main():
     dt = time.time() - t0
     print(f'  {len(learning)} animals in {dt:.1f}s')
 
+    # Add expert_sessions key (last 8 sessions) for downstream scripts
+    for a in learning:
+        a['expert_sessions'] = a['sessions'][-8:]
+
     path = SYNTH_COHORTS_DIR / 'learning_uniform.pkl'
     with open(path, 'wb') as f:
         pickle.dump({'animals': learning, 'metadata': meta}, f)

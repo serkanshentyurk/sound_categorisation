@@ -6,7 +6,7 @@
 #SBATCH -N 1
 #SBATCH -c 8
 #SBATCH --mem=8G
-#SBATCH --time=0-4:00
+#SBATCH --time=1-00:00
 #
 # Grid-search CV on real animals, uniform distribution.
 # Array job: one task per (animal × model × fit_target).
@@ -61,7 +61,8 @@ python3 scripts/run_gs_single.py \
     --animal "${ANIMAL}" \
     --model "${MODEL}" \
     --fit-target "${FIT_TARGET}" \
-    --distribution "${DISTRIBUTION}"
+    --distribution "${DISTRIBUTION}" \
+    --config config_slurm.yaml
 
 echo ""
 echo "=== Finished ==="

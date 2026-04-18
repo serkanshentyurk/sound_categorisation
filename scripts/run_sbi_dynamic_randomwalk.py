@@ -32,6 +32,7 @@ from scripts.config import (
     SBI_DYNAMIC_DIR, BASE_SEED, FIT_TARGETS, STAGE,
     SMOKE_DYNAMIC_SBI_N_SIMULATIONS,
     build_metadata, ensure_dirs,
+    load_animal_data,
 )
 
 
@@ -52,6 +53,8 @@ def main():
                         help='Comma-separated param names (default: model-specific)')
     parser.add_argument('--seed', type=int, default=BASE_SEED)
     parser.add_argument('--output-dir', type=str, default=None)
+    parser.add_argument('--config', type=str, default=None,
+                        help='Path to project config YAML (default: auto-detect)')
     parser.add_argument('--smoke-test', action='store_true')
     args = parser.parse_args()
 
@@ -80,12 +83,11 @@ def main():
         print('  ** SMOKE TEST MODE **')
 
     # Load real animal data
-    from behav_utils.data.loading import load_animal
     from behav_utils.data.selection import select_sessions, fitting_data_from_sessions
     from inference.fitting import SBIFitter
     from inference.types import ConstantSpec, RandomWalkSpec
 
-    animal = load_animal(args.animal)
+    animal = load_animal_data(args.animal, config_path=args.config)
     sessions = select_sessions(animal, f'expert_{args.distribution}')
 
     if not sessions:

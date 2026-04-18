@@ -27,6 +27,7 @@ from scripts.config import (
     CV_DIR, BASE_SEED, STAGE, FIT_TARGETS,
     SMOKE_GS_N_SEEDS,
     build_metadata, ensure_dirs,
+    load_animal_data,
 )
 
 
@@ -46,6 +47,8 @@ def main():
     parser.add_argument('--seed-offset', type=int, default=0,
                         help='Offset added to base seed (for SLURM array indexing)')
     parser.add_argument('--output-dir', type=str, default=None)
+    parser.add_argument('--config', type=str, default=None,
+                        help='Path to project config YAML (default: auto-detect)')
     parser.add_argument('--smoke-test', action='store_true')
     args = parser.parse_args()
 
@@ -67,10 +70,9 @@ def main():
         print('  ** SMOKE TEST MODE **')
 
     # Load real animal data
-    from behav_utils.data.loading import load_animal
     from behav_utils.data.selection import select_sessions
 
-    animal = load_animal(args.animal)
+    animal = load_animal_data(args.animal, config_path=args.config)
     sessions = select_sessions(animal, f'expert_{args.distribution}')
 
     if not sessions:

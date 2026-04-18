@@ -6,7 +6,7 @@
 #SBATCH -N 1
 #SBATCH -c 4
 #SBATCH --mem=12G
-#SBATCH --time=0-3:00
+#SBATCH --time=1-00:00
 #
 # Per-animal dynamic SBI with RandomWalk-linked parameters.
 # Array job: one task per (animal × model × fit_target).
@@ -60,7 +60,8 @@ python3 scripts/run_sbi_dynamic_randomwalk.py \
     --animal "${ANIMAL}" \
     --model "${MODEL}" \
     --fit-target "${FIT_TARGET}" \
-    --distribution "${DISTRIBUTION}"
+    --distribution "${DISTRIBUTION}" \
+    --config config_slurm.yaml
 
 echo ""
 echo "=== Finished ==="

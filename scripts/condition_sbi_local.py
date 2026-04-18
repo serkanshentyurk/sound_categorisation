@@ -30,6 +30,7 @@ from scripts.config import (
     SBI_STATIC_DIR, SNPE_DIR, BASE_SEED, FIT_TARGETS, STAGE,
     SMOKE_N_ANIMALS_LIMIT,
     build_metadata, ensure_dirs,
+    load_animal_data, list_animal_ids,
 )
 
 
@@ -67,6 +68,8 @@ def main():
     parser.add_argument('--animals', type=str, default=None,
                         help='Comma-separated animal IDs (default: all)')
     parser.add_argument('--n-cv-repeats', type=int, default=SBI_N_CV_REPEATS)
+    parser.add_argument('--config', type=str, default=None,
+                        help='Path to project config YAML (default: auto-detect)')
     parser.add_argument('--smoke-test', action='store_true')
     args = parser.parse_args()
 
@@ -88,13 +91,12 @@ def main():
     sc_snpe = load_snpe(sc_path)
 
     # Load animal list
-    from behav_utils.data.loading import list_animals, load_animal
     from behav_utils.data.selection import select_sessions, fitting_data_from_sessions
 
     if args.animals:
         animal_ids = args.animals.split(',')
     else:
-        animal_ids = list_animals()
+        animal_ids = list_animal_ids(config_path=args.config)
 
     if args.smoke_test:
         animal_ids = animal_ids[:SMOKE_N_ANIMALS_LIMIT]
@@ -110,7 +112,7 @@ def main():
     for aid in animal_ids:
         print(f'\n--- {aid} ---')
         try:
-            animal = load_animal(aid)
+            animal = load_animal_data(aid, config_path=args.config)
             sessions = select_sessions(animal, f'expert_{args.distribution}')
             if not sessions:
                 print(f'  No expert {args.distribution} sessions. Skipping.')

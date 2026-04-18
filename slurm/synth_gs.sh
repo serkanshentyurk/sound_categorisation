@@ -6,7 +6,7 @@
 #SBATCH -N 1
 #SBATCH -c 8
 #SBATCH --mem=8G
-#SBATCH --time=0-4:00
+#SBATCH --time=1-00:00
 #
 # Grid-search on synthetic cohort.
 # Array job: one task per (animal_index × model × fit_target).
