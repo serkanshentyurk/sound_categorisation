@@ -87,6 +87,8 @@ class FileStructure:
     behaviour_file: str = "trial_summary*.csv"
     date_format: str = "{year}_{month}_{day}"
     date_regex: str = r"(\d{4})_(\d{1,2})_(\d{1,2})"
+    drop_last_row: bool = True   
+    min_trials_per_file: int = 10           
 
 
 # =============================================================================

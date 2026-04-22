@@ -7,6 +7,8 @@
 #SBATCH -c 4
 #SBATCH --mem=12G
 #SBATCH --time=1-00:00
+#SBATCH -p gpu
+#SBATCH --gres=gpu:1
 #
 # Per-animal dynamic SBI with RandomWalk-linked parameters.
 # Array job: one task per (animal × model × fit_target).
@@ -22,7 +24,7 @@
 #   sbatch --array=0-47 slurm/sbi_dynamic.sh
 # ─────────────────────────────────────────────────────────────────────────────
 
-source "$(dirname "$0")/env_setup.sh"
+source "/nfs/nhome/live/sshentyurk/repos/sound_categorisation/slurm/env_setup.sh"
 cd "${REPO_DIR}"
 
 # ── Configuration ────────────────────────────────────────────────────────────

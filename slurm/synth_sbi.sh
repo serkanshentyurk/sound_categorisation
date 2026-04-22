@@ -6,7 +6,7 @@
 #SBATCH -N 1
 #SBATCH -c 4
 #SBATCH --mem=8G
-#SBATCH --time=0-1:00
+#SBATCH --time=1-00:00
 #
 # SBI model comparison on synthetic cohort.
 # Array job: one task per (animal_index × fit_target).
@@ -21,7 +21,7 @@
 #   sbatch --dependency=afterok:${JOB_SNPE} --array=0-79 slurm/synth_sbi.sh static_uniform
 # ─────────────────────────────────────────────────────────────────────────────
 
-source "$(dirname "$0")/env_setup.sh"
+source "/nfs/nhome/live/sshentyurk/repos/sound_categorisation/slurm/env_setup.sh"
 cd "${REPO_DIR}"
 
 # ── Configuration ────────────────────────────────────────────────────────────

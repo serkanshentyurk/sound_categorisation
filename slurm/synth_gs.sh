@@ -23,7 +23,7 @@
 #   sbatch --array=0-159 slurm/synth_gs.sh learning_uniform
 # ─────────────────────────────────────────────────────────────────────────────
 
-source "$(dirname "$0")/env_setup.sh"
+source "/nfs/nhome/live/sshentyurk/repos/sound_categorisation/slurm/env_setup.sh"
 cd "${REPO_DIR}"
 
 # ── Configuration ────────────────────────────────────────────────────────────

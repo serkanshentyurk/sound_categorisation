@@ -25,3 +25,4 @@ echo "Environment: $(which python3)"
 echo "Repo:        ${REPO_DIR}"
 echo "Node:        $(hostname)"
 echo "Date:        $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+export PYTHONUNBUFFERED=1

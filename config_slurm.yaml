@@ -1,16 +1,15 @@
 # =============================================================================
-# Sound Categorisation Project Config
+# Sound Categorisation — Raw Data Config
 # =============================================================================
-# 2-AFC sound amplitude categorisation in head-fixed mice.
-# Used by behav_utils to load and parse behavioural CSV files.
+# Loads directly from raw Trial_Summary CSVs (Bonsai output).
+# No preprocessing pipeline required.
 #
-# Column mapping convention:
-#   internal_name:
-#     csv_name: "Column_Name_In_CSV"
-#     dtype: float | int | str | bool
-#     optional: true | false (default: false)
-#     default: <value when missing>
-#     mapping: {csv_value: internal_value, ...}  (optional)
+# Key differences from the processed config:
+#   - choice column: First_Lick (string) instead of Choice (int)
+#   - choice_mapping: uses string keys (Left/Right) with contingency rules
+#   - file_structure: points at Raw/ directory
+#   - drop_last_row: true (Bonsai CSVs may have truncated final row)
+#   - no Rolling_* columns (these were computed by the old pipeline)
 # =============================================================================
 
 project:
@@ -24,12 +23,14 @@ project:
 # File structure
 # =============================================================================
 file_structure:
-  data_dir: "/ceph/akrami/Serkan/Head_Fixed_Behavior/Data/Processed"
+  # data_dir: "/Volumes/akrami/Serkan/Head_Fixed_Behavior/Data/Raw"
+  data_dir: "/Users/Serkan/Desktop/pro/PhD/main/data/Head_Fixed_Behavior/Raw"
   animal_pattern: "{animal_id}"
   session_pattern: "SOUND_CAT_{animal_id}_{date}"
-  behaviour_file: "trial_summary*.csv"
+  behaviour_file: "Trial_Summary*.csv"
   date_format: "{year}_{month}_{day}"
   date_regex: "(?P<year>\\d{4})_(?P<month>\\d{1,2})_(?P<day>\\d{1,2})"
+  drop_last_row: true
 
 # =============================================================================
 # Task parameters
@@ -40,32 +41,31 @@ task:
   outputs:
     - choice
     - reaction_time
+
   primary_stimulus: stimulus
   primary_choice: choice
-  
+
   boundary: 0.0
   stimulus_range: [-1.0, 1.0]
   n_categories: 2
-  category_rule: "above_boundary"   # stimulus > boundary → category B (1)
+  category_rule: "above_boundary"
 
-  # Choice encoding: convert spatial (left/right) to category (A/B)
   choice_mapping:
     type: "spatial_to_category"
-    no_response_value: 0             # 0 in CSV means no response → NaN
+    no_response_value: ""
     contingency_field: "sound_contingency"
     contingency_rules:
       Low_Left_High_Right:
-        -1: 0    # left → category A
-        1: 1     # right → category B
+        Left: 0     # left lick → category A
+        Right: 1    # right lick → category B
       Low_Right_High_Left:
-        -1: 1    # left → category B
-        1: 0     # right → category A
+        Left: 1     # left lick → category B
+        Right: 0    # right lick → category A
 
 # =============================================================================
-# Trial-level columns (vary trial-to-trial)
+# Trial-level columns
 # =============================================================================
 columns:
-  # ── Required ──────────────────────────────────────────────────────────────
   trial_number:
     csv_name: "Trial_Number"
     dtype: int
@@ -74,11 +74,11 @@ columns:
     csv_name: "Stim_Relative"
     dtype: float
 
+  # Raw data uses First_Lick (Left/Right string) instead of numeric Choice.
+  # The choice_mapping above converts spatial lick → category space.
   choice:
-    csv_name: "Choice"
-    dtype: int
-    # Raw spatial encoding: -1 = left, 0 = no response, 1 = right
-    # Preprocessing step converts this to category space using sound_contingency
+    csv_name: "First_Lick"
+    dtype: str
 
   outcome:
     csv_name: "Trial_Outcome"
@@ -88,7 +88,6 @@ columns:
     csv_name: "Correct"
     dtype: bool
 
-  # ── Optional behavioural ──────────────────────────────────────────────────
   abort:
     csv_name: "Abort_Trial"
     dtype: bool
@@ -115,46 +114,19 @@ columns:
     dtype: float
     optional: true
 
-  first_lick:
-    csv_name: "First_Lick"
-    dtype: str
-    optional: true
-
-  # ── Rolling performance (computed online by Bonsai) ───────────────────────
-  rolling_perf:
-    csv_name: "Rolling_perf"
-    dtype: float
-    optional: true
-
-  rolling_bias:
-    csv_name: "Rolling_bias"
-    dtype: float
-    optional: true
-
-  rolling_abort_rate:
-    csv_name: "Rolling_abort_rate"
-    dtype: float
-    optional: true
-
-  # ── Distribution columns ──────────────────────────────────────────────────
   distribution:
     csv_name: "Distribution"
     dtype: str
     optional: true
     default: "Uniform"
-    mapping:
-      Asym_Left: "Hard-B"
-      Asym_Right: "Hard-A"
-      Uniform: "Uniform"
 
   distribution_exp_rate:
     csv_name: "Distribution_Exp_Rate"
     dtype: float
     optional: true
 
-  # ── Optogenetic columns ───────────────────────────────────────────────────
   opto_on:
-    csv_name: "Opto_On"
+    csv_name: "Fiber"
     dtype: bool
     optional: true
     default: false
@@ -206,7 +178,7 @@ columns:
     optional: true
 
 # =============================================================================
-# Session-level metadata (constant within session, extracted from first row)
+# Session-level metadata
 # =============================================================================
 session_metadata:
   animal_id:
@@ -241,6 +213,11 @@ session_metadata:
     dtype: float
     optional: true
     default: 1.0
+    
+  opto_on_session:
+    csv_name: "Opto_On"
+    dtype: bool
+    optional: true
 
   anti_bias:
     csv_name: "Anti_Bias"
@@ -256,7 +233,7 @@ session_metadata:
     csv_name: "Response_Window"
     dtype: str
     optional: true
-    parse_timespan: true     # HH:MM:SS.fff → seconds
+    parse_timespan: true
 
   timeout_duration:
     csv_name: "Timeout_Duration"
@@ -331,20 +308,21 @@ session_metadata:
     optional: true
 
 # =============================================================================
-# Extra columns: loaded into TrialData.extra dict, not mapped to fields
+# Extra columns
 # =============================================================================
 extra_columns:
   - "Trial_End_Time"
+  - "Correct_Count"
 
 # =============================================================================
 # Analysis defaults
 # =============================================================================
 analysis:
-  excluded_stats: []              # e.g., ["update_matrix"] to skip slow stats
-  hard_threshold: 0.3             # |stimulus| split for easy/hard
-  default_n_bins: 8               # binning for psychometric/update matrix
-  min_valid_trials: 10            # sessions below this are dropped
-  default_stage: "Full_Task_Cont" # default stage filter
+  excluded_stats: []
+  hard_threshold: 0.3
+  default_n_bins: 8
+  min_valid_trials: 10
+  default_stage: "Full_Task_Cont"
 
 # =============================================================================
 # Plotting defaults
@@ -358,19 +336,3 @@ plotting:
     BE: "steelblue"
     SC: "darkorange"
     default: "grey"
-
-session_presets:
-  expert_uniform:
-    stage: "Full_Task_Cont"
-    distribution: "Uniform"
-    min_accuracy: 0.70
-    last_fraction: 0.50
-  all_uniform:
-    stage: "Full_Task_Cont"
-    distribution: "Uniform"
-  post_shift_hard_a:
-    stage: "Full_Task_Cont"
-    distribution: "Hard-A"
-  post_shift_hard_b:
-    stage: "Full_Task_Cont"
-    distribution: "Hard-B"

@@ -72,13 +72,13 @@ SBI_STATS = [
 
 # Grid search
 GS_N_FOLDS = 2
-GS_N_SEEDS = 64
+GS_N_SEEDS = 32
 SYNTH_GS_N_SEEDS = 8        # Synthetic validation needs fewer seeds than real data
 GS_BURN_IN = 1000
 GS_N_BINS = 8
 
 # SBI training
-SBI_N_SIMULATIONS = 100_000
+SBI_N_SIMULATIONS = 50_000
 SBI_N_GENERIC_TRIALS = 2500
 SBI_BURN_IN = 1000
 
