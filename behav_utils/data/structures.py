@@ -1487,16 +1487,20 @@ class ExperimentData:
         return fig, axes
         
     # ── Persistence ─────────────────────────────────────────────────────────
-
     def save(self, path: Union[str, Path]) -> None:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        # Don't pickle the config object — reload from YAML
         config_backup = self.config
         self.config = None
+        animal_configs = {}
+        for aid, animal in self.animals.items():
+            animal_configs[aid] = getattr(animal, '_config', None)
+            animal._config = None
         with open(path, 'wb') as f:
             pickle.dump(self, f)
         self.config = config_backup
+        for aid, animal in self.animals.items():
+            animal._config = animal_configs[aid]
 
     @classmethod
     def load(cls, path: Union[str, Path]) -> 'ExperimentData':

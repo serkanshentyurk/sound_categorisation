@@ -2,22 +2,18 @@
 Shared Notebook Setup
 
 Single entry point for all notebooks. Handles:
-- Path configuration
-- Data loading (real CSV, pickle, or synthetic fallback)
+- Path configuration (auto-detects macOS vs cluster)
+- Data loading (snapshot → CSV → synthetic fallback)
 - Common imports re-exported for convenience
 
 Usage:
-    from shared_setup import load_data, STAGE, PATH_CONFIG
-
+    from shared_setup import *
     experiment, info = load_data()
-    # info = {'mode': 'csv'|'pickle'|'synthetic', 'config_path': ..., ...}
-
-    # Or force a specific mode:
-    experiment, info = load_data(mode='synthetic', n_animals=5)
 """
 
 import os
 import sys
+import platform
 import warnings
 from pathlib import Path
 
@@ -26,22 +22,38 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # ── Path setup ──────────────────────────────────────────────────────────────
-# Notebooks live in sound_categorisation/notebooks/
-# Project root is one level up.
 _NOTEBOOK_DIR = Path(os.path.abspath(''))
 _PROJECT_ROOT = _NOTEBOOK_DIR.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-# ── Project constants ───────────────────────────────────────────────────────
-# Edit these to match your local setup.
-PATH_CONFIG = _PROJECT_ROOT / 'config.yaml'
-PATH_PICKLE = _PROJECT_ROOT / 'data' / 'experiment.pkl'
+# ── Project constants (OS-aware) ────────────────────────────────────────────
+_DATA_ROOT = _PROJECT_ROOT.parent.parent / 'data'
+
+if platform.system() == 'Darwin':  # macOS
+    PATH_CONFIG = _PROJECT_ROOT / 'config.yaml'
+    PATH_SNAPSHOT = _DATA_ROOT / 'snapshots' / 'sound_cat_snapshot.pkl'
+elif platform.system() == 'Linux':  # cluster
+    PATH_CONFIG = _PROJECT_ROOT / 'config_slurm.yaml'
+    # On the cluster, derive snapshot path from config's data_dir.
+    # Quick config parse — no CSV loading.
+    try:
+        from scripts.config import load_project_config
+        from scripts.snapshot import default_output_path
+        _config = load_project_config()
+        PATH_SNAPSHOT = default_output_path(_config)
+        del _config
+    except Exception:
+        PATH_SNAPSHOT = _PROJECT_ROOT / 'results' / 'processed' / 'sound_cat_snapshot.pkl'
+else:
+    PATH_CONFIG = _PROJECT_ROOT / 'config.yaml'
+    PATH_SNAPSHOT = _DATA_ROOT / 'snapshots' / 'sound_cat_snapshot.pkl'
+
+PATH_PICKLE = _DATA_ROOT / 'experiment.pkl'  # legacy fallback
 STAGE = 'Full_Task_Cont'
 MIN_SESSIONS = 5
 
 # ── Common imports ──────────────────────────────────────────────────────────
-# Re-exported so notebooks can do: from shared_setup import ExperimentData, ...
 from behav_utils.data.structures import (
     ExperimentData, AnimalData, SessionData, FittingData,
 )
@@ -135,32 +147,54 @@ def _generate_synthetic_cohort(
 def load_data(
     mode: str = 'auto',
     config_path: Path = None,
+    snapshot_path: Path = None,
     pickle_path: Path = None,
+    warn_age_hours: float = 72,
     **synthetic_kwargs,
 ):
     """
     Load experimental data.
 
-    Args:
-        mode: 'auto' (try CSV then pickle then synthetic),
-              'csv', 'pickle', or 'synthetic'
-        config_path: Override PATH_CONFIG
-        pickle_path: Override PATH_PICKLE
-        **synthetic_kwargs: Passed to _generate_synthetic_cohort
+    Priority order for 'auto':
+        1. Snapshot — versioned pickle with staleness checks
+        2. CSV — full reload from raw data
+        3. Legacy pickle — ExperimentData.save() output
+        4. Synthetic — always works, for testing notebooks
 
     Returns:
-        (experiment, info) where info is a dict with loading metadata
+        (experiment, info_dict)
     """
     config_path = config_path or PATH_CONFIG
+    snapshot_path = snapshot_path or PATH_SNAPSHOT
     pickle_path = pickle_path or PATH_PICKLE
 
-    if mode == 'csv' or (mode == 'auto' and config_path.exists()):
+    # 1. Snapshot
+    if mode in ('snapshot', 'auto') and snapshot_path.exists():
+        try:
+            from scripts.snapshot import load_snapshot
+            experiment, meta = load_snapshot(
+                snapshot_path,
+                config_path=config_path if config_path.exists() else None,
+                warn_age_hours=warn_age_hours,
+            )
+            return experiment, {
+                'mode': 'snapshot',
+                'snapshot_path': str(snapshot_path),
+                'metadata': meta,
+            }
+        except Exception as e:
+            if mode == 'snapshot':
+                raise
+            warnings.warn(f'Snapshot loading failed ({e}), trying CSV...')
+
+    # 2. CSV
+    if mode in ('csv', 'auto') and config_path.exists():
         try:
             experiment = load_experiment(config_path)
             n_total = sum(a.n_sessions for a in experiment.animals.values())
             print(
-                f"Loaded {experiment.n_animals} animals, "
-                f"{n_total} sessions from CSV"
+                f'Loaded {experiment.n_animals} animals, '
+                f'{n_total} sessions from CSV'
             )
             return experiment, {
                 'mode': 'csv',
@@ -169,13 +203,16 @@ def load_data(
         except Exception as e:
             if mode == 'csv':
                 raise
-            warnings.warn(f"CSV loading failed ({e}), trying pickle...")
+            warnings.warn(f'CSV loading failed ({e}), trying pickle...')
 
-    if mode == 'pickle' or (mode == 'auto' and pickle_path.exists()):
+    # 3. Legacy pickle
+    if mode in ('pickle', 'auto') and pickle_path.exists():
         try:
             experiment = ExperimentData.load(pickle_path)
+            n_total = sum(a.n_sessions for a in experiment.animals.values())
             print(
-                f"Loaded {experiment.n_animals} animals from pickle"
+                f'Loaded {experiment.n_animals} animals from pickle '
+                f'(no metadata — consider re-exporting as snapshot)'
             )
             return experiment, {
                 'mode': 'pickle',
@@ -184,16 +221,23 @@ def load_data(
         except Exception as e:
             if mode == 'pickle':
                 raise
-            warnings.warn(f"Pickle loading failed ({e}), generating synthetic...")
+            warnings.warn(f'Pickle loading failed ({e}), generating synthetic...')
 
-    # Synthetic fallback
+    # 4. Synthetic fallback
+    if mode not in ('synthetic', 'auto'):
+        raise FileNotFoundError(
+            f'Could not load data in mode={mode!r}. '
+            f'Check paths: snapshot={snapshot_path}, '
+            f'config={config_path}, pickle={pickle_path}'
+        )
+
     kw = {'n_animals': 5, 'n_sessions': 25, 'shift_session': 15, 'seed': 42}
     kw.update(synthetic_kwargs)
     experiment = _generate_synthetic_cohort(**kw)
     print(
-        f"Generated synthetic cohort: {experiment.n_animals} animals, "
-        f"{kw['n_sessions']} sessions each "
-        f"(shift at session {kw['shift_session']})"
+        f'Generated synthetic cohort: {experiment.n_animals} animals, '
+        f'{kw["n_sessions"]} sessions each '
+        f'(shift at session {kw["shift_session"]})'
     )
     return experiment, {
         'mode': 'synthetic',
