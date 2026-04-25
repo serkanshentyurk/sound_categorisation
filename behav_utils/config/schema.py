@@ -15,6 +15,7 @@ Usage:
 """
 
 import yaml
+import os
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import (
@@ -367,6 +368,8 @@ def load_config(path: Union[str, Path]) -> ProjectConfig:
 
     # File structure
     fs_raw = raw.get('file_structure', {})
+    if 'data_dir' in fs_raw:
+        fs_raw['data_dir'] = os.path.expandvars(fs_raw['data_dir'])
     file_structure = FileStructure(**{
         k: fs_raw[k] for k in FileStructure.__dataclass_fields__
         if k in fs_raw

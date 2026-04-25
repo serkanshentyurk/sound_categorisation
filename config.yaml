@@ -23,8 +23,7 @@ project:
 # File structure
 # =============================================================================
 file_structure:
-  # data_dir: "/Volumes/akrami/Serkan/Head_Fixed_Behavior/Data/Raw"
-  data_dir: "/Users/Serkan/Desktop/pro/PhD/main/data/Head_Fixed_Behavior/Raw"
+  data_dir: "${BEHAV_DATA_DIR}/Raw"
   animal_pattern: "{animal_id}"
   session_pattern: "SOUND_CAT_{animal_id}_{date}"
   behaviour_file: "Trial_Summary*.csv"

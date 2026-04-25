@@ -1,33 +1,53 @@
 """
 Experiment Snapshot Export / Import
 
-Saves ExperimentData as a versioned pickle with metadata for
-staleness detection.
-
-Usage (cluster — export):
+Usage (export — on cluster):
     python scripts/export_snapshot.py
 
-Usage (local — load):
+Usage (load — in notebooks):
     from scripts.snapshot import load_snapshot
-    experiment, meta = load_snapshot('data/snapshots/sound_cat_snapshot.pkl')
+    experiment, meta = load_snapshot(PATH_SNAPSHOT)
 """
 
 import hashlib
+import os
 import pickle
+import platform
 import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional, Tuple, Union
 
-# Bump this when ExperimentData / AnimalData / SessionData / TrialData
-# fields change in a way that breaks unpickling.
 SNAPSHOT_FORMAT_VERSION = 1
-
 SNAPSHOT_FILENAME = 'sound_cat_snapshot.pkl'
+
+# Cluster path — fixed, will not change
+_CLUSTER_SNAPSHOT_DIR = Path(
+    '/ceph/akrami/Serkan/Head_Fixed_Behavior/Data/Processed/behaviour/snapshots'
+)
+
+def snapshot_dir(repo_root: Optional[Path] = None) -> Path:
+    """
+    Return the snapshot directory for the current machine.
+
+    Cluster (Linux): /ceph/akrami/.../Processed/snapshots/
+    Local (any OS):  some_folder/data/snapshots/
+                     (derived from repo at some_folder/repos/sound_categorisation/)
+    """
+    if platform.system() == 'Linux':
+        return _CLUSTER_SNAPSHOT_DIR
+    else:
+        if repo_root is None:
+            from scripts.config import REPO_ROOT
+            repo_root = REPO_ROOT
+        return repo_root.parent.parent / 'data' / 'behaviour' / 'snapshots'
+
+
+def default_output_path(repo_root: Optional[Path] = None) -> Path:
+    return snapshot_dir(repo_root) / SNAPSHOT_FILENAME
 
 
 def _config_hash(config_path: Union[str, Path]) -> str:
-    """SHA-256 of config YAML contents (first 8 hex chars)."""
     content = Path(config_path).read_bytes()
     return hashlib.sha256(content).hexdigest()[:8]
 
@@ -41,21 +61,10 @@ def _get_behav_utils_version() -> str:
 
 
 def _session_summary(experiment) -> Dict[str, int]:
-    """Per-animal session counts for staleness detection."""
     return {
         aid: animal.n_sessions
         for aid, animal in experiment.animals.items()
     }
-
-
-def default_output_path(config) -> Path:
-    """
-    Derive snapshot save path from config's data_dir.
-
-    If data_dir is .../Data/Raw, saves to .../Data/Processed/snapshots/.
-    """
-    data_dir = Path(config.file_structure.data_dir)
-    return data_dir.parent / 'Processed' / 'snapshots' / SNAPSHOT_FILENAME
 
 
 def export_snapshot(
@@ -63,36 +72,23 @@ def export_snapshot(
     output_path: Optional[Union[str, Path]] = None,
     verbose: bool = True,
 ) -> Path:
-    """
-    Load data from CSV via config, save as versioned snapshot.
-
-    Args:
-        config_path: Path to project YAML config
-        output_path: Where to save. If None, derives from config's
-                     data_dir (Raw → Processed/snapshots/).
-        verbose: Print progress
-
-    Returns:
-        Path to saved snapshot
-    """
+    """Load data from CSV via config, save as versioned snapshot."""
     from behav_utils.config.schema import load_config
     from behav_utils.data.loading import load_experiment
 
     config_path = Path(config_path)
 
-    if verbose:
-        print(f'Loading from config: {config_path}')
-
-    config = load_config(str(config_path))
-
-    # Derive output path from config if not specified
     if output_path is None:
-        output_path = default_output_path(config)
+        output_path = default_output_path()
     else:
         output_path = Path(output_path)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    if verbose:
+        print(f'Loading from config: {config_path}')
+
+    config = load_config(str(config_path))
     experiment = load_experiment(config)
 
     # Clean ALL config references
@@ -145,17 +141,7 @@ def load_snapshot(
     config_path: Optional[Union[str, Path]] = None,
     warn_age_hours: float = 72,
 ) -> Tuple:
-    """
-    Load a snapshot, with staleness and version checks.
-
-    Args:
-        path: Path to snapshot pickle
-        config_path: If provided, check config hash matches.
-        warn_age_hours: Warn if snapshot is older than this (default 72h)
-
-    Returns:
-        (ExperimentData, metadata_dict)
-    """
+    """Load a snapshot, with staleness and version checks."""
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f'Snapshot not found: {path}')
@@ -172,18 +158,13 @@ def load_snapshot(
 
     if not isinstance(snapshot, dict) or 'experiment' not in snapshot:
         raise ValueError(
-            f'Not a valid snapshot file. This might be a raw '
-            f'ExperimentData.save() pickle — re-export with '
+            f'Not a valid snapshot file. Re-export with '
             f'scripts/export_snapshot.py.'
         )
 
     meta = snapshot.get('metadata', {})
-    fmt_version = meta.get('format_version', 0)
-    if fmt_version != SNAPSHOT_FORMAT_VERSION:
-        raise ValueError(
-            f'Snapshot format version {fmt_version} != '
-            f'current {SNAPSHOT_FORMAT_VERSION}. Re-export.'
-        )
+    if meta.get('format_version', 0) != SNAPSHOT_FORMAT_VERSION:
+        raise ValueError('Snapshot format version mismatch. Re-export.')
 
     experiment = snapshot['experiment']
 
@@ -211,8 +192,7 @@ def load_snapshot(
             export_hash = meta.get('config_hash', '')
             if export_hash and current_hash != export_hash:
                 warnings.warn(
-                    f'Config has changed since snapshot was exported '
-                    f'(export: {export_hash}, current: {current_hash}). '
+                    f'Config has changed since snapshot was exported. '
                     f'Re-export if column mappings changed.',
                     stacklevel=2,
                 )

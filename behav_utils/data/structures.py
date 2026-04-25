@@ -1490,6 +1490,7 @@ class ExperimentData:
     def save(self, path: Union[str, Path]) -> None:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
+        # Don't pickle config objects — reload from YAML
         config_backup = self.config
         self.config = None
         animal_configs = {}

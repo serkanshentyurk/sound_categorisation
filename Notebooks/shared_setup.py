@@ -1,11 +1,6 @@
 """
 Shared Notebook Setup
 
-Single entry point for all notebooks. Handles:
-- Path configuration (auto-detects macOS vs cluster)
-- Data loading (snapshot → CSV → synthetic fallback)
-- Common imports re-exported for convenience
-
 Usage:
     from shared_setup import *
     experiment, info = load_data()
@@ -27,29 +22,19 @@ _PROJECT_ROOT = _NOTEBOOK_DIR.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-# ── Project constants (OS-aware) ────────────────────────────────────────────
-_DATA_ROOT = _PROJECT_ROOT.parent.parent / 'data'
+# ── Snapshot and config paths ───────────────────────────────────────────────
+#
+# Folder structure (local, any OS):
+#   some_folder/data/snapshots/sound_cat_snapshot.pkl
+#   some_folder/repos/sound_categorisation/   ← _PROJECT_ROOT
+#
+# Cluster (fixed):
+#   /ceph/akrami/Serkan/.../Processed/snapshots/sound_cat_snapshot.pkl
+#
+from scripts.snapshot import snapshot_dir
+PATH_SNAPSHOT = snapshot_dir(_PROJECT_ROOT) / 'sound_cat_snapshot.pkl'
+PATH_CONFIG = _PROJECT_ROOT / 'config.yaml'
 
-if platform.system() == 'Darwin':  # macOS
-    PATH_CONFIG = _PROJECT_ROOT / 'config.yaml'
-    PATH_SNAPSHOT = _DATA_ROOT / 'snapshots' / 'sound_cat_snapshot.pkl'
-elif platform.system() == 'Linux':  # cluster
-    PATH_CONFIG = _PROJECT_ROOT / 'config_slurm.yaml'
-    # On the cluster, derive snapshot path from config's data_dir.
-    # Quick config parse — no CSV loading.
-    try:
-        from scripts.config import load_project_config
-        from scripts.snapshot import default_output_path
-        _config = load_project_config()
-        PATH_SNAPSHOT = default_output_path(_config)
-        del _config
-    except Exception:
-        PATH_SNAPSHOT = _PROJECT_ROOT / 'results' / 'processed' / 'sound_cat_snapshot.pkl'
-else:
-    PATH_CONFIG = _PROJECT_ROOT / 'config.yaml'
-    PATH_SNAPSHOT = _DATA_ROOT / 'snapshots' / 'sound_cat_snapshot.pkl'
-
-PATH_PICKLE = _DATA_ROOT / 'experiment.pkl'  # legacy fallback
 STAGE = 'Full_Task_Cont'
 MIN_SESSIONS = 5
 
@@ -148,7 +133,6 @@ def load_data(
     mode: str = 'auto',
     config_path: Path = None,
     snapshot_path: Path = None,
-    pickle_path: Path = None,
     warn_age_hours: float = 72,
     **synthetic_kwargs,
 ):
@@ -157,16 +141,14 @@ def load_data(
 
     Priority order for 'auto':
         1. Snapshot — versioned pickle with staleness checks
-        2. CSV — full reload from raw data
-        3. Legacy pickle — ExperimentData.save() output
-        4. Synthetic — always works, for testing notebooks
+        2. CSV — full reload from raw data (needs BEHAV_DATA_DIR env var)
+        3. Synthetic — always works, for testing notebooks
 
     Returns:
         (experiment, info_dict)
     """
     config_path = config_path or PATH_CONFIG
     snapshot_path = snapshot_path or PATH_SNAPSHOT
-    pickle_path = pickle_path or PATH_PICKLE
 
     # 1. Snapshot
     if mode in ('snapshot', 'auto') and snapshot_path.exists():
@@ -203,32 +185,13 @@ def load_data(
         except Exception as e:
             if mode == 'csv':
                 raise
-            warnings.warn(f'CSV loading failed ({e}), trying pickle...')
+            warnings.warn(f'CSV loading failed ({e}), generating synthetic...')
 
-    # 3. Legacy pickle
-    if mode in ('pickle', 'auto') and pickle_path.exists():
-        try:
-            experiment = ExperimentData.load(pickle_path)
-            n_total = sum(a.n_sessions for a in experiment.animals.values())
-            print(
-                f'Loaded {experiment.n_animals} animals from pickle '
-                f'(no metadata — consider re-exporting as snapshot)'
-            )
-            return experiment, {
-                'mode': 'pickle',
-                'pickle_path': str(pickle_path),
-            }
-        except Exception as e:
-            if mode == 'pickle':
-                raise
-            warnings.warn(f'Pickle loading failed ({e}), generating synthetic...')
-
-    # 4. Synthetic fallback
+    # 3. Synthetic fallback
     if mode not in ('synthetic', 'auto'):
         raise FileNotFoundError(
             f'Could not load data in mode={mode!r}. '
-            f'Check paths: snapshot={snapshot_path}, '
-            f'config={config_path}, pickle={pickle_path}'
+            f'Check paths: snapshot={snapshot_path}, config={config_path}'
         )
 
     kw = {'n_animals': 5, 'n_sessions': 25, 'shift_session': 15, 'seed': 42}

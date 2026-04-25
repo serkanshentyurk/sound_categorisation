@@ -251,7 +251,7 @@ def load_project_config(config_path=None):
     if CLUSTER_CONFIG.exists():
         import socket
         hostname = socket.gethostname()
-        if 'hpc' in hostname or 'gpu' in hostname or 'enc' in hostname:
+        if any(x in hostname for x in ('hpc', 'gpu', 'enc', 'sgw')):
             return load_config(str(CLUSTER_CONFIG))
 
     return load_config(str(DEFAULT_CONFIG))
