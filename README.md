@@ -65,6 +65,27 @@ cd ~/repos/sound_categorisation
 pip install -e behav_utils/
 ```
 
+## Data Setup
+
+The config uses an environment variable for the data path, so one config file works on any machine.
+
+**Set once per machine** — add to your shell profile (`~/.zshrc` on Mac, `~/.bashrc` on cluster):
+```bash
+export BEHAV_DATA_DIR="/your/mount/point/Head_Fixed_Behavior/Data"
+```
+
+**Export a snapshot** (converts raw CSVs to a fast-loading pickle):
+```bash
+python scripts/export_snapshot.py
+```
+
+**Sync snapshot to local machine** (Mac, with lab drive mounted):
+```bash
+./scripts/sync_snapshot.sh
+```
+
+Notebooks load the snapshot automatically via `shared_setup.py`. See [SETUP.md](SETUP.md) for detailed instructions and new student onboarding.
+
 ## Notebooks
 
 Numbered for reading order. Each has a `MODE` toggle at the top: `'load'` reads cluster results, `'run'` does a quick local analysis.
