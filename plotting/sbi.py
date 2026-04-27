@@ -752,6 +752,40 @@ def plot_learning_trajectory(
     fig.tight_layout()
     return fig
 
+def plot_param_stat_correlations(corr_data: dict, title: str = None):
+    """
+    Heatmap of parameter-summary stat correlations.
+    
+    Args:
+        corr_data: Output from compute_param_stat_correlations
+        title: Optional title
+    """
+    corr = corr_data['corr_matrix']
+    pnames = corr_data['param_names']
+    snames = corr_data['stat_names_expanded']
+
+    fig, ax = plt.subplots(figsize=(max(8, len(snames) * 0.8), len(pnames) * 1.2 + 1))
+    im = ax.imshow(corr, cmap='RdBu_r', vmin=-1, vmax=1, aspect='auto')
+
+    # Annotate cells
+    for i in range(len(pnames)):
+        for j in range(len(snames)):
+            val = corr[i, j]
+            colour = 'white' if abs(val) > 0.5 else 'black'
+            ax.text(j, i, f'{val:.2f}', ha='center', va='center',
+                    fontsize=7, color=colour)
+
+    ax.set_xticks(range(len(snames)))
+    ax.set_xticklabels(snames, rotation=45, ha='right', fontsize=9)
+    ax.set_yticks(range(len(pnames)))
+    ax.set_yticklabels(pnames, fontsize=10)
+
+    plt.colorbar(im, ax=ax, label='Correlation', shrink=0.8)
+    ax.set_title(title or 'Parameter–Summary Stat Correlations',
+                 fontsize=13, fontweight='bold')
+    plt.tight_layout()
+    plt.show()
+    return fig
 
 # =============================================================================
 # EXPORTS
@@ -765,6 +799,7 @@ __all__ = [
     'plot_performance_trajectory',
     'plot_summary_stats_comparison',
     'plot_learning_trajectory',
+    'plot_param_stat_correlations',
     'PARAM_COLOURS',
     'PHASE_COLOURS',
 ]

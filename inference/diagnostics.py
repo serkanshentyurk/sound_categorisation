@@ -771,6 +771,93 @@ def recovery_summary_table(
     else:
         return text
 
+def compute_param_stat_correlations(
+    model_type: str,
+    stat_names: list,
+    burn_in: int = 1000,
+    n_samples: int = 1000,
+    n_trials: int = 2500,
+    seed: int = 42,
+) -> dict:
+    """
+    Sample from prior, simulate, compute parameter-stat correlations.
+    
+    This regenerates a small batch of training-like data to show
+    which summary stats are informative for which parameters.
+    
+    Args:
+        model_type: 'be' or 'sc'
+        stat_names: Summary stat names (raw, not expanded)
+        burn_in: Burn-in trials
+        n_samples: Number of (theta, x) pairs to generate
+        n_trials: Trials per simulation
+        seed: Random seed
+    
+    Returns:
+        {
+            'corr_matrix': (n_params, n_expanded_stats) array,
+            'param_names': list,
+            'stat_names_expanded': list,
+            'theta': (n_valid, n_params) array,
+            'x': (n_valid, n_expanded_stats) array,
+        }
+    """
+    import torch
+    from behav_utils.data.synthetic import sample_stimuli
+    from behav_utils.analysis.summary_stats import get_stat_names_expanded
+    from inference.simulator import (
+        create_be_simulator, create_sc_simulator,
+        get_sbi_prior, wrap_for_sbi,
+    )
+
+    rng = np.random.default_rng(seed)
+    stim, cat = sample_stimuli(n_trials, 'uniform', rng)
+
+    creator = create_be_simulator if model_type == 'be' else create_sc_simulator
+    sim = creator(stim, cat, stat_names=stat_names, burn_in=burn_in, seed=seed)
+    prior = get_sbi_prior(sim)
+    sbi_sim = wrap_for_sbi(sim)
+
+    param_names = sim.get_param_names()
+    stat_names_expanded = get_stat_names_expanded(stat_names)
+
+    # Sample and simulate
+    theta = prior.sample((n_samples,))
+    x_list = []
+    theta_valid = []
+    for t in theta:
+        try:
+            x = sbi_sim(t)
+            if x is not None and not torch.any(torch.isnan(x)):
+                x_list.append(x.numpy())
+                theta_valid.append(t.numpy())
+        except Exception:
+            pass
+
+    if not x_list:
+        raise RuntimeError('All simulations failed')
+
+    theta_arr = np.array(theta_valid)
+    x_arr = np.array(x_list)
+
+    # Correlation matrix: (n_params, n_stats)
+    n_params = theta_arr.shape[1]
+    n_stats = x_arr.shape[1]
+    corr_matrix = np.zeros((n_params, n_stats))
+    for i in range(n_params):
+        for j in range(n_stats):
+            corr_matrix[i, j] = np.corrcoef(theta_arr[:, i], x_arr[:, j])[0, 1]
+
+    print(f'Computed correlations: {len(theta_valid)}/{n_samples} valid, '
+          f'{n_params} params × {n_stats} stats')
+
+    return {
+        'corr_matrix': corr_matrix,
+        'param_names': param_names,
+        'stat_names_expanded': stat_names_expanded,
+        'theta': theta_arr,
+        'x': x_arr,
+    }
 
 # =============================================================================
 # EXPORTS
@@ -784,4 +871,6 @@ __all__ = [
     'plot_recovery_scatter',
     'plot_recovery_bias',
     'recovery_summary_table',
+    'compute_param_stat_correlations'
 ]
+

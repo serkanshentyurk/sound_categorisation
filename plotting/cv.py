@@ -92,8 +92,14 @@ def plot_cv_comparison(
 
     _draw_split_violins(ax1, be_vals, sc_vals, be_p, sc_p)
     ax1.set_ylabel(f'Test {fit_target} MSE', fontsize=11)
-    ax1.set_title(f'{p_str}, winner={winner}', fontsize=11)
-
+    if p_val < 0.05:
+        verdict = f'{p_str}, winner={winner}'
+    elif p_val < 0.1:
+        verdict = f'{p_str}, marginal {winner}'
+    else:
+        verdict = f'{p_str}, inconclusive'
+    ax1.set_title(verdict, fontsize=11)
+    
     _draw_paired_scatter(ax2, be_p, sc_p)
 
     fig.suptitle(
