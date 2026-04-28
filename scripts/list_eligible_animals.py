@@ -42,6 +42,30 @@ sys.path.insert(0, str(REPO_ROOT))
 from scripts.config import load_project_config, list_animal_ids, load_animal_data
 
 
+def _load_experiment(config_path=None):
+    """
+    Load experiment data, snapshot-first (same as notebooks).
+
+    Falls back to raw CSV if snapshot not found (needs BEHAV_DATA_DIR).
+    """
+    from scripts.snapshot import snapshot_dir, load_snapshot
+
+    snapshot_path = snapshot_dir(REPO_ROOT) / 'sound_cat_snapshot.pkl'
+    if snapshot_path.exists():
+        experiment, _ = load_snapshot(snapshot_path)
+        return experiment
+
+    # Fall back to loading from raw data
+    config = load_project_config(config_path)
+    from behav_utils.data.loading import load_experiment
+    data_dir = Path(config.file_structure.data_dir)
+    if not data_dir.exists():
+        print(f'Data directory not found: {data_dir}', file=sys.stderr)
+        print('Set BEHAV_DATA_DIR or ensure a snapshot exists.', file=sys.stderr)
+        sys.exit(1)
+    return load_experiment(data_dir, config)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='List animals qualifying for analysis',
@@ -119,21 +143,27 @@ def main():
         parser.error('Specify --preset or --stage/--distribution criteria')
         return
 
+    # Load experiment data (snapshot-first, like notebooks)
+    experiment = _load_experiment(args.config)
+
     # Get candidate animal IDs
     if args.animals:
         candidate_ids = args.animals.split(',')
     else:
-        candidate_ids = list_animal_ids(config_path=args.config)
+        candidate_ids = sorted(experiment.animals.keys())
 
     if not candidate_ids:
-        print('No animals found in data directory.', file=sys.stderr)
+        print('No animals found.', file=sys.stderr)
         sys.exit(1)
 
     # Apply filter to each animal
     eligible = []
     for aid in sorted(candidate_ids):
+        if aid not in experiment.animals:
+            print(f'  {aid}: not in experiment', file=sys.stderr)
+            continue
         try:
-            animal = load_animal_data(aid, config_path=args.config)
+            animal = experiment.animals[aid]
             sessions = filt.apply(animal)
             n = len(sessions)
             if n >= args.min_sessions:
