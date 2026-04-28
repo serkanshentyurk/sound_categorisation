@@ -137,8 +137,13 @@ def main():
         'be_mean': result['be_mean'],
         'sc_mean': result['sc_mean'],
         'p': result['p'],
+        'be_params': result['be_params'],
+        'sc_params': result['sc_params'],
+        'be_test_errors': result['be_cv']['test_errors'],
+        'sc_test_errors': result['sc_cv']['test_errors'],
         'method': args.fit_target,
         'cohort': args.cohort,
+        'n_sessions': len(sessions),
         'metadata': build_metadata('validation/run_synth_sbi.py', vars(args)),
     }
     with open(output_path, 'wb') as f:

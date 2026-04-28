@@ -63,16 +63,8 @@ def _params_to_dict(params) -> dict:
     return {}
 
 
-def _gs_seed_errors(gs_data: dict) -> Tuple[list, Optional[dict]]:
-    results = gs_data.get('results', [])
-    errors = [r['avg_test_error'] for r in results
-              if not np.isnan(r.get('avg_test_error', np.nan))]
-    valid = [r for r in results
-             if not np.isnan(r.get('avg_test_error', np.nan))
-             and r.get('best_params_single')]
-    best_params = (min(valid, key=lambda r: r['avg_test_error'])['best_params_single']
-                   if valid else None)
-    return errors, best_params
+# Re-export for callers that already import from here
+from plotting.cv import gs_seed_errors as _gs_seed_errors
 
 
 def _pool_sessions(sessions):
@@ -144,12 +136,15 @@ def plot_synth_cv_results(
     """
     GS CV violin + scatter for a synthetic animal.
 
+    Uses the shared plot_cv_comparison from plotting.cv for consistent
+    visual style across synthetic and real data.
+
     Args:
         sa: Synthetic animal dict
         gs_index: {fit_target: {animal_id: {'BE': pickle, 'SC': pickle}}}
         fit_target: Which fit target to show
     """
-    from scipy.stats import wilcoxon
+    from plotting.cv import build_cv_dataframes, plot_cv_comparison
 
     aid = sa['animal_id']
     mt = sa['true_model']
@@ -167,47 +162,19 @@ def plot_synth_cv_results(
     be_e, _ = _gs_seed_errors(fits['BE'])
     sc_e, _ = _gs_seed_errors(fits['SC'])
     if not be_e or not sc_e:
-        print(f'  No valid seeds for {aid}'); return None
+        print(f'  No valid seeds for {aid}')
+        return None
 
+    long_df, comparison_df = build_cv_dataframes(aid, be_e, sc_e)
+    if long_df is None:
+        return None
+
+    # Build synthetic-specific suptitle showing ground truth
+    row = comparison_df.iloc[0]
+    winner = row['winner']
+    p_val = row['p_value']
     n_paired = min(len(be_e), len(sc_e))
-    be_m, sc_m = np.mean(be_e), np.mean(sc_e)
-    winner = 'BE' if be_m < sc_m else 'SC'
 
-    try:
-        _, p_val = wilcoxon(be_e[:n_paired], sc_e[:n_paired])
-    except Exception:
-        p_val = np.nan
-
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
-
-    # Violin
-    ax = axes[0]
-    for i in range(n_paired):
-        ax.plot([0, 1], [be_e[i], sc_e[i]], 'o-', color='grey', alpha=0.12, ms=3)
-    parts = ax.violinplot([be_e, sc_e], positions=[0, 1], showmedians=True)
-    for pc, col in zip(parts['bodies'], [BE_COL, SC_COL]):
-        pc.set_facecolor(col); pc.set_alpha(0.4)
-    ax.set_xticks([0, 1]); ax.set_xticklabels(['BE', 'SC'])
-    ax.set_ylabel(f'Test {ft_short} MSE')
-
-    if p_val < 0.05:
-        verdict = f'winner={winner} (p={p_val:.3f})'
-    elif p_val < 0.1:
-        verdict = f'marginal {winner} (p={p_val:.3f})'
-    else:
-        verdict = f'inconclusive (p={p_val:.3f})'
-    ax.set_title(verdict, fontsize=10)
-
-    # Scatter
-    ax = axes[1]
-    ax.scatter(be_e[:n_paired], sc_e[:n_paired], alpha=0.5, color='grey', s=20)
-    lim = max(max(be_e), max(sc_e)) * 1.1
-    ax.plot([0, lim], [0, lim], 'k--', alpha=0.3)
-    ax.set(xlabel='BE test error', ylabel='SC test error',
-           title=f'BE={be_m:.5f}, SC={sc_m:.5f}')
-    ax.set_aspect('equal')
-
-    # Suptitle — reflects significance
     if p_val < 0.05:
         correct = winner == mt
         tick = '✓' if correct else '✗'
@@ -217,9 +184,13 @@ def plot_synth_cv_results(
     else:
         sig_str = f'Inconclusive, {winner} lower (true: {mt})'
 
-    fig.suptitle(f'{aid} — GS-{ft_short} CV ({n_paired} seeds) — {sig_str}',
-                 fontsize=13, fontweight='bold')
-    plt.tight_layout(); plt.show()
+    title = f'{aid} — GS-{ft_short} CV ({n_paired} seeds) — {sig_str}'
+
+    fig = plot_cv_comparison(
+        long_df, comparison_df, aid,
+        fit_target=ft_short, suptitle=title,
+    )
+    plt.show()
     return fig
 
 

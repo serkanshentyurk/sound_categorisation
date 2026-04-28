@@ -76,17 +76,8 @@ def _load_gs_raw_pickles(
     return data.get('BE'), data.get('SC')
 
 
-def _gs_seed_errors(gs_data: dict) -> Tuple[list, Optional[dict]]:
-    """Extract per-seed errors and best params from a raw GS pickle."""
-    results = gs_data.get('results', [])
-    errors = [r['avg_test_error'] for r in results
-              if not np.isnan(r.get('avg_test_error', np.nan))]
-    valid = [r for r in results
-             if not np.isnan(r.get('avg_test_error', np.nan))
-             and r.get('best_params_single')]
-    best_params = (min(valid, key=lambda r: r['avg_test_error'])['best_params_single']
-                   if valid else None)
-    return errors, best_params
+# Re-export for callers that already import from here
+from plotting.cv import gs_seed_errors as _gs_seed_errors
 
 
 def _build_cv_dataframes(
@@ -94,40 +85,17 @@ def _build_cv_dataframes(
     distribution: str = 'uniform', fit_target: str = 'update_matrix',
 ) -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFrame]]:
     """Build long_df and comparison_df for plotting.cv.plot_cv_comparison."""
+    from plotting.cv import build_cv_dataframes
+
     be_data, sc_data = _load_gs_raw_pickles(
         animal_id, results_dir, distribution, fit_target)
     if be_data is None or sc_data is None:
         return None, None
 
-    rows = []
-    for model, data in [('BE', be_data), ('SC', sc_data)]:
-        for i, r in enumerate(data.get('results', [])):
-            if np.isnan(r.get('avg_test_error', np.nan)):
-                continue
-            rows.append({
-                'animal_id': animal_id, 'model': model,
-                'seed': i, 'avg_test_error': r['avg_test_error'],
-            })
-    if not rows:
-        return None, None
+    be_errors, _ = _gs_seed_errors(be_data)
+    sc_errors, _ = _gs_seed_errors(sc_data)
 
-    long_df = pd.DataFrame(rows)
-    be_errors = long_df[long_df['model'] == 'BE']['avg_test_error']
-    sc_errors = long_df[long_df['model'] == 'SC']['avg_test_error']
-    be_mean, sc_mean = be_errors.mean(), sc_errors.mean()
-    winner = 'BE' if be_mean < sc_mean else 'SC'
-
-    try:
-        from scipy.stats import f_oneway
-        _, p_val = f_oneway(be_errors.values, sc_errors.values)
-    except Exception:
-        p_val = np.nan
-
-    comparison_df = pd.DataFrame([{
-        'animal_id': animal_id, 'winner': winner, 'p_value': p_val,
-        'be_mean': be_mean, 'sc_mean': sc_mean,
-    }])
-    return long_df, comparison_df
+    return build_cv_dataframes(animal_id, be_errors, sc_errors)
 
 
 def _load_sbi_comparison(
@@ -264,39 +232,40 @@ def _plot_consensus_strip(
     animal_id: str, results_dir: Path,
     distribution: str = 'uniform',
     ax: Optional[plt.Axes] = None,
+    assign_row: Optional[pd.Series] = None,
 ) -> Tuple[plt.Figure, dict]:
-    """Plot 4-column consensus strip for one animal."""
+    """
+    Plot 4-column consensus strip for one animal.
+
+    Parameters
+    ----------
+    assign_row : pd.Series, optional
+        Pre-computed row from analysis.consensus.load_all_assignments().
+        If not provided, loads it on the fly.
+    """
+    from analysis.consensus import load_all_assignments, METHOD_COLS
+
+    if assign_row is None:
+        assign_df = load_all_assignments(results_dir, distribution=distribution)
+        match = assign_df[assign_df['id'] == animal_id]
+        if len(match) == 0:
+            assign_row = pd.Series({'id': animal_id})
+        else:
+            assign_row = match.iloc[0]
+
     methods = {}
-    for ft in FIT_TARGETS:
-        ft_short = FT_LABEL[ft]
-        # GS
-        be_data, sc_data = _load_gs_raw_pickles(
-            animal_id, results_dir, distribution, ft)
-        if be_data and sc_data:
-            be_e, _ = _gs_seed_errors(be_data)
-            sc_e, _ = _gs_seed_errors(sc_data)
-            if be_e and sc_e:
-                from scipy.stats import wilcoxon
-                n_paired = min(len(be_e), len(sc_e))
-                try:
-                    _, p_val = wilcoxon(be_e[:n_paired], sc_e[:n_paired])
-                except Exception:
-                    p_val = np.nan
-                if p_val < 0.05:
-                    methods[f'GS-{ft_short}'] = 'BE' if np.mean(be_e) < np.mean(sc_e) else 'SC'
-                else:
-                    methods[f'GS-{ft_short}'] = 'Inconclusive'
+    for mc in METHOD_COLS:
+        val = assign_row.get(mc)
+        p_val = assign_row.get(f'{mc}_p', np.nan)
+        if val in ('BE', 'SC'):
+            if pd.notna(p_val) and p_val < 0.05:
+                methods[mc] = val
             else:
-                methods[f'GS-{ft_short}'] = None
+                methods[mc] = 'Inconclusive'
+        elif isinstance(val, str):
+            methods[mc] = val
         else:
-            methods[f'GS-{ft_short}'] = None
-        # SBI
-        comp = _load_sbi_comparison(animal_id, results_dir, distribution, ft)
-        if comp:
-            w = comp.get('winner')
-            methods[f'SBI-{ft_short}'] = w if w in ('BE', 'SC') else w
-        else:
-            methods[f'SBI-{ft_short}'] = None
+            methods[mc] = None
 
     method_names = list(methods.keys())
     n_m = len(method_names)
@@ -327,11 +296,14 @@ def _plot_consensus_strip(
     for spine in ax.spines.values():
         spine.set_visible(False)
 
-    valid = [v for v in methods.values() if v in ('BE', 'SC')]
-    if valid:
-        from collections import Counter
-        majority = Counter(valid).most_common(1)[0]
-        ax.set_title(f'{animal_id} — {majority[1]}/{len(valid)} say {majority[0]}',
+    consensus = assign_row.get('Consensus', 'Unclear')
+    if consensus in ('BE', 'SC'):
+        sig_count = sum(1 for mc in METHOD_COLS
+                        if methods.get(mc) == consensus)
+        ax.set_title(f'{animal_id} — {sig_count}/{n_m} say {consensus}',
+                     fontsize=12, fontweight='bold')
+    elif consensus == 'Split':
+        ax.set_title(f'{animal_id} — Split',
                      fontsize=12, fontweight='bold')
     else:
         ax.set_title(f'{animal_id} — No clear assignment',
@@ -353,6 +325,7 @@ def plot_animal_summary(
     distribution: str = 'uniform',
     phase_label: Optional[str] = None,
     true_params: Optional[Any] = None,
+    assign_row: Optional[pd.Series] = None,
 ) -> dict:
     """
     Raw behaviour overview + method consensus strip.
@@ -361,6 +334,12 @@ def plot_animal_summary(
         - Bootstrapped psychometric curve (via behav_utils.plot_psychometric)
         - Accuracy trajectory
         - Consensus strip (GS-UM | GS-CP | SBI-UM | SBI-CP)
+
+    Parameters
+    ----------
+    assign_row : pd.Series, optional
+        Pre-computed row from analysis.consensus.load_all_assignments().
+        Avoids re-loading all pickles per animal.
     """
     results_dir = Path(results_dir)
     label = phase_label or distribution.replace('_', ' ').title()
@@ -387,7 +366,10 @@ def plot_animal_summary(
     ax.set_title(f'Accuracy ({np.mean(accs):.1%} mean)', fontsize=10)
 
     # Panel 3: Consensus strip
-    _plot_consensus_strip(animal_id, results_dir, distribution, ax=axes[2])
+    _plot_consensus_strip(
+        animal_id, results_dir, distribution,
+        ax=axes[2], assign_row=assign_row,
+    )
 
     title = f'{animal_id} — {label} ({len(sessions)} sessions, {n_trials} trials)'
     if true_params:

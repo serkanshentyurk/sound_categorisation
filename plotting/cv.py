@@ -11,9 +11,11 @@ Colours imported from behav_utils.plotting.styles for consistency.
 """
 
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
-from typing import Optional, Dict, Tuple
+from typing import Optional, Dict, Tuple, List
 from pathlib import Path
+from scipy.stats import wilcoxon
 
 from behav_utils.plotting.styles import COLOURS, UM_CMAP, apply_style
 
@@ -21,6 +23,82 @@ from behav_utils.plotting.styles import COLOURS, UM_CMAP, apply_style
 BE_COLOUR = COLOURS['BE']
 SC_COLOUR = COLOURS['SC']
 MODEL_COLOURS = {'BE': BE_COLOUR, 'SC': SC_COLOUR, 'Inconclusive': COLOURS.get('unknown', '#95A5A6')}
+
+
+# =============================================================================
+# DATA PREPARATION
+# =============================================================================
+
+def gs_seed_errors(gs_data: dict) -> Tuple[list, Optional[dict]]:
+    """
+    Extract per-seed errors and best params from a raw GS pickle.
+
+    Shared utility — used by both animal_report.py and validation_report.py.
+
+    Returns (errors, best_params) where best_params is from the
+    lowest-error seed, or None if no valid seeds.
+    """
+    results = gs_data.get('results', [])
+    errors = [r['avg_test_error'] for r in results
+              if not np.isnan(r.get('avg_test_error', np.nan))]
+    valid = [r for r in results
+             if not np.isnan(r.get('avg_test_error', np.nan))
+             and r.get('best_params_single')]
+    best_params = (min(valid, key=lambda r: r['avg_test_error'])['best_params_single']
+                   if valid else None)
+    return errors, best_params
+
+
+def build_cv_dataframes(
+    animal_id: str,
+    be_errors: List[float],
+    sc_errors: List[float],
+) -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFrame]]:
+    """
+    Build (long_df, comparison_df) from raw per-seed error arrays.
+
+    Used by both real-data and synthetic-data callers to feed into
+    plot_cv_comparison(). Uses Wilcoxon signed-rank test (paired seeds).
+
+    Returns (None, None) if either error list is empty.
+    """
+    if not be_errors or not sc_errors:
+        return None, None
+
+    rows = []
+    for i, e in enumerate(be_errors):
+        if not np.isnan(e):
+            rows.append({'animal_id': animal_id, 'model': 'BE',
+                         'seed': i, 'avg_test_error': e})
+    for i, e in enumerate(sc_errors):
+        if not np.isnan(e):
+            rows.append({'animal_id': animal_id, 'model': 'SC',
+                         'seed': i, 'avg_test_error': e})
+
+    if not rows:
+        return None, None
+
+    long_df = pd.DataFrame(rows)
+    be_vals = long_df[long_df['model'] == 'BE']['avg_test_error'].values
+    sc_vals = long_df[long_df['model'] == 'SC']['avg_test_error'].values
+
+    if len(be_vals) == 0 or len(sc_vals) == 0:
+        return None, None
+
+    be_mean, sc_mean = np.mean(be_vals), np.mean(sc_vals)
+    winner = 'BE' if be_mean < sc_mean else 'SC'
+
+    n_paired = min(len(be_vals), len(sc_vals))
+    try:
+        _, p_val = wilcoxon(be_vals[:n_paired], sc_vals[:n_paired])
+    except Exception:
+        p_val = np.nan
+
+    comparison_df = pd.DataFrame([{
+        'animal_id': animal_id, 'winner': winner, 'p_value': p_val,
+        'be_mean': be_mean, 'sc_mean': sc_mean,
+    }])
+    return long_df, comparison_df
 
 
 # =============================================================================
@@ -44,6 +122,7 @@ def plot_cv_comparison(
     comparison_df,
     animal_id: str,
     fit_target: str = 'UM',
+    suptitle: Optional[str] = None,
     figsize: Tuple[float, float] = (12, 5),
     output_dir: Optional[str] = None,
 ) -> plt.Figure:
@@ -75,14 +154,17 @@ def plot_cv_comparison(
     be_p = np.array([be_paired[s] for s in paired_seeds])
     sc_p = np.array([sc_paired[s] for s in paired_seeds])
 
-    # Get stats from ANOVA table
+    # Get stats from comparison_df
     row = comparison_df[comparison_df['animal_id'] == animal_id]
     if len(row) > 0:
         p_val = row.iloc[0]['p_value']
         winner = row.iloc[0]['winner']
     else:
-        from scipy.stats import f_oneway
-        _, p_val = f_oneway(be_vals, sc_vals)
+        n_paired = min(len(be_vals), len(sc_vals))
+        try:
+            _, p_val = wilcoxon(be_vals[:n_paired], sc_vals[:n_paired])
+        except Exception:
+            p_val = np.nan
         winner = 'BE' if np.mean(be_vals) < np.mean(sc_vals) else 'SC'
 
     p_str = f'p={p_val:.2e}' if p_val < 0.001 else f'p={p_val:.3f}'
@@ -103,7 +185,7 @@ def plot_cv_comparison(
     _draw_paired_scatter(ax2, be_p, sc_p)
 
     fig.suptitle(
-        f'{animal_id} — CV — Expert - Heuristics',
+        suptitle or f'{animal_id} — CV — {fit_target}',
         fontsize=14, fontweight='bold',
     )
     plt.tight_layout()

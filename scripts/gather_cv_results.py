@@ -28,14 +28,25 @@ sys.path.insert(0, str(REPO_ROOT))
 from scripts.config import CV_DIR, FIT_TARGETS, VALIDATION_DIR, build_metadata
 
 
-def gather_one(results_dir: Path, label: str = '') -> pd.DataFrame:
-    """Gather all per-animal GS pickles in a directory into a DataFrame."""
+def gather_one(results_dir: Path, label: str = '') -> tuple:
+    """
+    Gather all per-animal GS pickles in a directory.
+
+    Returns
+    -------
+    (pivot_df, detail_df)
+        pivot_df: one row per animal with BE/SC mean errors and winner.
+        detail_df: one row per (animal × seed) with individual errors
+            and best params — needed for violin plots and parameter recovery.
+    """
     pkl_files = sorted(results_dir.glob('cv_*.pkl'))
     if not pkl_files:
         print(f'  No results in {results_dir}')
-        return pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame()
 
-    rows = []
+    summary_rows = []
+    detail_rows = []
+
     for path in pkl_files:
         with open(path, 'rb') as f:
             data = pickle.load(f)
@@ -43,19 +54,46 @@ def gather_one(results_dir: Path, label: str = '') -> pd.DataFrame:
         if data.get('n_sessions', 0) == 0:
             continue
 
-        rows.append({
-            'animal': data['animal'],
-            'model': data['model'],
-            'fit_target': data.get('fit_target', 'update_matrix'),
-            'distribution': data.get('distribution', 'uniform'),
+        animal = data['animal']
+        model = data['model']
+        fit_target = data.get('fit_target', 'update_matrix')
+        distribution = data.get('distribution', 'uniform')
+
+        summary_rows.append({
+            'animal': animal,
+            'model': model,
+            'fit_target': fit_target,
+            'distribution': distribution,
             'n_sessions': data['n_sessions'],
             'n_seeds': data.get('n_seeds', 0),
             'mean_error': data.get('mean_error', np.nan),
         })
 
-    df = pd.DataFrame(rows)
+        # Per-seed detail
+        for r in data.get('results', []):
+            err = r.get('avg_test_error', np.nan)
+            if np.isnan(err):
+                continue
+            detail_row = {
+                'animal': animal,
+                'model': model,
+                'fit_target': fit_target,
+                'distribution': distribution,
+                'seed': r.get('seed', np.nan),
+                'avg_test_error': err,
+            }
+            # Flatten best params
+            bp = r.get('best_params', {})
+            if isinstance(bp, dict):
+                for pn, pv in bp.items():
+                    detail_row[f'param_{pn}'] = pv
+            detail_rows.append(detail_row)
+
+    df = pd.DataFrame(summary_rows)
+    detail_df = pd.DataFrame(detail_rows)
+
     if len(df) == 0:
-        return df
+        return df, detail_df
 
     # Pivot: one row per animal, columns for BE and SC errors
     pivot = df.pivot_table(
@@ -76,7 +114,7 @@ def gather_one(results_dir: Path, label: str = '') -> pd.DataFrame:
         for m, c in vc.items():
             print(f'    {m}: {c}')
 
-    return pivot
+    return pivot, detail_df
 
 
 def main():
@@ -112,12 +150,18 @@ def main():
         if not results_dir.exists():
             print(f'  {label}: directory not found')
             continue
-        df = gather_one(results_dir, label)
+        df, detail_df = gather_one(results_dir, label)
         if len(df) > 0:
             summary_path = results_dir / 'summary.pkl'
             with open(summary_path, 'wb') as f:
-                pickle.dump({'df': df, 'metadata': meta}, f)
+                pickle.dump({
+                    'df': df,
+                    'detail_df': detail_df,
+                    'metadata': meta,
+                }, f)
             df.to_csv(results_dir / 'summary.csv', index=False)
+            if len(detail_df) > 0:
+                detail_df.to_csv(results_dir / 'detail.csv', index=False)
             print(f'    Saved {summary_path}')
             all_dfs.append(df)
 

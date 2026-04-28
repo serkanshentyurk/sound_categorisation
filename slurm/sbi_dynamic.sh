@@ -2,7 +2,6 @@
 #SBATCH --job-name=sbi_dyn
 #SBATCH --output=results/logs/sbi_dyn_%A_%a.out
 #SBATCH --error=results/logs/sbi_dyn_%A_%a.err
-#SBATCH -p cpu
 #SBATCH -N 1
 #SBATCH -c 4
 #SBATCH --mem=12G

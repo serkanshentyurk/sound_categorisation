@@ -7,10 +7,18 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Load conda (SWC cluster)
-module load miniconda/23.10.0
+module load miniconda
 
 # Activate environment
-conda activate sound_categorisation
+# NOTE: verify this matches your actual conda env name.
+# If the env doesn't exist, the job will fail here rather than
+# silently running with the base environment.
+CONDA_ENV="sound_cat"
+conda activate "${CONDA_ENV}" || {
+    echo "ERROR: conda env '${CONDA_ENV}' not found."
+    echo "Available envs: $(conda env list --json | python3 -c 'import sys,json; print([e.split(\"/\")[-1] for e in json.load(sys.stdin)[\"envs\"]])')"
+    exit 1
+}
 
 # Headless matplotlib (no X display on compute nodes)
 export MPLBACKEND=Agg

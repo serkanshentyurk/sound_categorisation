@@ -38,6 +38,17 @@ PATH_CONFIG = _PROJECT_ROOT / 'config.yaml'
 STAGE = 'Full_Task_Cont'
 MIN_SESSIONS = 5
 
+# ── Results paths (single source of truth for all notebooks) ───────────────
+RESULTS_DIR = _PROJECT_ROOT / 'results'
+SNPE_DIR = RESULTS_DIR / 'snpe'
+CV_DIR = RESULTS_DIR / 'cv'
+SBI_STATIC_DIR = RESULTS_DIR / 'sbi_static'
+SBI_DYNAMIC_DIR = RESULTS_DIR / 'sbi_dynamic'
+VALIDATION_DIR = RESULTS_DIR / 'validation'
+
+FIT_TARGETS = ['update_matrix', 'conditional_psych']
+FT_LABEL = {'update_matrix': 'UM', 'conditional_psych': 'CP'}
+
 # ── Common imports ──────────────────────────────────────────────────────────
 from behav_utils.data.structures import (
     ExperimentData, AnimalData, SessionData, FittingData,
@@ -82,6 +93,32 @@ from behav_utils.plotting.update_matrix import (
     plot_phase_update_matrices,
     plot_conditional_psychometrics,
 )
+
+from analysis.consensus import load_all_assignments, consensus_summary
+
+
+# ── Results loading helpers ─────────────────────────────────────────────────
+
+def load_snpe_networks(snpe_dir: Path = None, distribution: str = 'uniform') -> dict:
+    """
+    Load trained SNPE pickles for BE and SC.
+
+    Returns dict keyed by model type ('be', 'sc'), each containing
+    the trained posterior + metadata.
+    """
+    import pickle
+
+    snpe_dir = snpe_dir or SNPE_DIR
+    snpe = {}
+    for model in ['be', 'sc']:
+        p = snpe_dir / f'{distribution}_{model}.pkl'
+        if p.exists():
+            with open(p, 'rb') as f:
+                snpe[model] = pickle.load(f)
+            print(f'SNPE {model}: {snpe[model]["param_names"]}')
+        else:
+            print(f'SNPE {model}: not found at {p}')
+    return snpe
 
 
 # ── Data loading ────────────────────────────────────────────────────────────

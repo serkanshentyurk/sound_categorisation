@@ -133,6 +133,13 @@ def main():
                 'n_sessions': len(sessions),
                 'be_params': be_cond['median_params'],
                 'sc_params': sc_cond['median_params'],
+                'be_samples': be_cond['samples'],
+                'sc_samples': sc_cond['samples'],
+                'be_param_names': be_cond['param_names'],
+                'sc_param_names': sc_cond['param_names'],
+                'observed_stats': be_cond['observed_stats'],
+                'observed_stats_be': be_cond['observed_stats'],
+                'observed_stats_sc': sc_cond['observed_stats'],
                 'metadata': meta,
             }
             posterior_path = posterior_dir / f'animal_{aid}.pkl'
@@ -161,6 +168,11 @@ def main():
                     'sc_mean': result['sc_mean'],
                     'be_params': result['be_params'],
                     'sc_params': result['sc_params'],
+                    'be_test_errors': result['be_cv']['test_errors'],
+                    'sc_test_errors': result['sc_cv']['test_errors'],
+                    'be_std': result['be_cv'].get('std_error', np.nan),
+                    'sc_std': result['sc_cv'].get('std_error', np.nan),
+                    'n_sessions': len(sessions),
                     'metadata': meta,
                 }
                 comp_path = comp_dir / f'animal_{aid}.pkl'
