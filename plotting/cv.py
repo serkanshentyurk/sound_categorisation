@@ -29,6 +29,20 @@ MODEL_COLOURS = {'BE': BE_COLOUR, 'SC': SC_COLOUR, 'Inconclusive': COLOURS.get('
 # DATA PREPARATION
 # =============================================================================
 
+def params_to_str(params) -> str:
+    """Format params (dict or dataclass) as compact string."""
+    if params is None:
+        return ''
+    if hasattr(params, '__dict__'):
+        d = {k: v for k, v in vars(params).items()
+             if not str(k).startswith('_') and isinstance(v, (int, float))}
+    elif isinstance(params, dict):
+        d = {k: v for k, v in params.items() if isinstance(v, (int, float))}
+    else:
+        return str(params)
+    return ', '.join(f'{k}={v:.3f}' for k, v in d.items())
+
+
 def gs_seed_errors(gs_data: dict) -> Tuple[list, Optional[dict]]:
     """
     Extract per-seed errors and best params from a raw GS pickle.

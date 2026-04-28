@@ -214,18 +214,8 @@ def _get_sbi_samples(
     return samples.get('be'), samples.get('sc'), x_obs
 
 
-def _params_to_str(params) -> str:
-    """Format params (dict or dataclass) as compact string."""
-    if params is None:
-        return ''
-    if hasattr(params, '__dict__'):
-        d = {k: v for k, v in vars(params).items()
-             if not str(k).startswith('_') and isinstance(v, (int, float))}
-    elif isinstance(params, dict):
-        d = {k: v for k, v in params.items() if isinstance(v, (int, float))}
-    else:
-        return str(params)
-    return ', '.join(f'{k}={v:.3f}' for k, v in d.items())
+# Re-export for callers that already import from here
+from plotting.cv import params_to_str as _params_to_str
 
 
 def _plot_consensus_strip(

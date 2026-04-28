@@ -42,15 +42,8 @@ FT_LABEL = {'update_matrix': 'UM', 'conditional_psych': 'CP'}
 # HELPERS
 # =============================================================================
 
-def _params_to_str(params) -> str:
-    if params is None: return ''
-    if hasattr(params, '__dict__'):
-        d = {k: v for k, v in vars(params).items()
-             if not str(k).startswith('_') and isinstance(v, (int, float))}
-    elif isinstance(params, dict):
-        d = {k: v for k, v in params.items() if isinstance(v, (int, float))}
-    else: return str(params)
-    return ', '.join(f'{k}={v:.3f}' for k, v in d.items())
+# Re-export for callers that already import from here
+from plotting.cv import params_to_str as _params_to_str
 
 
 def _params_to_dict(params) -> dict:

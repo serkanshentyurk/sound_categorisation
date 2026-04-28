@@ -27,7 +27,15 @@ source "/nfs/nhome/live/sshentyurk/repos/sound_categorisation/slurm/env_setup.sh
 cd "${REPO_DIR}"
 
 # ── Configuration ────────────────────────────────────────────────────────────
-ANIMALS=(SS01 SS04 SS05 SS06 SS07 SS08 SS09 SS10 SS11 SS12 SS13 SS14)
+# Animal list: loaded from ANIMALS_FILE if set by submit.sh,
+# otherwise falls back to the hardcoded list below.
+if [ -n "${ANIMALS_FILE:-}" ] && [ -f "${ANIMALS_FILE}" ]; then
+    mapfile -t ANIMALS < "${ANIMALS_FILE}"
+    echo "Animals from ${ANIMALS_FILE}"
+else
+    ANIMALS=(SS01 SS04 SS05 SS06 SS07 SS08 SS09 SS10 SS11 SS12 SS13 SS14)
+    echo "Animals from hardcoded list (use slurm/submit.sh for dynamic selection)"
+fi
 MODELS=(be sc)
 FIT_TARGETS=(update_matrix conditional_psych)
 DISTRIBUTION="uniform"
