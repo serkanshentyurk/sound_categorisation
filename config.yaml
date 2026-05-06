@@ -314,6 +314,53 @@ extra_columns:
   - "Correct_Count"
 
 # =============================================================================
+# Session Selection Presets
+# =============================================================================
+# Override or extend the hardcoded presets in behav_utils.data.selection.
+# Loaded via register_presets_from_config() — call from shared_setup.py.
+# Any preset defined here overrides the default of the same name.
+session_presets:
+  expert_uniform:
+    stage: "Full_Task_Cont"
+    distribution: "Uniform"
+    min_accuracy: 0.70
+    last_fraction: 0.50
+  all_uniform:
+    stage: "Full_Task_Cont"
+    distribution: "Uniform"
+  naive_uniform:
+    stage: "Full_Task_Cont"
+    distribution: "Uniform"
+    first_n: 5
+  all_hard_a:
+    stage: "Full_Task_Cont"
+    distribution: "Hard-A"
+  all_hard_b:
+    stage: "Full_Task_Cont"
+    distribution: "Hard-B"
+  early_hard_a:
+    stage: "Full_Task_Cont"
+    distribution: "Hard-A"
+    first_n: 5
+  early_hard_b:
+    stage: "Full_Task_Cont"
+    distribution: "Hard-B"
+    first_n: 5
+  expert_hard_a:
+    stage: "Full_Task_Cont"
+    distribution: "Hard-A"
+    min_accuracy: 0.60
+    last_fraction: 0.50
+  expert_hard_b:
+    stage: "Full_Task_Cont"
+    distribution: "Hard-B"
+    min_accuracy: 0.60
+    last_fraction: 0.50
+  all_full_task:
+    stage: "Full_Task_Cont"
+  all_stages: {}
+
+# =============================================================================
 # Analysis defaults
 # =============================================================================
 analysis:

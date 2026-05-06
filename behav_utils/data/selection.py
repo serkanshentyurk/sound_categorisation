@@ -430,6 +430,7 @@ def register_presets_from_config(config_raw: Dict[str, Any]) -> int:
 # =============================================================================
 # Registered on import. Projects can override via config or explicit calls.
 
+# ── Uniform distribution ─────────────────────────────────────────────────
 register_preset('expert_uniform', SessionFilter(
     stage='Full_Task_Cont',
     distribution='Uniform',
@@ -442,4 +443,52 @@ register_preset('all_uniform', SessionFilter(
     distribution='Uniform',
 ))
 
+register_preset('naive_uniform', SessionFilter(
+    stage='Full_Task_Cont',
+    distribution='Uniform',
+    first_n=5,
+))
+
+# ── Hard distributions ───────────────────────────────────────────────────
+register_preset('all_hard_a', SessionFilter(
+    stage='Full_Task_Cont',
+    distribution='Hard-A',
+))
+
+register_preset('all_hard_b', SessionFilter(
+    stage='Full_Task_Cont',
+    distribution='Hard-B',
+))
+
+register_preset('early_hard_a', SessionFilter(
+    stage='Full_Task_Cont',
+    distribution='Hard-A',
+    first_n=5,
+))
+
+register_preset('early_hard_b', SessionFilter(
+    stage='Full_Task_Cont',
+    distribution='Hard-B',
+    first_n=5,
+))
+
+register_preset('expert_hard_a', SessionFilter(
+    stage='Full_Task_Cont',
+    distribution='Hard-A',
+    min_accuracy=0.60,
+    last_fraction=0.50,
+))
+
+register_preset('expert_hard_b', SessionFilter(
+    stage='Full_Task_Cont',
+    distribution='Hard-B',
+    min_accuracy=0.60,
+    last_fraction=0.50,
+))
+
+# ── Global ───────────────────────────────────────────────────────────────
 register_preset('all_stages', SessionFilter())
+
+register_preset('all_full_task', SessionFilter(
+    stage='Full_Task_Cont',
+))
