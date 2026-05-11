@@ -360,6 +360,7 @@ class SessionData:
     date: date
     metadata: SessionMetadata
     trials: TrialData
+    masking: bool = False
 
     # Source
     csv_path: Optional[str] = None
@@ -572,6 +573,10 @@ class AnimalData:
     @property
     def n_sessions(self) -> int:
         return len(self.sessions)
+    
+    @property
+    def genotype(self) -> str:
+        return self.metadata.get('genotype', 'unknown')
 
     @property
     def stages(self) -> List[str]:

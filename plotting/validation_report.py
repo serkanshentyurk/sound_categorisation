@@ -9,6 +9,7 @@ Usage:
         plot_synth_summary, plot_synth_cv_results,
         plot_synth_model_fits, plot_synth_sbi_diagnostics,
         plot_recovery_overlay, plot_recovery_summary,
+        build_confusion_matrix,
     )
 """
 
@@ -737,3 +738,39 @@ def plot_recovery_summary(
                 else:
                     row += f'     —'
             print(row)
+
+# ─── Confusion matrix utility ────────────────────────────────────────────────
+
+def build_confusion_matrix(
+    df,
+    true_col: str = 'true_model',
+    pred_col: str = 'winner',
+    labels: Optional[List[str]] = None,
+) -> Optional[np.ndarray]:
+    """
+    Build 2×2 confusion matrix from a DataFrame of assignments.
+
+    Args:
+        df: DataFrame with columns for true model and predicted winner
+        true_col: Column name for ground truth
+        pred_col: Column name for predicted assignment
+        labels: Class labels. Default: ['BE', 'SC']
+
+    Returns:
+        (2, 2) ndarray or None if no valid rows.
+        Rows = true, columns = predicted.
+
+    Usage:
+        cm = build_confusion_matrix(synth_df)
+        cm = build_confusion_matrix(synth_df, true_col='true', pred_col='GS-UM')
+    """
+    labels = labels or ['BE', 'SC']
+    cm = np.zeros((len(labels), len(labels)), dtype=int)
+
+    for _, row in df.iterrows():
+        true_val = row.get(true_col)
+        pred_val = row.get(pred_col)
+        if true_val in labels and pred_val in labels:
+            cm[labels.index(true_val), labels.index(pred_val)] += 1
+
+    return cm if cm.sum() > 0 else None

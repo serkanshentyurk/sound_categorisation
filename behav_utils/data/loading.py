@@ -686,7 +686,34 @@ def load_experiment(
         except Exception as e:
             warnings.warn(f"Failed to load animal {animal_dir.name}: {e}")
             continue
-
+    
+    # Load animal metadata if file exists
+    meta_path = data_dir / 'animal_metadata.json'
+    if meta_path.exists():
+        import json
+        with open(meta_path) as f:
+            animal_meta = json.load(f)
+        for animal_id, meta in animal_meta.items():
+            animal = experiment.animals.get(animal_id)
+            if animal is not None:
+                animal.metadata.update(meta)
+    
+    if config.masking_sessions:
+        from datetime import date as dt_date
+        for animal_id, date_strs in config.masking_sessions.items():
+            animal = experiment.animals.get(animal_id)
+            if animal is None:
+                continue
+            dates = set()
+            for ds in date_strs:
+                try:
+                    dates.add(dt_date(int(ds[:4]), int(ds[4:6]), int(ds[6:8])))
+                except (ValueError, IndexError):
+                    continue
+            for sess in animal.sessions:
+                if sess.date in dates:
+                    sess.masking = True
+    
     print(
         f"Loaded {experiment.n_animals} animals, "
         f"{sum(a.n_sessions for a in experiment.animals.values())} total sessions"

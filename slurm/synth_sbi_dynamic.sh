@@ -5,7 +5,7 @@
 #SBATCH -N 1
 #SBATCH -c 4
 #SBATCH --mem=12G
-#SBATCH --time=0-18:00
+#SBATCH --time=2-00:00
 #SBATCH -p gpu
 #SBATCH --gres=gpu:1
 #

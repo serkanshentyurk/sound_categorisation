@@ -225,6 +225,9 @@ class ProjectConfig:
 
     # Extra columns to load but not map to specific fields
     extra_columns: List[str] = field(default_factory=list)
+    
+    # Masking session overrides: {animal_id: ['YYYYMMDD', ...]}
+    masking_sessions: Dict[str, List[str]] = field(default_factory=dict)
 
     def __post_init__(self):
         self._validate()

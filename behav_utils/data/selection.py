@@ -14,7 +14,8 @@ Filtering order (each step narrows the previous):
     3. Positional:  last_fraction, first_n, last_n
     4. Quality:     min_accuracy, max_accuracy, min_trials
     5. Opto:        exclude_opto
-    6. Custom:      custom_filter callable
+    6. Masking:     exclude_masking
+    7. Custom:      custom_filter callable
 
 Usage:
     from behav_utils.data.selection import select_sessions, register_preset, SessionFilter
@@ -91,6 +92,7 @@ class SessionFilter:
     session_indices: Optional[List[int]] = None
     min_trials: int = 10
     exclude_opto: bool = False
+    exclude_masking: bool = True
     custom_filter: Optional[Callable] = field(default=None, hash=False)
 
     def apply(self, animal: 'AnimalData') -> List['SessionData']:
@@ -161,7 +163,12 @@ class SessionFilter:
                 if not np.any(s.trials.opto_on)
             ]
 
-        # ── 6. Custom ─────────────────────────────────────────────────────
+        # ── 6. Masking ───────────────────────────────────────────────────
+        if self.exclude_masking:
+            sessions = [s for s in sessions if not getattr(s, 'masking', False)]
+
+
+        # ── 7. Custom ─────────────────────────────────────────────────────
         if self.custom_filter is not None:
             sessions = [s for s in sessions if self.custom_filter(s)]
 
@@ -201,6 +208,8 @@ class SessionFilter:
             parts.append(f"≥{self.min_trials} trials")
         if self.exclude_opto:
             parts.append("no opto")
+        if self.exclude_masking:
+            parts.append("no masking")
         if self.custom_filter is not None:
             parts.append("+ custom filter")
         return ', '.join(parts) if parts else '(no constraints)'

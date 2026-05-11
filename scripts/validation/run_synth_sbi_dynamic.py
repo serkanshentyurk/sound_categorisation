@@ -42,7 +42,9 @@ if str(REPO_ROOT) not in sys.path:
 
 from scripts.config import (
     DYNAMIC_SBI_N_SIMULATIONS, DYNAMIC_SBI_SIGMA_DRIFT,
-    DYNAMIC_SBI_VARYING_PARAMS, SBI_BURN_IN, BASE_SEED,
+    DYNAMIC_SBI_VARYING_PARAMS, DYNAMIC_SBI_BOUNDS,
+    SYNTH_DYNAMIC_VARYING_PARAMS,
+    SBI_BURN_IN, BASE_SEED,
     VALIDATION_DIR,
     SMOKE_DYNAMIC_SBI_N_SIMULATIONS,
     build_metadata, ensure_dirs,
@@ -143,11 +145,17 @@ def generate_synthetic_dynamic_animal(
 
 def run_dynamic_sbi(
     sessions, animal_id, model_type, varying_params,
-    sigma_drift, n_simulations, burn_in, seed,
+    sigma_drift_dict, n_simulations, burn_in, seed,
+    bounds_override=None,
     n_trajectory_samples=500, n_ppc_sims=200,
 ):
     """
     Run dynamic SBI with RandomWalk linking for one model type.
+
+    Args:
+        sigma_drift_dict: {param_name: float} — per-parameter drift.
+        bounds_override: {param_name: (lo, hi)} — overrides model defaults.
+            Use DYNAMIC_SBI_BOUNDS for learning-trajectory fitting.
 
     Returns dict with trajectories, PPC, session params, and timing.
     """
@@ -166,12 +174,19 @@ def run_dynamic_sbi(
         bounds = SCParams.get_bounds()
         all_params = SCParams.get_param_names()
 
+    # Override bounds if provided (e.g. wider bounds for dynamic fitting)
+    if bounds_override is not None:
+        for pname, b in bounds_override.items():
+            if pname in bounds:
+                bounds[pname] = b
+
     param_links = {}
     for pname in all_params:
         if pname in varying_params:
+            sd = sigma_drift_dict.get(pname, 0.05)
             param_links[pname] = RandomWalkSpec(
                 bounds=bounds[pname],
-                sigma_drift=sigma_drift,
+                sigma_drift=sd,
             )
         else:
             param_links[pname] = ConstantSpec(bounds=bounds[pname])
@@ -217,8 +232,6 @@ def main():
     parser.add_argument('--n-sessions', type=int, default=20)
     parser.add_argument('--trials-per-session', type=int, default=350)
     parser.add_argument('--n-simulations', type=int, default=None)
-    parser.add_argument('--sigma-drift', type=float,
-                        default=DYNAMIC_SBI_SIGMA_DRIFT)
     parser.add_argument('--seed', type=int, default=BASE_SEED)
     parser.add_argument('--output-dir', type=str, default=None)
     parser.add_argument('--smoke-test', action='store_true',
@@ -251,9 +264,23 @@ def main():
         mode_label = 'FULL'
 
     model_key = args.model.upper()
-    be_varying = list(DYNAMIC_SBI_VARYING_PARAMS['BE'])
-    sc_varying = list(DYNAMIC_SBI_VARYING_PARAMS['SC'])
+
+    # Use SYNTH varying params (only actually-varying params) for validation.
+    # For the WRONG model fit, also use synth params so both models get a
+    # fair comparison (only fitting what the synthetic data actually varies).
+    be_varying = list(SYNTH_DYNAMIC_VARYING_PARAMS['BE'])
+    sc_varying = list(SYNTH_DYNAMIC_VARYING_PARAMS['SC'])
     true_varying = be_varying if model_key == 'BE' else sc_varying
+
+    # Per-parameter sigma_drift
+    be_drift = DYNAMIC_SBI_SIGMA_DRIFT['BE']
+    sc_drift = DYNAMIC_SBI_SIGMA_DRIFT['SC']
+    true_drift = be_drift if model_key == 'BE' else sc_drift
+
+    # Dynamic bounds (wider than static to cover learning phase)
+    be_bounds = DYNAMIC_SBI_BOUNDS['BE']
+    sc_bounds = DYNAMIC_SBI_BOUNDS['SC']
+    true_bounds = be_bounds if model_key == 'BE' else sc_bounds
 
     output_dir = Path(args.output_dir) if args.output_dir else (
         VALIDATION_DIR / 'synth_sbi_dynamic'
@@ -268,6 +295,9 @@ def main():
     print(f'  Simulations:        {n_sims:,}')
     print(f'  Trajectory samples: {n_trajectory_samples}')
     print(f'  PPC sims:           {n_ppc_sims}')
+    print(f'  Varying params:     {true_varying}')
+    print(f'  Sigma drift:        {true_drift}')
+    print(f'  Dynamic bounds:     {true_bounds}')
 
     # ── Generate synthetic animal ────────────────────────────────────────────
     print('\n── Generating synthetic animal ──')
@@ -293,10 +323,11 @@ def main():
         animal_id=synth['animal_id'],
         model_type=model_key,
         varying_params=true_varying,
-        sigma_drift=args.sigma_drift,
+        sigma_drift_dict=true_drift,
         n_simulations=n_sims,
         burn_in=SBI_BURN_IN,
         seed=args.seed,
+        bounds_override=true_bounds,
         n_trajectory_samples=n_trajectory_samples,
         n_ppc_sims=n_ppc_sims,
     )
@@ -305,6 +336,8 @@ def main():
     # ── Run dynamic SBI: WRONG model ────────────────────────────────────────
     wrong_key = 'SC' if model_key == 'BE' else 'BE'
     wrong_varying = sc_varying if model_key == 'BE' else be_varying
+    wrong_drift = sc_drift if model_key == 'BE' else be_drift
+    wrong_bounds = sc_bounds if model_key == 'BE' else be_bounds
 
     print(f'\n── Fitting WRONG model ({wrong_key}) ──')
     wrong_fit = run_dynamic_sbi(
@@ -312,10 +345,11 @@ def main():
         animal_id=synth['animal_id'],
         model_type=wrong_key,
         varying_params=wrong_varying,
-        sigma_drift=args.sigma_drift,
+        sigma_drift_dict=wrong_drift,
         n_simulations=n_sims,
         burn_in=SBI_BURN_IN,
         seed=args.seed + 999,
+        bounds_override=wrong_bounds,
         n_trajectory_samples=n_trajectory_samples,
         n_ppc_sims=n_ppc_sims,
     )
@@ -384,7 +418,14 @@ def main():
         'wrong_ppc_mse': float(wrong_ppc_mse),
 
         # Config
-        'sigma_drift': args.sigma_drift,
+        'sigma_drift': {
+            model_key: true_drift,
+            wrong_key: wrong_drift,
+        },
+        'dynamic_bounds': {
+            model_key: true_bounds,
+            wrong_key: wrong_bounds,
+        },
         'n_simulations': n_sims,
         'n_trajectory_samples': n_trajectory_samples,
         'n_ppc_sims': n_ppc_sims,

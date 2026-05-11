@@ -125,7 +125,7 @@ columns:
     optional: true
 
   opto_on:
-    csv_name: "Fiber"
+    csv_name: "Zapit"
     dtype: bool
     optional: true
     default: false
@@ -358,6 +358,11 @@ session_presets:
     last_fraction: 0.50
   all_full_task:
     stage: "Full_Task_Cont"
+  expert_opto:
+    stage: "Full_Task_Cont"
+    distribution: "Uniform"
+  opto_all:
+    stage: "Full_Task_Cont"
   all_stages: {}
 
 # =============================================================================
@@ -382,3 +387,18 @@ plotting:
     BE: "steelblue"
     SC: "darkorange"
     default: "grey"
+
+# =============================================================================
+# Masking sessions (light-only controls, no real inactivation)
+# =============================================================================
+masking_sessions:
+  SS14: ['20260429', '20260505']
+  SS15: ['20260428', '20260429', '20260505']
+  SS16: ['20260427', '20260428', '20260429', '20260505']
+  SS17: ['20260511', '20260512', '20260513', '20260514']
+  SS18: ['20260429', '20260505']
+  SS19: []
+  SS20: ['20260429', '20260505']
+  SS21: ['20260427' ,'20260428', '20260429', '20260505']
+  SS22: ['20260511', '20260512', '20260513', '20260514']
+  SS23: ['20260427', '20260428', '20260429', '20260505']

@@ -3,7 +3,6 @@ logs/
 __pycache__/
 .idea/
 .vscode/
-Proposal.pdf
 .DS_Store
 feature_analysis.ipynb
 results/
@@ -12,3 +11,4 @@ logs/
 fitter_errors.log
 .ipynb_checkpoints/
 data/
+animal_metadata.json
