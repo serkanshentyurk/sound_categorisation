@@ -434,6 +434,18 @@ def load_config(path: Union[str, Path]) -> ProjectConfig:
     for name, spec in raw.get('session_metadata', {}).items():
         session_metadata[name] = _parse_session_metadata(name, spec)
 
+    # Masking sessions: {animal_id: ['YYYYMMDD', ...]}
+    masking_raw = raw.get('masking_sessions', {})
+    # Normalise: ensure all values are lists of strings
+    masking_sessions = {}
+    for aid, dates in masking_raw.items():
+        if isinstance(dates, list):
+            masking_sessions[str(aid)] = [str(d) for d in dates]
+        elif dates is None:
+            masking_sessions[str(aid)] = []
+        else:
+            masking_sessions[str(aid)] = [str(dates)]
+
     return ProjectConfig(
         name=raw.get('project', {}).get('name', 'Unnamed Project'),
         description=raw.get('project', {}).get('description', ''),
@@ -444,6 +456,7 @@ def load_config(path: Union[str, Path]) -> ProjectConfig:
         columns=columns,
         session_metadata=session_metadata,
         extra_columns=raw.get('extra_columns', []),
+        masking_sessions=masking_sessions,
     )
 
 

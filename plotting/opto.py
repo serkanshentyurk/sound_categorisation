@@ -41,7 +41,8 @@ from behav_utils.analysis.utils import cumulative_gaussian
 from behav_utils.plotting.styles import COLOURS, UM_CMAP, apply_style
 
 from analysis.opto import (
-    OptoPhase, split_trials_by_opto, extract_trial_arrays,
+    OptoPhase, split_trials_by_opto, get_post_opto_mask,
+    extract_trial_arrays,
 )
 
 apply_style()
@@ -49,6 +50,7 @@ apply_style()
 # ─── Colours ─────────────────────────────────────────────────────────────────
 
 OPTO_COLOUR = '#E24A33'
+POST_OPTO_COLOUR = '#8B6DAF'
 CTRL_COLOUR = '#348ABD'
 BE_COLOUR = COLOURS.get('BE', 'steelblue')
 SC_COLOUR = COLOURS.get('SC', 'darkorange')
@@ -80,15 +82,23 @@ def plot_opto_psychometric(
     ax: Optional[plt.Axes] = None,
     title: Optional[str] = None,
     n_bins: int = 8,
+    n_bootstrap: int = 200,
+    show_post_opto: bool = True,
 ) -> plt.Figure:
     """
-    Plot overlaid psychometric curves for opto and control trials.
+    Plot overlaid psychometric curves for opto, post-opto, and control trials.
+
+    Shows binned data points, fitted curves, and bootstrap 95% CI bands.
+    Uses three-way split when show_post_opto=True.
 
     Args:
         session_or_sessions: Single SessionData or list of SessionData.
             If list, trials are pooled.
         ax: Matplotlib axes. If None, creates new figure.
         title: Plot title.
+        n_bins: Number of stimulus bins for data points.
+        n_bootstrap: Bootstrap iterations for CI bands (0 to skip).
+        show_post_opto: Include post-opto curve (default True).
     """
     if ax is None:
         fig, ax = plt.subplots(1, 1, figsize=(5, 4))
@@ -99,13 +109,21 @@ def plot_opto_psychometric(
                 if isinstance(session_or_sessions, list)
                 else [session_or_sessions])
 
-    for label, mask_idx, colour in [
-        ('Control', 1, CTRL_COLOUR), ('Opto', 0, OPTO_COLOUR)
-    ]:
+    # Define conditions: (label, mask_getter, colour)
+    # Control = all non-opto (70%), post-opto = subset of control
+    conditions = [
+        ('Control', lambda s: split_trials_by_opto(s)[1], CTRL_COLOUR),
+        ('Opto', lambda s: split_trials_by_opto(s)[0], OPTO_COLOUR),
+    ]
+    if show_post_opto:
+        conditions.append(
+            ('Post-opto', lambda s: get_post_opto_mask(s), POST_OPTO_COLOUR))
+
+    for label, mask_fn, colour in conditions:
         all_stim, all_choice = [], []
         for sess in sessions:
-            masks = split_trials_by_opto(sess)
-            arrays = extract_trial_arrays(sess, masks[mask_idx])
+            mask = mask_fn(sess)
+            arrays = extract_trial_arrays(sess, mask)
             if arrays is None:
                 continue
             valid = ~arrays['no_response']
@@ -132,10 +150,24 @@ def plot_opto_psychometric(
         ax.plot(centres, means, 'o', color=colour, markersize=6,
                 label=f'{label} (n={len(stim)})')
 
-        # Fitted curve
+        # Fitted curve with bootstrap CI
         try:
-            pfit = fit_psychometric(stim, choice)
+            pfit = fit_psychometric(
+                stim, choice, n_bootstrap=n_bootstrap)
             x_fine = np.linspace(-1, 1, 200)
+
+            # CI band
+            if n_bootstrap > 0 and pfit.get('y_fit_ci') is not None:
+                ci_lo, ci_hi = pfit['y_fit_ci']
+                if ci_lo is not None and ci_hi is not None:
+                    x_fit = pfit.get('x_fit', np.linspace(-1, 1, 100))
+                    ci_lo_fine = np.interp(x_fine, x_fit, ci_lo)
+                    ci_hi_fine = np.interp(x_fine, x_fit, ci_hi)
+                    ax.fill_between(
+                        x_fine, ci_lo_fine, ci_hi_fine,
+                        color=colour, alpha=0.15)
+
+            # Fitted line
             y_fine = cumulative_gaussian(
                 x_fine, pfit['mu'], pfit['sigma'],
                 pfit['lapse_low'], pfit['lapse_high'])
@@ -216,8 +248,8 @@ def plot_opto_um_comparison(
     """
     Side-by-side update matrices: control, opto, and optionally difference.
 
-    Uses UM_CMAP from behav_utils for control and opto panels.
-    Uses RdBu_r for the difference panel (diverging from zero).
+    Uses UM_CMAP from behav_utils for all panels (consistent with
+    all other UM plots in the codebase).
     """
     n_panels = 3 if diff else 2
     fig, axes = plt.subplots(1, n_panels, figsize=(4.5 * n_panels, 4))
@@ -244,7 +276,7 @@ def plot_opto_um_comparison(
         diff_um = opto_um - control_um
         vmax_d = max(np.nanmax(np.abs(diff_um)), 0.01)
         im2 = axes[2].imshow(
-            diff_um, cmap='RdBu_r', vmin=-vmax_d, vmax=vmax_d,
+            diff_um, cmap=UM_CMAP, vmin=-vmax_d, vmax=vmax_d,
             origin='lower', aspect='equal')
         axes[2].set_title('Opto − Control')
         axes[2].set_xlabel('Previous stimulus')
@@ -297,6 +329,82 @@ def plot_expert_stability(
     p = stability_result.get('p_value', np.nan)
     if not np.isnan(p):
         ax.set_xlabel(f'Baseline vs Opto: p={p:.3f}')
+
+    if title:
+        ax.set_title(title)
+    fig.tight_layout()
+    return fig
+
+
+def plot_phase_stability(
+    stability_result: Dict[str, Any],
+    stat_name: str = 'accuracy',
+    ax: Optional[plt.Axes] = None,
+    title: Optional[str] = None,
+) -> plt.Figure:
+    """
+    Plot stat values across all phases with pairwise comparisons.
+
+    Shows baseline, masking, opto, washout as grouped dots with means.
+    Annotates significant pairwise comparisons.
+
+    Args:
+        stability_result: From phase_stability().
+        stat_name: Which stat to plot (must be in stability_result['stat_names']).
+    """
+    if ax is None:
+        fig, ax = plt.subplots(1, 1, figsize=(6, 4.5))
+    else:
+        fig = ax.get_figure()
+
+    phase_order = [
+        (OptoPhase.EXPERT_BASELINE, 'Baseline'),
+        (OptoPhase.MASKING, 'Masking'),
+        (OptoPhase.EXPERT_OPTO, 'Opto'),
+        (OptoPhase.EXPERT_WASHOUT, 'Washout'),
+    ]
+
+    # Only show phases with data
+    present = []
+    for phase, label in phase_order:
+        vals = stability_result['per_phase'].get(phase, {}).get(stat_name, np.array([]))
+        if len(vals) > 0:
+            present.append((phase, label, vals))
+
+    for i, (phase, label, values) in enumerate(present):
+        colour = PHASE_COLOURS.get(phase, '#333333')
+        jitter = np.random.default_rng(42).uniform(-0.15, 0.15, len(values))
+        ax.scatter(i + jitter, values, c=colour, s=30, alpha=0.6,
+                   edgecolor='white', linewidth=0.5)
+        ax.plot([i - 0.2, i + 0.2], [np.mean(values)] * 2,
+                color=colour, linewidth=2.5)
+
+    ax.set_xticks(range(len(present)))
+    ax.set_xticklabels([label for _, label, _ in present])
+    ax.set_ylabel(stat_name)
+
+    # Annotate significant comparisons
+    comparisons = stability_result.get('comparisons', {})
+    sig_pairs = []
+    for (pa, pb), stats in comparisons.items():
+        p_val = stats.get(stat_name, {}).get('p', np.nan)
+        if not np.isnan(p_val) and p_val < 0.05:
+            # Find x positions
+            idx_a = next((i for i, (ph, _, _) in enumerate(present) if ph == pa), None)
+            idx_b = next((i for i, (ph, _, _) in enumerate(present) if ph == pb), None)
+            if idx_a is not None and idx_b is not None:
+                sig_pairs.append((idx_a, idx_b, p_val))
+
+    # Draw significance brackets
+    if sig_pairs:
+        y_max = max(np.max(v) for _, _, v in present)
+        y_step = (y_max - min(np.min(v) for _, _, v in present)) * 0.08
+        for k, (ia, ib, p_val) in enumerate(sig_pairs):
+            y = y_max + y_step * (k + 1)
+            ax.plot([ia, ia, ib, ib], [y - y_step * 0.3, y, y, y - y_step * 0.3],
+                    'k-', linewidth=0.8)
+            ax.text((ia + ib) / 2, y, f'p={p_val:.3f}',
+                    ha='center', va='bottom', fontsize=7)
 
     if title:
         ax.set_title(title)
@@ -702,7 +810,7 @@ def plot_animal_opto_report(
             diff_um = comp['opto_um'] - comp['control_um']
             vmax = max(np.nanmax(np.abs(diff_um)), 0.01)
             im = ax_um.imshow(
-                diff_um, cmap='RdBu_r', vmin=-vmax, vmax=vmax,
+                diff_um, cmap=UM_CMAP, vmin=-vmax, vmax=vmax,
                 origin='lower', aspect='equal')
             ax_um.set_title(f'{phase.value}\nOpto−Control UM')
             plt.colorbar(im, ax=ax_um, fraction=0.046)

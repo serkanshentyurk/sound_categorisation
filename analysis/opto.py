@@ -14,17 +14,21 @@ session.masking (set by load_experiment from config.yaml / CSV column).
 Public API:
     OptoPhase               — Enum for experimental phases
     assign_opto_phases      — Label each session with its phase
-    split_trials_by_opto    — Boolean masks for opto/control trials
+    opto_relative_mask      — Boolean mask at fixed offset from opto events
+    split_trials_by_opto    — Boolean masks for opto/control trials (wrapper)
+    get_post_opto_mask      — Identify post-opto trials (wrapper)
     extract_trial_arrays    — Get stimulus/choice/category arrays for a mask
     within_session_effect   — Per-session opto vs control stats
     phase_pooled_comparison — Pool across sessions, compare opto vs control
-    compute_opto_um         — Update matrix from only opto or only control trials
-    expert_stability        — Baseline → opto → washout trajectory
+    compute_opto_um         — Update matrix from opto-relative trials (delta API)
+    expert_stability        — Backward-compat wrapper for phase_stability
+    phase_stability         — Full baseline/masking/opto/washout comparison
     genotype_interaction    — Compare effect sizes across het vs WT
     animal_opto_report      — Run full analysis for one animal
     cohort_opto_report      — Run full analysis for all animals, split by genotype
     opto_by_model_assignment — Group opto effects by BE/SC/unclear consensus
     expert_null_test        — TOST equivalence test for expert-phase null prediction
+    expert_um_test          — UM RMSE equivalence test for expert-phase null prediction
     phase_opto_interaction  — Phase × opto interaction (expert vs post-shift)
     simulate_with_opto      — Simulate session with trial-level opto lesion
 
@@ -38,12 +42,11 @@ Usage:
 """
 
 from enum import Enum
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple, Union, Any
 
 import numpy as np
 from scipy.stats import mannwhitneyu, ttest_1samp, wilcoxon, ttest_rel
 
-from behav_utils.analysis.psychometry import fit_psychometric
 from behav_utils.analysis.update_matrix import compute_update_matrix
 
 
@@ -132,22 +135,128 @@ def assign_opto_phases(animal) -> List[OptoPhase]:
     return phases
 
 
-# ─── Trial splitting ─────────────────────────────────────────────────────────
+# ─── Trial masking ───────────────────────────────────────────────────────────
+
+def opto_relative_mask(
+    session,
+    delta: Optional[Union[int, str]] = 0,
+) -> np.ndarray:
+    """
+    Boolean mask for trials at a fixed offset from opto events.
+
+    Consecutive opto trials are treated as a single "run": offsets
+    are measured from the run boundary, not from each individual
+    opto trial within the run.
+
+    Args:
+        session: SessionData
+        delta:
+            None      → all valid (non-abort) trials
+            0         → opto trials themselves
+            1         → first valid non-opto trial after each opto run
+            2         → second valid non-opto trial after each opto run
+            -1        → last valid non-opto trial before each opto run
+            -2        → second-to-last before each opto run
+            'control' → all valid non-opto trials (complement of delta=0)
+
+    Returns:
+        Boolean mask of length n_trials.
+    """
+    trials = session.trials
+    valid = ~trials.abort
+    opto_on = trials.opto_on
+    n = len(valid)
+
+    # All valid trials
+    if delta is None:
+        return valid.copy()
+
+    # Non-opto valid trials
+    if delta == 'control':
+        return valid & ~opto_on
+
+    # Opto trials themselves
+    if delta == 0:
+        return valid & opto_on
+
+    # ── Identify opto run boundaries ─────────────────────────────────
+    runs = []  # list of (start_idx, end_idx) for each contiguous opto block
+    in_run = False
+    start = None
+    for t in range(n):
+        if opto_on[t]:
+            if not in_run:
+                start = t
+                in_run = True
+        else:
+            if in_run:
+                runs.append((start, t - 1))
+                in_run = False
+    if in_run:
+        runs.append((start, n - 1))
+
+    mask = np.zeros(n, dtype=bool)
+
+    if delta > 0:
+        # Forward offset: k-th valid non-opto trial after run end
+        for _, run_end in runs:
+            count = 0
+            for t in range(run_end + 1, n):
+                if opto_on[t]:
+                    break  # hit another opto run, stop
+                if valid[t]:
+                    count += 1
+                    if count == delta:
+                        mask[t] = True
+                        break
+
+    elif delta < 0:
+        # Backward offset: k-th valid non-opto trial before run start
+        k = abs(delta)
+        for run_start, _ in runs:
+            count = 0
+            for t in range(run_start - 1, -1, -1):
+                if opto_on[t]:
+                    break  # hit another opto run, stop
+                if valid[t]:
+                    count += 1
+                    if count == k:
+                        mask[t] = True
+                        break
+
+    return mask
+
 
 def split_trials_by_opto(session) -> Tuple[np.ndarray, np.ndarray]:
     """
     Get boolean masks for opto and control trials.
 
+    Wrapper around opto_relative_mask for backward compatibility.
     Excludes abort trials from both masks.
 
     Returns:
         (opto_mask, control_mask): Boolean arrays of length n_trials.
     """
-    trials = session.trials
-    valid = ~trials.abort
-    opto = trials.opto_on & valid
-    control = ~trials.opto_on & valid
-    return opto, control
+    return (
+        opto_relative_mask(session, delta=0),
+        opto_relative_mask(session, delta='control'),
+    )
+
+
+def get_post_opto_mask(session) -> np.ndarray:
+    """
+    Identify post-opto trials: first valid non-opto trial after each opto run.
+
+    Wrapper around opto_relative_mask(session, delta=1).
+
+    These are a SUBSET of control trials, not a separate partition.
+    Control remains all non-opto valid trials (70%). Post-opto (~30%)
+    is an overlay for visualisation and carry-over analysis.
+
+    Returns:
+        Boolean mask of length n_trials.
+    """
+    return opto_relative_mask(session, delta=1)
 
 
 def extract_trial_arrays(
@@ -174,48 +283,40 @@ def extract_trial_arrays(
 
 # ─── Within-session comparison ───────────────────────────────────────────────
 
-def _compute_basic_stats(arrays: Dict[str, np.ndarray]) -> Dict[str, float]:
-    """
-    Compute accuracy, PSE, slope from trial arrays.
 
-    Matches behav_utils registered stat computation:
-    accuracy = mean(choices == categories).
-    """
-    valid = ~arrays['no_response']
-    stimuli = arrays['stimuli'][valid]
-    choices = arrays['choices'][valid]
-    categories = arrays['categories'][valid]
-
-    accuracy = float(np.mean(choices == categories))
-    result = {'accuracy': accuracy, 'n_trials': int(valid.sum())}
-
-    try:
-        pfit = fit_psychometric(stimuli, choices)
-        result['pse'] = float(pfit['mu'])
-        result['slope'] = float(pfit['sigma'])
-        result['lapse_low'] = float(pfit['lapse_low'])
-        result['lapse_high'] = float(pfit['lapse_high'])
-    except Exception:
-        result['pse'] = np.nan
-        result['slope'] = np.nan
-        result['lapse_low'] = np.nan
-        result['lapse_high'] = np.nan
-
-    return result
-
-
-def within_session_effect(session) -> Optional[Dict[str, Any]]:
+def within_session_effect(
+    session,
+    n_permutations: int = 0,
+    n_bootstrap: int = 0,
+    seed: int = 42,
+    min_trials: int = 10,
+) -> Optional[Dict[str, Any]]:
     """
     Compare opto vs control trials within one session.
 
-    Returns dict with:
-        opto_stats: {accuracy, pse, slope, ...}
-        control_stats: {accuracy, pse, slope, ...}
-        diff: {accuracy, pse, slope, ...}  (opto - control)
-        n_opto, n_control: trial counts
+    Control = all non-opto valid trials (70%). Post-opto stats are
+    computed as an overlay (subset of control) for carry-over analysis.
 
-    Returns None if either split has < 10 valid trials.
+    Wraps compare_conditions() for the opto/control comparison.
+    Set n_permutations/n_bootstrap > 0 for statistical tests.
+
+    Returns dict with:
+        opto_stats, control_stats: {accuracy, pse, slope, lapse_low, lapse_high}
+        diff: same keys (opto - control)
+        n_opto, n_control, n_post_opto: trial counts
+
+        post_opto_stats: same keys (None if < min_trials)
+        post_opto_diff: post_opto - control (None if too few)
+
+        perm_p, boot_ci, fisher_p: tests for opto vs control
+
+        um_opto, um_control: update matrices
+        um_rmse, um_corr: UM comparison scalars
+
+    Returns None if opto or control split has < min_trials valid trials.
     """
+    from behav_utils.analysis.comparison import compare_conditions
+
     opto_mask, control_mask = split_trials_by_opto(session)
     opto_arrays = extract_trial_arrays(session, opto_mask)
     control_arrays = extract_trial_arrays(session, control_mask)
@@ -223,20 +324,65 @@ def within_session_effect(session) -> Optional[Dict[str, Any]]:
     if opto_arrays is None or control_arrays is None:
         return None
 
-    opto_stats = _compute_basic_stats(opto_arrays)
-    control_stats = _compute_basic_stats(control_arrays)
+    valid_o = ~opto_arrays['no_response']
+    valid_c = ~control_arrays['no_response']
 
-    diff = {}
-    for key in ('accuracy', 'pse', 'slope'):
-        diff[key] = opto_stats.get(key, np.nan) - control_stats.get(key, np.nan)
+    comp = compare_conditions(
+        opto_arrays['stimuli'][valid_o],
+        opto_arrays['choices'][valid_o],
+        opto_arrays['categories'][valid_o],
+        control_arrays['stimuli'][valid_c],
+        control_arrays['choices'][valid_c],
+        control_arrays['categories'][valid_c],
+        n_permutations=n_permutations,
+        n_bootstrap=n_bootstrap,
+        seed=seed,
+        label_a='opto',
+        label_b='control',
+    )
 
-    return {
-        'opto_stats': opto_stats,
-        'control_stats': control_stats,
-        'diff': diff,
-        'n_opto': opto_stats['n_trials'],
-        'n_control': control_stats['n_trials'],
+    post_opto_mask = get_post_opto_mask(session)
+    n_post = int(post_opto_mask.sum())
+
+    result = {
+        'opto_stats': comp['params_a'],
+        'control_stats': comp['params_b'],
+        'diff': comp['diffs'],
+        'n_opto': comp['n_a'],
+        'n_control': comp['n_b'],
+        'n_post_opto': n_post,
+        'perm_p': comp.get('perm_p'),
+        'boot_ci': comp.get('boot_ci'),
+        'fisher_p': comp.get('fisher_p', np.nan),
+        'um_opto': comp.get('um_a'),
+        'um_control': comp.get('um_b'),
+        'um_rmse': comp.get('um_rmse', np.nan),
+        'um_corr': comp.get('um_corr', np.nan),
     }
+
+    # Post-opto overlay (subset of control)
+    post_arrays = extract_trial_arrays(session, post_opto_mask)
+    if post_arrays is not None and post_arrays['n_trials'] >= min_trials:
+        from behav_utils.analysis.comparison import _fit_params, _accuracy
+        valid_p = ~post_arrays['no_response']
+        stim_p = post_arrays['stimuli'][valid_p]
+        ch_p = post_arrays['choices'][valid_p]
+        cat_p = post_arrays['categories'][valid_p]
+
+        post_params = _fit_params(stim_p, ch_p) or {}
+        post_params['accuracy'] = _accuracy(ch_p, cat_p)
+        result['post_opto_stats'] = post_params
+
+        # Diff relative to full control
+        result['post_opto_diff'] = {
+            k: post_params.get(k, np.nan) - comp['params_b'].get(k, np.nan)
+            for k in ('accuracy', 'pse', 'slope', 'lapse_low', 'lapse_high')
+        }
+    else:
+        result['post_opto_stats'] = None
+        result['post_opto_diff'] = None
+
+    return result
 
 
 # ─── Phase-pooled comparison ─────────────────────────────────────────────────
@@ -281,15 +427,30 @@ def phase_pooled_comparison(
     phases: List[OptoPhase],
     target_phase: OptoPhase,
     n_bins: int = 8,
+    n_permutations: int = 0,
+    n_bootstrap: int = 0,
+    seed: int = 42,
 ) -> Optional[Dict[str, Any]]:
     """
     Pool all sessions in target_phase, compare opto vs control.
 
+    Control = all non-opto trials (70%). Post-opto stats computed
+    as an overlay (subset of control).
+
     Returns dict with:
-        opto_stats, control_stats, diff (same as within_session_effect)
-        opto_um, control_um: (n_bins, n_bins) update matrices
-        n_sessions: how many sessions contributed
+        opto_stats, control_stats: {accuracy, pse, slope, ...}
+        diff: opto - control diffs
+        opto_um, control_um: update matrices
+        um_rmse, um_corr: UM comparison scalars
+        perm_p, boot_ci, fisher_p: statistical tests
+
+        post_opto_stats: same (None if < 10 pooled trials)
+        post_opto_diff: post_opto - control
+
+        n_sessions, n_opto, n_control, n_post_opto: counts
     """
+    from behav_utils.analysis.comparison import compare_conditions, _fit_params, _accuracy
+
     phase_sessions = [
         s for s, p in zip(sessions, phases) if p == target_phase
     ]
@@ -304,62 +465,235 @@ def phase_pooled_comparison(
     if opto_arrays is None or control_arrays is None:
         return None
 
-    opto_stats = _compute_basic_stats(opto_arrays)
-    control_stats = _compute_basic_stats(control_arrays)
+    valid_o = ~opto_arrays['no_response']
+    valid_c = ~control_arrays['no_response']
 
-    diff = {}
-    for key in ('accuracy', 'pse', 'slope'):
-        diff[key] = opto_stats.get(key, np.nan) - control_stats.get(key, np.nan)
+    comp = compare_conditions(
+        opto_arrays['stimuli'][valid_o],
+        opto_arrays['choices'][valid_o],
+        opto_arrays['categories'][valid_o],
+        control_arrays['stimuli'][valid_c],
+        control_arrays['choices'][valid_c],
+        control_arrays['categories'][valid_c],
+        n_bins=n_bins,
+        n_permutations=n_permutations,
+        n_bootstrap=n_bootstrap,
+        seed=seed,
+        label_a='opto',
+        label_b='control',
+    )
 
-    opto_um, _, _ = compute_update_matrix(
-        opto_arrays['stimuli'], opto_arrays['choices'],
-        opto_arrays['categories'], n_bins=n_bins)
-    control_um, _, _ = compute_update_matrix(
-        control_arrays['stimuli'], control_arrays['choices'],
-        control_arrays['categories'], n_bins=n_bins)
-
-    return {
-        'opto_stats': opto_stats,
-        'control_stats': control_stats,
-        'diff': diff,
-        'opto_um': opto_um,
-        'control_um': control_um,
+    result = {
+        'opto_stats': comp['params_a'],
+        'control_stats': comp['params_b'],
+        'diff': comp['diffs'],
+        'opto_um': comp['um_a'],
+        'control_um': comp['um_b'],
+        'um_rmse': comp['um_rmse'],
+        'um_corr': comp['um_corr'],
+        'perm_p': comp.get('perm_p'),
+        'boot_ci': comp.get('boot_ci'),
+        'fisher_p': comp.get('fisher_p', np.nan),
         'n_sessions': len(phase_sessions),
-        'n_opto': opto_stats['n_trials'],
-        'n_control': control_stats['n_trials'],
+        'n_opto': comp['n_a'],
+        'n_control': comp['n_b'],
     }
 
+    # Post-opto overlay
+    post_arrays = _pool_trial_arrays(
+        phase_sessions, lambda s: get_post_opto_mask(s))
 
-# ─── Update matrix from one trial subset ─────────────────────────────────────
+    if post_arrays is not None and post_arrays['n_trials'] >= 10:
+        valid_p = ~post_arrays['no_response']
+        stim_p = post_arrays['stimuli'][valid_p]
+        ch_p = post_arrays['choices'][valid_p]
+        cat_p = post_arrays['categories'][valid_p]
+
+        post_params = _fit_params(stim_p, ch_p) or {}
+        post_params['accuracy'] = _accuracy(ch_p, cat_p)
+        result['post_opto_stats'] = post_params
+        result['n_post_opto'] = int(valid_p.sum())
+        result['post_opto_diff'] = {
+            k: post_params.get(k, np.nan) - comp['params_b'].get(k, np.nan)
+            for k in ('accuracy', 'pse', 'slope', 'lapse_low', 'lapse_high')
+        }
+    else:
+        result['post_opto_stats'] = None
+        result['post_opto_diff'] = None
+        result['n_post_opto'] = 0
+
+    return result
+
+
+# ─── Update matrix from opto-relative trials ─────────────────────────────────
 
 def compute_opto_um(
     sessions: list,
-    opto_only: bool = True,
+    delta: Optional[Union[int, str]] = 0,
     n_bins: int = 8,
+    opto_only: Optional[bool] = None,
 ) -> Tuple[np.ndarray, np.ndarray, Dict]:
     """
-    Compute pooled update matrix from opto or control trials only.
+    Compute pooled update matrix from opto-relative trials.
+
+    Uses opto_relative_mask to select trials at a fixed offset from
+    opto events, then pools across sessions and computes the UM.
 
     Args:
         sessions: List of SessionData
-        opto_only: If True, use opto trials. If False, use control trials.
+        delta: Trial selection relative to opto events.
+            None      → all valid trials
+            0         → opto trials only
+            1         → post-opto (1st valid non-opto after each opto run)
+            2         → 2nd valid non-opto after each opto run
+            -1        → pre-opto (last valid non-opto before each opto run)
+            'control' → all valid non-opto trials
         n_bins: Number of stimulus bins.
+        opto_only: DEPRECATED — backward compat only. If delta is left
+            at its default (0) and opto_only is explicitly passed,
+            maps True → delta=0, False → delta='control'.
+
+    Returns:
+        (update_matrix, counts, info_dict)
+        info_dict includes 'n_trials' and 'delta'.
     """
-    mask_idx = 0 if opto_only else 1
+    # Backward compat: old callers pass opto_only=True/False
+    if opto_only is not None and delta == 0:
+        delta = 0 if opto_only else 'control'
+
     arrays = _pool_trial_arrays(
-        sessions, lambda s: split_trials_by_opto(s)[mask_idx])
+        sessions, lambda s: opto_relative_mask(s, delta=delta))
 
     if arrays is None:
         empty = np.full((n_bins, n_bins), np.nan)
-        return empty, empty, {'n_trials': 0}
+        return empty, empty, {'n_trials': 0, 'delta': delta}
 
-    return compute_update_matrix(
+    um, counts, info = compute_update_matrix(
         arrays['stimuli'], arrays['choices'],
         arrays['categories'], n_bins=n_bins)
+    info['delta'] = delta
+    return um, counts, info
 
 
 # ─── Expert stability ────────────────────────────────────────────────────────
 
+def phase_stability(
+    sessions: list,
+    phases: List[OptoPhase],
+    stat_names: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """
+    Track statistics across experimental phases and compare all pairs.
+
+    Replaces expert_stability with full phase coverage including masking.
+    Uses sess.stats(exclude_opto=True) so opto trials are excluded —
+    this tests whether control-trial performance changes across phases.
+
+    Compares all pairs: baseline↔masking, baseline↔opto,
+    masking↔opto, baseline↔washout, opto↔washout.
+    Uses Mann-Whitney U (two-sided). NaN values are filtered
+    before testing.
+
+    Args:
+        sessions: List of SessionData
+        phases: List of OptoPhase (same length as sessions)
+        stat_names: Which stats to track. Default: all 5 psychometric
+            params. Must match names returned by sess.stats().
+
+    Returns dict with:
+        per_phase: {OptoPhase: {stat_name: np.array of values}}
+        phase_means: {OptoPhase: {stat_name: float}}
+        phase_n: {OptoPhase: int}
+        comparisons: {(phase_a, phase_b): {
+            stat_name: {'p': float, 'u': float, 'diff': float}
+        }}
+    """
+    if stat_names is None:
+        stat_names = ['accuracy', 'pse', 'slope', 'lapse_low', 'lapse_high']
+
+    target_phases = [
+        OptoPhase.EXPERT_BASELINE,
+        OptoPhase.MASKING,
+        OptoPhase.EXPERT_OPTO,
+        OptoPhase.EXPERT_WASHOUT,
+    ]
+
+    # Collect per-phase stats
+    per_phase = {p: {s: [] for s in stat_names} for p in target_phases}
+
+    for sess, phase in zip(sessions, phases):
+        if phase not in target_phases:
+            continue
+
+        # Get stats — try sess.stats() first, fall back to manual
+        for sn in stat_names:
+            try:
+                st = sess.stats(stat_names=[sn], exclude_opto=True)
+                val = st[sn]
+                if val is not None and not np.isnan(val):
+                    per_phase[phase][sn].append(float(val))
+            except Exception:
+                pass
+
+    # Convert to arrays
+    for p in target_phases:
+        for sn in stat_names:
+            per_phase[p][sn] = np.array(per_phase[p][sn])
+
+    # Means and counts
+    phase_means = {}
+    phase_n = {}
+    for p in target_phases:
+        phase_means[p] = {}
+        # Count from first stat (all should have same n)
+        first_stat = stat_names[0]
+        phase_n[p] = len(per_phase[p][first_stat])
+        for sn in stat_names:
+            vals = per_phase[p][sn]
+            phase_means[p][sn] = float(np.mean(vals)) if len(vals) > 0 else np.nan
+
+    # Pairwise comparisons
+    pairs = [
+        (OptoPhase.EXPERT_BASELINE, OptoPhase.MASKING),
+        (OptoPhase.EXPERT_BASELINE, OptoPhase.EXPERT_OPTO),
+        (OptoPhase.MASKING, OptoPhase.EXPERT_OPTO),
+        (OptoPhase.EXPERT_BASELINE, OptoPhase.EXPERT_WASHOUT),
+        (OptoPhase.EXPERT_OPTO, OptoPhase.EXPERT_WASHOUT),
+    ]
+
+    comparisons = {}
+    for pa, pb in pairs:
+        comparisons[(pa, pb)] = {}
+        for sn in stat_names:
+            vals_a = per_phase[pa][sn]
+            vals_b = per_phase[pb][sn]
+
+            comp = {'p': np.nan, 'u': np.nan, 'diff': np.nan}
+
+            if len(vals_a) > 0 and len(vals_b) > 0:
+                comp['diff'] = float(np.mean(vals_a) - np.mean(vals_b))
+
+            if len(vals_a) >= 2 and len(vals_b) >= 2:
+                try:
+                    u, p = mannwhitneyu(
+                        vals_a, vals_b, alternative='two-sided')
+                    comp['p'] = float(p)
+                    comp['u'] = float(u)
+                except Exception:
+                    pass
+
+            comparisons[(pa, pb)][sn] = comp
+
+    return {
+        'per_phase': per_phase,
+        'phase_means': phase_means,
+        'phase_n': phase_n,
+        'comparisons': comparisons,
+        'stat_names': stat_names,
+    }
+
+
+# Backward compatibility — thin wrapper
 def expert_stability(
     sessions: list,
     phases: List[OptoPhase],
@@ -368,53 +702,30 @@ def expert_stability(
     """
     Track a statistic across expert baseline → opto → washout.
 
-    Uses sess.stats() (delegates to TrialData.stats with exclude_opto=True)
-    so opto trials are excluded from the stat computation — this tests
-    whether the *control* trials are affected by the presence of opto
-    in the session.
-
-    Returns dict with:
-        baseline_values, opto_values, washout_values: per-session stats
-        baseline_mean, opto_mean, washout_mean: phase averages
-        p_value: Mann-Whitney U test, baseline vs opto
+    Backward-compatible wrapper around phase_stability().
+    Prefer phase_stability() for new code — it includes masking
+    and tests all phase pairs.
     """
-    def _get_phase_stats(target):
-        values = []
-        for sess, phase in zip(sessions, phases):
-            if phase != target:
-                continue
-            try:
-                st = sess.stats(
-                    stat_names=[stat_name], exclude_opto=True)
-                values.append(st[stat_name])
-            except Exception:
-                pass
-        return np.array(values)
+    full = phase_stability(sessions, phases, stat_names=[stat_name])
 
-    baseline = _get_phase_stats(OptoPhase.EXPERT_BASELINE)
-    opto = _get_phase_stats(OptoPhase.EXPERT_OPTO)
-    washout = _get_phase_stats(OptoPhase.EXPERT_WASHOUT)
+    baseline = full['per_phase'][OptoPhase.EXPERT_BASELINE][stat_name]
+    opto = full['per_phase'][OptoPhase.EXPERT_OPTO][stat_name]
+    washout = full['per_phase'][OptoPhase.EXPERT_WASHOUT][stat_name]
 
-    result = {
+    comp = full['comparisons'].get(
+        (OptoPhase.EXPERT_BASELINE, OptoPhase.EXPERT_OPTO), {})
+    comp_stat = comp.get(stat_name, {})
+
+    return {
         'baseline_values': baseline,
         'opto_values': opto,
         'washout_values': washout,
         'baseline_mean': float(np.nanmean(baseline)) if len(baseline) else np.nan,
         'opto_mean': float(np.nanmean(opto)) if len(opto) else np.nan,
         'washout_mean': float(np.nanmean(washout)) if len(washout) else np.nan,
+        'p_value': comp_stat.get('p', np.nan),
+        'u_statistic': comp_stat.get('u', np.nan),
     }
-
-    if len(baseline) >= 3 and len(opto) >= 3:
-        try:
-            stat, p = mannwhitneyu(baseline, opto, alternative='two-sided')
-            result['p_value'] = float(p)
-            result['u_statistic'] = float(stat)
-        except Exception:
-            result['p_value'] = np.nan
-    else:
-        result['p_value'] = np.nan
-
-    return result
 
 
 # ─── Genotype interaction ────────────────────────────────────────────────────
@@ -493,7 +804,7 @@ def animal_opto_report(animal) -> Dict[str, Any]:
     within = []
     for idx, (sess, phase) in enumerate(zip(sessions, phases)):
         if phase in (OptoPhase.EXPERT_OPTO, OptoPhase.SHIFT_1_OPTO,
-                     OptoPhase.SHIFT_2_OPTO):
+                     OptoPhase.SHIFT_2_OPTO, OptoPhase.MASKING):
             within.append({
                 'phase': phase,
                 'session_idx': idx,
@@ -503,8 +814,8 @@ def animal_opto_report(animal) -> Dict[str, Any]:
     exp_stab = expert_stability(sessions, phases, stat_name='accuracy')
 
     phase_comparisons = {}
-    for target in (OptoPhase.EXPERT_OPTO, OptoPhase.SHIFT_1_OPTO,
-                   OptoPhase.SHIFT_2_OPTO):
+    for target in (OptoPhase.EXPERT_OPTO, OptoPhase.MASKING,
+                   OptoPhase.SHIFT_1_OPTO, OptoPhase.SHIFT_2_OPTO):
         comp = phase_pooled_comparison(sessions, phases, target)
         if comp is not None:
             phase_comparisons[target] = comp

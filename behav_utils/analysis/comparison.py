@@ -1,0 +1,330 @@
+"""
+Condition comparison for 2AFC tasks.
+
+General-purpose comparison of two independent trial sets:
+psychometric parameter differences with permutation tests,
+bootstrap CIs on differences, accuracy Fisher's exact test,
+and update matrix comparison.
+
+Works for any two-condition comparison:
+- Opto vs control trials (within session)
+- Pre-shift vs post-shift sessions
+- Hard-A vs Hard-B sessions
+- Masking vs real opto
+- Het vs WT animals (pooled trials)
+
+Public API:
+    compare_conditions      — Full comparison of two trial sets
+    permutation_test_params — Permutation test on psychometric param diffs
+    bootstrap_param_diff    — Bootstrap CI on psychometric param diffs
+
+Usage:
+    from behav_utils.analysis.comparison import compare_conditions
+
+    result = compare_conditions(
+        stim_a, choices_a, cat_a,
+        stim_b, choices_b, cat_b,
+    )
+    # result['diffs']['pse']  → PSE difference (A - B)
+    # result['perm_p']['pse'] → permutation p-value
+    # result['boot_ci']['pse'] → (lower, upper) 95% CI on diff
+    # result['um_rmse']       → UM RMSE between conditions
+"""
+
+from typing import Dict, Optional, Tuple
+
+import numpy as np
+from scipy.stats import fisher_exact
+
+from behav_utils.analysis.psychometry import fit_psychometric
+from behav_utils.analysis.update_matrix import compute_update_matrix
+
+
+PARAM_NAMES = ('mu', 'sigma', 'lapse_low', 'lapse_high')
+# Map to human-readable names used elsewhere in the codebase
+PARAM_ALIASES = {
+    'mu': 'pse', 'sigma': 'slope',
+    'lapse_low': 'lapse_low', 'lapse_high': 'lapse_high',
+}
+
+
+def _fit_params(stimuli, choices):
+    """Fit psychometric and return param dict, or None if fit fails."""
+    pfit = fit_psychometric(stimuli, choices)
+    if not pfit.get('success', False) and np.isnan(pfit.get('mu', np.nan)):
+        return None
+    return {
+        'pse': float(pfit['mu']),
+        'slope': float(pfit['sigma']),
+        'lapse_low': float(pfit['lapse_low']),
+        'lapse_high': float(pfit['lapse_high']),
+    }
+
+
+def _accuracy(choices, categories):
+    """Compute accuracy, handling NaN choices."""
+    valid = ~np.isnan(choices)
+    if valid.sum() == 0:
+        return np.nan
+    return float(np.mean(choices[valid] == categories[valid]))
+
+
+def permutation_test_params(
+    stimuli_a: np.ndarray, choices_a: np.ndarray,
+    stimuli_b: np.ndarray, choices_b: np.ndarray,
+    n_permutations: int = 1000,
+    seed: int = 42,
+) -> Dict[str, float]:
+    """
+    Permutation test for psychometric parameter differences.
+
+    Pools all trials, shuffles group labels, refits both groups,
+    computes param diffs. p-value = proportion of permuted diffs
+    at least as extreme as observed.
+
+    Two-sided test: compares |observed diff| against |permuted diffs|.
+
+    Args:
+        stimuli_a, choices_a: Condition A trials
+        stimuli_b, choices_b: Condition B trials
+        n_permutations: Number of permutations
+        seed: Random seed
+
+    Returns:
+        Dict mapping param name → p-value. NaN if fit fails.
+    """
+    rng = np.random.default_rng(seed)
+
+    # Observed diffs
+    params_a = _fit_params(stimuli_a, choices_a)
+    params_b = _fit_params(stimuli_b, choices_b)
+    if params_a is None or params_b is None:
+        return {p: np.nan for p in ('pse', 'slope', 'lapse_low', 'lapse_high')}
+
+    observed = {p: params_a[p] - params_b[p] for p in params_a}
+
+    # Pool trials
+    all_stim = np.concatenate([stimuli_a, stimuli_b])
+    all_choice = np.concatenate([choices_a, choices_b])
+    n_a = len(stimuli_a)
+    n_total = len(all_stim)
+
+    # Permutation distribution
+    perm_diffs = {p: [] for p in observed}
+    for _ in range(n_permutations):
+        perm_idx = rng.permutation(n_total)
+        perm_stim_a = all_stim[perm_idx[:n_a]]
+        perm_choice_a = all_choice[perm_idx[:n_a]]
+        perm_stim_b = all_stim[perm_idx[n_a:]]
+        perm_choice_b = all_choice[perm_idx[n_a:]]
+
+        pa = _fit_params(perm_stim_a, perm_choice_a)
+        pb = _fit_params(perm_stim_b, perm_choice_b)
+        if pa is None or pb is None:
+            continue
+
+        for p in observed:
+            perm_diffs[p].append(pa[p] - pb[p])
+
+    # Compute p-values (two-sided)
+    p_values = {}
+    for p in observed:
+        perm = np.array(perm_diffs[p])
+        if len(perm) < 10:
+            p_values[p] = np.nan
+            continue
+        p_values[p] = float(np.mean(np.abs(perm) >= np.abs(observed[p])))
+
+    return p_values
+
+
+def bootstrap_param_diff(
+    stimuli_a: np.ndarray, choices_a: np.ndarray,
+    stimuli_b: np.ndarray, choices_b: np.ndarray,
+    n_bootstrap: int = 1000,
+    ci_level: float = 0.95,
+    seed: int = 42,
+) -> Dict[str, Tuple[float, float]]:
+    """
+    Bootstrap CI on psychometric parameter differences (A - B).
+
+    Resamples each group independently with replacement, refits,
+    computes diff. Returns percentile CIs.
+
+    Args:
+        stimuli_a, choices_a: Condition A trials
+        stimuli_b, choices_b: Condition B trials
+        n_bootstrap: Number of bootstrap samples
+        ci_level: CI coverage (default 0.95 → 2.5/97.5 percentiles)
+        seed: Random seed
+
+    Returns:
+        Dict mapping param name → (lower, upper) CI.
+    """
+    rng = np.random.default_rng(seed)
+    alpha = (1 - ci_level) / 2
+    n_a = len(stimuli_a)
+    n_b = len(stimuli_b)
+
+    boot_diffs = {p: [] for p in ('pse', 'slope', 'lapse_low', 'lapse_high')}
+
+    for _ in range(n_bootstrap):
+        idx_a = rng.choice(n_a, size=n_a, replace=True)
+        idx_b = rng.choice(n_b, size=n_b, replace=True)
+
+        pa = _fit_params(stimuli_a[idx_a], choices_a[idx_a])
+        pb = _fit_params(stimuli_b[idx_b], choices_b[idx_b])
+        if pa is None or pb is None:
+            continue
+
+        for p in boot_diffs:
+            boot_diffs[p].append(pa[p] - pb[p])
+
+    cis = {}
+    for p in boot_diffs:
+        vals = np.array(boot_diffs[p])
+        if len(vals) < 10:
+            cis[p] = (np.nan, np.nan)
+        else:
+            cis[p] = (
+                float(np.percentile(vals, 100 * alpha)),
+                float(np.percentile(vals, 100 * (1 - alpha))),
+            )
+    return cis
+
+
+def compare_conditions(
+    stimuli_a: np.ndarray, choices_a: np.ndarray, categories_a: np.ndarray,
+    stimuli_b: np.ndarray, choices_b: np.ndarray, categories_b: np.ndarray,
+    n_bins: int = 8,
+    n_permutations: int = 1000,
+    n_bootstrap: int = 1000,
+    seed: int = 42,
+    label_a: str = 'A',
+    label_b: str = 'B',
+) -> Dict:
+    """
+    Compare two independent trial sets across all behavioural metrics.
+
+    Computes psychometric parameters, accuracy, and update matrices
+    for each condition, then tests for differences using permutation
+    tests, bootstrap CIs, and Fisher's exact test.
+
+    This is the general-purpose comparison function. Specific
+    use-cases (opto vs control, pre vs post shift) are thin
+    wrappers that select trials and call this.
+
+    Args:
+        stimuli_a/b: Stimulus arrays for conditions A and B
+        choices_a/b: Choice arrays (binary, may contain NaN)
+        categories_a/b: Category arrays
+        n_bins: Number of bins for update matrix
+        n_permutations: Permutation test iterations (0 to skip)
+        n_bootstrap: Bootstrap iterations (0 to skip)
+        seed: Random seed
+        label_a, label_b: Labels for the two conditions
+
+    Returns dict with:
+        params_a, params_b: {accuracy, pse, slope, lapse_low, lapse_high}
+        diffs: {accuracy, pse, slope, lapse_low, lapse_high} (A - B)
+        n_a, n_b: trial counts
+
+        perm_p: {pse, slope, lapse_low, lapse_high} → p-values
+            (None if n_permutations == 0)
+        boot_ci: {pse, slope, lapse_low, lapse_high} → (lo, hi)
+            (None if n_bootstrap == 0)
+
+        fisher_p: Fisher's exact test p-value for accuracy
+        fisher_odds: odds ratio
+
+        um_a, um_b: (n_bins, n_bins) update matrices
+        um_diff: um_a - um_b
+        um_rmse: element-wise RMSE of difference
+        um_corr: Pearson r between flattened UMs
+
+        label_a, label_b: condition labels
+    """
+    # Clean NaN choices
+    valid_a = ~np.isnan(choices_a.astype(float))
+    valid_b = ~np.isnan(choices_b.astype(float))
+    stim_a, ch_a, cat_a = stimuli_a[valid_a], choices_a[valid_a], categories_a[valid_a]
+    stim_b, ch_b, cat_b = stimuli_b[valid_b], choices_b[valid_b], categories_b[valid_b]
+
+    # ── Psychometric fits ────────────────────────────────────────────
+    params_a = _fit_params(stim_a, ch_a) or {}
+    params_b = _fit_params(stim_b, ch_b) or {}
+
+    acc_a = _accuracy(ch_a, cat_a)
+    acc_b = _accuracy(ch_b, cat_b)
+    params_a['accuracy'] = acc_a
+    params_b['accuracy'] = acc_b
+
+    diffs = {}
+    for key in ('accuracy', 'pse', 'slope', 'lapse_low', 'lapse_high'):
+        diffs[key] = params_a.get(key, np.nan) - params_b.get(key, np.nan)
+
+    # ── Permutation test on psychometric params ──────────────────────
+    perm_p = None
+    if n_permutations > 0 and len(stim_a) >= 10 and len(stim_b) >= 10:
+        perm_p = permutation_test_params(
+            stim_a, ch_a, stim_b, ch_b,
+            n_permutations=n_permutations, seed=seed,
+        )
+
+    # ── Bootstrap CI on param diffs ──────────────────────────────────
+    boot_ci = None
+    if n_bootstrap > 0 and len(stim_a) >= 10 and len(stim_b) >= 10:
+        boot_ci = bootstrap_param_diff(
+            stim_a, ch_a, stim_b, ch_b,
+            n_bootstrap=n_bootstrap, seed=seed,
+        )
+
+    # ── Fisher's exact test on accuracy ──────────────────────────────
+    fisher_p, fisher_odds = np.nan, np.nan
+    if len(ch_a) >= 5 and len(ch_b) >= 5:
+        correct_a = int(np.sum(ch_a == cat_a))
+        incorrect_a = int(np.sum(ch_a != cat_a))
+        correct_b = int(np.sum(ch_b == cat_b))
+        incorrect_b = int(np.sum(ch_b != cat_b))
+        try:
+            table = [[correct_a, incorrect_a], [correct_b, incorrect_b]]
+            fisher_odds, fisher_p = fisher_exact(table, alternative='two-sided')
+            fisher_p = float(fisher_p)
+            fisher_odds = float(fisher_odds)
+        except Exception:
+            pass
+
+    # ── Update matrices ──────────────────────────────────────────────
+    um_a, _, _ = compute_update_matrix(stim_a, ch_a, cat_a, n_bins=n_bins)
+    um_b, _, _ = compute_update_matrix(stim_b, ch_b, cat_b, n_bins=n_bins)
+
+    um_diff = um_a - um_b
+    valid_um = ~np.isnan(um_a) & ~np.isnan(um_b)
+
+    if valid_um.sum() >= 4:
+        um_rmse = float(np.sqrt(np.mean(um_diff[valid_um] ** 2)))
+        from scipy.stats import pearsonr
+        um_corr, _ = pearsonr(um_a[valid_um], um_b[valid_um])
+        um_corr = float(um_corr)
+    else:
+        um_rmse = np.nan
+        um_corr = np.nan
+
+    return {
+        'params_a': params_a,
+        'params_b': params_b,
+        'diffs': diffs,
+        'n_a': int(len(stim_a)),
+        'n_b': int(len(stim_b)),
+        'perm_p': perm_p,
+        'boot_ci': boot_ci,
+        'fisher_p': fisher_p,
+        'fisher_odds': fisher_odds,
+        'um_a': um_a,
+        'um_b': um_b,
+        'um_diff': um_diff,
+        'um_rmse': um_rmse,
+        'um_corr': um_corr,
+        'label_a': label_a,
+        'label_b': label_b,
+    }
