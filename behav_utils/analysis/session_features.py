@@ -114,13 +114,13 @@ def compute_session_features(
     session: 'SessionData',
     rt_extractor: Callable = default_rt_extractor,
     stat_names: Optional[List[str]] = None,
-    exclude_abort: bool = True,
-    exclude_opto: bool = True,
     hard_threshold: float = 0.3,
     fast_threshold: float = 50.0,
 ) -> Dict[str, float]:
     """
     Compute all features for a single session.
+
+    No filtering. Data must be pre-filtered via session.filter().
 
     Returns dict of feature_name -> value (all scalars).
     """
@@ -137,11 +137,8 @@ def compute_session_features(
         'distribution': session.distribution,
     }
 
-    # Get filtered arrays
-    arrays = session.trials.get_arrays(
-        exclude_abort=exclude_abort,
-        exclude_opto=exclude_opto,
-    )
+    # Get arrays (no filtering — session should be pre-filtered)
+    arrays = session.get_arrays()
 
     stimuli = arrays['stimuli']
     categories = arrays['categories']
@@ -199,8 +196,6 @@ def build_feature_matrix(
     rt_extractor: Callable = default_rt_extractor,
     stat_names: Optional[List[str]] = None,
     stage: Optional[str] = None,
-    exclude_abort: bool = True,
-    exclude_opto: bool = True,
     min_valid_trials: int = 10,
     hard_threshold: float = 0.3,
     fast_threshold: float = 50.0,
@@ -208,6 +203,10 @@ def build_feature_matrix(
 ) -> pd.DataFrame:
     """
     Build session x feature DataFrame for a single animal.
+
+    No trial filtering. Sessions should be pre-filtered if needed
+    (e.g. via filter_trials). Session selection by stage is still
+    supported as a convenience.
 
     Returns DataFrame with one row per session, columns = features.
     """
@@ -219,8 +218,6 @@ def build_feature_matrix(
             session,
             rt_extractor=rt_extractor,
             stat_names=stat_names,
-            exclude_abort=exclude_abort,
-            exclude_opto=exclude_opto,
             hard_threshold=hard_threshold,
             fast_threshold=fast_threshold,
         )

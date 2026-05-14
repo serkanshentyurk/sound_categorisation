@@ -803,7 +803,10 @@ def simulate_example_session(
 
     sessions = animal.get_sessions(stage=stage, distribution=distribution)
     sess = sessions[session_idx]
-    arrays = sess.trials.get_arrays(exclude_abort=True, exclude_opto=True)
+    # Pre-filter then extract
+    from behav_utils.data.filtering import filter_session
+    clean = filter_session(sess)
+    arrays = clean.get_arrays()
     valid = ~arrays['no_response']
     stim = arrays['stimuli'][valid]
     cat = arrays['categories'][valid]

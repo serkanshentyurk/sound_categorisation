@@ -27,8 +27,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from behav_utils.analysis.update_matrix import compute_update_matrix_from_sessions
-from behav_utils.plotting.update_matrix import plot_phase_update_matrices
-from behav_utils.plotting.psychometric import plot_psychometric_overlay
+from behav_utils.plotting import plot_psychometric, plot_um, PALETTE
 from behav_utils.plotting.styles import COLOURS, apply_style
 
 apply_style()
@@ -144,7 +143,7 @@ def plot_shift_um_evolution(
     """
     Plot update matrices across expert → early post → late post.
 
-    Delegates to behav_utils.plotting.update_matrix.plot_phase_update_matrices.
+    Uses plot_um for each phase panel.
 
     Args:
         baseline_sessions: Expert-phase sessions.
@@ -182,8 +181,14 @@ def plot_shift_um_evolution(
             f"{details.get('before', '?')} → {details.get('after', '?')}"
         )
 
-    fig, axes = plot_phase_update_matrices(
-        phases, suptitle=': '.join(title_parts) if title_parts else None)
+    n_panels = len(phases)
+    fig, axes = plt.subplots(1, n_panels, figsize=(4.5 * n_panels, 4))
+    if n_panels == 1:
+        axes = [axes]
+    for ax, (label, um) in zip(axes, phases.items()):
+        plot_um(um, ax=ax, title=label)
+    if title_parts:
+        fig.suptitle(': '.join(title_parts), y=1.02)
     fig.tight_layout()
     return fig
 
@@ -201,7 +206,7 @@ def plot_shift_psychometric(
     """
     Psychometric curves overlaid across shift phases.
 
-    Delegates to behav_utils.plotting.psychometric.plot_psychometric_overlay.
+    Uses plot_psychometric for each phase group.
     """
     groups = {'Expert baseline': baseline_sessions[-n_baseline:]}
 
@@ -224,9 +229,14 @@ def plot_shift_psychometric(
             f"{details.get('before', '?')} → {details.get('after', '?')}"
         )
 
-    fig, ax, infos = plot_psychometric_overlay(
-        groups, mode='pooled', n_bootstrap=n_bootstrap, show_ci=True,
-        title=': '.join(title_parts) if title_parts else None)
+    fig, ax = plt.subplots(1, 1, figsize=(5, 4))
+    for i, (label, sessions) in enumerate(groups.items()):
+        plot_psychometric(sessions, ax=ax, mode='pooled',
+                         n_bootstrap=n_bootstrap, show_ci=True,
+                         color=PALETTE[i], label=label)
+    ax.legend(fontsize=8)
+    if title_parts:
+        ax.set_title(': '.join(title_parts))
     return fig
 
 

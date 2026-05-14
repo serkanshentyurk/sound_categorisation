@@ -125,38 +125,27 @@ class ModelTrace:
         s_hat: np.ndarray,
         beliefs: np.ndarray,
         x: np.ndarray,
-        exclude_abort: bool = True,
-        exclude_opto: bool = True,
     ) -> 'ModelTrace':
         """
         Create ModelTrace from a TrialData object and model outputs.
         
-        Bridges experimental data (Data.structures.TrialData) with model
-        computation results.
-        
-        Args:
-            trial_data: TrialData object (from Data.structures)
-            p_B: Model's P(choose B) per trial
-            s_hat: Perceived stimulus per trial
-            beliefs: Belief distributions (n_trials, n_points)
-            x: Discretisation grid
-            exclude_abort: Whether aborts were excluded (affects array alignment)
-            exclude_opto: Whether opto trials were excluded
-        
-        Returns:
-            ModelTrace with matched input and output arrays
+        trial_data should be from a pre-filtered session.
         """
-        arrays = trial_data.get_model_arrays(
-            exclude_abort=exclude_abort,
-            exclude_opto=exclude_opto,
-        )
+        from behav_utils.data.filtering import get_arrays
+        arrays = get_arrays(trial_data)
+        
+        # Add not_blockstart (models need this)
+        n = arrays['n_trials']
+        not_blockstart = np.ones(n, dtype=bool)
+        if n > 0:
+            not_blockstart[0] = False
         
         return cls(
             stimuli=arrays['stimuli'],
             categories=arrays['categories'],
             choices=arrays['choices'],
             no_response=arrays['no_response'],
-            not_blockstart=arrays['not_blockstart'],
+            not_blockstart=not_blockstart,
             p_B=p_B,
             s_hat=s_hat,
             beliefs=beliefs,

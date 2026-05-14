@@ -343,10 +343,9 @@ def _sessions_to_arrays(
     all_no_resp, all_nbs, all_block = [], [], []
 
     for block_id, session in enumerate(sessions):
-        arrays = session.trials.get_arrays(
-            exclude_abort=True, exclude_opto=True,
-        )
-        n = len(arrays['stimuli'])
+        # No filtering — sessions should be pre-filtered
+        arrays = session.get_arrays()
+        n = arrays['n_trials']
         if n == 0:
             continue
 

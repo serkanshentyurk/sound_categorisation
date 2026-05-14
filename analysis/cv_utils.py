@@ -55,19 +55,16 @@ def sessions_to_old_df(
     all_rows = []
 
     for block_id, session in enumerate(sessions):
-        trials = session.trials
-        valid = ~trials.abort
-        if hasattr(trials, 'opto_on') and trials.opto_on is not None:
-            valid = valid & ~trials.opto_on
-
-        stim = trials.stimulus[valid]
-        choice = trials.choice[valid]
-        correct = trials.correct[valid]
-        n = len(stim)
+        # No filtering — sessions should be pre-filtered
+        arrays = session.get_arrays()
+        stim = arrays['stimuli']
+        choice = arrays['choices']
+        n = arrays['n_trials']
         if n == 0:
             continue
 
-        no_response = np.isnan(choice)
+        no_response = arrays['no_response']
+        correct = arrays['categories'] == choice  # recompute from arrays
         choice_clean = np.where(no_response, 0, choice).astype(int)
         correct_clean = np.where(no_response, 0, correct).astype(int)
 

@@ -1,103 +1,112 @@
 """
 behav_utils — Behavioural Neuroscience Data Utilities
 
-Config-driven library for loading, analysing, and plotting
-trial-based behavioural data.
+Config-driven library for loading, filtering, analysing, and
+plotting trial-based behavioural data.
 
-Quick start:
-    from behav_utils import load_experiment
-
+Pipeline:
     experiment = load_experiment('config.yaml')
-    animal = experiment.get_animal('SS05')
+    sessions   = select_sessions(animal, preset='expert_uniform')
+    clean      = filter_trials(sessions)
+    plot_psychometric(clean, ax=ax, mode='pooled')
 
-    # Stats
-    session.stats(['accuracy', 'recency'])
-    animal.stat_trajectory('accuracy')
-
-    # Plotting
-    session.plot_psychometric()
-    animal.plot_trajectory('accuracy')
-    experiment.plot_trajectory('accuracy', combine='mean_sem')
-
-    # Direct function access
-    from behav_utils.analysis import compute_summary_stats, fit_psychometric
-    from behav_utils.plotting import plot_psychometric, plot_stat_trajectory
+Modules:
+    behav_utils.data        — structures, loading, selection, filtering
+    behav_utils.analysis    — stats, psychometry, update matrix, comparison
+    behav_utils.plotting    — psychometric, update matrix, trajectory, styles
 """
 
+# Config
 from behav_utils.config.schema import load_config, ProjectConfig
-from behav_utils.data.loading import load_experiment, load_session_csv, load_animal
+
+# Data structures
 from behav_utils.data.structures import (
-    ExperimentData,
-    AnimalData,
-    SessionData,
-    SessionMetadata,
-    TrialData,
+    ExperimentData, AnimalData, SessionData,
+    SessionMetadata, TrialData, FittingData,
 )
-from behav_utils.data.neural import NeuralData, Epoch
+
+# Loading
+from behav_utils.data.loading import load_experiment, load_session_csv, load_animal
+
+# Session selection
+from behav_utils.data.selection import (
+    select_sessions, SessionFilter,
+    fitting_data_from_sessions,
+    register_preset, list_presets, register_presets_from_config,
+)
+
+# Trial filtering
+from behav_utils.data.filtering import (
+    filter_trials, pool_arrays,
+    build_mask, opto_mask,
+    filter_session, filter_trial_data,
+    get_arrays,
+)
 
 # Synthetic data
 from behav_utils.data.synthetic import (
-    generate_synthetic_animal,
-    generate_synthetic_session,
-    sample_stimuli,
-    noisy_psychometric_simulator,
+    generate_synthetic_animal, generate_synthetic_session,
+    sample_stimuli, noisy_psychometric_simulator,
 )
 
-# Analysis (available after migration)
-try:
-    from behav_utils.analysis import (
-        compute_summary_stats,
-        fit_psychometric,
-        compute_update_matrix,
-        build_feature_matrix,
-        list_available_stats,
-    )
-except ImportError:
-    pass
+# Neural (stub)
+from behav_utils.data.neural import NeuralData, Epoch
 
-# Plotting (available after migration)
-try:
-    from behav_utils.plotting.styles import apply_style, COLOURS
-except ImportError:
-    pass
+# Analysis
+from behav_utils.analysis import (
+    compute_summary_stats, fit_psychometric, cumulative_gaussian,
+    compute_update_matrix, compute_update_matrix_from_sessions, matrix_error,
+    compare_conditions, permutation_test_params, bootstrap_param_diff,
+    build_feature_matrix, compute_session_features,
+    list_available_stats, register_stat,
+)
 
-__version__ = '0.1.0'
+# Plotting
+from behav_utils.plotting import (
+    plot_psychometric, plot_um, plot_trajectory,
+    PALETTE, COLOURS, UM_CMAP,
+    apply_style, get_colour,
+)
+
+__version__ = '0.2.0'
 
 __all__ = [
     # Config
-    'load_config',
-    'ProjectConfig',
+    'load_config', 'ProjectConfig',
+
+    # Structures
+    'ExperimentData', 'AnimalData', 'SessionData',
+    'SessionMetadata', 'TrialData', 'FittingData',
 
     # Loading
-    'load_experiment',
-    'load_session_csv',
-    'load_animal',
+    'load_experiment', 'load_session_csv', 'load_animal',
 
-    # Data structures
-    'ExperimentData',
-    'AnimalData',
-    'SessionData',
-    'SessionMetadata',
-    'TrialData',
+    # Session selection
+    'select_sessions', 'SessionFilter',
+    'fitting_data_from_sessions',
+    'register_preset', 'list_presets', 'register_presets_from_config',
 
-    # Neural (stub)
-    'NeuralData',
-    'Epoch',
+    # Trial filtering
+    'filter_trials', 'pool_arrays',
+    'build_mask', 'opto_mask',
+    'filter_session', 'filter_trial_data', 'get_arrays',
 
-    # Synthetic data
-    'generate_synthetic_animal',
-    'generate_synthetic_session',
-    'sample_stimuli',
-    'noisy_psychometric_simulator',
+    # Synthetic
+    'generate_synthetic_animal', 'generate_synthetic_session',
+    'sample_stimuli', 'noisy_psychometric_simulator',
+
+    # Neural
+    'NeuralData', 'Epoch',
 
     # Analysis
-    'compute_summary_stats',
-    'fit_psychometric',
-    'compute_update_matrix',
-    'build_feature_matrix',
-    'list_available_stats',
+    'compute_summary_stats', 'fit_psychometric', 'cumulative_gaussian',
+    'compute_update_matrix', 'compute_update_matrix_from_sessions', 'matrix_error',
+    'compare_conditions', 'permutation_test_params', 'bootstrap_param_diff',
+    'build_feature_matrix', 'compute_session_features',
+    'list_available_stats', 'register_stat',
 
     # Plotting
-    'apply_style',
-    'COLOURS',
+    'plot_psychometric', 'plot_um', 'plot_trajectory',
+    'PALETTE', 'COLOURS', 'UM_CMAP',
+    'apply_style', 'get_colour',
 ]

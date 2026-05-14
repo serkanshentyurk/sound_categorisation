@@ -55,6 +55,11 @@ from behav_utils.data.structures import (
 )
 from behav_utils.data.loading import load_experiment
 from behav_utils.data.selection import select_sessions, SessionFilter
+from behav_utils.data.filtering import (
+    filter_trials, pool_arrays,
+    build_mask, opto_mask,
+    filter_session, get_arrays,
+)
 from behav_utils.data.synthetic import (
     generate_synthetic_animal,
     sample_stimuli,
@@ -77,21 +82,12 @@ from behav_utils.analysis.update_matrix import (
 )
 from behav_utils.analysis.psychometry import fit_psychometric
 from behav_utils.analysis.utils import cumulative_gaussian
+from behav_utils.analysis.comparison import compare_conditions
 
-from behav_utils.plotting.psychometric import (
-    plot_psychometric,
-    plot_session_psychometrics,
-    plot_psychometric_overlay,
-)
-from behav_utils.plotting.trajectory import (
-    plot_stat_trajectory,
-    plot_multi_animal_trajectory,
-    plot_stat_grid,
-)
-from behav_utils.plotting.update_matrix import (
-    plot_update_matrix,
-    plot_phase_update_matrices,
-    plot_conditional_psychometrics,
+from behav_utils.plotting import (
+    plot_psychometric, plot_um, plot_trajectory,
+    PALETTE, COLOURS, UM_CMAP,
+    apply_style, get_colour,
 )
 
 from analysis.consensus import load_all_assignments, consensus_summary

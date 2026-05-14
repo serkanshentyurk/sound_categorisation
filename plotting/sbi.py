@@ -12,7 +12,7 @@ Usage:
     from plotting.sbi import (
         plot_parameter_trajectories,
         plot_marginal_posteriors,
-        plot_psychometric_overlay,
+        plot_posterior_psychometric,
         plot_performance_trajectory,
     )
 """
@@ -363,7 +363,7 @@ def plot_pairplot(
 # PSYCHOMETRIC OVERLAY
 # =============================================================================
 
-def plot_psychometric_overlay(
+def plot_posterior_psychometric(
     stimuli_per_session: List[np.ndarray],
     choices_per_session: List[np.ndarray],
     posterior_choices: Optional[List[List[np.ndarray]]] = None,
@@ -795,7 +795,7 @@ __all__ = [
     'plot_parameter_trajectories',
     'plot_marginal_posteriors',
     'plot_pairplot',
-    'plot_psychometric_overlay',
+    'plot_posterior_psychometric',
     'plot_performance_trajectory',
     'plot_summary_stats_comparison',
     'plot_learning_trajectory',

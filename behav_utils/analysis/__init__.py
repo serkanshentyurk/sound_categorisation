@@ -2,11 +2,15 @@
 behav_utils.analysis — Behavioural Analysis Tools
 
 Summary statistics, psychometric fitting, update matrices,
-and session feature extraction for 2AFC tasks.
+condition comparison, and session feature extraction.
+
+All functions operate on pre-filtered data. No trial-level filtering
+is done here — use filter_trials / session.filter first.
 
 Usage:
     from behav_utils.analysis import compute_summary_stats, fit_psychometric
     from behav_utils.analysis import compute_update_matrix
+    from behav_utils.analysis import compare_conditions
     from behav_utils.analysis import build_feature_matrix
 """
 
@@ -39,6 +43,11 @@ from behav_utils.analysis.session_features import (
     get_numeric_features,
     zscore_features,
 )
+from behav_utils.analysis.comparison import (
+    compare_conditions,
+    permutation_test_params,
+    bootstrap_param_diff,
+)
 
 __all__ = [
     # Utils
@@ -63,6 +72,11 @@ __all__ = [
     'compute_update_matrix',
     'compute_update_matrix_from_sessions',
     'matrix_error',
+
+    # Comparison
+    'compare_conditions',
+    'permutation_test_params',
+    'bootstrap_param_diff',
 
     # Session features
     'build_feature_matrix',

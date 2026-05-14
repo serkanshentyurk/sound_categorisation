@@ -40,9 +40,9 @@ from behav_utils.analysis.psychometry import fit_psychometric
 from behav_utils.analysis.utils import cumulative_gaussian
 from behav_utils.plotting.styles import COLOURS, UM_CMAP, apply_style
 
-from analysis.opto import (
-    OptoPhase, split_trials_by_opto, get_post_opto_mask,
-    extract_trial_arrays,
+from analysis.opto import OptoPhase
+from behav_utils.data.filtering import (
+    opto_mask as _opto_mask, filter_session, get_arrays,
 )
 
 apply_style()
@@ -112,20 +112,21 @@ def plot_opto_psychometric(
     # Define conditions: (label, mask_getter, colour)
     # Control = all non-opto (70%), post-opto = subset of control
     conditions = [
-        ('Control', lambda s: split_trials_by_opto(s)[1], CTRL_COLOUR),
-        ('Opto', lambda s: split_trials_by_opto(s)[0], OPTO_COLOUR),
+        ('Control', lambda s: _opto_mask(s.trials, delta='control'), CTRL_COLOUR),
+        ('Opto', lambda s: _opto_mask(s.trials, delta=0), OPTO_COLOUR),
     ]
     if show_post_opto:
         conditions.append(
-            ('Post-opto', lambda s: get_post_opto_mask(s), POST_OPTO_COLOUR))
+            ('Post-opto', lambda s: _opto_mask(s.trials, delta=1), POST_OPTO_COLOUR))
 
     for label, mask_fn, colour in conditions:
         all_stim, all_choice = [], []
         for sess in sessions:
             mask = mask_fn(sess)
-            arrays = extract_trial_arrays(sess, mask)
-            if arrays is None:
+            if mask.sum() < 10:
                 continue
+            filtered = filter_session(sess, mask)
+            arrays = get_arrays(filtered.trials)
             valid = ~arrays['no_response']
             all_stim.append(arrays['stimuli'][valid])
             all_choice.append(arrays['choices'][valid])
@@ -212,7 +213,8 @@ def plot_phase_trajectory(
     colours = []
     for sess, phase in zip(sessions, phases):
         try:
-            st = sess.stats(stat_names=[stat_name], exclude_opto=True)
+            clean = filter_session(sess)  # exclude abort + opto → control trials
+            st = clean.stats(stat_names=[stat_name])
             values.append(st[stat_name])
         except Exception:
             values.append(np.nan)

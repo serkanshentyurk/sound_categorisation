@@ -14,10 +14,9 @@ session.masking (set by load_experiment from config.yaml / CSV column).
 Public API:
     OptoPhase               — Enum for experimental phases
     assign_opto_phases      — Label each session with its phase
-    opto_relative_mask      — Boolean mask at fixed offset from opto events
-    split_trials_by_opto    — Boolean masks for opto/control trials (wrapper)
-    get_post_opto_mask      — Identify post-opto trials (wrapper)
-    extract_trial_arrays    — Get stimulus/choice/category arrays for a mask
+    opto_relative_mask      — Wrapper: session.trials.opto_mask(delta)
+    split_trials_by_opto    — Wrapper: opto + control masks
+    get_post_opto_mask      — Wrapper: post-opto mask (delta=1)
     within_session_effect   — Per-session opto vs control stats
     phase_pooled_comparison — Pool across sessions, compare opto vs control
     compute_opto_um         — Update matrix from opto-relative trials (delta API)
@@ -31,6 +30,10 @@ Public API:
     expert_um_test          — UM RMSE equivalence test for expert-phase null prediction
     phase_opto_interaction  — Phase × opto interaction (expert vs post-shift)
     simulate_with_opto      — Simulate session with trial-level opto lesion
+
+    Filtering is handled by behav_utils.data.filtering — this module
+    does NOT filter internally. Mask wrappers (opto_relative_mask, etc.)
+    delegate to filtering.opto_mask.
 
 Usage:
     from analysis.opto import assign_opto_phases, within_session_effect, OptoPhase
@@ -48,6 +51,10 @@ import numpy as np
 from scipy.stats import mannwhitneyu, ttest_1samp, wilcoxon, ttest_rel
 
 from behav_utils.analysis.update_matrix import compute_update_matrix
+from behav_utils.data.filtering import (
+    build_mask, opto_mask as _opto_mask,
+    filter_session, filter_trials, get_arrays, pool_arrays,
+)
 
 
 # ─── Phase enum ──────────────────────────────────────────────────────────────
@@ -137,148 +144,34 @@ def assign_opto_phases(animal) -> List[OptoPhase]:
 
 # ─── Trial masking ───────────────────────────────────────────────────────────
 
-def opto_relative_mask(
-    session,
-    delta: Optional[Union[int, str]] = 0,
-) -> np.ndarray:
-    """
-    Boolean mask for trials at a fixed offset from opto events.
-
-    Consecutive opto trials are treated as a single "run": offsets
-    are measured from the run boundary, not from each individual
-    opto trial within the run.
-
-    Args:
-        session: SessionData
-        delta:
-            None      → all valid (non-abort) trials
-            0         → opto trials themselves
-            1         → first valid non-opto trial after each opto run
-            2         → second valid non-opto trial after each opto run
-            -1        → last valid non-opto trial before each opto run
-            -2        → second-to-last before each opto run
-            'control' → all valid non-opto trials (complement of delta=0)
-
-    Returns:
-        Boolean mask of length n_trials.
-    """
-    trials = session.trials
-    valid = ~trials.abort
-    opto_on = trials.opto_on
-    n = len(valid)
-
-    # All valid trials
-    if delta is None:
-        return valid.copy()
-
-    # Non-opto valid trials
-    if delta == 'control':
-        return valid & ~opto_on
-
-    # Opto trials themselves
-    if delta == 0:
-        return valid & opto_on
-
-    # ── Identify opto run boundaries ─────────────────────────────────
-    runs = []  # list of (start_idx, end_idx) for each contiguous opto block
-    in_run = False
-    start = None
-    for t in range(n):
-        if opto_on[t]:
-            if not in_run:
-                start = t
-                in_run = True
-        else:
-            if in_run:
-                runs.append((start, t - 1))
-                in_run = False
-    if in_run:
-        runs.append((start, n - 1))
-
-    mask = np.zeros(n, dtype=bool)
-
-    if delta > 0:
-        # Forward offset: k-th valid non-opto trial after run end
-        for _, run_end in runs:
-            count = 0
-            for t in range(run_end + 1, n):
-                if opto_on[t]:
-                    break  # hit another opto run, stop
-                if valid[t]:
-                    count += 1
-                    if count == delta:
-                        mask[t] = True
-                        break
-
-    elif delta < 0:
-        # Backward offset: k-th valid non-opto trial before run start
-        k = abs(delta)
-        for run_start, _ in runs:
-            count = 0
-            for t in range(run_start - 1, -1, -1):
-                if opto_on[t]:
-                    break  # hit another opto run, stop
-                if valid[t]:
-                    count += 1
-                    if count == k:
-                        mask[t] = True
-                        break
-
-    return mask
+def opto_relative_mask(session, delta=0):
+    """Wrapper: delegates to session.trials.opto_mask(delta). See filtering.opto_mask."""
+    return _opto_mask(session.trials, delta=delta)
 
 
 def split_trials_by_opto(session) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Get boolean masks for opto and control trials.
-
-    Wrapper around opto_relative_mask for backward compatibility.
-    Excludes abort trials from both masks.
-
-    Returns:
-        (opto_mask, control_mask): Boolean arrays of length n_trials.
-    """
-    return (
-        opto_relative_mask(session, delta=0),
-        opto_relative_mask(session, delta='control'),
-    )
+    """Wrapper: opto and control masks. See filtering.opto_mask."""
+    t = session.trials
+    return _opto_mask(t, delta=0), _opto_mask(t, delta='control')
 
 
 def get_post_opto_mask(session) -> np.ndarray:
+    """Wrapper: post-opto trials (delta=1). See filtering.opto_mask."""
+    return _opto_mask(session.trials, delta=1)
+
+
+def extract_trial_arrays(session, mask):
     """
-    Identify post-opto trials: first valid non-opto trial after each opto run.
-
-    Wrapper around opto_relative_mask(session, delta=1).
-
-    These are a SUBSET of control trials, not a separate partition.
-    Control remains all non-opto valid trials (70%). Post-opto (~30%)
-    is an overlay for visualisation and carry-over analysis.
-
-    Returns:
-        Boolean mask of length n_trials.
+    DEPRECATED — use session.filter(mask).get_arrays() instead.
+    
+    Kept for backward compatibility. Returns None if < 10 trials.
     """
-    return opto_relative_mask(session, delta=1)
-
-
-def extract_trial_arrays(
-    session, mask: np.ndarray,
-) -> Optional[Dict[str, np.ndarray]]:
-    """
-    Extract stimulus/choice/category arrays for trials matching mask.
-
-    Returns None if fewer than 10 trials pass the mask.
-    """
-    trials = session.trials
     if mask.sum() < 10:
         return None
-
-    choices = trials.choice[mask].astype(float)
-    return {
-        'stimuli': trials.stimulus[mask],
-        'categories': trials.category[mask],
-        'choices': choices,
-        'no_response': np.isnan(choices),
-        'n_trials': int(mask.sum()),
-    }
+    filtered = filter_session(session, mask, label='extract_trial_arrays')
+    arr = get_arrays(filtered.trials)
+    arr['n_trials'] = arr['n_trials']  # already there
+    return arr
 
 
 # ─── Within-session comparison ───────────────────────────────────────────────
@@ -387,39 +280,15 @@ def within_session_effect(
 
 # ─── Phase-pooled comparison ─────────────────────────────────────────────────
 
-def _pool_trial_arrays(
-    sessions: list, mask_fn,
-) -> Optional[Dict[str, np.ndarray]]:
-    """
-    Pool trial arrays across sessions using mask_fn to select trials.
-
-    Args:
-        sessions: List of SessionData
-        mask_fn: Callable(session) -> boolean mask over trials
-    """
-    all_stimuli, all_choices, all_categories = [], [], []
-
-    for sess in sessions:
-        mask = mask_fn(sess)
-        arrays = extract_trial_arrays(sess, mask)
-        if arrays is None:
-            continue
-        valid = ~arrays['no_response']
-        all_stimuli.append(arrays['stimuli'][valid])
-        all_choices.append(arrays['choices'][valid])
-        all_categories.append(arrays['categories'][valid])
-
-    if not all_stimuli:
+def _pool_trial_arrays(sessions, mask_fn):
+    """Pool trials across sessions via filter_trials + pool_arrays."""
+    filtered = filter_trials(sessions, mask_fn=mask_fn, min_trials=10, label='opto pool')
+    if not filtered:
         return None
-
-    return {
-        'stimuli': np.concatenate(all_stimuli),
-        'choices': np.concatenate(all_choices),
-        'categories': np.concatenate(all_categories),
-        'no_response': np.zeros(
-            sum(len(s) for s in all_stimuli), dtype=bool),
-        'n_trials': sum(len(s) for s in all_stimuli),
-    }
+    arr = pool_arrays(filtered)
+    if arr['n_trials'] == 0:
+        return None
+    return arr
 
 
 def phase_pooled_comparison(
@@ -562,7 +431,7 @@ def compute_opto_um(
         delta = 0 if opto_only else 'control'
 
     arrays = _pool_trial_arrays(
-        sessions, lambda s: opto_relative_mask(s, delta=delta))
+        sessions, lambda s: _opto_mask(s.trials, delta=delta))
 
     if arrays is None:
         empty = np.full((n_bins, n_bins), np.nan)
@@ -586,7 +455,7 @@ def phase_stability(
     Track statistics across experimental phases and compare all pairs.
 
     Replaces expert_stability with full phase coverage including masking.
-    Uses sess.stats(exclude_opto=True) so opto trials are excluded —
+    Filters each session (exclude abort + opto) before computing stats —
     this tests whether control-trial performance changes across phases.
 
     Compares all pairs: baseline↔masking, baseline↔opto,
@@ -625,10 +494,11 @@ def phase_stability(
         if phase not in target_phases:
             continue
 
-        # Get stats — try sess.stats() first, fall back to manual
+        # Filter once per session (exclude abort + opto → control trials only)
+        clean = filter_session(sess)  # standard exclusions
         for sn in stat_names:
             try:
-                st = sess.stats(stat_names=[sn], exclude_opto=True)
+                st = clean.stats(stat_names=[sn])
                 val = st[sn]
                 if val is not None and not np.isnan(val):
                     per_phase[phase][sn].append(float(val))

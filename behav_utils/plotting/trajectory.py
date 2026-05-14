@@ -1,306 +1,163 @@
 """
 Stat Trajectory Plotting
 
-Plot how summary statistics evolve across sessions for single animals
-or groups of animals. Supports individual traces, mean/SEM, median/IQR.
+plot_trajectory(data, stat_name, ax, **kwargs)
 
-All functions return (fig, ax) for further customisation.
-
-Usage:
-    from behav_utils.plotting.trajectory import (
-        plot_stat_trajectory,
-        plot_multi_animal_trajectory,
-    )
-
-    # Single animal
-    fig, ax = plot_stat_trajectory(session_indices, values, ylabel='Accuracy')
-
-    # Multi-animal (called by experiment.plot_trajectory)
-    fig, ax = plot_multi_animal_trajectory(
-        animals, stat='accuracy', combine='mean_sem',
-    )
+Accepts AnimalData, List[AnimalData], or List[SessionData].
+NO FILTERING. Data must be pre-filtered via filter_trials / session.filter.
 """
 
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import Optional, List, Union, Tuple, TYPE_CHECKING
+from typing import Optional, Tuple, TYPE_CHECKING
 
 from behav_utils.plotting.styles import (
-    COLOURS, SEM_ALPHA, DEFAULT_ALPHA, DEFAULT_LINE_WIDTH,
-    get_animal_colours,
+    COLOURS, PALETTE, DEFAULT_ALPHA, SEM_ALPHA, DEFAULT_LINE_WIDTH,
 )
 
 if TYPE_CHECKING:
-    from behav_utils.data.structures import AnimalData
+    from behav_utils.data.structures import SessionData, AnimalData
 
 
-# =============================================================================
-# SINGLE TRAJECTORY
-# =============================================================================
-
-def plot_stat_trajectory(
-    session_indices: np.ndarray,
-    values: np.ndarray,
-    title: str = '',
-    ylabel: str = '',
-    xlabel: str = 'Session',
-    color: Optional[str] = None,
-    ax: Optional[plt.Axes] = None,
-    show_points: bool = True,
-    marker: str = 'o',
-    linewidth: float = DEFAULT_LINE_WIDTH,
-    alpha: float = DEFAULT_ALPHA,
-    label: Optional[str] = None,
-    **kwargs,
-) -> Tuple[plt.Figure, plt.Axes]:
+def plot_trajectory(
+    data, stat_name: str, ax=None,
+    combine='none',
+    color=None, label=None, alpha=DEFAULT_ALPHA,
+    linewidth=DEFAULT_LINE_WIDTH, marker='o', markersize=4,
+    title='', xlabel='Session', ylabel=None,
+) -> Tuple[plt.Figure, plt.Axes, dict]:
     """
-    Plot a single stat trajectory across sessions.
+    Plot a summary stat across sessions. Data must be pre-filtered.
 
     Args:
-        session_indices: x-axis values (session numbers)
-        values: y-axis values (stat values)
-        title: Plot title
-        ylabel: Y-axis label
-        xlabel: X-axis label
-        color: Line colour (default: COLOURS['default'])
-        ax: Existing axes (creates new figure if None)
-        show_points: Whether to show markers at each session
-        label: Legend label
-
-    Returns:
-        (fig, ax)
+        data: AnimalData, List[AnimalData], or List[SessionData].
+        stat_name: Registered stat name ('accuracy', 'pse', etc.).
+        combine: For multi-animal:
+            'none' — overlay individual animals
+            'mean_sem' — cohort mean ± SEM
+            'median_iqr' — cohort median ± IQR
+            'mean_only' — mean, no error band
     """
     if ax is None:
         fig, ax = plt.subplots(figsize=(8, 4))
     else:
         fig = ax.get_figure()
 
-    if color is None:
-        color = COLOURS['default']
+    ylabel = ylabel or stat_name
+    animals, session_list = _resolve(data)
 
-    # Filter NaNs for plotting
-    valid = ~np.isnan(values.astype(float))
-
-    plot_kwargs = dict(color=color, linewidth=linewidth, alpha=alpha)
-    if label is not None:
-        plot_kwargs['label'] = label
-
-    if show_points:
-        ax.plot(session_indices[valid], values[valid],
-                f'{marker}-', markersize=4, **plot_kwargs, **kwargs)
+    if session_list is not None:
+        info = _draw_sessions(session_list, stat_name, ax,
+            color=color, label=label, alpha=alpha,
+            linewidth=linewidth, marker=marker, markersize=markersize)
+    elif len(animals) == 1 or combine == 'none':
+        info = _draw_animals(animals, stat_name, ax,
+            color=color, label=label, alpha=alpha,
+            linewidth=linewidth, marker=marker, markersize=markersize)
     else:
-        ax.plot(session_indices[valid], values[valid],
-                '-', **plot_kwargs, **kwargs)
+        info = _draw_combined(animals, stat_name, ax, combine,
+            color=color, label=label, alpha=alpha, linewidth=linewidth)
 
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
+    ax.set_xlabel(xlabel); ax.set_ylabel(ylabel)
     if title:
         ax.set_title(title)
-
-    return fig, ax
-
-
-# =============================================================================
-# MULTI-ANIMAL TRAJECTORY
-# =============================================================================
-
-def plot_multi_animal_trajectory(
-    animals: List['AnimalData'],
-    stat: str,
-    stage: Optional[str] = None,
-    combine: str = 'mean_sem',
-    show_individual: bool = True,
-    individual_alpha: float = 0.3,
-    individual_linewidth: float = 0.8,
-    title: Optional[str] = None,
-    ylabel: Optional[str] = None,
-    xlabel: str = 'Session',
-    ax: Optional[plt.Axes] = None,
-    colour_by: str = 'animal',
-    manipulation_lines: bool = False,
-    **kwargs,
-) -> Tuple[plt.Figure, plt.Axes]:
-    """
-    Plot stat trajectories for multiple animals with group summary.
-
-    Args:
-        animals: List of AnimalData objects
-        stat: Feature name to plot
-        stage: Stage filter for sessions
-        combine: Group summary method:
-            'mean_sem' — mean line with SEM shading
-            'median_iqr' — median line with IQR shading
-            'mean_only' — just the mean line
-            'none' — no group summary
-        show_individual: Show per-animal traces
-        individual_alpha: Alpha for individual traces
-        title: Plot title (default: stat name)
-        ylabel: Y-axis label (default: stat name)
-        colour_by: 'animal' (each animal different colour) or
-                   'manipulation' (colour by manipulation type)
-        manipulation_lines: Draw vertical lines at manipulation sessions
-
-    Returns:
-        (fig, ax)
-    """
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(10, 5))
-    else:
-        fig = ax.get_figure()
-
-    if title is None:
-        title = stat
-    if ylabel is None:
-        ylabel = stat
-
-    # Get trajectories
-    trajectories = []  # (indices, values, animal_id, animal)
-    for animal in animals:
-        try:
-            idx, vals = animal.stat_trajectory(stat, stage=stage)
-            trajectories.append((idx, vals, animal.animal_id, animal))
-        except (ValueError, KeyError):
-            continue
-
-    if not trajectories:
-        ax.text(0.5, 0.5, f'No data for stat "{stat}"',
-                transform=ax.transAxes, ha='center', va='center')
-        ax.set_title(title)
-        return fig, ax
-
-    # Colour assignment
-    if colour_by == 'animal':
-        animal_ids = [t[2] for t in trajectories]
-        colours = get_animal_colours(animal_ids)
-    else:
-        colours = {}
-
-    # Plot individual traces
-    if show_individual:
-        for idx, vals, aid, animal in trajectories:
-            color = colours.get(aid, COLOURS['default'])
-            valid = ~np.isnan(vals.astype(float))
-            ax.plot(idx[valid], vals[valid], '-',
-                    color=color, alpha=individual_alpha,
-                    linewidth=individual_linewidth)
-
-    # Compute group summary
-    if combine != 'none':
-        # Align by session index (not all animals have same number of sessions)
-        all_indices = set()
-        for idx, _, _, _ in trajectories:
-            all_indices.update(idx.astype(int))
-        all_indices = sorted(all_indices)
-
-        summary_x = []
-        summary_mean = []
-        summary_low = []
-        summary_high = []
-
-        for si in all_indices:
-            vals_at_si = []
-            for idx, vals, _, _ in trajectories:
-                mask = idx.astype(int) == si
-                if mask.any():
-                    v = vals[mask][0]
-                    if not np.isnan(v):
-                        vals_at_si.append(v)
-
-            if len(vals_at_si) < 2:
-                continue
-
-            arr = np.array(vals_at_si)
-            summary_x.append(si)
-
-            if combine in ('mean_sem', 'mean_only'):
-                summary_mean.append(np.mean(arr))
-                summary_low.append(np.mean(arr) - np.std(arr) / np.sqrt(len(arr)))
-                summary_high.append(np.mean(arr) + np.std(arr) / np.sqrt(len(arr)))
-            elif combine == 'median_iqr':
-                summary_mean.append(np.median(arr))
-                summary_low.append(np.percentile(arr, 25))
-                summary_high.append(np.percentile(arr, 75))
-
-        summary_x = np.array(summary_x)
-        summary_mean = np.array(summary_mean)
-        summary_low = np.array(summary_low)
-        summary_high = np.array(summary_high)
-
-        # Plot summary
-        ax.plot(summary_x, summary_mean, '-',
-                color=COLOURS['mean_line'], linewidth=2.5, zorder=10,
-                label=combine.replace('_', ' '))
-
-        if combine != 'mean_only':
-            ax.fill_between(summary_x, summary_low, summary_high,
-                            color=COLOURS['sem_fill'], alpha=SEM_ALPHA, zorder=5)
-
-    # Manipulation lines
-    if manipulation_lines:
-        for _, _, aid, animal in trajectories:
-            manip = animal.metadata.get('manipulation_session', None)
-            if manip is not None:
-                ax.axvline(manip, color='red', linestyle='--', alpha=0.3)
-
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
-    ax.set_title(title)
-
-    if combine != 'none':
-        ax.legend(fontsize=8)
-
-    return fig, ax
+    return fig, ax, info
 
 
-# =============================================================================
-# MULTI-STAT GRID
-# =============================================================================
+def _resolve(data):
+    from behav_utils.data.structures import SessionData, AnimalData
+    if isinstance(data, AnimalData):
+        return [data], None
+    if isinstance(data, (list, tuple)):
+        if len(data) == 0:
+            return [], None
+        if isinstance(data[0], AnimalData):
+            return list(data), None
+        if hasattr(data[0], 'trials'):
+            return None, list(data)
+    try:
+        items = list(data)
+        if items and hasattr(items[0], 'trials'):
+            return None, items
+        if items and hasattr(items[0], 'sessions'):
+            return items, None
+    except TypeError:
+        pass
+    raise TypeError(f"Expected AnimalData/List/SessionData, got {type(data).__name__}")
 
-def plot_stat_grid(
-    animals: List['AnimalData'],
-    stats: List[str],
-    stage: Optional[str] = None,
-    combine: str = 'mean_sem',
-    n_cols: int = 4,
-    figsize_per_panel: Tuple[float, float] = (4.0, 3.0),
-    **kwargs,
-) -> Tuple[plt.Figure, np.ndarray]:
-    """
-    Grid of stat trajectories — one panel per stat.
 
-    Args:
-        animals: List of AnimalData
-        stats: List of stat names
-        stage: Stage filter
-        combine: Group summary method
-        n_cols: Columns in grid
+def _get_stat(session, stat_name):
+    """Get a scalar stat from one session. No filtering."""
+    try:
+        result = session.stats([stat_name])
+    except Exception:
+        return np.nan
+    val = result.get(stat_name, np.nan)
+    if isinstance(val, dict):
+        for k in ['value', 'mean', 'accuracy', stat_name]:
+            if k in val:
+                return float(val[k])
+        return np.nan
+    return float(val)
 
-    Returns:
-        (fig, axes_array)
-    """
-    n_stats = len(stats)
-    n_rows = int(np.ceil(n_stats / n_cols))
 
-    fig, axes = plt.subplots(
-        n_rows, n_cols,
-        figsize=(figsize_per_panel[0] * n_cols, figsize_per_panel[1] * n_rows),
-        squeeze=False,
-    )
-    axes_flat = axes.flatten()
+def _draw_sessions(sessions, stat_name, ax, color=None, label=None,
+                   alpha=DEFAULT_ALPHA, linewidth=DEFAULT_LINE_WIDTH,
+                   marker='o', markersize=4):
+    color = color or COLOURS['default']
+    vals = [_get_stat(s, stat_name) for s in sessions]
+    ax.plot(range(len(vals)), vals, marker=marker, markersize=markersize,
+            color=color, lw=linewidth, alpha=alpha, label=label, zorder=2)
+    return {'values': np.array(vals), 'n_sessions': len(vals)}
 
-    for i, stat in enumerate(stats):
-        plot_multi_animal_trajectory(
-            animals, stat=stat, stage=stage,
-            combine=combine, ax=axes_flat[i],
-            title=stat, **kwargs,
-        )
 
-    # Hide empty panels
-    for j in range(n_stats, len(axes_flat)):
-        axes_flat[j].set_visible(False)
+def _draw_animals(animals, stat_name, ax, color=None, label=None,
+                  alpha=DEFAULT_ALPHA, linewidth=DEFAULT_LINE_WIDTH,
+                  marker='o', markersize=4):
+    infos = {}
+    for i, animal in enumerate(animals):
+        vals = [_get_stat(s, stat_name) for s in animal.sessions]
+        c = color or PALETTE[i % len(PALETTE)]
+        lbl = label if len(animals) == 1 else getattr(animal, 'animal_id', f'Animal {i}')
+        ax.plot(range(len(vals)), vals, marker=marker, markersize=markersize,
+                color=c, lw=linewidth, alpha=alpha, label=lbl, zorder=2)
+        infos[lbl] = np.array(vals)
+    return {'per_animal': infos, 'n_animals': len(animals)}
 
-    fig.suptitle(f'Summary Stat Trajectories ({len(animals)} animals)',
-                 fontsize=13, fontweight='bold', y=1.01)
-    plt.tight_layout()
 
-    return fig, axes
+def _draw_combined(animals, stat_name, ax, combine,
+                   color=None, label=None, alpha=DEFAULT_ALPHA,
+                   linewidth=DEFAULT_LINE_WIDTH):
+    color = color or COLOURS['mean_line']
+    all_trajs = [[_get_stat(s, stat_name) for s in a.sessions] for a in animals]
+    max_len = max(len(t) for t in all_trajs)
+    padded = np.full((len(all_trajs), max_len), np.nan)
+    for i, t in enumerate(all_trajs):
+        padded[i, :len(t)] = t
+
+    x = np.arange(max_len)
+    n_valid = np.sum(~np.isnan(padded), axis=0)
+    mask = n_valid >= 2
+
+    with np.errstate(all='ignore'):
+        if combine in ('mean_sem', 'mean_only'):
+            centre = np.nanmean(padded, axis=0)
+            err = np.nanstd(padded, axis=0, ddof=1) / np.sqrt(n_valid)
+        elif combine == 'median_iqr':
+            centre = np.nanmedian(padded, axis=0)
+            q25 = np.nanpercentile(padded, 25, axis=0)
+            q75 = np.nanpercentile(padded, 75, axis=0)
+        else:
+            raise ValueError(f"Unknown combine: {combine!r}")
+
+    ax.plot(x[mask], centre[mask], '-', color=color, lw=linewidth * 1.5,
+            alpha=alpha, label=label or combine.replace('_', ' '), zorder=3)
+
+    if combine == 'mean_sem':
+        ax.fill_between(x[mask], (centre-err)[mask], (centre+err)[mask],
+                        color=color, alpha=SEM_ALPHA, zorder=1)
+    elif combine == 'median_iqr':
+        ax.fill_between(x[mask], q25[mask], q75[mask],
+                        color=color, alpha=SEM_ALPHA, zorder=1)
+
+    return {'centre': centre, 'n_animals': len(animals), 'padded': padded}
