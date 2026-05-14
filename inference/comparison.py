@@ -858,20 +858,22 @@ def simulate_example_session(
 # calls select_expert_sessions(animal, stage, dist, min_acc, last_frac)
 # and expects FittingData back.
 
+
 def select_expert_fitting_data(
-    animal: Any,
+    animal,
     stage: str = 'Full_Task_Cont',
     distribution: str = 'Uniform',
     min_accuracy: float = 0.70,
     last_fraction: float = 0.50,
     min_valid_trials: int = 30,
-) -> FittingData:
+) -> 'FittingData':
     """
-    Select expert sessions and return as FittingData.
+    Select expert sessions, filter trials, and return as FittingData.
 
-    Drop-in replacement for the old sbi_comparison_utils.select_expert_sessions.
+    Pipeline: select_sessions → filter_trials → fitting_data_from_sessions.
     """
     from behav_utils.data.selection import select_sessions, fitting_data_from_sessions
+    from behav_utils.data.filtering import filter_trials
 
     sessions = select_sessions(
         animal,
@@ -886,23 +888,25 @@ def select_expert_fitting_data(
             f"No expert sessions for {animal.animal_id} "
             f"(acc>={min_accuracy}, last {last_fraction:.0%})"
         )
+    clean = filter_trials(sessions)
     return fitting_data_from_sessions(
-        sessions, animal.animal_id, min_valid_trials=min_valid_trials,
+        clean, animal.animal_id, min_valid_trials=min_valid_trials,
     )
 
 
 def select_all_fitting_data(
-    animal: Any,
+    animal,
     stage: str = 'Full_Task_Cont',
     distribution: str = 'Uniform',
     min_valid_trials: int = 30,
-) -> FittingData:
+) -> 'FittingData':
     """
-    Select all qualifying sessions and return as FittingData.
+    Select all qualifying sessions, filter trials, and return as FittingData.
 
-    Drop-in replacement for the old sbi_comparison_utils.select_all_sessions.
+    Pipeline: select_sessions → filter_trials → fitting_data_from_sessions.
     """
     from behav_utils.data.selection import select_sessions, fitting_data_from_sessions
+    from behav_utils.data.filtering import filter_trials
 
     sessions = select_sessions(
         animal,
@@ -910,6 +914,7 @@ def select_all_fitting_data(
         distribution=distribution,
         min_trials=min_valid_trials,
     )
+    clean = filter_trials(sessions)
     return fitting_data_from_sessions(
-        sessions, animal.animal_id, min_valid_trials=min_valid_trials,
+        clean, animal.animal_id, min_valid_trials=min_valid_trials,
     )

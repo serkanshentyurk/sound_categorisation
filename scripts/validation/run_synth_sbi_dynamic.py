@@ -160,9 +160,11 @@ def run_dynamic_sbi(
     Returns dict with trajectories, PPC, session params, and timing.
     """
     from behav_utils.data.selection import fitting_data_from_sessions
+    from behav_utils.data.filtering import filter_trials
     from inference.fitting import SBIFitter
     from inference.types import ConstantSpec, RandomWalkSpec
 
+    sessions = filter_trials(sessions)
     fd = fitting_data_from_sessions(sessions, animal_id)
 
     if model_type.upper() == 'BE':

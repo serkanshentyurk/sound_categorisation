@@ -32,11 +32,6 @@ from behav_utils.plotting.styles import COLOURS, apply_style
 
 apply_style()
 
-# ─── Colours ─────────────────────────────────────────────────────────────────
-
-BASELINE_COLOUR = 'steelblue'
-POST_COLOUR = 'darkorange'
-
 
 # ─── Per-animal trajectory ───────────────────────────────────────────────────
 
@@ -82,12 +77,12 @@ def plot_animal_trajectory(
         ax.plot(
             trajectory_df.loc[bl_mask, 'relative_session'],
             trajectory_df.loc[bl_mask, stat],
-            'o-', ms=4, color=BASELINE_COLOUR,
+            'o-', ms=4, color=PALETTE[0],
         )
         ax.plot(
             trajectory_df.loc[post_mask, 'relative_session'],
             trajectory_df.loc[post_mask, stat],
-            'o-', ms=4, color=POST_COLOUR,
+            'o-', ms=4, color=PALETTE[1],
         )
 
         # Baseline band
@@ -97,10 +92,10 @@ def plot_animal_trajectory(
             bl_mean = trajectory_df[bl_mean_col].iloc[0]
             bl_std = trajectory_df[bl_std_col].iloc[0]
             if not np.isnan(bl_mean):
-                ax.axhline(bl_mean, color=BASELINE_COLOUR, ls='--', lw=0.8, alpha=0.5)
+                ax.axhline(bl_mean, color=PALETTE[0], ls='--', lw=0.8, alpha=0.5)
                 ax.axhspan(
                     bl_mean - bl_std, bl_mean + bl_std,
-                    color=BASELINE_COLOUR, alpha=0.08,
+                    color=PALETTE[0], alpha=0.08,
                 )
 
         ax.axvline(0, color='black', ls=':', lw=0.8)
@@ -120,7 +115,8 @@ def plot_animal_trajectory(
     if shift_info:
         details = shift_info.get('details', {})
         title_parts.append(
-            f"{details.get('before', '?')} → {details.get('after', '?')}"
+            f"{details.get('before', '?')} "
+            f"\u2192 {details.get('after', '?')}"
         )
         title_parts.append(f"({shift_info.get('shift_type', '')})")
     if title_parts:
@@ -146,8 +142,8 @@ def plot_shift_um_evolution(
     Uses plot_um for each phase panel.
 
     Args:
-        baseline_sessions: Expert-phase sessions.
-        post_sessions: Post-shift sessions.
+        baseline_sessions: Expert-phase sessions (pre-filtered).
+        post_sessions: Post-shift sessions (pre-filtered).
         n_baseline: Number of baseline sessions to pool.
         n_early_post: Number of early post-shift sessions.
     """
@@ -178,7 +174,7 @@ def plot_shift_um_evolution(
     if shift_info:
         details = shift_info.get('details', {})
         title_parts.append(
-            f"{details.get('before', '?')} → {details.get('after', '?')}"
+            f"{details.get('before', '?')} \u2192 {details.get('after', '?')}"
         )
 
     n_panels = len(phases)
@@ -206,12 +202,13 @@ def plot_shift_psychometric(
     """
     Psychometric curves overlaid across shift phases.
 
-    Uses plot_psychometric for each phase group.
+    Uses plot_psychometric for each phase group. Each group gets a
+    sequential PALETTE colour.
     """
     groups = {'Expert baseline': baseline_sessions[-n_baseline:]}
 
     if len(post_sessions) >= 3:
-        groups['Early post (1–3)'] = post_sessions[:3]
+        groups['Early post (1\u20133)'] = post_sessions[:3]
     if len(post_sessions) >= 6:
         groups['Mid post'] = post_sessions[3:min(6, len(post_sessions))]
     if len(post_sessions) > 6:
@@ -226,7 +223,7 @@ def plot_shift_psychometric(
     if shift_info:
         details = shift_info.get('details', {})
         title_parts.append(
-            f"{details.get('before', '?')} → {details.get('after', '?')}"
+            f"{details.get('before', '?')} \u2192 {details.get('after', '?')}"
         )
 
     fig, ax = plt.subplots(1, 1, figsize=(5, 4))
@@ -273,9 +270,8 @@ def plot_group_trajectories(
         row, col = divmod(idx, n_cols)
         ax = axes[row, col]
 
-        stat_data = aggregated_df[
-            aggregated_df['stat'] == stat
-        ].sort_values('relative_session')
+        stat_data = aggregated_df[aggregated_df['stat'] == stat].sort_values(
+            'relative_session')
         if stat_data.empty:
             ax.set_title(f'{stat} (no data)', fontsize=10)
             continue
@@ -287,14 +283,10 @@ def plot_group_trajectories(
         bl_mask = x < 0
         post_mask = x >= 0
 
-        ax.errorbar(
-            x[bl_mask], y[bl_mask], yerr=yerr[bl_mask],
-            fmt='o-', ms=4, color=BASELINE_COLOUR, capsize=2,
-        )
-        ax.errorbar(
-            x[post_mask], y[post_mask], yerr=yerr[post_mask],
-            fmt='o-', ms=4, color=POST_COLOUR, capsize=2,
-        )
+        ax.errorbar(x[bl_mask], y[bl_mask], yerr=yerr[bl_mask],
+                    fmt='o-', ms=4, color=PALETTE[0], capsize=2)
+        ax.errorbar(x[post_mask], y[post_mask], yerr=yerr[post_mask],
+                    fmt='o-', ms=4, color=PALETTE[1], capsize=2)
         ax.axvline(0, color='black', ls=':', lw=0.8)
         ax.set_title(stat, fontsize=10)
 
@@ -308,6 +300,5 @@ def plot_group_trajectories(
     if n_animals is not None:
         title += f' (n={n_animals} animals)'
     fig.suptitle(title, fontsize=12, fontweight='bold')
-
     fig.tight_layout()
     return fig

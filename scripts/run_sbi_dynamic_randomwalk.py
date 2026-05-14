@@ -84,12 +84,14 @@ def main():
 
     # Load real animal data
     from behav_utils.data.selection import select_sessions, fitting_data_from_sessions
+    from behav_utils.data.filtering import filter_trials
     from inference.fitting import SBIFitter
     from inference.types import ConstantSpec, RandomWalkSpec
 
     animal = load_animal_data(args.animal, config_path=args.config)
     sessions = select_sessions(animal, f'expert_{args.distribution}')
-
+    sessions = filter_trials(sessions)
+    
     if not sessions:
         print(f'  No expert {args.distribution} sessions for {args.animal}. Skipping.')
         save_data = {

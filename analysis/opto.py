@@ -159,23 +159,50 @@ def get_post_opto_mask(session) -> np.ndarray:
     """Wrapper: post-opto trials (delta=1). See filtering.opto_mask."""
     return _opto_mask(session.trials, delta=1)
 
+def split_opto_session(
+    session,
+    min_trials: int = 10,
+):
+    """
+    Split a session into opto, control, and post-opto filtered SessionData.
 
-def extract_trial_arrays(session, mask):
+    Returns three filtered SessionData objects (or None for splits with
+    fewer than min_trials valid trials). The filtering step is explicit
+    and uses filtering.py throughout.
+
+    Args:
+        session: Raw SessionData with opto trials.
+        min_trials: Minimum valid trials for a split to be returned.
+
+    Returns:
+        (opto_session, control_session, post_opto_session)
+        Any element may be None if below min_trials.
+
+    Usage:
+        opto_sess, ctrl_sess, post_sess = split_opto_session(session)
+        if opto_sess and ctrl_sess:
+            opto_stats = opto_sess.stats(['accuracy', 'pse'])
+            ctrl_stats = ctrl_sess.stats(['accuracy', 'pse'])
     """
-    DEPRECATED — use session.filter(mask).get_arrays() instead.
-    
-    Kept for backward compatibility. Returns None if < 10 trials.
-    """
-    if mask.sum() < 10:
-        return None
-    filtered = filter_session(session, mask, label='extract_trial_arrays')
-    arr = get_arrays(filtered.trials)
-    arr['n_trials'] = arr['n_trials']  # already there
-    return arr
+    opto_mask, ctrl_mask = split_trials_by_opto(session)
+    post_mask = get_post_opto_mask(session)
+
+    results = []
+    for mask, label in [
+        (opto_mask, 'opto'),
+        (ctrl_mask, 'control'),
+        (post_mask, 'post_opto'),
+    ]:
+        if mask.sum() < min_trials:
+            results.append(None)
+        else:
+            results.append(filter_session(session, mask=mask, label=label))
+
+    return tuple(results)
+
 
 
 # ─── Within-session comparison ───────────────────────────────────────────────
-
 
 def within_session_effect(
     session,
@@ -183,50 +210,47 @@ def within_session_effect(
     n_bootstrap: int = 0,
     seed: int = 42,
     min_trials: int = 10,
-) -> Optional[Dict[str, Any]]:
+):
     """
     Compare opto vs control trials within one session.
 
-    Control = all non-opto valid trials (70%). Post-opto stats are
-    computed as an overlay (subset of control) for carry-over analysis.
-
-    Wraps compare_conditions() for the opto/control comparison.
-    Set n_permutations/n_bootstrap > 0 for statistical tests.
+    Uses split_opto_session() to get filtered sessions, then
+    compare_conditions() for the statistical comparison.
 
     Returns dict with:
         opto_stats, control_stats: {accuracy, pse, slope, lapse_low, lapse_high}
         diff: same keys (opto - control)
         n_opto, n_control, n_post_opto: trial counts
-
-        post_opto_stats: same keys (None if < min_trials)
-        post_opto_diff: post_opto - control (None if too few)
-
-        perm_p, boot_ci, fisher_p: tests for opto vs control
-
+        post_opto_stats, post_opto_diff: (None if too few post-opto trials)
+        perm_p, boot_ci, fisher_p: statistical tests
         um_opto, um_control: update matrices
         um_rmse, um_corr: UM comparison scalars
 
     Returns None if opto or control split has < min_trials valid trials.
     """
     from behav_utils.analysis.comparison import compare_conditions
+    from behav_utils.analysis.psychometry import fit_psychometric
 
-    opto_mask, control_mask = split_trials_by_opto(session)
-    opto_arrays = extract_trial_arrays(session, opto_mask)
-    control_arrays = extract_trial_arrays(session, control_mask)
+    opto_sess, ctrl_sess, post_sess = split_opto_session(
+        session, min_trials=min_trials)
 
-    if opto_arrays is None or control_arrays is None:
+    if opto_sess is None or ctrl_sess is None:
         return None
 
-    valid_o = ~opto_arrays['no_response']
-    valid_c = ~control_arrays['no_response']
+    # Extract arrays from filtered sessions
+    opto_arr = opto_sess.get_arrays()
+    ctrl_arr = ctrl_sess.get_arrays()
+
+    valid_o = ~opto_arr['no_response']
+    valid_c = ~ctrl_arr['no_response']
 
     comp = compare_conditions(
-        opto_arrays['stimuli'][valid_o],
-        opto_arrays['choices'][valid_o],
-        opto_arrays['categories'][valid_o],
-        control_arrays['stimuli'][valid_c],
-        control_arrays['choices'][valid_c],
-        control_arrays['categories'][valid_c],
+        opto_arr['stimuli'][valid_o],
+        opto_arr['choices'][valid_o],
+        opto_arr['categories'][valid_o],
+        ctrl_arr['stimuli'][valid_c],
+        ctrl_arr['choices'][valid_c],
+        ctrl_arr['categories'][valid_c],
         n_permutations=n_permutations,
         n_bootstrap=n_bootstrap,
         seed=seed,
@@ -234,16 +258,13 @@ def within_session_effect(
         label_b='control',
     )
 
-    post_opto_mask = get_post_opto_mask(session)
-    n_post = int(post_opto_mask.sum())
-
     result = {
         'opto_stats': comp['params_a'],
         'control_stats': comp['params_b'],
         'diff': comp['diffs'],
         'n_opto': comp['n_a'],
         'n_control': comp['n_b'],
-        'n_post_opto': n_post,
+        'n_post_opto': 0,
         'perm_p': comp.get('perm_p'),
         'boot_ci': comp.get('boot_ci'),
         'fisher_p': comp.get('fisher_p', np.nan),
@@ -253,30 +274,39 @@ def within_session_effect(
         'um_corr': comp.get('um_corr', np.nan),
     }
 
-    # Post-opto overlay (subset of control)
-    post_arrays = extract_trial_arrays(session, post_opto_mask)
-    if post_arrays is not None and post_arrays['n_trials'] >= min_trials:
-        from behav_utils.analysis.comparison import _fit_params, _accuracy
-        valid_p = ~post_arrays['no_response']
-        stim_p = post_arrays['stimuli'][valid_p]
-        ch_p = post_arrays['choices'][valid_p]
-        cat_p = post_arrays['categories'][valid_p]
+    # Post-opto overlay
+    if post_sess is not None:
+        post_arr = post_sess.get_arrays()
+        valid_p = ~post_arr['no_response']
+        stim_p = post_arr['stimuli'][valid_p]
+        ch_p = post_arr['choices'][valid_p]
+        cat_p = post_arr['categories'][valid_p]
 
-        post_params = _fit_params(stim_p, ch_p) or {}
-        post_params['accuracy'] = _accuracy(ch_p, cat_p)
-        result['post_opto_stats'] = post_params
+        result['n_post_opto'] = int(valid_p.sum())
 
-        # Diff relative to full control
-        result['post_opto_diff'] = {
-            k: post_params.get(k, np.nan) - comp['params_b'].get(k, np.nan)
-            for k in ('accuracy', 'pse', 'slope', 'lapse_low', 'lapse_high')
-        }
+        if valid_p.sum() >= min_trials:
+            post_pfit = fit_psychometric(stim_p, ch_p)
+            post_params = {
+                'pse': post_pfit.get('mu', np.nan),
+                'slope': post_pfit.get('sigma', np.nan),
+                'lapse_low': post_pfit.get('lapse_low', np.nan),
+                'lapse_high': post_pfit.get('lapse_high', np.nan),
+                'accuracy': float(np.mean(ch_p == cat_p)) if len(ch_p) > 0 else np.nan,
+            }
+            result['post_opto_stats'] = post_params
+            result['post_opto_diff'] = {
+                k: post_params.get(k, np.nan) - comp['params_b'].get(k, np.nan)
+                for k in ('accuracy', 'pse', 'slope', 'lapse_low', 'lapse_high')
+            }
+        else:
+            result['post_opto_stats'] = None
+            result['post_opto_diff'] = None
     else:
+        result['n_post_opto'] = 0
         result['post_opto_stats'] = None
         result['post_opto_diff'] = None
 
     return result
-
 
 # ─── Phase-pooled comparison ─────────────────────────────────────────────────
 

@@ -108,6 +108,9 @@ def main():
 
     # Build FittingData from synthetic sessions
     from behav_utils.data.selection import fitting_data_from_sessions
+    from behav_utils.data.filtering import filter_trials
+    
+    sessions = filter_trials(sessions)
     fd = fitting_data_from_sessions(sessions, aid)
 
     # Run pipeline

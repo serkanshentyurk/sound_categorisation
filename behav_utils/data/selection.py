@@ -38,7 +38,8 @@ Usage:
     sessions = select_sessions(animal, stage='Full_Task_Cont', last_n=5)
 
     # Convert to FittingData for SBI
-    fd = fitting_data_from_sessions(sessions, animal.animal_id)
+    clean = filter_trials(sessions)
+    fd = fitting_data_from_sessions(clean, animal.animal_id)
 """
 
 import numpy as np
@@ -309,26 +310,28 @@ def select_sessions(
 def fitting_data_from_sessions(
     sessions: List['SessionData'],
     animal_id: str,
-    exclude_abort: bool = True,
-    exclude_opto: bool = True,
     min_valid_trials: int = 10,
 ) -> 'FittingData':
     """
-    Convert a list of SessionData into a FittingData object for SBI.
+    Convert a list of (pre-filtered) SessionData into FittingData for SBI.
 
-    This is the bridge between the session selection API and the
-    inference pipeline. Mirrors AnimalData.get_fitting_data() but
-    takes an already-filtered session list.
+    Sessions must be pre-filtered via filter_trials() before calling.
+    Internally calls sess.get_arrays() which only excludes aborts
+    (always invalid). Since filter_trials clears flags on survivors,
+    this is a no-op if filtering was already done.
+
+    Pipeline:
+        sessions = select_sessions(animal, 'expert_uniform')
+        clean = filter_trials(sessions)
+        fd = fitting_data_from_sessions(clean, animal.animal_id)
 
     Args:
-        sessions: List of SessionData (from select_sessions)
-        animal_id: Animal identifier string
-        exclude_abort: Remove abort trials from each session
-        exclude_opto: Remove opto trials from each session
-        min_valid_trials: Skip sessions below this threshold
+        sessions: Pre-filtered SessionData list.
+        animal_id: Animal identifier string.
+        min_valid_trials: Skip sessions below this threshold.
 
     Returns:
-        FittingData ready for SBIFitter
+        FittingData ready for SBIFitter.
     """
     from behav_utils.data.structures import FittingData
 
@@ -337,10 +340,8 @@ def fitting_data_from_sessions(
     sess_ids, sess_dates, sess_indices = [], [], []
 
     for sess in sessions:
-        arrays = sess.trials.get_arrays(
-            exclude_abort=exclude_abort,
-            exclude_opto=exclude_opto,
-        )
+        arrays = sess.get_arrays()
+
         n_valid = (~arrays['no_response']).sum()
         if n_valid < min_valid_trials:
             continue

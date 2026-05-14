@@ -92,6 +92,8 @@ def main():
 
     # Load animal list
     from behav_utils.data.selection import select_sessions, fitting_data_from_sessions
+    from behav_utils.data.filtering import filter_trials
+    
 
     if args.animals:
         animal_ids = args.animals.split(',')
@@ -114,6 +116,8 @@ def main():
         try:
             animal = load_animal_data(aid, config_path=args.config)
             sessions = select_sessions(animal, f'expert_{args.distribution}')
+            sessions = filter_trials(sessions)
+            
             if not sessions:
                 print(f'  No expert {args.distribution} sessions. Skipping.')
                 continue
