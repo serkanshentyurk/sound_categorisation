@@ -9,6 +9,7 @@ Usage:
 import os
 import sys
 import platform
+from typing import Optional
 import warnings
 from pathlib import Path
 
@@ -75,17 +76,23 @@ from behav_utils.analysis.session_features import (
     build_feature_matrix,
     build_feature_matrix_multi,
 )
-from behav_utils.analysis.update_matrix import (
-    compute_update_matrix,
-    compute_update_matrix_from_sessions,
-    matrix_error,
-)
+# Low-level analysis (arrays)
 from behav_utils.analysis.psychometry import fit_psychometric
-from behav_utils.analysis.utils import cumulative_gaussian
+from behav_utils.analysis.update_matrix import compute_update_matrix, matrix_error
 from behav_utils.analysis.comparison import compare_conditions
+from behav_utils.analysis.utils import cumulative_gaussian
 
+# Session-level analysis (sessions → result dicts)
+from behav_utils.analysis.psychometry import compute_psychometric
+from behav_utils.analysis.update_matrix import compute_um
+from behav_utils.analysis.trajectory import compute_trajectory
+from behav_utils.analysis.comparison import compute_comparison
+from behav_utils.analysis.session_raster import compute_session_raster
+
+# Plotting (result dicts → axes)
 from behav_utils.plotting import (
     plot_psychometric, plot_um, plot_trajectory,
+    plot_comparison, plot_session_raster,
     PALETTE, COLOURS, UM_CMAP,
     apply_style, get_colour,
 )
@@ -95,7 +102,7 @@ from analysis.consensus import load_all_assignments, consensus_summary
 
 # ── Results loading helpers ─────────────────────────────────────────────────
 
-def load_snpe_networks(snpe_dir: Path = None, distribution: str = 'uniform') -> dict:
+def load_snpe_networks(snpe_dir: Optional[Path] = None, distribution: str = 'uniform') -> dict:
     """
     Load trained SNPE pickles for BE and SC.
 
@@ -126,7 +133,7 @@ def _generate_synthetic_cohort(
     seed: int = 42,
 ) -> ExperimentData:
     """Generate a synthetic cohort with a distribution shift for testing."""
-    from scipy.stats import norm as sp_norm
+    from scipy.stats import norm as sp_norm # type: ignore
 
     rng = np.random.default_rng(seed)
     experiment = ExperimentData(metadata={'cohort': 'synthetic_demo'})
@@ -164,8 +171,8 @@ def _generate_synthetic_cohort(
 
 def load_data(
     mode: str = 'auto',
-    config_path: Path = None,
-    snapshot_path: Path = None,
+    config_path: Optional[Path] = None,
+    snapshot_path: Optional[Path] = None,
     warn_age_hours: float = 72,
     **synthetic_kwargs,
 ):

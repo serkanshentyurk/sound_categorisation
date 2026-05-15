@@ -215,7 +215,11 @@ All plotting functions take result dicts from the corresponding `compute_` funct
 
 | Function | Purpose |
 |:---------|:--------|
-| `generate_synthetic_animal(animal_id, n_sessions, simulator)` | Full synthetic animal |
-| `generate_synthetic_session(n_trials, simulator)` | Single session |
-| `sample_stimuli(n, distribution='uniform')` | Draw stimulus arrays |
-| `noisy_psychometric_simulator(mu, sigma, lapse_low, lapse_high)` | Returns a simulator function |
+| `generate_synthetic_animal(animal_id, n_sessions, simulator, simulator_kwargs)` | Full synthetic animal; returns `(AnimalData, info)` |
+| `generate_synthetic_session(n_trials, simulator, simulator_kwargs)` | Single session |
+| `sample_stimuli(n, distribution='uniform', rng=)` | Draw `(stimuli, categories)` arrays |
+| `noisy_psychometric_simulator(stimuli, categories, rng, sigma, lapse)` | Sigmoidal choice simulator |
+| `random_choice_simulator(stimuli, categories, rng, accuracy)` | Fixed-accuracy choice simulator |
+
+All simulators follow the signature: `(stimuli, categories, rng, **kwargs) -> choices`.
+Parameters are passed via `simulator_kwargs` when using `generate_synthetic_animal`.

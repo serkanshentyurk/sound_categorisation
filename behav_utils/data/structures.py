@@ -11,31 +11,27 @@ Hierarchical containers for behavioural data:
 
     FittingData             Flat per-session arrays for SBI inference
 
-Plot methods are thin wrappers around:
-    plot_psychometric()     behav_utils.plotting.psychometric
-    plot_um()               behav_utils.plotting.update_matrix
-    plot_trajectory()       behav_utils.plotting.trajectory
+Convention:
+    compute_psychometric(sessions) → result dict → plot_psychometric(result)
+    compute_um(sessions)           → result dict → plot_um(result)
+    compute_trajectory(sessions)   → result dict → plot_trajectory(result)
+
+Plot methods on data classes are thin wrappers that call compute_ then plot_ internally.
 
 Usage:
-    from behav_utils import load_experiment, select_sessions
-    from behav_utils.plotting import plot_psychometric, plot_um, plot_trajectory, PALETTE
+    from behav_utils import (
+        load_experiment, select_sessions, filter_trials,
+        compute_psychometric, compute_um, plot_psychometric, plot_um, PALETTE,
+    )
 
     experiment = load_experiment('config.yaml')
     animal = experiment.get_animal('SS05')
-    expert = select_sessions(animal, preset='expert_uniform')
+    sessions = select_sessions(animal, preset='expert_uniform')
+    clean = filter_trials(sessions)
 
-    # Session-level
-    session = expert[-1]
-    session.stats(['accuracy', 'pse', 'slope'])
-    session.plot_psychometric(ax=ax)
-
-    # Filtered list → standalone function
-    plot_psychometric(expert, ax=ax, mode='pooled', n_bootstrap=200)
-    plot_um(expert, ax=ax)
-
-    # Animal-level
-    animal.plot_trajectory('accuracy', ax=ax)
-    animal.plot_psychometric(ax=ax, mode='pooled')
+    psych = compute_psychometric(clean, mode='pooled', n_bootstrap=200)
+    fig, ax = plt.subplots()
+    plot_psychometric(psych, ax=ax, color=PALETTE[0])
 """
 
 import numpy as np

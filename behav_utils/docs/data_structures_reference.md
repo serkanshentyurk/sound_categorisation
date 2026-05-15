@@ -12,7 +12,7 @@ ExperimentData                    All animals in a project
               └── TrialData        Trial-by-trial arrays
 ```
 
-Each level provides filtering, stat computation, and plotting. Higher levels delegate to lower levels with selection and combination logic.
+Separately, `FittingData` provides a flat per-session array format for SBI inference.
 
 ---
 
@@ -25,23 +25,20 @@ The lowest level — per-trial arrays for a single session.
 | Field | Type | Description |
 |-------|------|-------------|
 | `trial_number` | int array | Original trial numbers from CSV |
-| `stimulus` | float array | Stimulus values (raw from CSV) |
+| `stimulus` | float array | Stimulus values |
 | `choice` | float array | Category-space choice: 0=A, 1=B, NaN=no response |
 | `choice_raw` | float array | Raw choice from CSV (before conversion) |
-| `outcome` | str array | Trial outcome (e.g., 'Correct', 'Incorrect', 'Abort') |
+| `outcome` | str array | Trial outcome ('Correct', 'Incorrect', 'Abort') |
 | `correct` | bool array | Whether choice matched category |
-| `category` | int array | Derived from stimulus: 0=A (below boundary), 1=B (above) |
+| `category` | int array | Derived from stimulus: 0=A, 1=B |
 
 ### Optional Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `reaction_time` | float array | Response latency (NaN for aborts/no-response) |
+| `reaction_time` | float array | Response latency (NaN for aborts) |
 | `abort` | bool array | Whether animal broke fixation |
 | `opto_on` | bool array | Whether optogenetics was active |
-| `distribution` | str array | Stimulus distribution name |
-
-Additional mapped columns from the config are in `optional_fields` (dict). Unmapped CSV columns are in `extra` (dict).
 
 ### Properties
 
@@ -53,274 +50,244 @@ Additional mapped columns from the config are in `optional_fields` (dict). Unmap
 
 ### Key Methods
 
-#### `get_arrays(exclude_abort=True, exclude_opto=True, exclude_no_response=False)`
+All are thin wrappers to `behav_utils.data.filtering`.
 
-The standard interface for extracting analysis-ready arrays. Applies filtering, returns a dict:
+#### `get_arrays()`
+
+Extract analysis-ready arrays. **No kwargs** — always excludes aborts (invalid data), returns everything else. All scientific filtering (opto, no-response, custom) happens upstream via `filter_trials()`.
 
 ```python
-arrays = session.trials.get_arrays(exclude_abort=True, exclude_opto=True)
+arrays = session.trials.get_arrays()
 ```
 
-Returns:
+Returns dict:
 
 | Key | Description |
 |-----|-------------|
-| `'stimuli'` | Stimulus values (filtered) |
-| `'categories'` | True categories 0/1 (filtered) |
-| `'choices'` | Choices 0/1/NaN (filtered) |
+| `'stimuli'` | Stimulus values |
+| `'categories'` | True categories 0/1 |
+| `'choices'` | Choices 0/1/NaN |
 | `'no_response'` | Boolean mask for NaN choices |
-| `'reaction_times'` | RT values (filtered) |
+| `'reaction_times'` | RT values |
 | `'trial_indices'` | Original indices for back-mapping |
 
-#### `get_field(name)`
+#### `build_mask(exclude_abort=True, exclude_opto=True)`
 
-Access any field by name — checks core fields, `optional_fields`, then `extra`:
+Build a boolean trial mask. Wrapper to `filtering.build_mask()`.
+
+#### `opto_mask(delta=0)`
+
+Boolean mask for trials relative to opto events. Wrapper to `filtering.opto_mask()`.
+
+- `delta=0` — opto trials themselves
+- `delta=1` — first trial after each opto trial
+- `delta=-1` — trial before each opto trial
+- `delta='control'` — non-opto trials (not adjacent to opto)
+
+#### `filter(mask, label='custom')`
+
+Return a new TrialData with only the trials where `mask` is True. Wrapper to `filtering.filter_trial_data()`.
+
+#### `stats(stat_names)`
+
+Compute summary statistics on these trials. **No filtering kwargs** — filter first, then call stats.
 
 ```python
-opto_mask = session.trials.get_field('opto_mask')
-```
-
-#### `stats(stat_names=None, exclude_abort=True, exclude_opto=True)`
-
-Compute summary statistics:
-
-```python
-s = session.trials.stats(['accuracy', 'recency'])
-# {'accuracy': 0.82, 'recency': 0.15}
+# Correct pattern:
+clean_session = session.filter()
+clean_session.stats(['accuracy', 'pse', 'recency'])
 ```
 
 ---
 
 ## SessionData
 
-One behavioural session — contains metadata and trial data.
+One behavioural session — metadata + trial data.
 
 ### Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `session_id` | str | Unique identifier |
-| `session_idx` | int | Ordinal position within animal's timeline |
-| `date` | datetime.date | When the session was run |
+| `session_idx` | int | Ordinal position within animal (0-based) |
+| `date` | datetime.date | Session date |
 | `metadata` | SessionMetadata | Task parameters |
-| `trials` | TrialData | Trial-by-trial data |
-| `csv_path` | str or None | Source file path |
+| `trials` | TrialData | Trial-by-trial arrays |
+| `masking` | bool | Whether this is a masking (sham) session |
+| `filter_info` | dict or None | Metadata about filtering applied |
 
 ### Properties
 
 | Property | Returns | Description |
 |----------|---------|-------------|
-| `.n_trials` | int | Total trials |
+| `.n_trials` | int | Total trials (reflects filtering) |
 | `.stage` | str | Training stage (from metadata) |
-| `.distribution` | str | Primary stimulus distribution |
-| `.days_since_first` | float | Calendar days from animal's first session |
+| `.distribution` | str | Stimulus distribution |
+| `.is_filtered` | bool | Whether filtering has been applied |
 
-### Methods
+### Key Methods
 
 ```python
-# Summary statistics
-stats = session.stats(['accuracy', 'recency', 'psychometric'])
+# Filter trials
+clean = session.filter()                              # standard: exclude abort + opto
+opto = session.filter(session.trials.opto_mask(0))    # opto trials only
 
-# Quick summary dict
-info = session.summary()
-# {'session_id': '...', 'perf': 0.82, 'n_valid': 245, ...}
+# Get arrays from (pre-filtered) session
+arrays = session.get_arrays()
 
-# Plotting (returns (fig, ax, info))
-fig, ax, info = session.plot_psychometric()
-
-# Trial raster (returns (fig, ax))
-fig, ax = session.plot_trials(window=20)
+# Stats (filter first!)
+clean.stats(['accuracy', 'pse', 'slope'])
 ```
 
 ---
 
 ## SessionMetadata
 
-Task parameters that are constant within a session. Populated from the config's `session_metadata` mappings.
-
-All fields are stored in a `fields` dict. Access by attribute or `.get()`:
+Task parameters constant within a session. Access by attribute or `.get()`:
 
 ```python
-session.metadata.stage                    # attribute access
-session.metadata.get('sound_contingency') # dict access with default
-session.metadata.fields                   # raw dict
+session.metadata.stage
+session.metadata.get('sound_contingency')
+session.metadata.fields  # raw dict
 ```
-
-Common fields (exposed as properties): `animal_id`, `stage`, `sound_contingency`, `stim_range_min`, `stim_range_max`.
 
 ---
 
 ## AnimalData
 
-All data for one animal. Sessions stored chronologically. This is the unit of model fitting and longitudinal analysis.
+One animal — all sessions in chronological order.
 
 ### Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `animal_id` | str | e.g., 'SS05' |
-| `sessions` | List[SessionData] | Chronological list |
-| `metadata` | dict | Optional animal-level info |
+| `animal_id` | str | Animal identifier |
+| `sessions` | list[SessionData] | Chronologically ordered sessions |
+| `metadata` | dict | Animal-level metadata (genotype, etc.) |
 
-### Filtering
+### Properties
 
-```python
-# By stage
-task_sessions = animal.get_sessions(stage='Full_Task_Cont')
+| Property | Returns | Description |
+|----------|---------|-------------|
+| `.n_sessions` | int | Session count |
+| `.session_ids` | list[str] | All session IDs |
 
-# By date range
-recent = animal.get_sessions(date_range=(date(2026, 1, 1), date(2026, 3, 1)))
+### Convenience Plot Methods
 
-# By index range
-first_ten = animal.get_sessions(idx_range=(0, 9))
-```
-
-### Stats and Features
+These are thin wrappers that call `compute_` then `plot_` internally. For full control, call the functions directly.
 
 ```python
-# Feature matrix (cached after first call)
-df = animal.feature_matrix(stage='Full_Task_Cont')
-# DataFrame: one row per session, columns = all summary stats
+# Thin wrappers (quick exploration)
+animal.plot_psychometric(ax=ax, mode='pooled')
+animal.plot_trajectory('accuracy', ax=ax)
+animal.plot_um(ax=ax)
 
-# Single stat trajectory
-indices, values = animal.stat_trajectory('accuracy')
-
-# Expert baseline (last N sessions)
-baseline = animal.expert_baseline(['accuracy', 'recency'], last_n=5)
-# {'accuracy': {'mean': 0.85, 'std': 0.03}, 'recency': {'mean': 0.08, 'std': 0.02}}
-
-# Flexible trial-level extraction
-data = animal.get_trial_data(
-    fields=['stimuli', 'choices', 'categories', 'reaction_times'],
-    stage='Full_Task_Cont',
+# Full control (recommended)
+from behav_utils import (
+    select_sessions, filter_trials,
+    compute_psychometric, plot_psychometric, PALETTE,
 )
-# Returns dict with 'session_arrays' (list of dicts), 'session_ids', etc.
-```
-
-### Plotting
-
-```python
-# Psychometric curves
-fig, ax, infos = animal.plot_psychometric(sessions='last_5', mode='overlay')
-fig, axes, infos = animal.plot_psychometric(sessions='all', mode='grid')
-fig, ax, info = animal.plot_psychometric(sessions='last_5', mode='pooled')
-
-# Stat trajectory
-fig, ax = animal.plot_trajectory('accuracy', stage='Full_Task_Cont')
-```
-
-#### Session Selectors
-
-The `sessions` argument accepts:
-- `'all'` — all sessions (optionally filtered by `stage`)
-- `'last_5'`, `'last_10'`, etc. — last N sessions
-- `'first_5'`, `'first_3'`, etc. — first N sessions
-- `[0, 5, 10, -1]` — specific indices
-
-### Persistence
-
-```python
-animal.save('animal_SS05.pkl')
-animal = AnimalData.load('animal_SS05.pkl')
+sessions = select_sessions(animal, preset='expert_uniform')
+clean = filter_trials(sessions)
+result = compute_psychometric(clean, mode='pooled', n_bootstrap=200)
+fig, ax = plt.subplots()
+plot_psychometric(result, ax=ax, color=PALETTE[0])
 ```
 
 ---
 
 ## ExperimentData
 
-Top-level container for all animals. Provides the query API for multi-animal analysis.
+All animals in one project.
 
 ### Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `animals` | Dict[str, AnimalData] | Animals keyed by ID |
-| `metadata` | dict | Optional experiment-level info |
-| `config` | ProjectConfig or None | The config used to load the data |
+| `animals` | dict[str, AnimalData] | animal_id → AnimalData |
+| `config` | ProjectConfig or None | Loaded config |
 
-### Filtering
+### Methods
 
 ```python
-# Get one animal
+experiment = load_experiment('config.yaml')
 animal = experiment.get_animal('SS05')
-
-# Filter animals
-good = experiment.get_animals(min_sessions=10, stage='Full_Task_Cont')
-specific = experiment.get_animals(animal_ids=['SS05', 'SS08'])
-
-# Get all sessions matching criteria
-sessions = experiment.get_sessions(stage='Full_Task_Cont', min_sessions_per_animal=10)
-```
-
-### Stats
-
-```python
-# Pooled feature matrix across all animals
-df = experiment.feature_matrix(stage='Full_Task_Cont', min_sessions=10)
-
-# Summary table
-experiment.summary()
-# DataFrame: animal_id, n_sessions, stages, date_first, date_last
-```
-
-### Query API: Plotting
-
-```python
-# Stat trajectory across all animals
-fig, ax = experiment.plot_trajectory(
-    stat='accuracy',
-    animals='all',              # or ['SS05', 'SS08']
-    stage='Full_Task_Cont',
-    combine='mean_sem',         # 'mean_sem', 'median_iqr', 'individual', 'none'
-    min_sessions=10,
-)
-
-# Psychometric curves across animals
-fig, ax, info = experiment.plot_psychometric(
-    animals='all',
-    sessions='last_5',
-    mode='pooled',
-    stage='Full_Task_Cont',
-)
-```
-
-### Persistence
-
-```python
-experiment.save('experiment.pkl')
-experiment = ExperimentData.load('experiment.pkl')
+all_animals = experiment.get_animals(min_sessions=10)
 ```
 
 ---
 
-## Data Flow
+## FittingData
 
+Flat per-session arrays for SBI inference. Built from pre-filtered sessions:
+
+```python
+from behav_utils import select_sessions, filter_trials, fitting_data_from_sessions
+
+sessions = select_sessions(animal, preset='expert_uniform')
+clean = filter_trials(sessions)
+fd = fitting_data_from_sessions(clean, animal.animal_id)
+
+# fd.stimuli       — list of arrays, one per session
+# fd.choices       — list of arrays
+# fd.n_sessions    — int
+# fd.animal_id     — str
 ```
-YAML config
-    │
-    ▼
-load_experiment('config.yaml')
-    │
-    ├── Scans data_dir for animal directories
-    │   └── For each animal:
-    │       ├── Scans for session directories
-    │       │   └── For each session:
-    │       │       ├── Reads CSV
-    │       │       ├── Maps columns via config
-    │       │       ├── Converts choice to category space
-    │       │       ├── Derives category from stimulus
-    │       │       └── Builds SessionData
-    │       └── Builds AnimalData (chronological)
-    └── Builds ExperimentData
-            │
-            ├── experiment.get_animal('SS05')
-            │       │
-            │       ├── animal.sessions[10].stats(...)
-            │       ├── animal.feature_matrix(...)
-            │       ├── animal.plot_trajectory(...)
-            │       └── animal.get_trial_data(...)
-            │
-            └── experiment.plot_trajectory(...)
+
+---
+
+## Pipeline Pattern
+
+Every notebook should follow this pattern:
+
+```python
+from behav_utils import (
+    load_experiment, select_sessions, filter_trials,
+    compute_psychometric, compute_um, compute_trajectory, compute_comparison,
+    plot_psychometric, plot_um, plot_trajectory, plot_comparison,
+    PALETTE, apply_style,
+)
+apply_style()
+
+# 1. Load
+experiment = load_experiment('config.yaml')
+animal = experiment.get_animal('SS05')
+
+# 2. Select sessions (session-level)
+sessions = select_sessions(animal, preset='expert_uniform')
+
+# 3. Filter trials (trial-level) — ALWAYS EXPLICIT
+clean = filter_trials(sessions)
+
+# 4. Analyse — returns result dicts
+psych = compute_psychometric(clean, mode='pooled', n_bootstrap=200)
+um = compute_um(clean)
+traj = compute_trajectory(clean, ['accuracy', 'pse'])
+
+# 5. Plot — draws result dicts
+fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+plot_psychometric(psych, ax=axes[0], color=PALETTE[0])
+plot_um(um, ax=axes[1])
+plot_trajectory(traj, 'accuracy', ax=axes[2])
+```
+
+### Comparing two conditions
+
+```python
+ctrl = filter_trials(sessions)
+opto = filter_trials(sessions, lambda s: s.trials.opto_mask(0))
+
+# Option A: full statistical comparison
+comp = compute_comparison(ctrl, opto, label_a='Control', label_b='Opto')
+plot_comparison(comp, metric='psychometric')
+
+# Option B: overlay individually
+ctrl_psych = compute_psychometric(ctrl)
+opto_psych = compute_psychometric(opto)
+fig, ax = plt.subplots()
+plot_psychometric(ctrl_psych, ax=ax, color=PALETTE[0], label='Control')
+plot_psychometric(opto_psych, ax=ax, color=PALETTE[1], label='Opto')
+ax.legend()
 ```
 
 ---
@@ -333,52 +300,32 @@ Generate test data without real experiments:
 from behav_utils import generate_synthetic_animal
 from behav_utils.data.synthetic import noisy_psychometric_simulator
 
-# Built-in simulator
+# Built-in simulator: (stimuli, categories, rng, sigma, lapse) -> choices
 animal, info = generate_synthetic_animal(
+    animal_id='SYN01',
     n_sessions=20,
+    trials_per_session=200,
     simulator=noisy_psychometric_simulator,
-    simulator_kwargs={'sigma': 0.3},
+    simulator_kwargs={'sigma': 0.3, 'lapse': 0.05},
 )
 
-# Custom simulator
+# Learning trajectory: parameters change across sessions
+animal, info = generate_synthetic_animal(
+    animal_id='LEARN01',
+    n_sessions=20,
+    simulator=noisy_psychometric_simulator,
+    per_session_simulator_kwargs=[
+        {'sigma': 0.8 - i * 0.03, 'lapse': max(0.01, 0.15 - i * 0.006)}
+        for i in range(20)
+    ],
+)
+
+# Custom simulator: any (stimuli, categories, rng, **kwargs) -> choices callable
 def my_simulator(stimuli, categories, rng, **kwargs):
-    # Return choices as 0/1 array
-    ...
     return choices
 
 animal, info = generate_synthetic_animal(
     simulator=my_simulator,
-    per_session_simulator_kwargs=[
-        {'learning_rate': 0.5 - i * 0.02} for i in range(20)
-    ],
+    simulator_kwargs={'my_param': 0.5},
 )
 ```
-
-The simulator callable signature is: `(stimuli, categories, rng, **kwargs) → choices`. This lets you plug in any model without the library knowing about it.
-
----
-
-## Neural Data (Stub)
-
-Interface defined for future implementation:
-
-```python
-from behav_utils.data.neural import NeuralData, Epoch
-
-# Structure: (n_neurons, n_trials, n_timepoints)
-neural = NeuralData.from_arrays(
-    traces=np.random.randn(200, 250, 90),
-    trial_indices=np.arange(250),
-    neuron_types=np.array(['excitatory'] * 180 + ['inhibitory'] * 20),
-    epochs=[
-        Epoch('stimulus', start_idx=0, end_idx=30),
-        Epoch('delay', start_idx=30, end_idx=60),
-        Epoch('choice', start_idx=60, end_idx=90),
-    ],
-)
-
-neural.get_epoch('stimulus')              # (200, 250, 30)
-neural.get_neurons_by_type('inhibitory')  # (20, 250, 90)
-```
-
-Suite2P and CaImAn loaders are planned but not yet implemented.

@@ -1,24 +1,23 @@
 """
 Session-Level Trial Plots
 
-Trial rasters, within-session choice/stimulus visualisation.
-All functions return (fig, ax).
+Trial rasters and within-session choice/stimulus visualisation.
+Takes result dicts from compute_session_raster(). No computation inside.
 
 Usage:
-    from behav_utils.plotting.session import plot_session_trials
+    from behav_utils.analysis.session_raster import compute_session_raster
+    from behav_utils.plotting.session import plot_session_raster
 
-    fig, ax = plot_session_trials(session)
+    raster = compute_session_raster(filtered_session)
+    fig, ax = plot_session_raster(raster, window=20)
 """
 
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
-from typing import Optional, Tuple, TYPE_CHECKING
+from typing import Optional, Tuple
 
 from behav_utils.plotting.styles import COLOURS
 
-if TYPE_CHECKING:
-    from behav_utils.data.structures import SessionData
 
 def plot_session_raster(
     result: dict,
@@ -30,13 +29,14 @@ def plot_session_raster(
     Plot trial-by-trial raster from a compute_session_raster() result.
 
     Shows stimulus values as a line, correct/incorrect as green/red markers,
-    and no-response trials as grey.
+    and no-response trials as grey. Optionally overlays a rolling accuracy line.
 
     Args:
-        result: Dict from compute_session_raster().
-        ax: Matplotlib axes (creates one if None).
-        window: Rolling accuracy window size (None = no rolling line).
-        title: Axes title.
+        result: Dict from compute_session_raster(). Required keys:
+            'stimuli', 'correct', 'no_response', 'n_trials'.
+        ax: Matplotlib axes. Creates one if None.
+        window: Rolling accuracy window size. None = no rolling line.
+        title: Axes title. Defaults to result['session_id'] if empty.
 
     Returns:
         (fig, ax)
