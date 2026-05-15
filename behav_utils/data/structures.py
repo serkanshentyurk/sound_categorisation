@@ -11,12 +11,12 @@ Hierarchical containers for behavioural data:
 
     FittingData             Flat per-session arrays for SBI inference
 
-Convention:
-    compute_psychometric(sessions) → result dict → plot_psychometric(result)
-    compute_um(sessions)           → result dict → plot_um(result)
-    compute_trajectory(sessions)   → result dict → plot_trajectory(result)
+Convention — three levels per domain:
+    Low-level:     fit_psychometric(stim, ch)       — raw arrays
+    Session-level: compute_psychometric(sessions)   — pre-filtered sessions → result dict
+    Plotting:      plot_psychometric(result)         — result dict → axes
 
-Plot methods on data classes are thin wrappers that call compute_ then plot_ internally.
+Plot methods on data classes are thin wrappers that call compute_ then plot_.
 
 Usage:
     from behav_utils import (
@@ -499,7 +499,7 @@ class SessionData:
             title:        str — axes title (default: session_id)
 
         Returns:
-            (fig, ax, info) where info is a dict of fit parameters.
+            (fig, ax) where info is a dict of fit parameters.
         """
         from behav_utils.analysis.psychometry import compute_psychometric
         from behav_utils.plotting.psychometric import plot_psychometric
@@ -511,11 +511,16 @@ class SessionData:
         """
         Plot trial-by-trial raster for this session.
 
+        Thin wrapper: calls compute_session_raster then plot_session_raster.
+
         Returns:
             (fig, ax)
         """
-        from behav_utils.plotting.session import plot_session_trials
-        return plot_session_trials(self, **kwargs)
+        from behav_utils.analysis.session_raster import compute_session_raster
+        from behav_utils.plotting.session import plot_session_raster
+        result = compute_session_raster(self)
+        kwargs.setdefault('title', self.session_id)
+        return plot_session_raster(result, **kwargs)
 
 
 # =============================================================================
@@ -775,7 +780,7 @@ class AnimalData:
         """
         Plot psychometric curve for this animal's sessions.
 
-        Thin wrapper: calls plot_psychometric(self.sessions, ax, mode, **kwargs).
+        Thin wrapper: calls compute_psychometric then plot_psychometric.
 
         Args:
             ax:   matplotlib Axes (creates new if None)
@@ -789,11 +794,12 @@ class AnimalData:
             n_bins, title
 
         Returns:
-            (fig, ax, info)
+            (fig, ax)
         """
         from behav_utils.analysis.psychometry import compute_psychometric
         from behav_utils.plotting.psychometric import plot_psychometric
-        result = compute_psychometric(self.sessions, mode=mode)
+        result = compute_psychometric(self.sessions, mode=mode,
+                                    n_bootstrap=kwargs.pop('n_bootstrap', 0))
         kwargs.setdefault('title', self.animal_id)
         return plot_psychometric(result, ax=ax, **kwargs)
 
@@ -801,7 +807,7 @@ class AnimalData:
         """
         Plot a summary stat across this animal's sessions.
 
-        Thin wrapper: calls plot_trajectory(self, stat_name, ax, **kwargs).
+        Thin wrapper: calls compute_trajectory then plot_trajectory.
 
         Args:
             stat_name: Any registered stat name ('accuracy', 'pse', etc.)
@@ -811,7 +817,7 @@ class AnimalData:
             color, label, marker, markersize, title
 
         Returns:
-            (fig, ax, info)
+            (fig, ax)
         """
         from behav_utils.analysis.trajectory import compute_trajectory
         from behav_utils.plotting.trajectory import plot_trajectory
@@ -823,7 +829,7 @@ class AnimalData:
         """
         Plot pooled update matrix for this animal.
 
-        Thin wrapper: calls plot_um(self.sessions, ax, **kwargs).
+        Thin wrapper: calls compute_um and plot_um internally.
 
         Args:
             ax: matplotlib Axes (creates new if None)
@@ -832,7 +838,7 @@ class AnimalData:
             n_bins, method, cmap, vmin, vmax, colorbar, title
 
         Returns:
-            (fig, ax, info)
+            (fig, ax)
         """
         from behav_utils.analysis.update_matrix import compute_um
         from behav_utils.plotting.update_matrix import plot_um
@@ -1083,8 +1089,8 @@ class ExperimentData:
         """
         Plot stat trajectory across animals.
 
-        Thin wrapper: resolves animals, then calls
-        plot_trajectory(animal_list, stat_name, ax, combine, **kwargs).
+        Resolves animals, computes per-animal trajectories via
+        compute_trajectory, then combines and plots.
 
         Args:
             stat_name: Registered stat name ('accuracy', 'pse', etc.)
@@ -1092,50 +1098,127 @@ class ExperimentData:
             combine:   How to combine multiple animals:
                 'none'       — overlay individual animals
                 'mean_sem'   — cohort mean ± SEM (default)
-                'median_iqr' — cohort median ± IQR
-                'mean_only'  — cohort mean, no error band
-            animals:      'all' or list of animal IDs
+            animals:   'all' or list of animal IDs
             min_sessions: Minimum sessions per animal
-            stage:        Stage filter
+            stage:     Stage filter
 
         Returns:
-            (fig, ax, info)
+            (fig, ax)
         """
+        import numpy as np
+        import matplotlib.pyplot as plt
+        from behav_utils.analysis.trajectory import compute_trajectory
         from behav_utils.plotting.trajectory import plot_trajectory
+        from behav_utils.plotting.styles import PALETTE
+
+        if ax is None:
+            fig, ax = plt.subplots(1, 1, figsize=(8, 4))
+        else:
+            fig = ax.get_figure()
 
         animal_list = self._resolve_animals(animals, min_sessions, stage)
-        return plot_trajectory(animal_list, stat_name, ax=ax,
-                              combine=combine, **kwargs)
+
+        if not animal_list:
+            ax.text(0.5, 0.5, 'No animals', transform=ax.transAxes,
+                    ha='center', va='center')
+            return fig, ax
+
+        if combine == 'none':
+            # Overlay individual animals
+            for i, animal in enumerate(animal_list):
+                sessions = list(animal.sessions)
+                if not sessions:
+                    continue
+                result = compute_trajectory(sessions, stat_names=[stat_name])
+                colour = PALETTE[i % len(PALETTE)]
+                plot_trajectory(result, stat_name=stat_name, ax=ax,
+                            color=colour, label=animal.animal_id, **kwargs)
+            ax.legend(fontsize=8)
+
+        elif combine in ('mean_sem', 'mean_only'):
+            # Compute per-animal, then average across animals
+            all_values = []
+            max_len = 0
+            for animal in animal_list:
+                sessions = list(animal.sessions)
+                if not sessions:
+                    continue
+                result = compute_trajectory(sessions, stat_names=[stat_name])
+                vals = result['values'][stat_name]
+                all_values.append(vals)
+                max_len = max(max_len, len(vals))
+
+            if not all_values:
+                return fig, ax
+
+            # Pad shorter animals with NaN and compute mean/SEM
+            padded = np.full((len(all_values), max_len), np.nan)
+            for i, vals in enumerate(all_values):
+                padded[i, :len(vals)] = vals
+
+            mean = np.nanmean(padded, axis=0)
+            x = np.arange(max_len)
+
+            colour = kwargs.pop('color', PALETTE[0])
+            label = kwargs.pop('label', f'n={len(all_values)} animals')
+            ax.plot(x, mean, '-o', ms=3, color=colour, label=label, **kwargs)
+
+            if combine == 'mean_sem':
+                n_valid = np.sum(~np.isnan(padded), axis=0)
+                sem = np.nanstd(padded, axis=0, ddof=1) / np.sqrt(
+                    np.maximum(n_valid, 1))
+                ax.fill_between(x, mean - sem, mean + sem,
+                            color=colour, alpha=0.15)
+
+            ax.legend(fontsize=9)
+
+        ax.set_xlabel('Session')
+        ax.set_ylabel(stat_name)
+        title = kwargs.get('title', f'{stat_name} ({combine})')
+        ax.set_title(title)
+
+        return fig, ax
 
     def plot_psychometric(self, ax=None, mode='pooled', animals='all',
-                          min_sessions=5, stage=None, **kwargs):
+                        min_sessions=5, stage=None, **kwargs):
         """
         Plot psychometric curve across animals.
 
         Resolves animals, collects their sessions, then calls
-        plot_psychometric(all_sessions, ax, mode, **kwargs).
+        compute_psychometric → plot_psychometric.
 
         Args:
-            ax:           matplotlib Axes (creates new if None)
-            mode:         'pooled', 'overlay', or 'session_mean'
-            animals:      'all' or list of animal IDs
+            ax:   matplotlib Axes (creates new if None)
+            mode: 'pooled', 'overlay', or 'session_mean'
+            animals: 'all' or list of animal IDs
             min_sessions: Minimum sessions per animal
-            stage:        Stage filter
-
-        Common kwargs:
-            color, label, n_bootstrap, show_ci, show_data,
-            show_params, n_bins, title
+            stage: Stage filter
 
         Returns:
-            (fig, ax, info)
+            (fig, ax)
         """
+        from behav_utils.analysis.psychometry import compute_psychometric
         from behav_utils.plotting.psychometric import plot_psychometric
 
         animal_list = self._resolve_animals(animals, min_sessions, stage)
         all_sessions = []
         for animal in animal_list:
             all_sessions.extend(animal.sessions)
-        return plot_psychometric(all_sessions, ax=ax, mode=mode, **kwargs)
+
+        if not all_sessions:
+            import matplotlib.pyplot as plt
+            if ax is None:
+                fig, ax = plt.subplots()
+            else:
+                fig = ax.get_figure()
+            ax.text(0.5, 0.5, 'No sessions', transform=ax.transAxes,
+                    ha='center', va='center')
+            return fig, ax
+
+        result = compute_psychometric(all_sessions, mode=mode,
+                                    n_bootstrap=kwargs.pop('n_bootstrap', 0))
+        kwargs.setdefault('title', f'Cohort ({len(animal_list)} animals)')
+        return plot_psychometric(result, ax=ax, **kwargs)
 
     def plot_overview(
         self,
@@ -1195,7 +1278,6 @@ class ExperimentData:
                     ax.text(0.5, 0.5, f'{sn}\n(n/a)',
                             transform=ax.transAxes,
                             ha='center', va='center', fontsize=9)
-
         plt.tight_layout()
         return fig, axes
 
