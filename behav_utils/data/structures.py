@@ -640,6 +640,11 @@ class AnimalData:
         return len(self.sessions)
     
     @property
+    def session_ids(self) -> list:
+        """List of session IDs in chronological order."""
+        return [s.session_id for s in self.sessions]
+
+    @property
     def genotype(self) -> str:
         return self.metadata.get('genotype', 'unknown')
 
@@ -846,27 +851,17 @@ class AnimalData:
         kwargs.setdefault('title', self.animal_id)
         return plot_um(result, ax=ax, **kwargs)
 
-    def plot_overview(
-        self,
-        stats: Optional[List[str]] = None,
-        psych_mode: str = 'pooled',
-        figsize: Optional[Tuple[float, float]] = None,
-        **kwargs,
-    ):
+    def plot_overview(self, stats=None, psych_mode='pooled', figsize=None, **kwargs):
         """
         Single-animal summary: psychometric + stat trajectories.
 
         Layout: [psychometric | stat_1 | stat_2 | stat_3]
 
-        Args:
-            stats:      Stat names for trajectory panels.
-                        Default: ['accuracy', 'pse', 'recency']
-            psych_mode: Mode for psychometric panel ('pooled', 'session_mean')
-            figsize:    Figure size (auto-computed if None)
-
         Returns:
-            (fig, axes) — axes is a 1D array of length 1 + len(stats)
+            (fig, axes)
         """
+        from behav_utils.analysis.psychometry import compute_psychometric
+        from behav_utils.analysis.trajectory import compute_trajectory
         from behav_utils.plotting.psychometric import plot_psychometric
         from behav_utils.plotting.trajectory import plot_trajectory
 
@@ -881,16 +876,19 @@ class AnimalData:
         if n_panels == 1:
             axes = np.array([axes])
 
-        plot_psychometric(self, ax=axes[0], mode=psych_mode,
-                         title=self.animal_id, **kwargs)
+        # Psychometric panel
+        psych_result = compute_psychometric(self.sessions, mode=psych_mode)
+        plot_psychometric(psych_result, ax=axes[0], title=self.animal_id, **kwargs)
 
+        # Trajectory panels
+        traj_result = compute_trajectory(self.sessions, stat_names=stats)
         for i, sn in enumerate(stats):
             try:
-                plot_trajectory(self, sn, ax=axes[i + 1], title=sn)
+                plot_trajectory(traj_result, stat_name=sn, ax=axes[i + 1], title=sn)
             except (ValueError, KeyError):
                 axes[i + 1].text(0.5, 0.5, f'{sn}\n(not available)',
-                                 transform=axes[i + 1].transAxes,
-                                 ha='center', va='center', fontsize=9)
+                                transform=axes[i + 1].transAxes,
+                                ha='center', va='center', fontsize=9)
 
         fig.tight_layout()
         return fig, axes
