@@ -505,9 +505,11 @@ class SessionData:
         Returns:
             (fig, ax, info) where info is a dict of fit parameters.
         """
+        from behav_utils.analysis.psychometry import compute_psychometric
         from behav_utils.plotting.psychometric import plot_psychometric
+        result = compute_psychometric([self], mode='pooled')
         kwargs.setdefault('title', self.session_id)
-        return plot_psychometric(self, ax=ax, **kwargs)
+        return plot_psychometric(result, ax=ax, **kwargs)
 
     def plot_trials(self, **kwargs):
         """
@@ -793,9 +795,11 @@ class AnimalData:
         Returns:
             (fig, ax, info)
         """
+        from behav_utils.analysis.psychometry import compute_psychometric
         from behav_utils.plotting.psychometric import plot_psychometric
+        result = compute_psychometric(self.sessions, mode=mode)
         kwargs.setdefault('title', self.animal_id)
-        return plot_psychometric(self, ax=ax, mode=mode, **kwargs)
+        return plot_psychometric(result, ax=ax, **kwargs)
 
     def plot_trajectory(self, stat_name, ax=None, **kwargs):
         """
@@ -813,8 +817,11 @@ class AnimalData:
         Returns:
             (fig, ax, info)
         """
+        from behav_utils.analysis.trajectory import compute_trajectory
         from behav_utils.plotting.trajectory import plot_trajectory
-        return plot_trajectory(self, stat_name, ax=ax, **kwargs)
+        result = compute_trajectory(self.sessions, stat_names=[stat_name])
+        kwargs.setdefault('title', self.animal_id)
+        return plot_trajectory(result, stat_name=stat_name, ax=ax, **kwargs)
 
     def plot_um(self, ax=None, **kwargs):
         """
@@ -831,9 +838,11 @@ class AnimalData:
         Returns:
             (fig, ax, info)
         """
+        from behav_utils.analysis.update_matrix import compute_um
         from behav_utils.plotting.update_matrix import plot_um
+        result = compute_um(self.sessions)
         kwargs.setdefault('title', self.animal_id)
-        return plot_um(self, ax=ax, **kwargs)
+        return plot_um(result, ax=ax, **kwargs)
 
     def plot_overview(
         self,

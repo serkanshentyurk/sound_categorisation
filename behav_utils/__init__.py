@@ -55,10 +55,11 @@ from behav_utils.data.neural import NeuralData, Epoch
 # Analysis
 from behav_utils.analysis import (
     compute_summary_stats, fit_psychometric, cumulative_gaussian,
-    compute_update_matrix, compute_update_matrix_from_sessions, matrix_error,
+    compute_update_matrix, matrix_error,
     compare_conditions, permutation_test_params, bootstrap_param_diff,
     build_feature_matrix, compute_session_features,
-    list_available_stats, register_stat,
+    list_available_stats, register_stat, 
+    compute_psychometric, compute_um, compute_trajectory
 )
 
 # Plotting
@@ -67,6 +68,17 @@ from behav_utils.plotting import (
     PALETTE, COLOURS, UM_CMAP,
     apply_style, get_colour,
 )
+
+# Session-level analysis
+from behav_utils.analysis.psychometry import compute_psychometric
+from behav_utils.analysis.update_matrix import compute_um
+from behav_utils.analysis.trajectory import compute_trajectory
+from behav_utils.analysis.comparison import compute_comparison
+from behav_utils.analysis.session_raster import compute_session_raster
+
+# Plotting
+from behav_utils.plotting.comparison import plot_comparison
+from behav_utils.plotting.session import plot_session_raster
 
 __version__ = '0.2.0'
 
@@ -100,13 +112,18 @@ __all__ = [
 
     # Analysis
     'compute_summary_stats', 'fit_psychometric', 'cumulative_gaussian',
-    'compute_update_matrix', 'compute_update_matrix_from_sessions', 'matrix_error',
+    'compute_update_matrix', 'matrix_error',
     'compare_conditions', 'permutation_test_params', 'bootstrap_param_diff',
     'build_feature_matrix', 'compute_session_features',
     'list_available_stats', 'register_stat',
+    'compute_psychometric', 'compute_um', 'compute_trajectory',
 
     # Plotting
     'plot_psychometric', 'plot_um', 'plot_trajectory',
     'PALETTE', 'COLOURS', 'UM_CMAP',
     'apply_style', 'get_colour',
+    
+    'compute_psychometric', 'compute_um', 'compute_trajectory',
+    'compute_comparison', 'compute_session_raster',
+    'plot_comparison', 'plot_session_raster',
 ]

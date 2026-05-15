@@ -1,163 +1,86 @@
 """
-Stat Trajectory Plotting
+Trajectory Plotting
 
-plot_trajectory(data, stat_name, ax, **kwargs)
+plot_trajectory(result, stat_name, ax, **kwargs)
 
-Accepts AnimalData, List[AnimalData], or List[SessionData].
-NO FILTERING. Data must be pre-filtered via filter_trials / session.filter.
+Takes a result dict from compute_trajectory(). Does ZERO computation.
+Just draws the trajectory line.
+
+Usage:
+    result = compute_trajectory(sessions, ['accuracy', 'pse'])
+    fig, axes = plt.subplots(1, 2)
+    plot_trajectory(result, 'accuracy', ax=axes[0])
+    plot_trajectory(result, 'pse', ax=axes[1])
 """
 
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import Optional, Tuple, TYPE_CHECKING
+from typing import Optional, Tuple
 
 from behav_utils.plotting.styles import (
-    COLOURS, PALETTE, DEFAULT_ALPHA, SEM_ALPHA, DEFAULT_LINE_WIDTH,
+    PALETTE, COLOURS, DEFAULT_ALPHA, DEFAULT_LINE_WIDTH, DEFAULT_MARKER_SIZE,
 )
-
-if TYPE_CHECKING:
-    from behav_utils.data.structures import SessionData, AnimalData
 
 
 def plot_trajectory(
-    data, stat_name: str, ax=None,
-    combine='none',
-    color=None, label=None, alpha=DEFAULT_ALPHA,
-    linewidth=DEFAULT_LINE_WIDTH, marker='o', markersize=4,
-    title='', xlabel='Session', ylabel=None,
-) -> Tuple[plt.Figure, plt.Axes, dict]:
+    result: dict,
+    stat_name: Optional[str] = None,
+    ax: Optional[plt.Axes] = None,
+    color: Optional[str] = None,
+    label: Optional[str] = None,
+    alpha: float = DEFAULT_ALPHA,
+    linewidth: float = DEFAULT_LINE_WIDTH,
+    marker: str = 'o',
+    markersize: float = DEFAULT_MARKER_SIZE,
+    linestyle: str = '-',
+    show_distribution_boundaries: bool = True,
+    title: str = '',
+) -> Tuple[plt.Figure, plt.Axes]:
     """
-    Plot a summary stat across sessions. Data must be pre-filtered.
+    Plot a stat trajectory from a compute_trajectory() result.
 
     Args:
-        data: AnimalData, List[AnimalData], or List[SessionData].
-        stat_name: Registered stat name ('accuracy', 'pse', etc.).
-        combine: For multi-animal:
-            'none' — overlay individual animals
-            'mean_sem' — cohort mean ± SEM
-            'median_iqr' — cohort median ± IQR
-            'mean_only' — mean, no error band
+        result: Dict from compute_trajectory().
+        stat_name: Which stat to plot. If None, uses the first stat in the result.
+        ax: Matplotlib axes (creates one if None).
+        color: Line colour.
+        label: Legend label.
+        show_distribution_boundaries: Draw vertical lines at distribution changes.
+        title: Axes title.
+
+    Returns:
+        (fig, ax)
     """
     if ax is None:
-        fig, ax = plt.subplots(figsize=(8, 4))
+        fig, ax = plt.subplots(1, 1, figsize=(8, 3.5))
     else:
         fig = ax.get_figure()
 
-    ylabel = ylabel or stat_name
-    animals, session_list = _resolve(data)
+    color = color or PALETTE[0]
 
-    if session_list is not None:
-        info = _draw_sessions(session_list, stat_name, ax,
-            color=color, label=label, alpha=alpha,
-            linewidth=linewidth, marker=marker, markersize=markersize)
-    elif len(animals) == 1 or combine == 'none':
-        info = _draw_animals(animals, stat_name, ax,
-            color=color, label=label, alpha=alpha,
-            linewidth=linewidth, marker=marker, markersize=markersize)
-    else:
-        info = _draw_combined(animals, stat_name, ax, combine,
-            color=color, label=label, alpha=alpha, linewidth=linewidth)
+    if stat_name is None:
+        stat_name = result['stat_names'][0]
 
-    ax.set_xlabel(xlabel); ax.set_ylabel(ylabel)
+    values = result['values'][stat_name]
+    x = np.array(result['session_indices'])
+
+    ax.plot(x, values, marker=marker, ms=markersize, ls=linestyle,
+            lw=linewidth, color=color, alpha=alpha, label=label, zorder=2)
+
+    # Distribution boundaries
+    if show_distribution_boundaries:
+        per_sess = result.get('per_session', [])
+        for i in range(1, len(per_sess)):
+            prev_dist = per_sess[i - 1].get('distribution')
+            curr_dist = per_sess[i].get('distribution')
+            if prev_dist and curr_dist and prev_dist != curr_dist:
+                boundary_x = (x[i - 1] + x[i]) / 2
+                ax.axvline(boundary_x, ls=':', color='grey', alpha=0.5, zorder=0)
+
+    ax.set_xlabel('Session')
+    ax.set_ylabel(stat_name)
+
     if title:
         ax.set_title(title)
-    return fig, ax, info
 
-
-def _resolve(data):
-    from behav_utils.data.structures import SessionData, AnimalData
-    if isinstance(data, AnimalData):
-        return [data], None
-    if isinstance(data, (list, tuple)):
-        if len(data) == 0:
-            return [], None
-        if isinstance(data[0], AnimalData):
-            return list(data), None
-        if hasattr(data[0], 'trials'):
-            return None, list(data)
-    try:
-        items = list(data)
-        if items and hasattr(items[0], 'trials'):
-            return None, items
-        if items and hasattr(items[0], 'sessions'):
-            return items, None
-    except TypeError:
-        pass
-    raise TypeError(f"Expected AnimalData/List/SessionData, got {type(data).__name__}")
-
-
-def _get_stat(session, stat_name):
-    """Get a scalar stat from one session. No filtering."""
-    try:
-        result = session.stats([stat_name])
-    except Exception:
-        return np.nan
-    val = result.get(stat_name, np.nan)
-    if isinstance(val, dict):
-        for k in ['value', 'mean', 'accuracy', stat_name]:
-            if k in val:
-                return float(val[k])
-        return np.nan
-    return float(val)
-
-
-def _draw_sessions(sessions, stat_name, ax, color=None, label=None,
-                   alpha=DEFAULT_ALPHA, linewidth=DEFAULT_LINE_WIDTH,
-                   marker='o', markersize=4):
-    color = color or COLOURS['default']
-    vals = [_get_stat(s, stat_name) for s in sessions]
-    ax.plot(range(len(vals)), vals, marker=marker, markersize=markersize,
-            color=color, lw=linewidth, alpha=alpha, label=label, zorder=2)
-    return {'values': np.array(vals), 'n_sessions': len(vals)}
-
-
-def _draw_animals(animals, stat_name, ax, color=None, label=None,
-                  alpha=DEFAULT_ALPHA, linewidth=DEFAULT_LINE_WIDTH,
-                  marker='o', markersize=4):
-    infos = {}
-    for i, animal in enumerate(animals):
-        vals = [_get_stat(s, stat_name) for s in animal.sessions]
-        c = color or PALETTE[i % len(PALETTE)]
-        lbl = label if len(animals) == 1 else getattr(animal, 'animal_id', f'Animal {i}')
-        ax.plot(range(len(vals)), vals, marker=marker, markersize=markersize,
-                color=c, lw=linewidth, alpha=alpha, label=lbl, zorder=2)
-        infos[lbl] = np.array(vals)
-    return {'per_animal': infos, 'n_animals': len(animals)}
-
-
-def _draw_combined(animals, stat_name, ax, combine,
-                   color=None, label=None, alpha=DEFAULT_ALPHA,
-                   linewidth=DEFAULT_LINE_WIDTH):
-    color = color or COLOURS['mean_line']
-    all_trajs = [[_get_stat(s, stat_name) for s in a.sessions] for a in animals]
-    max_len = max(len(t) for t in all_trajs)
-    padded = np.full((len(all_trajs), max_len), np.nan)
-    for i, t in enumerate(all_trajs):
-        padded[i, :len(t)] = t
-
-    x = np.arange(max_len)
-    n_valid = np.sum(~np.isnan(padded), axis=0)
-    mask = n_valid >= 2
-
-    with np.errstate(all='ignore'):
-        if combine in ('mean_sem', 'mean_only'):
-            centre = np.nanmean(padded, axis=0)
-            err = np.nanstd(padded, axis=0, ddof=1) / np.sqrt(n_valid)
-        elif combine == 'median_iqr':
-            centre = np.nanmedian(padded, axis=0)
-            q25 = np.nanpercentile(padded, 25, axis=0)
-            q75 = np.nanpercentile(padded, 75, axis=0)
-        else:
-            raise ValueError(f"Unknown combine: {combine!r}")
-
-    ax.plot(x[mask], centre[mask], '-', color=color, lw=linewidth * 1.5,
-            alpha=alpha, label=label or combine.replace('_', ' '), zorder=3)
-
-    if combine == 'mean_sem':
-        ax.fill_between(x[mask], (centre-err)[mask], (centre+err)[mask],
-                        color=color, alpha=SEM_ALPHA, zorder=1)
-    elif combine == 'median_iqr':
-        ax.fill_between(x[mask], q25[mask], q75[mask],
-                        color=color, alpha=SEM_ALPHA, zorder=1)
-
-    return {'centre': centre, 'n_animals': len(animals), 'padded': padded}
+    return fig, ax

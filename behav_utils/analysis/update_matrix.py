@@ -274,3 +274,48 @@ def compute_update_matrix_from_sessions(
 
     else:
         raise ValueError(f"method must be 'pool' or 'average', got '{method}'")
+
+def compute_um(
+    sessions: List['SessionData'],
+    method: Literal['pool', 'average'] = 'pool',
+    n_bins: int = 8,
+    trial_filter: Literal['all', 'post_correct'] = 'post_correct',
+) -> Dict:
+    """
+    Compute update matrix from pre-filtered sessions.
+
+    Session-level wrapper around compute_update_matrix(). Returns a
+    structured dict ready for plot_um().
+
+    Args:
+        sessions: Pre-filtered List[SessionData].
+        method: 'pool' (concatenate then compute) or 'average' (per-session then mean).
+        n_bins: Number of stimulus bins.
+        trial_filter: 'post_correct' or 'all'.
+
+    Returns:
+        Dict with:
+            'um': ndarray (n_bins × n_bins) update matrix
+            'conditional_matrix': ndarray (n_bins × n_bins)
+            'n_sessions': int
+            'n_trials': int
+            'method': str
+            'info': dict from low-level compute_update_matrix
+    """
+    # Delegate to existing compute_update_matrix_from_sessions
+    # which already handles pooling/averaging correctly.
+    from behav_utils.analysis.update_matrix import compute_update_matrix_from_sessions
+
+    um, conditional, info = compute_update_matrix_from_sessions(
+        sessions, method=method, n_bins=n_bins, trial_filter=trial_filter,
+    )
+
+    return {
+        'um': um,
+        'conditional_matrix': conditional,
+        'n_sessions': info.get('n_sessions', len(sessions)),
+        'n_trials': info.get('total_trials', 0),
+        'method': method,
+        'n_bins': n_bins,
+        'info': info,
+    }

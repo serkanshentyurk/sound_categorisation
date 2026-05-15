@@ -9,82 +9,80 @@ NO FILTERING. Data must be pre-filtered via filter_trials / session.filter.
 
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import Optional, Tuple, Dict, TYPE_CHECKING
+from typing import Optional, Tuple, Union, Dict
 
-from behav_utils.analysis.update_matrix import compute_update_matrix
 from behav_utils.plotting.styles import UM_CMAP
 
-if TYPE_CHECKING:
-    from behav_utils.data.structures import SessionData, AnimalData
-
-
 def plot_um(
-    data, ax=None, n_bins=8,
-    cmap=None, vmin=None, vmax=None, colorbar=True,
-    title='', xlabel='Previous stimulus', ylabel='Current stimulus',
-) -> Tuple[plt.Figure, plt.Axes, dict]:
-    """Plot an update matrix heatmap. Data must be pre-filtered."""
+    result: Union[Dict, np.ndarray],
+    ax: Optional[plt.Axes] = None,
+    vmin: Optional[float] = None,
+    vmax: Optional[float] = None,
+    cmap=None,
+    colorbar: bool = True,
+    title: str = '',
+    xlabel: str = 'Previous stimulus',
+    ylabel: str = 'Current stimulus',
+) -> Tuple[plt.Figure, plt.Axes]:
+    """
+    Plot an update matrix heatmap from a compute_um() result.
+
+    Args:
+        result: Dict from compute_um(), or raw ndarray for convenience.
+        ax: Matplotlib axes (creates one if None).
+        vmin/vmax: Colour scale limits (auto-symmetric if None).
+        cmap: Colourmap (default: UM_CMAP).
+        colorbar: Show colour bar.
+        title: Axes title.
+
+    Returns:
+        (fig, ax)
+    """
+    # Accept both dict and raw ndarray
+    if isinstance(result, np.ndarray):
+        um = result
+        n_bins = um.shape[0]
+    elif isinstance(result, dict):
+        um = result['um']
+        n_bins = result.get('n_bins', um.shape[0])
+    else:
+        raise TypeError(
+            f"plot_um expects dict from compute_um() or ndarray, "
+            f"got {type(result).__name__}."
+        )
+
     if ax is None:
-        fig, ax = plt.subplots(figsize=(5, 4.5))
+        fig, ax = plt.subplots(1, 1, figsize=(4.5, 4))
     else:
         fig = ax.get_figure()
 
     cmap = cmap or UM_CMAP
-    um, info = _resolve_um(data, n_bins)
 
     if vmin is None or vmax is None:
-        absmax = np.nanmax(np.abs(um)) if not np.all(np.isnan(um)) else 0.1
-        absmax = max(absmax, 0.01)
-        vmin = vmin if vmin is not None else -absmax
-        vmax = vmax if vmax is not None else absmax
+        abs_max = np.nanmax(np.abs(um))
+        abs_max = max(abs_max, 0.01)
+        vmin = vmin if vmin is not None else -abs_max
+        vmax = vmax if vmax is not None else abs_max
 
     im = ax.imshow(um, cmap=cmap, vmin=vmin, vmax=vmax,
-                   origin='lower', aspect='equal', interpolation='nearest')
+                   origin='lower', aspect='equal')
+
     if colorbar:
-        plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-    ax.set_xlabel(xlabel); ax.set_ylabel(ylabel)
+        plt.colorbar(im, ax=ax, fraction=0.046)
+
+    # Tick labels
+    edges = np.linspace(-1, 1, n_bins + 1)
+    centres = (edges[:-1] + edges[1:]) / 2
+    tick_labels = [f'{c:.1f}' for c in centres]
+    ax.set_xticks(range(n_bins))
+    ax.set_xticklabels(tick_labels, fontsize=7, rotation=45)
+    ax.set_yticks(range(n_bins))
+    ax.set_yticklabels(tick_labels, fontsize=7)
+
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+
     if title:
         ax.set_title(title)
-    info.update({'um': um, 'vmin': vmin, 'vmax': vmax})
-    return fig, ax, info
 
-
-def _resolve_um(data, n_bins):
-    """Resolve input to (um_array, info_dict). No filtering."""
-    from behav_utils.data.structures import SessionData, AnimalData
-
-    if isinstance(data, np.ndarray):
-        return data, {'source': 'array', 'n_bins': data.shape[0]}
-
-    if isinstance(data, SessionData):
-        sessions = [data]
-    elif isinstance(data, AnimalData):
-        sessions = list(data.sessions)
-    elif isinstance(data, (list, tuple)) and len(data) > 0 and hasattr(data[0], 'trials'):
-        sessions = list(data)
-    else:
-        try:
-            sessions = list(data)
-            if not sessions or not hasattr(sessions[0], 'trials'):
-                raise TypeError()
-        except TypeError:
-            raise TypeError(f"Expected SessionData/List/AnimalData/ndarray, got {type(data).__name__}")
-
-    # Pool arrays across sessions — no filtering
-    all_stim, all_ch, all_cat = [], [], []
-    for s in sessions:
-        arr = s.get_arrays()
-        v = ~arr['no_response']
-        if v.sum() > 0:
-            all_stim.append(arr['stimuli'][v])
-            all_ch.append(arr['choices'][v])
-            all_cat.append(arr['categories'][v])
-
-    if not all_stim:
-        return np.full((n_bins, n_bins), np.nan), {'source': 'empty', 'n_sessions': 0}
-
-    stim = np.concatenate(all_stim)
-    ch = np.concatenate(all_ch)
-    cat = np.concatenate(all_cat)
-    um, _, um_info = compute_update_matrix(stim, ch, cat, n_bins=n_bins)
-    return um, {'source': 'sessions', 'n_sessions': len(sessions), **um_info}
+    return fig, ax

@@ -31,7 +31,10 @@ Usage:
     # result['um_rmse']       → UM RMSE between conditions
 """
 
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from behav_utils.data.structures import SessionData
 
 import numpy as np
 from scipy.stats import fisher_exact
@@ -328,3 +331,58 @@ def compare_conditions(
         'label_a': label_a,
         'label_b': label_b,
     }
+
+def compute_comparison(
+    sessions_a: List['SessionData'],
+    sessions_b: List['SessionData'],
+    n_bins: int = 8,
+    n_permutations: int = 1000,
+    n_bootstrap: int = 1000,
+    seed: int = 42,
+    label_a: str = 'A',
+    label_b: str = 'B',
+) -> Dict:
+    """
+    Compare two groups of pre-filtered sessions.
+
+    Session-level wrapper around compare_conditions(). Pools arrays
+    from each group, then runs the full comparison pipeline.
+
+    Args:
+        sessions_a: Pre-filtered sessions for condition A.
+        sessions_b: Pre-filtered sessions for condition B.
+        n_bins: Bins for update matrix.
+        n_permutations: Permutation test iterations (0 to skip).
+        n_bootstrap: Bootstrap iterations (0 to skip).
+        seed: Random seed.
+        label_a, label_b: Condition labels.
+
+    Returns:
+        Dict from compare_conditions() plus:
+            'n_sessions_a', 'n_sessions_b': session counts
+        Pass to plot_comparison() for drawing.
+    """
+    from behav_utils.data.filtering import pool_arrays
+    from behav_utils.analysis.comparison import compare_conditions
+
+    arr_a = pool_arrays(sessions_a)
+    arr_b = pool_arrays(sessions_b)
+
+    valid_a = ~arr_a['no_response']
+    valid_b = ~arr_b['no_response']
+
+    result = compare_conditions(
+        arr_a['stimuli'][valid_a], arr_a['choices'][valid_a], arr_a['categories'][valid_a],
+        arr_b['stimuli'][valid_b], arr_b['choices'][valid_b], arr_b['categories'][valid_b],
+        n_bins=n_bins,
+        n_permutations=n_permutations,
+        n_bootstrap=n_bootstrap,
+        seed=seed,
+        label_a=label_a,
+        label_b=label_b,
+    )
+
+    result['n_sessions_a'] = len(sessions_a)
+    result['n_sessions_b'] = len(sessions_b)
+
+    return result
