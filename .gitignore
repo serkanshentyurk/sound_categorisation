@@ -10,5 +10,4 @@ logs/
 *.pkl
 fitter_errors.log
 .ipynb_checkpoints/
-data/
 animal_metadata.json
