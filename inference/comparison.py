@@ -800,9 +800,9 @@ def simulate_example_session(
     """Simulate BE and SC on one real session for visualisation."""
     from models.BE_core import BEParams, BEModel
     from models.SC_core import SCParams, SCModel
-
-    sessions = animal.get_sessions(stage=stage, distribution=distribution)
-    sess = sessions[session_idx]
+    from behav_utils import select_sessions
+    
+    sessions = select_sessions(animal, stage=stage, distribution=distribution)    sess = sessions[session_idx]
     # Pre-filter then extract
     from behav_utils.data.filtering import filter_session
     clean = filter_session(sess)

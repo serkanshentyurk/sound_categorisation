@@ -1,12 +1,9 @@
 """
-Adaptation / shift analysis plotting.
+Adaptation / Shift Analysis — Plotting
 
-Visualisations for distribution shift responses: per-animal
-trajectory plots, UM evolution, psychometric comparison across
-phases, and group-level trajectory heatmaps.
-
-Extracted from NB 30 inline code. Delegates to behav_utils
-plotting functions where possible.
+Visualisations for distribution shift responses. All plotting functions
+take pre-computed result dicts or pre-filtered sessions that are processed
+via behav_utils compute_ functions internally where needed.
 
 Public API:
     plot_animal_trajectory      — Per-stat trajectory around a shift
@@ -15,20 +12,29 @@ Public API:
     plot_group_trajectories     — Group-mean trajectory with SEM
 
 Usage:
-    from analysis.adaptation import (
-        detect_all_manipulations, adaptation_trajectory, aggregate_trajectories,
+    from analysis.adaptation import detect_all_manipulations, adaptation_trajectory
+    from plotting.adaptation import plot_animal_trajectory, plot_shift_psychometric
+
+    traj_df = adaptation_trajectory(sessions, shift_info)
+    fig = plot_animal_trajectory(traj_df, stats=['accuracy', 'pse'])
+
+    # UM evolution uses behav_utils compute_um + plot_um
+    fig = plot_shift_um_evolution(
+        baseline_sessions=clean_baseline,
+        post_sessions=clean_post,
     )
-    from plotting.adaptation import plot_animal_trajectory, plot_group_trajectories
 """
 
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional
 
 import numpy as np
 import matplotlib.pyplot as plt
 
-from behav_utils.analysis.update_matrix import compute_update_matrix_from_sessions
-from behav_utils.plotting import plot_psychometric, plot_um, PALETTE
-from behav_utils.plotting.styles import COLOURS, apply_style
+from behav_utils.analysis.psychometry import compute_psychometric
+from behav_utils.analysis.update_matrix import compute_um
+from behav_utils.plotting.psychometric import plot_psychometric
+from behav_utils.plotting.update_matrix import plot_um
+from behav_utils.plotting.styles import PALETTE, apply_style
 
 apply_style()
 
@@ -50,9 +56,8 @@ def plot_animal_trajectory(
         trajectory_df: DataFrame from adaptation_trajectory() with columns
             'relative_session', 'phase', stat columns, 'baseline_{stat}_mean/std'.
         stats: List of stat names to plot.
-        shift_info: Dict with 'details' and 'shift_type' (from detect_all_manipulations).
+        shift_info: Dict with 'details' and 'shift_type'.
         animal_id: Animal identifier for title.
-        n_cols: Max columns in subplot grid.
     """
     n_stats = len(stats)
     n_cols = min(n_cols, n_stats)
@@ -74,18 +79,13 @@ def plot_animal_trajectory(
         bl_mask = trajectory_df['phase'] == 'baseline'
         post_mask = trajectory_df['phase'] == 'post'
 
-        ax.plot(
-            trajectory_df.loc[bl_mask, 'relative_session'],
-            trajectory_df.loc[bl_mask, stat],
-            'o-', ms=4, color=PALETTE[0],
-        )
-        ax.plot(
-            trajectory_df.loc[post_mask, 'relative_session'],
-            trajectory_df.loc[post_mask, stat],
-            'o-', ms=4, color=PALETTE[1],
-        )
+        ax.plot(trajectory_df.loc[bl_mask, 'relative_session'],
+                trajectory_df.loc[bl_mask, stat],
+                'o-', ms=4, color=PALETTE[0])
+        ax.plot(trajectory_df.loc[post_mask, 'relative_session'],
+                trajectory_df.loc[post_mask, stat],
+                'o-', ms=4, color=PALETTE[1])
 
-        # Baseline band
         bl_mean_col = f'baseline_{stat}_mean'
         bl_std_col = f'baseline_{stat}_std'
         if bl_mean_col in trajectory_df.columns:
@@ -93,32 +93,24 @@ def plot_animal_trajectory(
             bl_std = trajectory_df[bl_std_col].iloc[0]
             if not np.isnan(bl_mean):
                 ax.axhline(bl_mean, color=PALETTE[0], ls='--', lw=0.8, alpha=0.5)
-                ax.axhspan(
-                    bl_mean - bl_std, bl_mean + bl_std,
-                    color=PALETTE[0], alpha=0.08,
-                )
+                ax.axhspan(bl_mean - bl_std, bl_mean + bl_std,
+                           color=PALETTE[0], alpha=0.08)
 
         ax.axvline(0, color='black', ls=':', lw=0.8)
         ax.set_title(stat, fontsize=10)
 
-    # Hide unused panels
     for idx in range(n_stats, n_rows * n_cols):
         row, col = divmod(idx, n_cols)
         axes[row, col].set_visible(False)
 
     axes[-1, 0].set_xlabel('Sessions relative to shift')
 
-    # Suptitle
     title_parts = []
     if animal_id:
         title_parts.append(animal_id)
     if shift_info:
-        details = shift_info.get('details', {})
-        title_parts.append(
-            f"{details.get('before', '?')} "
-            f"\u2192 {details.get('after', '?')}"
-        )
-        title_parts.append(f"({shift_info.get('shift_type', '')})")
+        d = shift_info.get('details', {})
+        title_parts.append(f"{d.get('before', '?')} \u2192 {d.get('after', '?')}")
     if title_parts:
         fig.suptitle(' '.join(title_parts), fontsize=12, fontweight='bold')
 
@@ -139,50 +131,44 @@ def plot_shift_um_evolution(
     """
     Plot update matrices across expert → early post → late post.
 
-    Uses plot_um for each phase panel.
+    Uses compute_um + plot_um from behav_utils.
 
     Args:
-        baseline_sessions: Expert-phase sessions (pre-filtered).
-        post_sessions: Post-shift sessions (pre-filtered).
-        n_baseline: Number of baseline sessions to pool.
-        n_early_post: Number of early post-shift sessions.
+        baseline_sessions: Pre-filtered expert sessions.
+        post_sessions: Pre-filtered post-shift sessions.
     """
     phases = {}
 
-    bl = baseline_sessions[-n_baseline:] if len(baseline_sessions) >= n_baseline \
-        else baseline_sessions
-    um, _, info = compute_update_matrix_from_sessions(bl, method='pool')
-    phases[f'Expert\n({info["n_sessions"]}s)'] = um
+    bl = baseline_sessions[-n_baseline:] if len(baseline_sessions) >= n_baseline else baseline_sessions
+    if bl:
+        um_result = compute_um(bl)
+        phases[f'Expert\n({um_result["n_sessions"]}s)'] = um_result
 
     n_early = min(n_early_post, len(post_sessions))
     if n_early >= 2:
-        um, _, info = compute_update_matrix_from_sessions(
-            post_sessions[:n_early], method='pool')
-        phases[f'Early post\n({info["n_sessions"]}s)'] = um
+        um_result = compute_um(post_sessions[:n_early])
+        phases[f'Early post\n({um_result["n_sessions"]}s)'] = um_result
 
     if len(post_sessions) > n_early_post:
-        late = post_sessions[n_early_post:]
-        um, _, info = compute_update_matrix_from_sessions(late, method='pool')
-        phases[f'Late post\n({info["n_sessions"]}s)'] = um
+        um_result = compute_um(post_sessions[n_early_post:])
+        phases[f'Late post\n({um_result["n_sessions"]}s)'] = um_result
 
     if len(phases) < 2:
         return None
-
-    title_parts = []
-    if animal_id:
-        title_parts.append(animal_id)
-    if shift_info:
-        details = shift_info.get('details', {})
-        title_parts.append(
-            f"{details.get('before', '?')} \u2192 {details.get('after', '?')}"
-        )
 
     n_panels = len(phases)
     fig, axes = plt.subplots(1, n_panels, figsize=(4.5 * n_panels, 4))
     if n_panels == 1:
         axes = [axes]
-    for ax, (label, um) in zip(axes, phases.items()):
-        plot_um(um, ax=ax, title=label)
+    for ax, (label, um_result) in zip(axes, phases.items()):
+        plot_um(um_result, ax=ax, title=label)
+
+    title_parts = []
+    if animal_id:
+        title_parts.append(animal_id)
+    if shift_info:
+        d = shift_info.get('details', {})
+        title_parts.append(f"{d.get('before', '?')} \u2192 {d.get('after', '?')}")
     if title_parts:
         fig.suptitle(': '.join(title_parts), y=1.02)
     fig.tight_layout()
@@ -202,8 +188,7 @@ def plot_shift_psychometric(
     """
     Psychometric curves overlaid across shift phases.
 
-    Uses plot_psychometric for each phase group. Each group gets a
-    sequential PALETTE colour.
+    Uses compute_psychometric + plot_psychometric from behav_utils.
     """
     groups = {'Expert baseline': baseline_sessions[-n_baseline:]}
 
@@ -217,21 +202,19 @@ def plot_shift_psychometric(
     if len(groups) < 2:
         return None
 
+    fig, ax = plt.subplots(1, 1, figsize=(5, 4))
+    for i, (label, sessions) in enumerate(groups.items()):
+        result = compute_psychometric(sessions, mode='pooled', n_bootstrap=n_bootstrap)
+        plot_psychometric(result, ax=ax, show_ci=True,
+                          color=PALETTE[i], label=label)
+    ax.legend(fontsize=8)
+
     title_parts = []
     if animal_id:
         title_parts.append(animal_id)
     if shift_info:
-        details = shift_info.get('details', {})
-        title_parts.append(
-            f"{details.get('before', '?')} \u2192 {details.get('after', '?')}"
-        )
-
-    fig, ax = plt.subplots(1, 1, figsize=(5, 4))
-    for i, (label, sessions) in enumerate(groups.items()):
-        plot_psychometric(sessions, ax=ax, mode='pooled',
-                         n_bootstrap=n_bootstrap, show_ci=True,
-                         color=PALETTE[i], label=label)
-    ax.legend(fontsize=8)
+        d = shift_info.get('details', {})
+        title_parts.append(f"{d.get('before', '?')} \u2192 {d.get('after', '?')}")
     if title_parts:
         ax.set_title(': '.join(title_parts))
     return fig
@@ -253,7 +236,6 @@ def plot_group_trajectories(
         aggregated_df: DataFrame from aggregate_trajectories() with columns
             'relative_session', 'stat', 'mean', 'sem'.
         stats: List of stat names to plot.
-        n_animals: For title annotation.
     """
     n_stats = len(stats)
     n_cols = min(n_cols, n_stats)
@@ -270,8 +252,7 @@ def plot_group_trajectories(
         row, col = divmod(idx, n_cols)
         ax = axes[row, col]
 
-        stat_data = aggregated_df[aggregated_df['stat'] == stat].sort_values(
-            'relative_session')
+        stat_data = aggregated_df[aggregated_df['stat'] == stat].sort_values('relative_session')
         if stat_data.empty:
             ax.set_title(f'{stat} (no data)', fontsize=10)
             continue

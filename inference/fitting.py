@@ -19,9 +19,14 @@ Public API:
 Usage (recommended — high-level):
     from inference.fitting import SBIFitter
     from inference.types import ConstantSpec, GPSpec
+    from behav_utils import select_sessions, filter_trials, fitting_data_from_sessions
+
+    sessions = select_sessions(animal, preset='expert_uniform')
+    clean = filter_trials(sessions)
+    fd = fitting_data_from_sessions(clean, animal.animal_id)
 
     fitter = SBIFitter(
-        fitting_data=animal.get_fitting_data(stage='Full_Task_Cont'),
+        fitting_data=fd,
         param_links={
             'sigma_percep': ConstantSpec(bounds=(0.05, 0.5)),
             'eta_learning': GPSpec(bounds=(0.05, 0.9), lengthscale=5.0),
