@@ -36,14 +36,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 
-from behav_utils.analysis.psychometry import fit_psychometric
 from behav_utils.analysis.utils import cumulative_gaussian
 from behav_utils.plotting.styles import COLOURS, UM_CMAP, apply_style
+from behav_utils.plotting.psychometric import plot_psychometric
 
 from analysis.opto import OptoPhase
-from behav_utils.data.filtering import (
-    opto_mask as _opto_mask, filter_session, get_arrays,
-)
 
 apply_style()
 
@@ -78,116 +75,71 @@ PHASE_COLOURS = {
 # ─── Psychometric overlay ────────────────────────────────────────────────────
 
 def plot_opto_psychometric(
-    session_or_sessions,
-    ax: Optional[plt.Axes] = None,
-    title: Optional[str] = None,
-    n_bins: int = 8,
-    n_bootstrap: int = 200,
+    result: dict,
+    ax=None,
+    title=None,
     show_post_opto: bool = True,
-) -> plt.Figure:
+):
     """
-    Plot overlaid psychometric curves for opto, post-opto, and control trials.
+    Plot overlaid psychometric curves for opto, control, and post-opto.
 
-    Shows binned data points, fitted curves, and bootstrap 95% CI bands.
-    Uses three-way split when show_post_opto=True.
+    Takes a result dict from compute_opto_psychometric(). No filtering,
+    no fitting — pure rendering using plot_psychometric from behav_utils.
 
     Args:
-        session_or_sessions: Single SessionData or list of SessionData.
-            If list, trials are pooled.
-        ax: Matplotlib axes. If None, creates new figure.
-        title: Plot title.
-        n_bins: Number of stimulus bins for data points.
-        n_bootstrap: Bootstrap iterations for CI bands (0 to skip).
-        show_post_opto: Include post-opto curve (default True).
+        result: Dict from compute_opto_psychometric().
+        ax: Matplotlib axes (creates one if None).
+        title: Axes title.
+        show_post_opto: Whether to draw post-opto curve.
+
+    Returns:
+        (fig, ax)
     """
+    import matplotlib.pyplot as plt
+    from behav_utils.plotting.psychometric import plot_psychometric
+
+    # Import colours from the module level (already defined in plotting/opto.py)
+    # OPTO_COLOUR, CTRL_COLOUR, POST_OPTO_COLOUR
+
     if ax is None:
-        fig, ax = plt.subplots(1, 1, figsize=(5, 4))
+        fig, ax = plt.subplots(1, 1, figsize=(6, 5))
     else:
         fig = ax.get_figure()
 
-    sessions = (session_or_sessions
-                if isinstance(session_or_sessions, list)
-                else [session_or_sessions])
+    drawn = False
 
-    # Define conditions: (label, mask_getter, colour)
-    # Control = all non-opto (70%), post-opto = subset of control
-    conditions = [
-        ('Control', lambda s: _opto_mask(s.trials, delta='control'), CTRL_COLOUR),
-        ('Opto', lambda s: _opto_mask(s.trials, delta=0), OPTO_COLOUR),
-    ]
-    if show_post_opto:
-        conditions.append(
-            ('Post-opto', lambda s: _opto_mask(s.trials, delta=1), POST_OPTO_COLOUR))
+    if result.get('control') is not None:
+        plot_psychometric(
+            result['control'], ax=ax, color=CTRL_COLOUR,
+            label=f'Control (n={result["n_control"]})',
+            show_ci=True)
+        drawn = True
 
-    for label, mask_fn, colour in conditions:
-        all_stim, all_choice = [], []
-        for sess in sessions:
-            mask = mask_fn(sess)
-            if mask.sum() < 10:
-                continue
-            filtered = filter_session(sess, mask)
-            arrays = get_arrays(filtered.trials)
-            valid = ~arrays['no_response']
-            all_stim.append(arrays['stimuli'][valid])
-            all_choice.append(arrays['choices'][valid])
+    if result.get('opto') is not None:
+        plot_psychometric(
+            result['opto'], ax=ax, color=OPTO_COLOUR,
+            label=f'Opto (n={result["n_opto"]})',
+            show_ci=True)
+        drawn = True
 
-        if not all_stim:
-            continue
+    if show_post_opto and result.get('post_opto') is not None:
+        plot_psychometric(
+            result['post_opto'], ax=ax, color=POST_OPTO_COLOUR,
+            label=f'Post-opto (n={result["n_post_opto"]})',
+            show_ci=True, linestyle='--')
+        drawn = True
 
-        stim = np.concatenate(all_stim)
-        choice = np.concatenate(all_choice)
+    if not drawn:
+        ax.text(0.5, 0.5, 'Insufficient opto trials',
+                transform=ax.transAxes, ha='center', va='center',
+                fontsize=11, color='grey')
 
-        # Binned data points
-        bins = np.linspace(-1, 1, n_bins + 1)
-        centres = (bins[:-1] + bins[1:]) / 2
-        means = np.full(n_bins, np.nan)
-        for b in range(n_bins):
-            in_bin = (stim >= bins[b]) & (stim < bins[b + 1])
-            if b == n_bins - 1:
-                in_bin |= (stim == bins[b + 1])
-            if in_bin.sum() > 0:
-                means[b] = np.nanmean(choice[in_bin])
-
-        ax.plot(centres, means, 'o', color=colour, markersize=6,
-                label=f'{label} (n={len(stim)})')
-
-        # Fitted curve with bootstrap CI
-        try:
-            pfit = fit_psychometric(
-                stim, choice, n_bootstrap=n_bootstrap)
-            x_fine = np.linspace(-1, 1, 200)
-
-            # CI band
-            if n_bootstrap > 0 and pfit.get('y_fit_ci') is not None:
-                ci_lo, ci_hi = pfit['y_fit_ci']
-                if ci_lo is not None and ci_hi is not None:
-                    x_fit = pfit.get('x_fit', np.linspace(-1, 1, 100))
-                    ci_lo_fine = np.interp(x_fine, x_fit, ci_lo)
-                    ci_hi_fine = np.interp(x_fine, x_fit, ci_hi)
-                    ax.fill_between(
-                        x_fine, ci_lo_fine, ci_hi_fine,
-                        color=colour, alpha=0.15)
-
-            # Fitted line
-            y_fine = cumulative_gaussian(
-                x_fine, pfit['mu'], pfit['sigma'],
-                pfit['lapse_low'], pfit['lapse_high'])
-            ax.plot(x_fine, y_fine, '-', color=colour, alpha=0.7)
-        except Exception:
-            pass
-
-    ax.axhline(0.5, ls='--', color='grey', alpha=0.3)
-    ax.axvline(0.0, ls='--', color='grey', alpha=0.3)
-    ax.set_xlabel('Stimulus')
-    ax.set_ylabel('P(choose B)')
-    ax.set_xlim(-1.05, 1.05)
-    ax.set_ylim(-0.05, 1.05)
     ax.legend(fontsize=9)
     if title:
         ax.set_title(title)
 
-    fig.tight_layout()
-    return fig
+    return fig, ax
+
 
 
 # ─── Phase trajectory ────────────────────────────────────────────────────────
@@ -777,6 +729,9 @@ def plot_animal_opto_report(
     Middle row: expert stability + within-session effect bars
     Bottom row: UM difference maps for each opto phase
     """
+    
+    from behav_utils.plotting.update_matrix import plot_um
+    
     phases = report['phases']
     sessions = animal.sessions
 
@@ -810,13 +765,7 @@ def plot_animal_opto_report(
                 break
             ax_um = fig.add_subplot(gs[2, idx])
             diff_um = comp['opto_um'] - comp['control_um']
-            vmax = max(np.nanmax(np.abs(diff_um)), 0.01)
-            im = ax_um.imshow(
-                diff_um, cmap=UM_CMAP, vmin=-vmax, vmax=vmax,
-                origin='lower', aspect='equal')
-            ax_um.set_title(f'{phase.value}\nOpto−Control UM')
-            plt.colorbar(im, ax=ax_um, fraction=0.046)
-
+            plot_um(diff_um, ax=ax_um, title=f'{phase.value}\nOpto−Control UM')
     if save_path:
         fig.savefig(save_path, dpi=150, bbox_inches='tight')
 

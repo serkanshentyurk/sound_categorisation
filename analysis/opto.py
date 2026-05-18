@@ -1405,3 +1405,73 @@ def simulate_with_opto(
             pass
 
     return choices_opto, choices_ctrl
+
+
+def compute_opto_psychometric(
+    sessions,
+    n_bootstrap: int = 200,
+    show_post_opto: bool = True,
+    min_trials: int = 10,
+):
+    """
+    Compute psychometric fits for opto, control, and post-opto conditions.
+
+    Uses split_opto_session to split, then compute_psychometric for each.
+
+    Args:
+        sessions: SessionData or List[SessionData] with opto trials.
+        n_bootstrap: Bootstrap iterations for CI.
+        show_post_opto: Whether to compute post-opto condition.
+        min_trials: Minimum trials per condition.
+
+    Returns:
+        Dict with:
+            'opto': result dict from compute_psychometric (or None)
+            'control': result dict from compute_psychometric (or None)
+            'post_opto': result dict from compute_psychometric (or None)
+            'n_opto': int
+            'n_control': int
+            'n_post_opto': int
+
+        Pass to plot_opto_psychometric().
+    """
+    from behav_utils.analysis.psychometry import compute_psychometric
+    from behav_utils.data.filtering import filter_trials
+    from analysis.opto import split_opto_session
+
+    if not isinstance(sessions, (list, tuple)):
+        sessions = [sessions]
+
+    opto_sessions = []
+    ctrl_sessions = []
+    post_sessions = []
+
+    for sess in sessions:
+        opto_s, ctrl_s, post_s = split_opto_session(sess, min_trials=1)
+        if opto_s is not None:
+            opto_sessions.append(opto_s)
+        if ctrl_s is not None:
+            ctrl_sessions.append(ctrl_s)
+        if post_s is not None and show_post_opto:
+            post_sessions.append(post_s)
+
+    result = {
+        'opto': None, 'control': None, 'post_opto': None,
+        'n_opto': sum(s.n_trials for s in opto_sessions),
+        'n_control': sum(s.n_trials for s in ctrl_sessions),
+        'n_post_opto': sum(s.n_trials for s in post_sessions),
+    }
+
+    if opto_sessions and result['n_opto'] >= min_trials:
+        result['opto'] = compute_psychometric(
+            opto_sessions, mode='pooled', n_bootstrap=n_bootstrap)
+
+    if ctrl_sessions and result['n_control'] >= min_trials:
+        result['control'] = compute_psychometric(
+            ctrl_sessions, mode='pooled', n_bootstrap=n_bootstrap)
+
+    if post_sessions and result['n_post_opto'] >= min_trials:
+        result['post_opto'] = compute_psychometric(
+            post_sessions, mode='pooled', n_bootstrap=n_bootstrap)
+
+    return result

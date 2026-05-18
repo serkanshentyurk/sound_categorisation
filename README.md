@@ -43,19 +43,18 @@ Two models of how mice update their internal representation:
 | `SC_model.py` | `StimulusCategoryModel` | High-level wrapper for fitting |
 | `perception.py` | `perceive_stimulus()` | Shared perceptual noise model |
 
-### `analysis/` — Project-specific analysis
+### `analysis/` — Project-specific analysis (compute_ functions)
 
 | Module | Key functions | Purpose |
 |:-------|:-------------|:--------|
-| `grid_search.py` | `grid_search_cv()`, `run_cv_both_models()`, `parameter_sweep()` | GS-CV model selection (2-fold × 64 seeds, 8×8 UM MSE) |
-| `consensus.py` | `load_all_assignments()`, `consensus_summary()` | 4-method consensus (GS-UM, GS-CP, SBI-UM, SBI-CP) |
-| `adaptation.py` | `detect_all_manipulations()`, `adaptation_trajectory()`, `fit_recovery_curve()`, `compare_phases()`, `build_phase_blocks()` | Post-shift behavioural analysis (15 functions) |
-| `opto.py` | `opto_relative_mask(session, delta=)`, `within_session_effect()`, `phase_stability()`, `expert_null_test()`, `expert_um_test()`, `animal_opto_report()` | Optogenetic inactivation analysis |
-| `cv_utils.py` | `load_cv_pickles()`, `build_long_df()`, `build_summary_table()` | Cross-validation result loading/formatting |
-| `validation.py` | `make_synthetic_cohort()`, `make_learning_cohort()`, `make_shift_cohort()` | Synthetic data for pipeline validation |
-| `stimulus_distribution.py` | `sample_distribution()`, `sample_hard_a()`, `sample_hard_b()` | Hard-A/B asymmetric distribution sampling |
-| `slds.py` | `predict_state()`, `compute_bic()` | SLDS/HMM state inference utilities |
-| `fold_utils.py` | `split_folds_by_block()` | Block-aware CV fold splitting |
+| `opto.py` | `split_opto_session()`, `within_session_effect()`, `phase_pooled_comparison()`, `expert_null_test()`, `compute_opto_psychometric()` | Opto analysis: splitting, comparison, equivalence testing |
+| `adaptation.py` | `detect_all_manipulations()`, `adaptation_trajectory()`, `aggregate_trajectories()` | Post-shift trajectory and recovery analysis |
+| `consensus.py` | `load_all_assignments()`, `majority_vote()` | BE/SC model assignment consensus |
+| `grid_search.py` | `grid_search_cv()`, `_simulate_um()` | Grid-search cross-validation |
+| `cv_utils.py` | `compute_empirical_um()`, `simulate_model_um()`, `sessions_to_old_df()` | CV helper utilities (no legacy dependency) |
+| `validation.py` | `make_synthetic_cohort()`, `generate_session_with_distribution()` | Synthetic data generation for validation |
+| `animal_report.py` | `compute_animal_summary()`, `compute_model_fits()`, `compute_sbi_diagnostics()` | Per-animal report computation |
+| `validation_report.py` | `compute_synth_summary()`, `compute_synth_model_fits()`, `build_confusion_matrix()`, `extract_gs_recovery()` | Synthetic validation report computation |
 
 ### `inference/` — Simulation-based inference
 
@@ -72,17 +71,29 @@ Two models of how mice update their internal representation:
 
 | Module | Key functions | Purpose |
 |:-------|:-------------|:--------|
-| `cv.py` | `plot_cv_comparison()`, `gs_seed_errors()`, `plot_winner_summary()` | Grid-search CV result visualisation |
+| `cv.py` | `plot_cv_comparison()`, `gs_seed_errors()`, `plot_winner_summary()` | Grid-search CV visualisation |
 | `assignment.py` | `plot_assignment_strip()` | Cohort-level BE/SC assignment strip |
 | `sbi.py` | `plot_parameter_trajectories()`, `plot_marginal_posteriors()`, `plot_pairplot()` | SBI posterior and trajectory plots |
 | `adaptation.py` | `plot_animal_trajectory()`, `plot_shift_psychometric()`, `plot_group_trajectories()` | Post-shift adaptation plots |
-| `opto.py` | `plot_opto_psychometric()`, `plot_phase_trajectory()`, `plot_opto_um_comparison()`, `plot_equivalence_test()`, `plot_animal_opto_report()` | Opto inactivation analysis plots |
-| `animal_report.py` | `plot_animal_summary()`, `plot_cv_results()`, `plot_model_fits()` | Per-animal multi-panel report figures |
-| `validation_report.py` | `plot_synth_summary()`, `plot_recovery_overlay()`, `build_confusion_matrix()` | Synthetic validation report figures |
+| `opto.py` | `plot_opto_psychometric()`, `plot_phase_trajectory()`, `plot_opto_um_comparison()`, `plot_equivalence_test()`, `plot_animal_opto_report()` | Opto inactivation plots |
+| `animal_report.py` | `plot_animal_summary()`, `plot_model_fits()`, `plot_sbi_diagnostics()` | Per-animal report rendering |
+| `validation_report.py` | `plot_synth_summary()`, `plot_synth_model_fits()`, `plot_recovery_overlay()`, `plot_confusion_matrix()` | Synthetic validation report rendering |
 
-### `legacy/` — Old codebase
+### `legacy/` — Deprecated
 
-Still imported by `analysis/cv_utils.py` for `post_correct_update_matrix`, `BE_model`, `SC_model`, `matrix_error`. ~4000 lines. Intended for eventual removal once these functions are ported.
+Original codebase from the manuscript. All functionality has been ported:
+
+| Legacy | Replacement |
+|:-------|:-----------|
+| `legacy.fitter.post_correct_update_matrix` | `behav_utils.analysis.update_matrix.compute_update_matrix` |
+| `legacy.fitter.matrix_error` | `behav_utils.analysis.update_matrix.matrix_error` |
+| `legacy.fitter.k_fold_CV` | `analysis.grid_search.grid_search_cv` |
+| `legacy.be.BE_model` | `models.BE_core.BEModel.simulate_session` |
+| `legacy.sc.SC_model` | `models.SC_core.SCModel.simulate_session` |
+
+Only imported by `notebooks/dev/2g_legacy_regression.ipynb` for side-by-side regression testing. No production code depends on legacy/.
+
+Importing `legacy` raises a `DeprecationWarning`.
 
 ---
 

@@ -340,50 +340,68 @@ def build_summary_table(
 
 
 # =============================================================================
-# MODEL SIMULATION (using legacy code)
+# MODEL SIMULATION 
 # =============================================================================
 
-def compute_empirical_um(df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
+import numpy as np
+from typing import List, Tuple
+
+from behav_utils.analysis.update_matrix import compute_update_matrix, matrix_error
+
+
+def compute_empirical_um(df) -> Tuple[np.ndarray, np.ndarray]:
     """
     Compute empirical update matrix from a flat DataFrame.
 
-    Returns (update_matrix, conditional_matrix) with rows reversed
-    to match legacy plotting convention.
+    Uses behav_utils.analysis.update_matrix.compute_update_matrix instead
+    of legacy.fitter.post_correct_update_matrix.
+
+    Args:
+        df: Flat DataFrame with columns 'stim_relative', 'choice',
+            'No_response', 'is_not_start_of_block'.
+
+    Returns:
+        (update_matrix, conditional_matrix)
     """
-    from legacy.fitter import post_correct_update_matrix
-
     s = df['stim_relative'].values
-    chooseB = df['choice'].values
-    reward = df['correct'].values
-    no_resp = df['No_response'].values
-    not_block = df['is_not_start_of_block'].values
+    ch = df['choice'].values
+    cat = np.where(s > 0, 1, 0)
+    no_resp = df['No_response'].values.astype(bool)
+    nbs = df['is_not_start_of_block'].values.astype(bool)
 
-    um, cm = post_correct_update_matrix(s, chooseB, reward, no_resp, not_block)
-    return um[::-1], cm[::-1]
+    um, cm, _ = compute_update_matrix(
+        s, ch, cat, n_bins=8,
+        trial_filter='post_correct',
+        no_response=no_resp,
+        not_blockstart=nbs,
+    )
+    return um, cm
 
 
 def simulate_model_um(
-    df: pd.DataFrame,
+    df,
     model_name: str,
     params: List[float],
     seed: int,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Simulate model with given params on the animal's stimulus sequence,
-    then compute update matrix via legacy code.
+    Simulate a model with given params on the animal's stimulus sequence,
+    then compute the update matrix.
+
+    Uses models/BE_core.py and models/SC_core.py instead of legacy.
 
     Args:
-        df: Flat DataFrame (from sessions_to_old_df)
-        model_name: 'BE' or 'SC'
-        params: [sigma_noise, A_repulsion, x_axis_val, y_axis_val]
-        seed: Random seed used during CV
+        df: Flat DataFrame with stimulus sequence.
+        model_name: 'BE' or 'SC'.
+        params: [sigma_noise, A_repulsion, x_axis_val, y_axis_val].
+        seed: Random seed.
 
     Returns:
         (model_update_matrix, model_conditional_matrix)
     """
-    from legacy.fitter import post_correct_update_matrix
-    from legacy.be import BE_model, Noise_generator, Delta_repulsion
-    from legacy.sc import SC_model
+    from models.BE_core import BEModel, BEParams
+    from models.SC_core import SCModel, SCParams
+    from models.perception import perceive_stimulus
 
     s = df['stim_relative'].values
     no_response = df['No_response'].values.astype(bool)
@@ -391,43 +409,57 @@ def simulate_model_um(
     categories = np.where(s > 0, 1, 0)
 
     sigma_noise, A_repulsion, x_val, y_val = params
-
-    # Stimulus space (matching legacy convention)
-    max_range = 1 + 6 * sigma_noise + 2 * A_repulsion * (1 + 6 * sigma_noise)
-    min_range = -max_range
-    num_points = round((max_range - min_range) * 1000)
-    x = np.linspace(min_range, max_range, num_points)
-
-    # Noisy perception
-    s_tilde = s + Noise_generator(len(s), seed, sigma_noise)
-    s_hat = Delta_repulsion(A_repulsion, s_tilde)
-
+    
+    rng = np.random.default_rng(seed)
+    
     if model_name == 'BE':
-        y = sp_uniform.pdf(x, loc=min_range, scale=max_range - min_range)
-        model_um, model_cm = BE_model(
-            post_correct_update_matrix,
-            x, y, s, s_hat, categories,
-            sigma_noise, A_repulsion,
-            y_val,   # eta_learning
-            x_val,   # eta_relax
-            no_response, not_blockstart, seed, 'simulated',
+        be_params = BEParams(
+            sigma_percep=sigma_noise,
+            A_repulsion=A_repulsion,
+            eta_learning=y_val,
+            eta_relax=x_val,
         )
+        choices, _, _, _ = BEModel.simulate_session(
+            stimuli=s, categories=categories,
+            params=be_params,
+            initial_state=None,
+            rng=rng,
+            no_response=no_response,
+            not_blockstart=not_blockstart,
+        )
+
     elif model_name == 'SC':
-        model_um, model_cm = SC_model(
-            post_correct_update_matrix,
-            x, None, s, s_hat, categories,
-            sigma_noise, A_repulsion,
-            y_val,   # gamma
-            x_val,   # sigma_update
-            no_response, not_blockstart, seed, 'simulated',
+        sc_params = SCParams(
+            sigma_percep=sigma_noise,
+            A_repulsion=A_repulsion,
+            gamma=y_val,
+            sigma_update=x_val,
         )
+        choices, _, _, _ = SCModel.simulate_session(
+            stimuli=s, categories=categories,
+            params=sc_params,
+            initial_state=None,
+            rng=rng,
+            no_response=no_response,
+            not_blockstart=not_blockstart,
+        )
+
     else:
         raise ValueError(f"Unknown model: {model_name}")
 
-    return model_um, model_cm
+    # Compute UM from simulated choices
+    um, cm, _ = compute_update_matrix(
+        s, choices, categories, n_bins=8,
+        trial_filter='post_correct',
+        no_response=no_response,
+        not_blockstart=not_blockstart,
+    )
+    return um, cm
 
 
 def compute_matrix_error(model_um: np.ndarray, emp_um: np.ndarray) -> float:
-    """MSE between model and empirical update matrices (NaN-safe)."""
-    from legacy.fitter import matrix_error
+    """MSE between model and empirical update matrices (NaN-safe).
+
+    Uses behav_utils.analysis.update_matrix.matrix_error directly.
+    """
     return float(matrix_error(model_um, emp_um))
