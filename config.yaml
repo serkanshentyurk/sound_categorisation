@@ -118,6 +118,9 @@ columns:
     dtype: str
     optional: true
     default: "Uniform"
+    mapping:
+      - ["Asym_Right", "Hard-A"]
+      - ["Asym_Left", "Hard-B"]
 
   distribution_exp_rate:
     csv_name: "Distribution_Exp_Rate"
