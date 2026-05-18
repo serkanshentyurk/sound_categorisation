@@ -348,8 +348,9 @@ def phase_pooled_comparison(
 
         n_sessions, n_opto, n_control, n_post_opto: counts
     """
-    from behav_utils.analysis.comparison import compare_conditions, _fit_params, _accuracy
-
+    from behav_utils.analysis.comparison import compare_conditions
+    from behav_utils.analysis.psychometry import fit_psychometric
+    
     phase_sessions = [
         s for s, p in zip(sessions, phases) if p == target_phase
     ]
@@ -408,8 +409,14 @@ def phase_pooled_comparison(
         ch_p = post_arrays['choices'][valid_p]
         cat_p = post_arrays['categories'][valid_p]
 
-        post_params = _fit_params(stim_p, ch_p) or {}
-        post_params['accuracy'] = _accuracy(ch_p, cat_p)
+        post_pfit = fit_psychometric(stim_p, ch_p)
+        post_params = {
+            'pse': post_pfit.get('mu', np.nan),
+            'slope': post_pfit.get('sigma', np.nan),
+            'lapse_low': post_pfit.get('lapse_low', np.nan),
+            'lapse_high': post_pfit.get('lapse_high', np.nan),
+            'accuracy': float(np.mean(ch_p == cat_p)) if len(ch_p) > 0 else np.nan,
+        }
         result['post_opto_stats'] = post_params
         result['n_post_opto'] = int(valid_p.sum())
         result['post_opto_diff'] = {

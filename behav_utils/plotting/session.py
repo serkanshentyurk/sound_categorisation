@@ -72,14 +72,16 @@ def plot_session_raster(
     # Rolling accuracy
     if window and n >= window:
         valid = ~no_resp
-        rolling = np.convolve(correct[valid].astype(float),
-                              np.ones(window) / window, mode='valid')
-        x_roll = np.arange(window - 1, valid.sum())
-        ax2 = ax.twinx()
-        ax2.plot(x_roll, rolling, color='steelblue', alpha=0.6, lw=1.5)
-        ax2.set_ylabel('Rolling accuracy', color='steelblue')
-        ax2.set_ylim(0, 1.05)
-        ax2.axhline(0.5, ls=':', color='steelblue', alpha=0.3)
+        n_valid = valid.sum()
+        if n_valid >= window:
+            rolling = np.convolve(correct[valid].astype(float),
+                                  np.ones(window) / window, mode='valid')
+            x_roll = np.arange(window - 1, n_valid)
+            ax2 = ax.twinx()
+            ax2.plot(x_roll, rolling, color='steelblue', alpha=0.6, lw=1.5)
+            ax2.set_ylabel('Rolling accuracy', color='steelblue')
+            ax2.set_ylim(0, 1.05)
+            ax2.axhline(0.5, ls=':', color='steelblue', alpha=0.3)
 
     ax.set_xlabel('Trial')
     ax.set_ylabel('Stimulus')
