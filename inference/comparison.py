@@ -19,9 +19,7 @@ Key fix:
     the grid-search CV.
 
 Functions:
-    train_amortised_snpe     — Train SNPE with generic stimuli (Parts 1 & 3)
     train_per_animal_snpe    — Train SNPE with real stimuli (Part 2)
-    condition_on_animal      — Condition posterior on observed stats
     cv_um_comparison         — FIXED cross-validated UM comparison
     compare_models           — ANOVA wrapper
     run_animal_pipeline      — Full per-animal pipeline (Parts 1 & 3)
@@ -30,7 +28,6 @@ Functions:
 
 Usage:
     from inference.comparison import (
-        train_amortised_snpe, condition_on_animal,
         cv_um_comparison, compare_models,
     )
 """
@@ -58,62 +55,6 @@ from inference.types import ModelType
 # =============================================================================
 # TRAINING
 # =============================================================================
-
-def train_amortised_snpe(
-    model_type: str,
-    stat_names: List[str],
-    n_simulations: int = 50_000,
-    n_trials: int = 2500,
-    burn_in: int = 1000,
-    seed: int = 42,
-) -> Dict[str, Any]:
-    """
-    Train amortised SNPE with generic Uniform stimuli.
-    Condition on any animal's stats without retraining.
-
-    stat_names should NOT include update_matrix (sequence-dependent).
-    """
-    import torch
-    from sbi.inference import SNPE
-    from inference.simulator import (
-        create_be_simulator, create_sc_simulator,
-        get_sbi_prior, wrap_for_sbi,
-    )
-
-    name = model_type.upper()
-    print(f"\nTraining amortised SNPE [{name}] "
-          f"({n_simulations:,} sims, {n_trials} trials, burn_in={burn_in})...")
-
-    stim, cat = sample_stimuli(n_trials, 'uniform', np.random.default_rng(seed))
-    creator = create_be_simulator if model_type == 'be' else create_sc_simulator
-    sim = creator(stim, cat, stat_names=stat_names, burn_in=burn_in)
-    prior = get_sbi_prior(sim)
-    sbi_sim = wrap_for_sbi(sim)
-
-    t0 = time.time()
-    theta = prior.sample((n_simulations,))
-    print(f"  Simulating...")
-    x = torch.stack([sbi_sim(t) for t in theta])
-
-    valid = ~torch.any(torch.isnan(x), dim=1)
-    n_valid = valid.sum().item()
-    print(f"  {n_valid}/{n_simulations} valid "
-          f"({100 * n_valid / n_simulations:.0f}%)")
-
-    inference = SNPE(prior=prior)
-    inference.append_simulations(theta[valid], x[valid])
-    posterior = inference.build_posterior(inference.train())
-
-    dt = time.time() - t0
-    print(f"  Done in {dt / 60:.1f} min")
-
-    return {
-        'posterior': posterior, 'prior': prior,
-        'simulator': sim, 'sbi_sim': sbi_sim,
-        'param_names': sim.get_param_names(),
-        'model_type': model_type, 'stat_names': stat_names,
-        'burn_in': burn_in, 'training_time': dt, 'n_valid': n_valid,
-    }
 
 
 def train_per_animal_snpe(
@@ -171,44 +112,6 @@ def train_per_animal_snpe(
         'model_type': model_type, 'stat_names': stat_names,
         'burn_in': burn_in, 'training_time': dt, 'n_valid': n_valid,
     }
-
-
-# =============================================================================
-# POSTERIOR CONDITIONING
-# =============================================================================
-
-def condition_on_animal(
-    snpe_result: Dict[str, Any],
-    fitting_data: FittingData,
-    n_samples: int = 2000,
-) -> Dict[str, Any]:
-    """Condition posterior on one animal's observed stats."""
-    import torch
-
-    pooled = fitting_data.pool()
-    obs = compute_summary_stats(
-        pooled['choices'], pooled['stimuli'], pooled['categories'],
-        stat_names=snpe_result['stat_names'], return_dict=False,
-    )
-    obs = np.nan_to_num(obs, nan=0.0)
-
-    x_obs = torch.tensor(obs, dtype=torch.float32)
-    samples = snpe_result['posterior'].sample(
-        (n_samples,), x=x_obs,
-    ).numpy()
-
-    param_names = snpe_result['param_names']
-    median_params = {
-        name: float(np.median(samples[:, i]))
-        for i, name in enumerate(param_names)
-    }
-
-    return {
-        'samples': samples, 'median_params': median_params,
-        'param_names': param_names, 'observed_stats': obs,
-        'animal_id': fitting_data.animal_id,
-    }
-
 
 # =============================================================================
 # CROSS-VALIDATED UM COMPARISON (FIXED: block-level splitting)
@@ -458,121 +361,6 @@ def compare_models(
         'f_stat': float(f_stat), 'p_value': float(p), 'winner': winner,
         'be_mean': float(np.mean(be)), 'be_std': float(np.std(be)),
         'sc_mean': float(np.mean(sc)), 'sc_std': float(np.std(sc)),
-    }
-
-
-# =============================================================================
-# FULL PIPELINE (Parts 1 & 3)
-# =============================================================================
-
-def run_animal_pipeline(
-    fitting_data: FittingData,
-    be_snpe: Dict,
-    sc_snpe: Dict,
-    n_cv_repeats: int = 64,
-    seed: int = 42,
-    verbose: bool = True,
-    method: str = 'update_matrix',
-) -> Dict[str, Any]:
-    """
-    Full comparison for one animal using pre-trained amortised SNPE.
-
-    Args:
-        method: 'update_matrix' or 'conditional_psych' — which matrix
-                to score BE vs SC against during CV.
-    """
-    aid = fitting_data.animal_id
-    if verbose:
-        print(f"\n  {aid}: {fitting_data.n_sessions} sessions, "
-              f"{fitting_data.trials_per_session.sum()} trials")
-
-    be_cond = condition_on_animal(be_snpe, fitting_data)
-    sc_cond = condition_on_animal(sc_snpe, fitting_data)
-
-    if verbose:
-        _print_params(be_cond['median_params'], 'BE')
-        _print_params(sc_cond['median_params'], 'SC')
-
-    be_cv = cv_comparison(
-        be_snpe, fitting_data, n_repeats=n_cv_repeats, seed=seed, method=method,
-    )
-    sc_cv = cv_comparison(
-        sc_snpe, fitting_data, n_repeats=n_cv_repeats, seed=seed, method=method,
-    )
-    comp = compare_models(be_cv, sc_cv)
-
-    if verbose:
-        print(f"    CV ({method}): BE={comp['be_mean']:.5f} SC={comp['sc_mean']:.5f} "
-              f"p={comp['p_value']:.3g} → {comp['winner']}")
-
-    return {
-        'animal_id': aid, 'n_sessions': fitting_data.n_sessions,
-        'n_trials': int(fitting_data.trials_per_session.sum()),
-        'be_params': be_cond['median_params'],
-        'sc_params': sc_cond['median_params'],
-        'winner': comp['winner'], 'p': comp['p_value'],
-        'be_mean': comp['be_mean'], 'sc_mean': comp['sc_mean'],
-        'be_cv': be_cv, 'sc_cv': sc_cv,
-        'method': method,
-    }
-
-
-def run_animal_pipeline_part2(
-    fitting_data: FittingData,
-    stat_names_with_um: List[str],
-    n_sbi_sims: int = 10_000,
-    n_cv_repeats: int = 64,
-    burn_in: int = 1000,
-    seed: int = 42,
-    verbose: bool = True,
-    method: str = 'update_matrix',
-) -> Dict[str, Any]:
-    """
-    Full comparison for one animal using per-animal SNPE with UM.
-
-    Args:
-        method: 'update_matrix' or 'conditional_psych' — which matrix
-                to score BE vs SC against during CV.
-    """
-    aid = fitting_data.animal_id
-    if verbose:
-        print(f"\n{'=' * 50}")
-        print(f"  {aid}: {fitting_data.n_sessions} sessions, "
-              f"{fitting_data.trials_per_session.sum()} trials")
-
-    be_snpe = train_per_animal_snpe(
-        'be', fitting_data, stat_names_with_um,
-        n_sbi_sims, burn_in, seed,
-    )
-    sc_snpe = train_per_animal_snpe(
-        'sc', fitting_data, stat_names_with_um,
-        n_sbi_sims, burn_in, seed + 1,
-    )
-
-    be_cond = condition_on_animal(be_snpe, fitting_data)
-    sc_cond = condition_on_animal(sc_snpe, fitting_data)
-
-    be_cv = cv_comparison(
-        be_snpe, fitting_data, n_repeats=n_cv_repeats, seed=seed, method=method,
-    )
-    sc_cv = cv_comparison(
-        sc_snpe, fitting_data, n_repeats=n_cv_repeats, seed=seed, method=method,
-    )
-    comp = compare_models(be_cv, sc_cv)
-
-    if verbose:
-        print(f"    CV ({method}): BE={comp['be_mean']:.5f} SC={comp['sc_mean']:.5f} "
-              f"p={comp['p_value']:.3g} → {comp['winner']}")
-
-    return {
-        'animal_id': aid, 'n_sessions': fitting_data.n_sessions,
-        'n_trials': int(fitting_data.trials_per_session.sum()),
-        'be_params': be_cond['median_params'],
-        'sc_params': sc_cond['median_params'],
-        'winner': comp['winner'], 'p': comp['p_value'],
-        'be_mean': comp['be_mean'], 'sc_mean': comp['sc_mean'],
-        'be_cv': be_cv, 'sc_cv': sc_cv,
-        'method': method,
     }
 
 
