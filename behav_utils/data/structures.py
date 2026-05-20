@@ -597,6 +597,67 @@ class FittingData:
             'categories': np.concatenate(all_cat),
             'choices': np.concatenate(all_choice),
         }
+    @classmethod
+    def from_arrays(
+        cls,
+        session_arrays: list,
+        animal_id: str = 'synthetic',
+    ) -> 'FittingData':
+        """
+        Create FittingData from a list of session dicts.
+
+        Each dict must have 'stimuli', 'choices', 'categories' keys
+        (1D numpy arrays). Optionally 'no_response' and 'not_blockstart'.
+
+        Usage:
+            sessions = [
+                {'stimuli': stim0, 'choices': ch0, 'categories': cat0},
+                {'stimuli': stim1, 'choices': ch1, 'categories': cat1},
+                ...
+            ]
+            fd = FittingData.from_arrays(sessions, animal_id='synth_BE_00')
+        """
+        n = len(session_arrays)
+
+        stim_list, cat_list, ch_list = [], [], []
+        no_resp_list, nbs_list = [], []
+
+        for s in session_arrays:
+            stim = np.asarray(s['stimuli'])
+            cat = np.asarray(s['categories'])
+            ch = np.asarray(s['choices'], dtype=float)
+
+            stim_list.append(stim)
+            cat_list.append(cat)
+            ch_list.append(ch)
+
+            if 'no_response' in s:
+                no_resp_list.append(np.asarray(s['no_response'], dtype=bool))
+            else:
+                no_resp_list.append(np.isnan(ch))
+
+            if 'not_blockstart' in s:
+                nbs_list.append(np.asarray(s['not_blockstart'], dtype=bool))
+            else:
+                nbs = np.ones(len(stim), dtype=bool)
+                if len(stim) > 0:
+                    nbs[0] = False
+                nbs_list.append(nbs)
+
+        return cls(
+            animal_id=animal_id,
+            session_ids=[f'sess_{i:03d}' for i in range(n)],
+            session_dates=[None] * n,
+            session_indices=np.arange(n, dtype=int),
+            stimuli=stim_list,
+            categories=cat_list,
+            choices=ch_list,
+            no_response=no_resp_list,
+            not_blockstart=nbs_list,
+            n_sessions=n,
+            trials_per_session=np.array([len(s['stimuli']) for s in session_arrays]),
+        )
+
 
 
 # =============================================================================

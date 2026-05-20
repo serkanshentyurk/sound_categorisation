@@ -79,7 +79,7 @@ def compare_results(
     Returns:
         Comparison dict (see module docstring).
     """
-    from scipy.stats import wilcoxon # type: ignore[import]
+    from scipy.stats import wilcoxon
 
     # Warn if comparing different CV types
     be_cv_type = be_result.get('cv_type', 'unknown')

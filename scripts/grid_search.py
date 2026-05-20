@@ -74,11 +74,11 @@ def run_grid_search(
     fit_target: str = 'update_matrix',
     animal_id: str = 'unknown',
     distribution: str = 'uniform',
-    n_seeds: Optional[int] = None,
-    n_folds: Optional[int] = None,
-    burn_in: Optional[int] = None,
-    n_bins: Optional[int] = None,
-    base_seed: Optional[int] = None,
+    n_seeds: int = None,
+    n_folds: int = None,
+    burn_in: int = None,
+    n_bins: int = None,
+    base_seed: int = None,
     smoke_test: bool = False,
 ) -> Dict[str, Any]:
     """

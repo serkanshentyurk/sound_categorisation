@@ -323,6 +323,79 @@ def parameter_sweep(
         'fit_target': fit_target,
     }
 
+def grid_search_fit(
+    stimuli: np.ndarray,
+    choices: np.ndarray,
+    categories: np.ndarray,
+    model_type: str,
+    grid: Optional[ParameterGrid] = None,
+    no_response: np.ndarray = None,
+    not_blockstart: np.ndarray = None,
+    burn_in: int = 1000,
+    n_bins: int = 8,
+    seed: int = 1,
+    n_jobs: int = -1,
+    fit_target: str = 'update_matrix',
+) -> Dict[str, Any]:
+    """
+    Grid search on raw arrays. No CV, no fold splitting.
+
+    This is the low-level entry point for fitting a model to a single
+    chunk of data (one session, one fold, or any pooled array). It
+    computes the empirical target matrix from the data, then searches
+    the parameter grid to minimise MSE.
+
+    grid_search_cv calls this internally for each fold.
+
+    Args:
+        stimuli: 1D array of stimulus values.
+        choices: 1D array of choices (0/1/NaN).
+        categories: 1D array of true categories (0/1).
+        model_type: 'BE' or 'SC'.
+        grid: ParameterGrid (default: DEFAULT_GRID[model_type]).
+        no_response: 1D bool array (True = no response). Auto-derived if None.
+        not_blockstart: 1D bool array. Auto-derived if None.
+        burn_in: Burn-in trials for model initialisation.
+        n_bins: Number of bins for update matrix.
+        seed: Random seed.
+        n_jobs: Parallelism (-1 = all cores).
+        fit_target: 'update_matrix' or 'conditional_psych'.
+
+    Returns:
+        {
+            'best_params': dict,
+            'best_error': float,
+            'errors': 4D array (grid shape),
+            'fit_target': str,
+        }
+    """
+    if grid is None:
+        grid = DEFAULT_GRID[model_type]
+
+    n = len(stimuli)
+    if no_response is None:
+        no_response = np.isnan(choices)
+    if not_blockstart is None:
+        not_blockstart = np.ones(n, dtype=bool)
+        not_blockstart[0] = False
+
+    # Compute empirical target
+    emp_um, emp_cm, _ = compute_update_matrix(
+        stimuli, choices, categories,
+        n_bins=n_bins, trial_filter='post_correct',
+        no_response=no_response,
+        not_blockstart=not_blockstart,
+    )
+    target = emp_um if fit_target == 'update_matrix' else emp_cm
+
+    # Grid search
+    return parameter_sweep(
+        model_type, grid,
+        stimuli, categories,
+        no_response, not_blockstart,
+        target, seed, burn_in, n_bins, n_jobs,
+        fit_target=fit_target,
+    )
 
 # =============================================================================
 # SESSION DATA → FLAT ARRAYS
