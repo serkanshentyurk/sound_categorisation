@@ -395,49 +395,26 @@ def quick_posterior(
     n_simulations: int = 20000, method: str = 'NPE',
     seed: Optional[int] = None,
 ) -> Tuple[Any, SBIResult]:
-    """Quick training + sampling. Returns (samples, result)."""
-    result = train_sbi(simulator=simulator, prior=prior,
-                       observed_stats=observed_stats, method=method,
-                       n_simulations=n_simulations, seed=seed)
-    samples = sample_posterior(result.posterior, observed_stats, n_samples=10000)
-    return samples, result
+    """Deprecated: use SBIFitter instead."""
+    warnings.warn(
+        "quick_posterior is deprecated. Use SBIFitter for all fitting.",
+        DeprecationWarning, stacklevel=2,
+    )
 
 
-def compare_methods(
-    simulator: Callable, prior: Any,
-    observed_stats: Union[np.ndarray, Any],
-    methods: List[str] = None,
-    n_simulations: int = 30000, seed: Optional[int] = None,
-) -> Dict[str, SBIResult]:
-    """Compare NPE/NLE/NRE on the same problem."""
-    if methods is None:
-        methods = ['NPE', 'NLE', 'NRE']
-    results = {}
-    for method in methods:
-        print(f"\n{'=' * 60}\nTraining {method}...\n{'=' * 60}")
-        method_seed = seed + hash(method) % 10000 if seed else None
-        results[method] = train_sbi(
-            simulator=simulator, prior=prior, observed_stats=observed_stats,
-            method=method, n_simulations=n_simulations, seed=method_seed,
-        )
-        print(f"{method} training time: {results[method].training_time:.1f}s")
-    return results
+def compare_methods() -> Dict[str, SBIResult]:
+    """Deprecated: use SBIFitter instead. """
+    warnings.warn(
+        "compare_methods is deprecated. Use SBIFitter for all fitting.",
+        DeprecationWarning, stacklevel=2,
+    )
 
 
-def train_multisession_sbi(
-    simulator: Callable, prior: Any,
-    observed_stats: Union[np.ndarray, Any],
-    method: str = 'NPE', n_simulations: int = 50000,
-    **kwargs,
-) -> SBIResult:
-    """Train SBI for multi-session inference (larger network defaults)."""
-    kwargs.setdefault('hidden_features', 100)
-    kwargs.setdefault('num_transforms', 8)
-    return train_sbi(
-        simulator=simulator, prior=prior, observed_stats=observed_stats,
-        method=method, n_simulations=n_simulations,
-        param_names=prior.param_names if hasattr(prior, 'param_names') else None,
-        **kwargs,
+def train_multisession_sbi() -> SBIResult:
+    """Deprecated: use SBIFitter instead."""
+    warnings.warn(
+        "train_multisession_sbi is deprecated. Use SBIFitter for all fitting.",
+        DeprecationWarning, stacklevel=2,
     )
 
 
@@ -949,44 +926,90 @@ def quick_fit(
     n_simulations: int = 30_000,
     varying_params: Optional[List[str]] = None,
     method: str = 'NPE', seed: int = 42,
-) -> Tuple['SBIFitter', SBIResult, Dict]:
+    ) -> Tuple['SBIFitter', SBIResult, Dict]:
     """
-    Quick-start fitting with sensible defaults.
+    Deprecated: use SBIFitter directly.
 
     Returns (fitter, result, trajectories).
     """
-    model_type = model_type.lower()
-    default_links = SBIFitter._DEFAULT_LINKS[model_type]
-    param_order = (SBIFitter.BE_PARAM_ORDER if model_type == 'be'
-                   else SBIFitter.SC_PARAM_ORDER)
-
-    if varying_params is None:
-        varying_params = (['eta_learning', 'eta_relax'] if model_type == 'be'
-                          else ['gamma'])
-
-    param_links = {}
-    for name in param_order:
-        bounds = default_links[name].bounds
-        if name in varying_params:
-            param_links[name] = GPSpec(bounds=bounds, lengthscale=5.0, amplitude=0.1)
-        else:
-            param_links[name] = ConstantSpec(bounds=bounds)
-
-    fitter = SBIFitter(
-        fitting_data=fitting_data, model_type=model_type,
-        param_links=param_links, burn_in=100,
+    warnings.warn(
+        "quick_fit is deprecated. Use SBIFitter directly with param_links.",
+        DeprecationWarning, stacklevel=2,
     )
-    print(fitter.describe())
-    test = fitter.test_simulator()
-    print(f"Simulator: {test['mean_time_per_sim']:.3f}s/sim, "
-          f"est {test['estimated_time_50k']} for 50k")
-    print(f"NaN in tests: {test['nan_counts']}\n")
-
-    result = fitter.train(n_simulations=n_simulations, method=method, seed=seed)
-    trajectories = fitter.extract_trajectories(result)
-    return fitter, result, trajectories
 
 
+def train_per_animal_snpe(
+    model_type: str,
+    fitting_data: 'FittingData',
+    stat_names: List[str],
+    n_simulations: int = 10_000,
+    burn_in: int = 1000,
+    seed: int = 42,
+) -> Dict[str, Any]:
+    """
+    Train SNPE for one animal using its real stimulus sequence.
+
+    This is the per-animal training path (as opposed to amortised training
+    which trains once on generic data). Produces a posterior that is
+    conditioned on this animal's specific stimulus sequence.
+
+    Args:
+        model_type: 'be' or 'sc'.
+        fitting_data: FittingData for one animal.
+        stat_names: Summary stat names (CAN include update_matrix).
+        n_simulations: Number of training simulations.
+        burn_in: Burn-in trials for model initialisation.
+        seed: Random seed.
+
+    Returns:
+        Dict with 'posterior', 'prior', 'simulator', 'sbi_sim',
+        'param_names', 'model_type', 'stat_names', 'burn_in',
+        'training_time', 'n_valid'.
+    """
+    import torch
+    from sbi.inference import SNPE
+    from inference.simulator import (
+        create_be_simulator, create_sc_simulator,
+        get_sbi_prior, wrap_for_sbi,
+    )
+
+    name = model_type.upper()
+    aid = fitting_data.animal_id
+    pooled = fitting_data.pool()
+    stim, cat = pooled['stimuli'], pooled['categories']
+
+    print(f"  Training per-animal SNPE [{name}] for {aid} "
+          f"({n_simulations:,} sims, {len(stim)} trials)...")
+
+    creator = create_be_simulator if model_type == 'be' else create_sc_simulator
+    sim = creator(stim, cat, stat_names=stat_names, burn_in=burn_in)
+    prior = get_sbi_prior(sim)
+    sbi_sim = wrap_for_sbi(sim)
+
+    t0 = time.time()
+    theta = prior.sample((n_simulations,))
+    x = torch.stack([sbi_sim(t) for t in theta])
+
+    valid = ~torch.any(torch.isnan(x), dim=1)
+    n_valid = valid.sum().item()
+    print(f"    {n_valid}/{n_simulations} valid "
+          f"({100 * n_valid / n_simulations:.0f}%)")
+
+    inference_engine = SNPE(prior=prior)
+    inference_engine.append_simulations(theta[valid], x[valid])
+    posterior = inference_engine.build_posterior(inference_engine.train())
+
+    dt = time.time() - t0
+    print(f"    Done in {dt / 60:.1f} min")
+
+    return {
+        'posterior': posterior, 'prior': prior,
+        'simulator': sim, 'sbi_sim': sbi_sim,
+        'param_names': sim.get_param_names(),
+        'model_type': model_type, 'stat_names': stat_names,
+        'burn_in': burn_in, 'training_time': dt, 'n_valid': n_valid,
+    }
+    
 # =============================================================================
 # EXPORTS
 # =============================================================================
@@ -995,13 +1018,13 @@ __all__ = [
     # Result container
     'SBIResult',
     # Core training
-    'train_sbi', 'sample_posterior',
-    # Convenience
-    'quick_posterior', 'compare_methods', 'train_multisession_sbi', 'quick_fit',
+    'train_sbi', 'sample_posterior', 'train_per_animal_snpe',
     # Building blocks
     'build_prior', 'build_simulator', 'compute_observed_stats',
     # High-level fitter
     'SBIFitter',
     # Defaults
     'DEFAULT_SUMMARY_STATS', 'DEFAULT_BE_PARAM_LINKS', 'DEFAULT_SC_PARAM_LINKS',
+    # Deprecated (kept for backwards compatibility)
+    'quick_posterior', 'compare_methods', 'train_multisession_sbi', 'quick_fit',
 ]

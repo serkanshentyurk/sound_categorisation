@@ -1,48 +1,44 @@
-"""
+'''
 Optogenetic effect analysis.
 
 Phase assignment, within-session opto vs control comparison,
 cross-phase stability, adaptation rate comparison,
 genotype interaction tests, model-assignment integration,
-equivalence testing, and phase × opto interaction.
+equivalence testing, and phase x opto interaction.
 
-Core pattern: analysis functions take List[SessionData] or SessionData,
-never do their own session selection. Phase assignment takes AnimalData
-because it needs the full sequential context. Masking is read from
-session.masking (set by load_experiment from config.yaml / CSV column).
+Naming convention: all analysis functions use compute_* prefix,
+matching behav_utils. Utilities (mask wrappers, phase assignment)
+keep descriptive names.
 
 Public API:
-    OptoPhase               — Enum for experimental phases
-    assign_opto_phases      — Label each session with its phase
-    opto_relative_mask      — Wrapper: session.trials.opto_mask(delta)
-    split_trials_by_opto    — Wrapper: opto + control masks
-    get_post_opto_mask      — Wrapper: post-opto mask (delta=1)
-    within_session_effect   — Per-session opto vs control stats
-    phase_pooled_comparison — Pool across sessions, compare opto vs control
-    compute_opto_um         — Update matrix from opto-relative trials (delta API)
-    expert_stability        — Backward-compat wrapper for phase_stability
-    phase_stability         — Full baseline/masking/opto/washout comparison
-    genotype_interaction    — Compare effect sizes across het vs WT
-    animal_opto_report      — Run full analysis for one animal
-    cohort_opto_report      — Run full analysis for all animals, split by genotype
-    opto_by_model_assignment — Group opto effects by BE/SC/unclear consensus
-    expert_null_test        — TOST equivalence test for expert-phase null prediction
-    expert_um_test          — UM RMSE equivalence test for expert-phase null prediction
-    phase_opto_interaction  — Phase × opto interaction (expert vs post-shift)
-    simulate_with_opto      — Simulate session with trial-level opto lesion
-
-    Filtering is handled by behav_utils.data.filtering — this module
-    does NOT filter internally. Mask wrappers (opto_relative_mask, etc.)
-    delegate to filtering.opto_mask.
+    OptoPhase                       - Enum for experimental phases
+    assign_opto_phases              - Label each session with its phase
+    opto_relative_mask              - Wrapper: session.trials.opto_mask(delta)
+    split_trials_by_opto            - Wrapper: opto + control masks
+    get_post_opto_mask              - Wrapper: post-opto mask (delta=1)
+    split_opto_session              - Split session into opto/ctrl/post trial groups
+    compute_within_session_effect   - Per-session opto vs control stats
+    compute_phase_comparison        - Pool across sessions, compare opto vs control
+    compute_opto_um                 - Update matrix from opto-relative trials
+    compute_phase_stability         - Full baseline/masking/opto/washout comparison
+    compute_genotype_interaction    - Compare effect sizes across het vs WT
+    compute_opto_by_assignment      - Group opto effects by BE/SC/unclear consensus
+    compute_expert_null_test        - TOST equivalence test for expert-phase null
+    compute_expert_um_test          - UM RMSE equivalence test
+    compute_phase_interaction       - Phase x opto interaction (expert vs post-shift)
+    compute_opto_psychometric       - Psychometric curves for opto/ctrl/post-opto
+    simulate_with_opto              - Simulate session with trial-level opto lesion
 
 Usage:
-    from analysis.opto import assign_opto_phases, within_session_effect, OptoPhase
+    from analysis.opto import (
+        assign_opto_phases, compute_within_session_effect, OptoPhase,
+    )
 
     phases = assign_opto_phases(animal)
     for sess, phase in zip(animal.sessions, phases):
         if phase == OptoPhase.EXPERT_OPTO:
-            effect = within_session_effect(sess)
-"""
+            effect = compute_within_session_effect(sess)
+'''
 
 from enum import Enum
 from typing import Dict, List, Optional, Tuple, Union, Any
@@ -204,7 +200,7 @@ def split_opto_session(
 
 # ─── Within-session comparison ───────────────────────────────────────────────
 
-def within_session_effect(
+def compute_within_session_effect(
     session,
     n_permutations: int = 0,
     n_bootstrap: int = 0,
@@ -321,7 +317,7 @@ def _pool_trial_arrays(sessions, mask_fn):
     return arr
 
 
-def phase_pooled_comparison(
+def compute_phase_comparison(
     sessions: list,
     phases: List[OptoPhase],
     target_phase: OptoPhase,
@@ -483,7 +479,7 @@ def compute_opto_um(
 
 # ─── Expert stability ────────────────────────────────────────────────────────
 
-def phase_stability(
+def compute_phase_stability(
     sessions: list,
     phases: List[OptoPhase],
     stat_names: Optional[List[str]] = None,
@@ -609,11 +605,11 @@ def expert_stability(
     """
     Track a statistic across expert baseline → opto → washout.
 
-    Backward-compatible wrapper around phase_stability().
-    Prefer phase_stability() for new code — it includes masking
+    Backward-compatible wrapper around compute_phase_stability().
+    Prefer compute_phase_stability() for new code — it includes masking
     and tests all phase pairs.
     """
-    full = phase_stability(sessions, phases, stat_names=[stat_name])
+    full = compute_phase_stability(sessions, phases, stat_names=[stat_name])
 
     baseline = full['per_phase'][OptoPhase.EXPERT_BASELINE][stat_name]
     opto = full['per_phase'][OptoPhase.EXPERT_OPTO][stat_name]
@@ -637,7 +633,7 @@ def expert_stability(
 
 # ─── Genotype interaction ────────────────────────────────────────────────────
 
-def genotype_interaction(
+def compute_genotype_interaction(
     het_effects: List[Dict],
     wt_effects: List[Dict],
     metric: str = 'accuracy',
@@ -689,100 +685,6 @@ def genotype_interaction(
     return result
 
 
-# ─── Convenience: full animal report ─────────────────────────────────────────
-
-def animal_opto_report(animal) -> Dict[str, Any]:
-    """
-    Run all opto analyses for one animal.
-
-    Masking is read from session.masking (set by load_experiment).
-
-    Returns dict with:
-        animal_id: str
-        genotype: str
-        phases: list of OptoPhase per session
-        within_session: list of per-opto-session effect dicts
-        expert_stability: expert baseline/opto/washout comparison
-        phase_comparisons: dict[OptoPhase, phase_pooled_comparison]
-    """
-    phases = assign_opto_phases(animal)
-    sessions = animal.sessions
-
-    within = []
-    for idx, (sess, phase) in enumerate(zip(sessions, phases)):
-        if phase in (OptoPhase.EXPERT_OPTO, OptoPhase.SHIFT_1_OPTO,
-                     OptoPhase.SHIFT_2_OPTO, OptoPhase.MASKING):
-            within.append({
-                'phase': phase,
-                'session_idx': idx,
-                'effect': within_session_effect(sess),
-            })
-
-    exp_stab = expert_stability(sessions, phases, stat_name='accuracy')
-
-    phase_comparisons = {}
-    for target in (OptoPhase.EXPERT_OPTO, OptoPhase.MASKING,
-                   OptoPhase.SHIFT_1_OPTO, OptoPhase.SHIFT_2_OPTO):
-        comp = phase_pooled_comparison(sessions, phases, target)
-        if comp is not None:
-            phase_comparisons[target] = comp
-
-    return {
-        'animal_id': animal.animal_id,
-        'genotype': animal.genotype,
-        'phases': phases,
-        'within_session': within,
-        'expert_stability': exp_stab,
-        'phase_comparisons': phase_comparisons,
-    }
-
-
-# ─── Cohort-level report ─────────────────────────────────────────────────────
-
-def cohort_opto_report(
-    experiment,
-    target_phase: OptoPhase = OptoPhase.EXPERT_OPTO,
-    metric: str = 'accuracy',
-) -> Dict[str, Any]:
-    """
-    Run opto analysis for all animals, split by genotype.
-
-    Reads animal.genotype ('het' or 'wt') to separate groups.
-
-    Args:
-        experiment: ExperimentData
-        target_phase: Which phase to compare
-        metric: Effect metric for interaction test
-
-    Returns dict with:
-        reports: {animal_id: animal_opto_report}
-        het_effects, wt_effects: separated within-session effects
-        interaction: genotype_interaction result
-    """
-    reports = {}
-    het_effects, wt_effects = [], []
-
-    for aid, animal in experiment.animals.items():
-        report = animal_opto_report(animal)
-        reports[aid] = report
-
-        for entry in report['within_session']:
-            if entry['phase'] == target_phase and entry['effect'] is not None:
-                if animal.genotype == 'het':
-                    het_effects.append(entry['effect'])
-                elif animal.genotype == 'wt':
-                    wt_effects.append(entry['effect'])
-
-    interaction = genotype_interaction(het_effects, wt_effects, metric=metric)
-
-    return {
-        'reports': reports,
-        'het_effects': het_effects,
-        'wt_effects': wt_effects,
-        'interaction': interaction,
-    }
-
-
 # ─── Model-assignment integration ────────────────────────────────────────────
 
 def _collect_phase_effects(
@@ -807,7 +709,7 @@ def _collect_phase_effects(
     return effects
 
 
-def opto_by_model_assignment(
+def compute_opto_by_assignment(
     experiment,
     consensus_df,
     target_phase: OptoPhase = OptoPhase.EXPERT_OPTO,
@@ -929,7 +831,7 @@ def opto_by_model_assignment(
 
 # ─── Expert null prediction testing ─────────────────────────────────────────
 
-def expert_null_test(
+def compute_expert_null_test(
     reports: Dict[str, Dict],
     metric: str = 'accuracy',
     equivalence_bound: float = 0.05,
@@ -956,11 +858,17 @@ def expert_null_test(
     in similar paradigms (Pinto et al. 2019 report ~10–15% accuracy drops).
 
     Args:
-        reports: {animal_id: animal_opto_report dict}. Only animals with
-            EXPERT_OPTO sessions contribute.
-        metric: Which diff metric to test.
-        equivalence_bound: Symmetric bound for TOST (default ±0.05).
-        alpha: Significance level (default 0.05).
+        reports: Dict mapping animal_id to report dicts. Each report must
+            contain 'within_session': list of dicts with keys:
+                'phase': OptoPhase
+                'effect': result from compute_within_session_effect()
+                    (must have 'diff' dict with the target metric)
+            Build this in notebooks:
+                report = {'within_session': [
+                    {'phase': phase, 'effect': compute_within_session_effect(sess)}
+                    for sess, phase in zip(sessions, phases)
+                    if phase in target_phases
+                ]}
 
     Returns dict with:
         animal_means: {animal_id: mean effect} — one value per animal
@@ -1074,7 +982,7 @@ def expert_null_test(
 
 # ─── Expert UM comparison ────────────────────────────────────────────────────
 
-def expert_um_test(
+def compute_expert_um_test(
     experiment_or_animals,
     reports: Dict[str, Dict],
     n_bins: int = 8,
@@ -1091,7 +999,7 @@ def expert_um_test(
     - Per-animal UM difference heatmaps (stored for plotting)
 
     Then runs cohort-level tests on the per-animal UM RMSE values
-    (t-test + TOST, same logic as expert_null_test).
+    (t-test + TOST, same logic as compute_expert_null_test).
 
     The equivalence bound for UM RMSE should be set based on what
     constitutes a meaningful UM distortion. Default 0.02 is conservative
@@ -1225,7 +1133,7 @@ def expert_um_test(
 
 # ─── Phase × opto interaction ────────────────────────────────────────────────
 
-def phase_opto_interaction(
+def compute_phase_opto_interaction(
     reports: Dict[str, Dict],
     expert_phase: OptoPhase = OptoPhase.EXPERT_OPTO,
     shift_phase: OptoPhase = OptoPhase.SHIFT_1_OPTO,

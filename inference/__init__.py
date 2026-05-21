@@ -1,130 +1,68 @@
 """
-Inference Module for BE and SC Models.
+inference — Simulation-based inference modules
 
-Provides simulation-based inference infrastructure:
-- Summary statistics computation
-- SBI-compatible simulators (BE and SC)
-- Prior definitions (single and multi-session)
-- SBI training and posterior sampling
-- Diagnostics (SBC, parameter recovery, posterior predictive)
+SBIFitter is the canonical high-level API. Low-level building blocks
+(train_sbi, build_prior, build_simulator) are available for custom
+pipelines.
 
-Quick Start:
-    from inference import (
-        create_be_simulator,
-        create_prior,
-        train_sbi,
-    )
-
-    # Setup
-    simulator = create_be_simulator(stimuli, categories, burn_in=100)
-    prior = create_prior()
-
-    # Train
-    result = train_sbi(simulator, prior, observed_stats, method='NPE')
-
-Note:
-    Full functionality requires: pip install torch sbi
-    Basic simulator and summary_stats work without torch.
+Modules:
+    fitting             — SBIFitter + training + posterior sampling
+    comparison          — Cross-validated BE vs SC comparison
+    simulation          — Model simulation for visualisation + timing
+    types               — Parameter specification types (ConstantSpec, etc.)
+    simulator           — Model simulators compatible with sbi package
+    priors              — Multi-session prior construction
+    amortised           — Amortised SBI for static model comparison
+    diagnostics         — SBC, parameter recovery, calibration
 """
 
-# Summary statistics (no torch dependency)
-from behav_utils.analysis.summary_stats import (
-    compute_summary_stats,
-    compute_stats_for_sbi,
-    list_available_stats,
-    DEFAULT_STATS,
-    DEFAULT_N_BINS,
+# ── Types ────────────────────────────────────────────────────────────────────
+from inference.types import (
+    ConstantSpec, GPSpec, RandomWalkSpec, IndependentSpec, HierarchicalSpec,
+    ThetaLayout, LinkSpec, PARAM_CLAMP,
 )
 
-# Simulator (no torch dependency at import)
-from inference.simulator import (
-    create_be_simulator,
-    Simulator,
-    SimulatorConfig,
-    ModelType,
+# ── Fitting (canonical API) ──────────────────────────────────────────────────
+from inference.fitting import (
+    SBIResult,
+    SBIFitter,
+    train_sbi,
+    sample_posterior,
+    train_per_animal_snpe,
+    build_prior,
+    build_simulator,
+    compute_observed_stats,
 )
 
-# Try to import torch-dependent modules
-_TORCH_AVAILABLE = False
-try:
-    import torch
-    _TORCH_AVAILABLE = True
-except ImportError:
-    pass
+# ── Comparison ───────────────────────────────────────────────────────────────
+from inference.comparison import (
+    compute_cv_comparison,
+    compute_model_comparison,
+)
 
-if _TORCH_AVAILABLE:
-    # Priors (requires torch)
-    from inference.priors import (
-        create_prior,
-        create_multisession_prior,
-        UniformPrior,
-        MultiSessionPrior,
-        LinkingConfig,
-        DEFAULT_BE_BOUNDS,
-    )
-    
-    # SBI wrapper (requires torch + sbi)
-    try:
-        from inference.fitting import (
-            train_sbi,
-            sample_posterior,
-            quick_posterior,
-            compare_methods,
-            train_multisession_sbi,
-            SBIResult,
-        )
-        
-        # Diagnostics (requires torch)
-        from inference.diagnostics import (
-            run_sbc,
-            parameter_recovery,
-            plot_sbc_ranks,
-            plot_sbc_ecdf,
-            plot_recovery_scatter,
-            plot_recovery_bias,
-            recovery_summary_table,
-        )
-    except ImportError as e:
-        import warnings
-        warnings.warn(f"SBI functionality not available: {e}. Install with: pip install sbi")
+# ── Simulation ───────────────────────────────────────────────────────────────
+from inference.simulation import (
+    simulate_all_sessions,
+    simulate_example_session,
+    estimate_timing,
+    print_timing_report,
+)
 
+# ── Simulator factories ──────────────────────────────────────────────────────
+# Lazy — only import if needed (avoids torch dependency at module load)
+# from inference.simulator import create_be_simulator, create_sc_simulator
 
 __all__ = [
-    # Summary stats (always available)
-    'compute_summary_stats',
-    'compute_stats_for_sbi',
-    'list_available_stats',
-    'DEFAULT_STATS',
-    'DEFAULT_N_BINS',
-    # Simulator (always available)
-    'create_be_simulator',
-    'Simulator',
-    'SimulatorConfig',
-    'ModelType',
+    # Types
+    'ConstantSpec', 'GPSpec', 'RandomWalkSpec', 'IndependentSpec',
+    'HierarchicalSpec', 'ThetaLayout', 'LinkSpec',
+    # Fitting
+    'SBIResult', 'SBIFitter',
+    'train_sbi', 'sample_posterior', 'train_per_animal_snpe',
+    'build_prior', 'build_simulator', 'compute_observed_stats',
+    # Comparison
+    'compute_cv_comparison', 'compute_model_comparison',
+    # Simulation
+    'simulate_all_sessions', 'simulate_example_session',
+    'estimate_timing', 'print_timing_report',
 ]
-
-if _TORCH_AVAILABLE:
-    __all__.extend([
-        # Priors
-        'create_prior',
-        'create_multisession_prior',
-        'UniformPrior',
-        'MultiSessionPrior',
-        'LinkingConfig',
-        'DEFAULT_BE_BOUNDS',
-        # SBI
-        'train_sbi',
-        'sample_posterior',
-        'quick_posterior',
-        'compare_methods',
-        'train_multisession_sbi',
-        'SBIResult',
-        # Diagnostics
-        'run_sbc',
-        'parameter_recovery',
-        'plot_sbc_ranks',
-        'plot_sbc_ecdf',
-        'plot_recovery_scatter',
-        'plot_recovery_bias',
-        'recovery_summary_table',
-    ])

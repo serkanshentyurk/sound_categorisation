@@ -1,118 +1,34 @@
 """
 Grid-Search CV Plotting
 
-Plotting functions for the BE/SC model comparison:
-- Per-animal violin + paired scatter (manuscript style)
-- Update matrix heatmaps (empirical vs model)
-- Parameter distributions across seeds
-- Winner summary bar chart
+Pure plotting functions for BE/SC model comparison visualisation.
+All computation (seed error extraction, dataframe building, statistical
+tests) has been moved to analysis/cv_utils.py.
 
-Colours imported from behav_utils.plotting.styles for consistency.
+Usage:
+    from analysis.cv_utils import compute_gs_seed_errors, compute_cv_dataframes
+    from plotting.cv import plot_cv_comparison, plot_winner_summary
+
+    errors, best = compute_gs_seed_errors(gs_pickle)
+    long_df, comp_df = compute_cv_dataframes(animal_id, be_errors, sc_errors)
+    fig = plot_cv_comparison(long_df, comp_df, animal_id)
 """
 
 import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
-from typing import Optional, Dict, Tuple, List
+from typing import Optional, Dict, Tuple
 from pathlib import Path
-from scipy.stats import wilcoxon
 
-from behav_utils.plotting.styles import COLOURS, UM_CMAP, apply_style
+from behav_utils.plotting.styles import COLOURS, UM_CMAP
 
 # Convenience aliases
 BE_COLOUR = COLOURS['BE']
 SC_COLOUR = COLOURS['SC']
-MODEL_COLOURS = {'BE': BE_COLOUR, 'SC': SC_COLOUR, 'Inconclusive': COLOURS.get('unknown', '#95A5A6')}
-
-
-# =============================================================================
-# DATA PREPARATION
-# =============================================================================
-
-def params_to_str(params) -> str:
-    """Format params (dict or dataclass) as compact string."""
-    if params is None:
-        return ''
-    if hasattr(params, '__dict__'):
-        d = {k: v for k, v in vars(params).items()
-             if not str(k).startswith('_') and isinstance(v, (int, float))}
-    elif isinstance(params, dict):
-        d = {k: v for k, v in params.items() if isinstance(v, (int, float))}
-    else:
-        return str(params)
-    return ', '.join(f'{k}={v:.3f}' for k, v in d.items())
-
-
-def gs_seed_errors(gs_data: dict) -> Tuple[list, Optional[dict]]:
-    """
-    Extract per-seed errors and best params from a raw GS pickle.
-
-    Shared utility — used by both animal_report.py and validation_report.py.
-
-    Returns (errors, best_params) where best_params is from the
-    lowest-error seed, or None if no valid seeds.
-    """
-    results = gs_data.get('results', [])
-    errors = [r['avg_test_error'] for r in results
-              if not np.isnan(r.get('avg_test_error', np.nan))]
-    valid = [r for r in results
-             if not np.isnan(r.get('avg_test_error', np.nan))
-             and r.get('best_params_single')]
-    best_params = (min(valid, key=lambda r: r['avg_test_error'])['best_params_single']
-                   if valid else None)
-    return errors, best_params
-
-
-def build_cv_dataframes(
-    animal_id: str,
-    be_errors: List[float],
-    sc_errors: List[float],
-) -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFrame]]:
-    """
-    Build (long_df, comparison_df) from raw per-seed error arrays.
-
-    Used by both real-data and synthetic-data callers to feed into
-    plot_cv_comparison(). Uses Wilcoxon signed-rank test (paired seeds).
-
-    Returns (None, None) if either error list is empty.
-    """
-    if not be_errors or not sc_errors:
-        return None, None
-
-    rows = []
-    for i, e in enumerate(be_errors):
-        if not np.isnan(e):
-            rows.append({'animal_id': animal_id, 'model': 'BE',
-                         'seed': i, 'avg_test_error': e})
-    for i, e in enumerate(sc_errors):
-        if not np.isnan(e):
-            rows.append({'animal_id': animal_id, 'model': 'SC',
-                         'seed': i, 'avg_test_error': e})
-
-    if not rows:
-        return None, None
-
-    long_df = pd.DataFrame(rows)
-    be_vals = long_df[long_df['model'] == 'BE']['avg_test_error'].values
-    sc_vals = long_df[long_df['model'] == 'SC']['avg_test_error'].values
-
-    if len(be_vals) == 0 or len(sc_vals) == 0:
-        return None, None
-
-    be_mean, sc_mean = np.mean(be_vals), np.mean(sc_vals)
-    winner = 'BE' if be_mean < sc_mean else 'SC'
-
-    n_paired = min(len(be_vals), len(sc_vals))
-    try:
-        _, p_val = wilcoxon(be_vals[:n_paired], sc_vals[:n_paired])
-    except Exception:
-        p_val = np.nan
-
-    comparison_df = pd.DataFrame([{
-        'animal_id': animal_id, 'winner': winner, 'p_value': p_val,
-        'be_mean': be_mean, 'sc_mean': sc_mean,
-    }])
-    return long_df, comparison_df
+MODEL_COLOURS = {
+    'BE': BE_COLOUR,
+    'SC': SC_COLOUR,
+    'Inconclusive': COLOURS.get('unknown', '#95A5A6'),
+}
 
 
 # =============================================================================
@@ -145,7 +61,23 @@ def plot_cv_comparison(
 
     Left: half-violins for BE and SC with paired seed lines + box-plot stats.
     Right: BE vs SC test error scatter with identity line.
+
+    Args:
+        long_df: DataFrame with columns animal_id, model, seed, avg_test_error.
+                 From compute_cv_dataframes().
+        comparison_df: DataFrame with animal_id, winner, p_value, be_mean, sc_mean.
+                       From compute_cv_dataframes().
+        animal_id: Which animal to plot.
+        fit_target: Label for y-axis (e.g. 'UM', 'CP').
+        suptitle: Override figure title. Default: '{animal_id} — CV — {fit_target}'.
+        figsize: Figure size.
+        output_dir: If provided, saves PNG + PDF.
+
+    Returns:
+        Figure.
     """
+    from scipy.stats import wilcoxon
+
     sub = long_df[long_df['animal_id'] == animal_id]
     be_sub = sub[sub['model'] == 'BE'].sort_values('seed').reset_index(drop=True)
     sc_sub = sub[sub['model'] == 'SC'].sort_values('seed').reset_index(drop=True)
@@ -195,7 +127,7 @@ def plot_cv_comparison(
     else:
         verdict = f'{p_str}, inconclusive'
     ax1.set_title(verdict, fontsize=11)
-    
+
     _draw_paired_scatter(ax2, be_p, sc_p)
 
     fig.suptitle(
@@ -338,11 +270,9 @@ def plot_update_matrix(
     show_colourbar: bool = True,
 ) -> plt.Axes:
     """
-    Plot a single 8×8 update matrix as a heatmap.
+    Plot a single 8x8 update matrix as a heatmap.
 
     Uses UM_CMAP from behav_utils styles by default.
-    Convention: rows = current stimulus bin (bottom = most negative),
-    columns = previous stimulus bin (left = most negative).
     """
     if cmap is None:
         cmap = UM_CMAP
@@ -378,9 +308,7 @@ def plot_um_comparison(
     figsize: Optional[Tuple[float, float]] = None,
     output_dir: Optional[str] = None,
 ) -> plt.Figure:
-    """
-    Side-by-side empirical vs model update matrices.
-    """
+    """Side-by-side empirical vs model update matrices."""
     n_panels = 1 + len(model_ums)
     if figsize is None:
         figsize = (5 * n_panels, 4)
@@ -429,8 +357,7 @@ def plot_param_distributions(
     """
     Parameter histograms across seeds for one animal.
 
-    Top row: BE params (sigma_noise, A_repulsion, eta_learning, eta_relax)
-    Bottom row: SC params (sigma_noise, A_repulsion, gamma, sigma_update)
+    Top row: BE params. Bottom row: SC params.
     """
     sub = param_df[param_df['animal_id'] == animal_id]
 

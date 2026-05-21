@@ -22,9 +22,9 @@ Protocol (matching manuscript):
     4. Return per-fold test errors, best params
 
 Usage:
-    from analysis.grid_search import grid_search_cv, DEFAULT_GRID
+    from analysis.grid_search import compute_grid_search_cv, DEFAULT_GRID
 
-    results = grid_search_cv(
+    results = compute_grid_search_cv(
         sessions=expert_sessions,
         model_type='BE',
         grid=DEFAULT_GRID['BE'],
@@ -113,7 +113,7 @@ COARSE_GRID = {
 # CORE: SIMULATE → UPDATE MATRIX
 # =============================================================================
 
-def _simulate_matrices(
+def simulate_model_matrices(
     model_type: str,
     stimuli: np.ndarray,
     categories: np.ndarray,
@@ -187,12 +187,6 @@ def _simulate_matrices(
     return um, cm
 
 
-# Backwards-compatible wrapper
-def _simulate_um(*args, **kwargs) -> np.ndarray:
-    """Backwards-compatible wrapper returning only the update matrix."""
-    um, _ = _simulate_matrices(*args, **kwargs)
-    return um
-
 
 # =============================================================================
 # GRID SEARCH (single data split)
@@ -222,7 +216,7 @@ def _evaluate_single_point(
         fit_target: 'update_matrix' or 'conditional_psych'.
     """
     try:
-        um, cm = _simulate_matrices(
+        um, cm = simulate_model_matrices(
             model_type, stimuli, categories, no_response, not_blockstart,
             sigma_percep, A_repulsion, param1, param2,
             param1_name, param2_name, seed, burn_in, n_bins,
@@ -241,7 +235,7 @@ def _evaluate_single_point(
         return np.nan
 
 
-def parameter_sweep(
+def compute_parameter_sweep(
     model_type: str,
     grid: ParameterGrid,
     stimuli: np.ndarray,
@@ -323,7 +317,7 @@ def parameter_sweep(
         'fit_target': fit_target,
     }
 
-def grid_search_fit(
+def compute_grid_search_fit(
     stimuli: np.ndarray,
     choices: np.ndarray,
     categories: np.ndarray,
@@ -345,7 +339,7 @@ def grid_search_fit(
     computes the empirical target matrix from the data, then searches
     the parameter grid to minimise MSE.
 
-    grid_search_cv calls this internally for each fold.
+    compute_grid_search_cv calls this internally for each fold.
 
     Args:
         stimuli: 1D array of stimulus values.
@@ -389,7 +383,7 @@ def grid_search_fit(
     target = emp_um if fit_target == 'update_matrix' else emp_cm
 
     # Grid search
-    return parameter_sweep(
+    return compute_parameter_sweep(
         model_type, grid,
         stimuli, categories,
         no_response, not_blockstart,
@@ -401,7 +395,7 @@ def grid_search_fit(
 # SESSION DATA → FLAT ARRAYS
 # =============================================================================
 
-def _sessions_to_arrays(
+def sessions_to_arrays(
     sessions: List['SessionData'],
 ) -> Dict[str, np.ndarray]:
     """
@@ -448,7 +442,7 @@ def _sessions_to_arrays(
 # FULL k-FOLD CV
 # =============================================================================
 
-def grid_search_cv(
+def compute_grid_search_cv(
     sessions: List['SessionData'],
     model_type: str,
     grid: Optional[ParameterGrid] = None,
@@ -501,7 +495,7 @@ def grid_search_cv(
             f"Use 'update_matrix' or 'conditional_psych'."
         )
 
-    data = _sessions_to_arrays(sessions)
+    data = sessions_to_arrays(sessions)
     stim = data['stimuli']
     cat = data['categories']
     choices = data['choices']
@@ -525,7 +519,7 @@ def grid_search_cv(
         train_target = train_um if fit_target == 'update_matrix' else train_cm
 
         # Grid search on training data
-        sweep = parameter_sweep(
+        sweep = compute_parameter_sweep(
             model_type, grid,
             stim[train_mask], cat[train_mask],
             no_resp[train_mask], nbs[train_mask],
@@ -544,7 +538,7 @@ def grid_search_cv(
             not_blockstart=nbs[test_mask],
         )
 
-        test_um_model, test_cm_model = _simulate_matrices(
+        test_um_model, test_cm_model = simulate_model_matrices(
             model_type,
             stim[test_mask], cat[test_mask],
             no_resp[test_mask], nbs[test_mask],
@@ -573,44 +567,11 @@ def grid_search_cv(
     }
 
 
-# =============================================================================
-# CONVENIENCE: RUN BOTH MODELS
-# =============================================================================
-
-def run_cv_both_models(
-    sessions: List['SessionData'],
-    grid_be: Optional[ParameterGrid] = None,
-    grid_sc: Optional[ParameterGrid] = None,
-    n_folds: int = 2,
-    seed: int = 1,
-    burn_in: int = 1000,
-    n_bins: int = 8,
-    n_jobs: int = -1,
-    fit_target: str = 'update_matrix',
-) -> Dict[str, Dict]:
-    """
-    Run grid-search CV for both BE and SC on the same data.
-
-    Args:
-        fit_target: 'update_matrix' or 'conditional_psych'.
-
-    Returns:
-        {'BE': {cv_result_dict}, 'SC': {cv_result_dict}}
-    """
-    results = {}
-    for model_type, grid in [('BE', grid_be), ('SC', grid_sc)]:
-        results[model_type] = grid_search_cv(
-            sessions, model_type, grid,
-            n_folds, seed, burn_in, n_bins, n_jobs,
-            fit_target=fit_target,
-        )
-    return results
-
 # ─────────────────────────────────────────────────────────────────────────────
 # PHASE-BLOCKED FITTING
 # ─────────────────────────────────────────────────────────────────────────────
 
-def fit_sessions_blocked(
+def compute_sessions_blocked(
     phase_blocks: Dict[str, List['SessionData']],
     model_type: str,
     grid: 'ParameterGrid' = None,
@@ -648,7 +609,7 @@ def fit_sessions_blocked(
         }}
     """
     from analysis.grid_search import (
-        _sessions_to_arrays, DEFAULT_GRID, parameter_sweep,
+        sessions_to_arrays, DEFAULT_GRID, compute_parameter_sweep,
     )
     from behav_utils.analysis.update_matrix import compute_update_matrix
 
@@ -673,7 +634,7 @@ def fit_sessions_blocked(
             continue
 
         # Pool sessions into flat arrays
-        data = _sessions_to_arrays(sessions)
+        data = sessions_to_arrays(sessions)
         stimuli = data['stimuli']
         categories = data['categories']
         choices = data['choices']
@@ -704,7 +665,7 @@ def fit_sessions_blocked(
         per_seed_params = []
 
         for s_offset in range(n_seeds):
-            sweep_result = parameter_sweep(
+            sweep_result = compute_parameter_sweep(
                 model_type=model_type,
                 grid=grid,
                 stimuli=stimuli,
@@ -738,7 +699,7 @@ def fit_sessions_blocked(
     return results
 
 
-def fit_sessions_individual(
+def compute_sessions_individual(
     sessions: List['SessionData'],
     model_type: str,
     grid: 'ParameterGrid' = None,
@@ -774,8 +735,8 @@ def fit_sessions_individual(
             'date': sess.date,
         }
 
-        # Use fit_sessions_blocked with a single-session block
-        block_result = fit_sessions_blocked(
+        # Use compute_sessions_blocked with a single-session block
+        block_result = compute_sessions_blocked(
             phase_blocks={'single': [sess]},
             model_type=model_type,
             grid=grid,
@@ -801,7 +762,7 @@ def fit_sessions_individual(
 # STATIC VS DYNAMIC COMPARISON
 # ─────────────────────────────────────────────────────────────────────────────
 
-def compare_static_vs_dynamic(
+def compute_static_vs_dynamic(
     sessions: List['SessionData'],
     model_type: str,
     phase_blocks: Dict[str, List['SessionData']],
@@ -848,7 +809,7 @@ def compare_static_vs_dynamic(
         )
 
     # Static fit: pool everything
-    static_result = fit_sessions_blocked(
+    static_result = compute_sessions_blocked(
         phase_blocks={'all': sessions},
         model_type=model_type,
         grid=grid,
@@ -859,7 +820,7 @@ def compare_static_vs_dynamic(
     )['all']
 
     # Dynamic fit: per phase
-    dynamic_results = fit_sessions_blocked(
+    dynamic_results = compute_sessions_blocked(
         phase_blocks=phase_blocks,
         model_type=model_type,
         grid=grid,
@@ -870,7 +831,7 @@ def compare_static_vs_dynamic(
     )
 
     # Evaluate static params on each phase separately
-    from analysis.grid_search import _sessions_to_arrays, _simulate_matrices
+    from analysis.grid_search import sessions_to_arrays, simulate_model_matrices
 
     per_phase_comparison = []
     dynamic_total_weighted_error = 0.0
@@ -881,7 +842,7 @@ def compare_static_vs_dynamic(
         if not phase_sessions:
             continue
 
-        data = _sessions_to_arrays(phase_sessions)
+        data = sessions_to_arrays(phase_sessions)
         stimuli = data['stimuli']
         categories = data['categories']
         choices = data['choices']
@@ -909,7 +870,7 @@ def compare_static_vs_dynamic(
             p1_name = _grid.model_param1_name
             p2_name = _grid.model_param2_name
 
-            static_um, static_cm = _simulate_matrices(
+            static_um, static_cm = simulate_model_matrices(
                 model_type=model_type,
                 stimuli=stimuli,
                 categories=categories,

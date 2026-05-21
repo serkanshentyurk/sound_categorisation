@@ -232,7 +232,7 @@ def load_all_assignments(
     return pd.DataFrame(rows)
 
 
-def consensus_summary(assign_df: pd.DataFrame) -> str:
+def compute_consensus_summary(assign_df: pd.DataFrame) -> str:
     """Return a printable consensus summary."""
     counts = assign_df['Consensus'].value_counts()
     lines = [f'{len(assign_df)} animals total', 'Consensus:']
