@@ -22,42 +22,6 @@ from analysis.consensus import (
     compute_consensus_summary,
 )
 
-# ── Opto ─────────────────────────────────────────────────────────────────────
-from analysis.opto import (
-    OptoPhase,
-    assign_opto_phases,
-    compute_within_session_effect,
-    compute_phase_comparison,
-    compute_opto_um,
-    compute_phase_stability,
-    compute_genotype_interaction,
-    compute_opto_by_assignment,
-    compute_expert_null_test,
-    compute_expert_um_test,
-    compute_phase_interaction,
-    compute_opto_psychometric,
-    simulate_with_opto,
-    split_opto_session,
-    opto_relative_mask,
-    split_trials_by_opto,
-    get_post_opto_mask,
-)
-
-# ── Adaptation ───────────────────────────────────────────────────────────────
-from analysis.adaptation import (
-    detect_all_manipulations,
-    detect_first_manipulation,
-    compute_adaptation_trajectory,
-    compute_recovery_curve,
-    compute_phase_comparison as compute_adaptation_phase_comparison,
-    compute_shift_magnitude,
-    compute_convergence_metrics,
-    classify_sessions,
-    compute_group_trajectories,
-    classify_shift_type,
-    group_shifts_by_type,
-    build_phase_blocks,
-)
 
 # ── Grid Search ──────────────────────────────────────────────────────────────
 from analysis.grid_search import (

@@ -97,9 +97,6 @@ from behav_utils.plotting import (
     apply_style, get_colour,
 )
 
-from analysis.consensus import load_all_assignments, consensus_summary
-
-
 # ── Results loading helpers ─────────────────────────────────────────────────
 
 def load_snpe_networks(snpe_dir: Optional[Path] = None, distribution: str = 'uniform') -> dict:
