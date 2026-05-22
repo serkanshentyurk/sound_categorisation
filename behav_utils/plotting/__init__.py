@@ -32,7 +32,6 @@ from behav_utils.plotting.session import plot_session_raster
 from behav_utils.plotting.styles import (
     PALETTE, COLOURS, UM_CMAP,
     apply_style, get_colour,
-    get_animal_colours, get_session_colours, get_bin_colours,
 )
 
 __all__ = [
@@ -43,5 +42,4 @@ __all__ = [
     'plot_session_raster',
     'PALETTE', 'COLOURS', 'UM_CMAP',
     'apply_style', 'get_colour',
-    'get_animal_colours', 'get_session_colours', 'get_bin_colours',
 ]

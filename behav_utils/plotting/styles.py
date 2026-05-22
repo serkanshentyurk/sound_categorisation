@@ -128,22 +128,3 @@ def get_colour(index_or_name):
     if index_or_name in COLOURS:
         return COLOURS[index_or_name]
     return index_or_name  # passthrough hex/named colour
-
-
-def get_animal_colours(animal_ids, cmap_name='tab10'):
-    """Consistent colour mapping for a list of animal IDs."""
-    cmap = plt.cm.get_cmap(cmap_name)
-    return {
-        aid: cmap(i % cmap.N)
-        for i, aid in enumerate(sorted(animal_ids))
-    }
-
-
-def get_session_colours(n_sessions, cmap=SESSION_CMAP):
-    """Colour gradient for sessions (early=dark, late=light)."""
-    return [cmap(i / max(n_sessions - 1, 1)) for i in range(n_sessions)]
-
-
-def get_bin_colours(n_bins, cmap=BIN_CMAP):
-    """Colours for stimulus bins."""
-    return [cmap(i / max(n_bins - 1, 1)) for i in range(n_bins)]

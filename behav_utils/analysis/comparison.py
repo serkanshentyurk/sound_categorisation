@@ -44,22 +44,21 @@ from behav_utils.analysis.update_matrix import compute_update_matrix
 
 
 PARAM_NAMES = ('mu', 'sigma', 'lapse_low', 'lapse_high')
-# Map to human-readable names used elsewhere in the codebase
-PARAM_ALIASES = {
-    'mu': 'pse', 'sigma': 'slope',
-    'lapse_low': 'lapse_low', 'lapse_high': 'lapse_high',
-}
 
 
 def _fit_params(stimuli, choices):
-    """Fit psychometric and return param dict, or None if fit fails."""
+    """Fit psychometric and return param dict, or None if fit fails.
+
+    Keys: mu (PSE), sigma (slope), lapse_low, lapse_high — matching
+    fit_psychometric() and compute_psychometric() conventions.
+    """
     pfit = fit_psychometric(stimuli, choices)
     if not pfit.get('success', False) and np.isnan(pfit.get('mu', np.nan)):
         return None
     return {
-        'pse': float(pfit['mu']),
-        'slope': float(pfit['sigma']),
-        'lapse_low': float(pfit['lapse_low']),
+        'mu':         float(pfit['mu']),
+        'sigma':      float(pfit['sigma']),
+        'lapse_low':  float(pfit['lapse_low']),
         'lapse_high': float(pfit['lapse_high']),
     }
 
@@ -102,7 +101,7 @@ def permutation_test_params(
     params_a = _fit_params(stimuli_a, choices_a)
     params_b = _fit_params(stimuli_b, choices_b)
     if params_a is None or params_b is None:
-        return {p: np.nan for p in ('pse', 'slope', 'lapse_low', 'lapse_high')}
+        return {p: np.nan for p in PARAM_NAMES}
 
     observed = {p: params_a[p] - params_b[p] for p in params_a}
 
@@ -169,7 +168,7 @@ def bootstrap_param_diff(
     n_a = len(stimuli_a)
     n_b = len(stimuli_b)
 
-    boot_diffs = {p: [] for p in ('pse', 'slope', 'lapse_low', 'lapse_high')}
+    boot_diffs = {p: [] for p in PARAM_NAMES}
 
     for _ in range(n_bootstrap):
         idx_a = rng.choice(n_a, size=n_a, replace=True)
@@ -195,6 +194,53 @@ def bootstrap_param_diff(
             )
     return cis
 
+def _bootstrap_curve_band(
+    stimuli: np.ndarray,
+    choices: np.ndarray,
+    x_eval: np.ndarray,
+    n_bootstrap: int = 1000,
+    alpha: float = 0.05,
+    seed: int = 42,
+) -> Dict[str, np.ndarray]:
+    """
+    Bootstrap percentile band around the fitted psychometric curve.
+
+    For each bootstrap iteration, resample trials with replacement,
+    refit the psychometric, evaluate the cumulative gaussian at x_eval.
+    Returns lower and upper percentiles per x.
+
+    Args:
+        stimuli, choices: Trial arrays for one condition.
+        x_eval: x values at which to evaluate the curve.
+        n_bootstrap: Number of bootstrap iterations.
+        alpha: Two-sided significance level (0.05 → 95% band).
+        seed: RNG seed.
+
+    Returns:
+        {'x': x_eval, 'lo': lower band, 'hi': upper band, 'median': median curve}
+    """
+    from behav_utils.analysis.utils import cumulative_gaussian
+
+    rng = np.random.default_rng(seed)
+    n = len(stimuli)
+    curves = np.full((n_bootstrap, len(x_eval)), np.nan)
+
+    for i in range(n_bootstrap):
+        idx = rng.integers(0, n, n)
+        p = fit_psychometric(stimuli[idx], choices[idx])
+        if p.get('success', False) and not np.isnan(p.get('mu', np.nan)):
+            curves[i] = cumulative_gaussian(
+                x_eval,
+                p['mu'], p['sigma'],
+                p.get('lapse_low', 0.0), p.get('lapse_high', 0.0),
+            )
+
+    return {
+        'x':      x_eval,
+        'lo':     np.nanpercentile(curves, 100 * alpha / 2,       axis=0),
+        'hi':     np.nanpercentile(curves, 100 * (1 - alpha / 2), axis=0),
+        'median': np.nanmedian(curves, axis=0),
+    }
 
 def compare_conditions(
     stimuli_a: np.ndarray, choices_a: np.ndarray, categories_a: np.ndarray,
@@ -228,24 +274,27 @@ def compare_conditions(
         label_a, label_b: Labels for the two conditions
 
     Returns dict with:
-        params_a, params_b: {accuracy, pse, slope, lapse_low, lapse_high}
-        diffs: {accuracy, pse, slope, lapse_low, lapse_high} (A - B)
-        n_a, n_b: trial counts
+        params_a, params_b: {accuracy, mu, sigma, lapse_low, lapse_high}
+            mu = PSE; sigma = psychometric slope.
+        diffs: same keys, A − B.
+        n_a, n_b: trial counts.
 
-        perm_p: {pse, slope, lapse_low, lapse_high} → p-values
-            (None if n_permutations == 0)
-        boot_ci: {pse, slope, lapse_low, lapse_high} → (lo, hi)
-            (None if n_bootstrap == 0)
+        perm_p: {mu, sigma, lapse_low, lapse_high} → permutation p-values
+            (None if n_permutations == 0).
+        boot_ci: {mu, sigma, lapse_low, lapse_high} → (lo, hi) CIs on diffs
+            (None if n_bootstrap == 0).
+        boot_band_a, boot_band_b: per-condition fit-curve bands
+            {x, lo, hi, median} (None if n_bootstrap == 0).
 
-        fisher_p: Fisher's exact test p-value for accuracy
-        fisher_odds: odds ratio
+        fisher_p: Fisher's exact test p-value for accuracy difference.
+        fisher_odds: odds ratio.
 
-        um_a, um_b: (n_bins, n_bins) update matrices
-        um_diff: um_a - um_b
-        um_rmse: element-wise RMSE of difference
-        um_corr: Pearson r between flattened UMs
+        um_a, um_b: (n_bins, n_bins) update matrices.
+        um_diff: um_a − um_b.
+        um_rmse: element-wise RMSE of difference.
+        um_corr: Pearson r between flattened UMs.
 
-        label_a, label_b: condition labels
+        label_a, label_b: condition labels.
     """
     # Clean NaN choices
     valid_a = ~np.isnan(choices_a.astype(float))
@@ -263,7 +312,7 @@ def compare_conditions(
     params_b['accuracy'] = acc_b
 
     diffs = {}
-    for key in ('accuracy', 'pse', 'slope', 'lapse_low', 'lapse_high'):
+    for key in ('accuracy',) + PARAM_NAMES:
         diffs[key] = params_a.get(key, np.nan) - params_b.get(key, np.nan)
 
     # ── Permutation test on psychometric params ──────────────────────
@@ -281,7 +330,20 @@ def compare_conditions(
             stim_a, ch_a, stim_b, ch_b,
             n_bootstrap=n_bootstrap, seed=seed,
         )
-
+        
+    # ── Bootstrap per-condition curve bands ─────────────────────────
+    boot_band_a, boot_band_b = None, None
+    if n_bootstrap > 0 and len(stim_a) >= 10 and len(stim_b) >= 10:
+        x_eval = np.linspace(-1, 1, 200)
+        boot_band_a = _bootstrap_curve_band(
+            stim_a, ch_a, x_eval,
+            n_bootstrap=n_bootstrap, seed=seed,
+        )
+        boot_band_b = _bootstrap_curve_band(
+            stim_b, ch_b, x_eval,
+            n_bootstrap=n_bootstrap, seed=seed + 1,
+        )
+        
     # ── Fisher's exact test on accuracy ──────────────────────────────
     fisher_p, fisher_odds = np.nan, np.nan
     if len(ch_a) >= 5 and len(ch_b) >= 5:
@@ -321,6 +383,8 @@ def compare_conditions(
         'n_b': int(len(stim_b)),
         'perm_p': perm_p,
         'boot_ci': boot_ci,
+        'boot_band_a': boot_band_a,           
+        'boot_band_b': boot_band_b,           
         'fisher_p': fisher_p,
         'fisher_odds': fisher_odds,
         'um_a': um_a,

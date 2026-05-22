@@ -58,8 +58,6 @@ except ImportError:
 from inference.types import (
     ConstantSpec, GPSpec, RandomWalkSpec, IndependentSpec, HierarchicalSpec,
     ThetaLayout, PARAM_CLAMP, LinkSpec,
-    # Backwards-compat aliases
-    ConstantLink, GPLink, RandomWalkLink, IndependentLink, HierarchicalLink,
 )
 
 
@@ -387,35 +385,6 @@ def sample_posterior(
                                 sample_with='vi', **sample_kwargs)
     else:
         raise ValueError(f"Unknown sampling method: {method}")
-
-
-def quick_posterior(
-    simulator: Callable, prior: Any,
-    observed_stats: Union[np.ndarray, Any],
-    n_simulations: int = 20000, method: str = 'NPE',
-    seed: Optional[int] = None,
-) -> Tuple[Any, SBIResult]:
-    """Deprecated: use SBIFitter instead."""
-    warnings.warn(
-        "quick_posterior is deprecated. Use SBIFitter for all fitting.",
-        DeprecationWarning, stacklevel=2,
-    )
-
-
-def compare_methods() -> Dict[str, SBIResult]:
-    """Deprecated: use SBIFitter instead. """
-    warnings.warn(
-        "compare_methods is deprecated. Use SBIFitter for all fitting.",
-        DeprecationWarning, stacklevel=2,
-    )
-
-
-def train_multisession_sbi() -> SBIResult:
-    """Deprecated: use SBIFitter instead."""
-    warnings.warn(
-        "train_multisession_sbi is deprecated. Use SBIFitter for all fitting.",
-        DeprecationWarning, stacklevel=2,
-    )
 
 
 # =============================================================================
@@ -921,23 +890,6 @@ class SBIFitter:
 # QUICK FIT 
 # =============================================================================
 
-def quick_fit(
-    fitting_data: Any, model_type: str = 'be',
-    n_simulations: int = 30_000,
-    varying_params: Optional[List[str]] = None,
-    method: str = 'NPE', seed: int = 42,
-    ) -> Tuple['SBIFitter', SBIResult, Dict]:
-    """
-    Deprecated: use SBIFitter directly.
-
-    Returns (fitter, result, trajectories).
-    """
-    warnings.warn(
-        "quick_fit is deprecated. Use SBIFitter directly with param_links.",
-        DeprecationWarning, stacklevel=2,
-    )
-
-
 def train_per_animal_snpe(
     model_type: str,
     fitting_data: 'FittingData',
@@ -1025,6 +977,4 @@ __all__ = [
     'SBIFitter',
     # Defaults
     'DEFAULT_SUMMARY_STATS', 'DEFAULT_BE_PARAM_LINKS', 'DEFAULT_SC_PARAM_LINKS',
-    # Deprecated (kept for backwards compatibility)
-    'quick_posterior', 'compare_methods', 'train_multisession_sbi', 'quick_fit',
 ]

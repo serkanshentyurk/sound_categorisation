@@ -37,11 +37,7 @@ from behav_utils.analysis.update_matrix import compute_um
 from behav_utils.analysis.trajectory import compute_trajectory
 from behav_utils.analysis.comparison import compute_comparison
 from behav_utils.analysis.session_raster import compute_session_raster
-from behav_utils.analysis.session_features import (
-    build_feature_matrix, build_feature_matrix_multi,
-    compute_session_features, summarise_features,
-    get_feature_columns, get_numeric_features, zscore_features,
-)
+from behav_utils.analysis.session_features import compute_session_features
 
 __all__ = [
     # Utils
@@ -61,8 +57,6 @@ __all__ = [
     'compute_trajectory',
     'compute_comparison',
     'compute_session_raster',
-    'build_feature_matrix', 'build_feature_matrix_multi',
-    'compute_session_features', 'summarise_features',
-    'get_feature_columns', 'get_numeric_features', 'zscore_features',
+    'compute_session_features'
 ]
 

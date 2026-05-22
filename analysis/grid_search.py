@@ -235,7 +235,7 @@ def _evaluate_single_point(
         return np.nan
 
 
-def compute_parameter_sweep(
+def _grid_sweep(
     model_type: str,
     grid: ParameterGrid,
     stimuli: np.ndarray,
@@ -316,80 +316,6 @@ def compute_parameter_sweep(
         'errors': errors,
         'fit_target': fit_target,
     }
-
-def compute_grid_search_fit(
-    stimuli: np.ndarray,
-    choices: np.ndarray,
-    categories: np.ndarray,
-    model_type: str,
-    grid: Optional[ParameterGrid] = None,
-    no_response: np.ndarray = None,
-    not_blockstart: np.ndarray = None,
-    burn_in: int = 1000,
-    n_bins: int = 8,
-    seed: int = 1,
-    n_jobs: int = -1,
-    fit_target: str = 'update_matrix',
-) -> Dict[str, Any]:
-    """
-    Grid search on raw arrays. No CV, no fold splitting.
-
-    This is the low-level entry point for fitting a model to a single
-    chunk of data (one session, one fold, or any pooled array). It
-    computes the empirical target matrix from the data, then searches
-    the parameter grid to minimise MSE.
-
-    compute_grid_search_cv calls this internally for each fold.
-
-    Args:
-        stimuli: 1D array of stimulus values.
-        choices: 1D array of choices (0/1/NaN).
-        categories: 1D array of true categories (0/1).
-        model_type: 'BE' or 'SC'.
-        grid: ParameterGrid (default: DEFAULT_GRID[model_type]).
-        no_response: 1D bool array (True = no response). Auto-derived if None.
-        not_blockstart: 1D bool array. Auto-derived if None.
-        burn_in: Burn-in trials for model initialisation.
-        n_bins: Number of bins for update matrix.
-        seed: Random seed.
-        n_jobs: Parallelism (-1 = all cores).
-        fit_target: 'update_matrix' or 'conditional_psych'.
-
-    Returns:
-        {
-            'best_params': dict,
-            'best_error': float,
-            'errors': 4D array (grid shape),
-            'fit_target': str,
-        }
-    """
-    if grid is None:
-        grid = DEFAULT_GRID[model_type]
-
-    n = len(stimuli)
-    if no_response is None:
-        no_response = np.isnan(choices)
-    if not_blockstart is None:
-        not_blockstart = np.ones(n, dtype=bool)
-        not_blockstart[0] = False
-
-    # Compute empirical target
-    emp_um, emp_cm, _ = compute_update_matrix(
-        stimuli, choices, categories,
-        n_bins=n_bins, trial_filter='post_correct',
-        no_response=no_response,
-        not_blockstart=not_blockstart,
-    )
-    target = emp_um if fit_target == 'update_matrix' else emp_cm
-
-    # Grid search
-    return compute_parameter_sweep(
-        model_type, grid,
-        stimuli, categories,
-        no_response, not_blockstart,
-        target, seed, burn_in, n_bins, n_jobs,
-        fit_target=fit_target,
-    )
 
 # =============================================================================
 # SESSION DATA → FLAT ARRAYS
@@ -519,7 +445,7 @@ def compute_grid_search_cv(
         train_target = train_um if fit_target == 'update_matrix' else train_cm
 
         # Grid search on training data
-        sweep = compute_parameter_sweep(
+        sweep = _grid_sweep(
             model_type, grid,
             stim[train_mask], cat[train_mask],
             no_resp[train_mask], nbs[train_mask],
@@ -609,7 +535,7 @@ def compute_sessions_blocked(
         }}
     """
     from analysis.grid_search import (
-        sessions_to_arrays, DEFAULT_GRID, compute_parameter_sweep,
+        sessions_to_arrays, DEFAULT_GRID, _grid_sweep,
     )
     from behav_utils.analysis.update_matrix import compute_update_matrix
 
@@ -665,7 +591,7 @@ def compute_sessions_blocked(
         per_seed_params = []
 
         for s_offset in range(n_seeds):
-            sweep_result = compute_parameter_sweep(
+            sweep_result = _grid_sweep(
                 model_type=model_type,
                 grid=grid,
                 stimuli=stimuli,
@@ -695,65 +621,6 @@ def compute_sessions_blocked(
             'per_seed_params': per_seed_params,
             'fit_target': fit_target,
         }
-
-    return results
-
-
-def compute_sessions_individual(
-    sessions: List['SessionData'],
-    model_type: str,
-    grid: 'ParameterGrid' = None,
-    burn_in: int = 1000,
-    seed: int = 42,
-    fit_target: str = 'update_matrix',
-) -> List[Dict[str, Any]]:
-    """
-    Fit model parameters to each session independently.
-
-    Noisy but assumption-free — gives the raw per-session parameter
-    trajectory. Sessions with too few trials return NaN.
-
-    Args:
-        sessions: List of SessionData
-        model_type: 'BE' or 'SC'
-        grid: Parameter grid (default: DEFAULT_GRID[model_type])
-        burn_in: Burn-in trials for simulation
-        seed: Random seed
-        fit_target: 'update_matrix' or 'conditional_psych'.
-
-    Returns:
-        List of dicts (one per session), each with:
-            'session_idx', 'session_id', 'best_params', 'error',
-            'n_trials', 'converged', 'fit_target'
-    """
-    results = []
-
-    for sess in sessions:
-        result = {
-            'session_idx': sess.session_idx,
-            'session_id': sess.session_id,
-            'date': sess.date,
-        }
-
-        # Use compute_sessions_blocked with a single-session block
-        block_result = compute_sessions_blocked(
-            phase_blocks={'single': [sess]},
-            model_type=model_type,
-            grid=grid,
-            burn_in=burn_in,
-            seed=seed,
-            n_seeds=1,
-            fit_target=fit_target,
-        )
-        r = block_result['single']
-        result.update({
-            'best_params': r['best_params'],
-            'error': r['train_error'],
-            'n_trials': r['n_trials'],
-            'converged': not np.isnan(r['train_error']),
-            'fit_target': fit_target,
-        })
-        results.append(result)
 
     return results
 

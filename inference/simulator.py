@@ -218,24 +218,6 @@ class Simulator:
             state_transition_identity
         )
         
-        # Try to import models (defer to allow flexibility)
-        self._be_model_class = None
-        self._sc_model_class = None
-        self._import_models()
-    
-    def _import_models(self):
-        """Import model classes."""
-        try:
-            from models.BE_model import BoundaryEstimationModel
-            self._be_model_class = BoundaryEstimationModel
-        except ImportError:
-            pass
-        try:
-            from models.SC_model import StimulusCategoryModel
-            self._sc_model_class = StimulusCategoryModel
-        except ImportError:
-            pass
-        
 
     def _compute_n_free_params(self) -> int:
         """Compute total number of free parameters in theta array."""

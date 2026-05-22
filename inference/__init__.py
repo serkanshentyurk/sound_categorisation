@@ -1,68 +1,24 @@
 """
-inference — Simulation-based inference modules
+inference — Simulation-based inference for BE and SC models.
 
-SBIFitter is the canonical high-level API. Low-level building blocks
-(train_sbi, build_prior, build_simulator) are available for custom
-pipelines.
-
-Modules:
-    fitting             — SBIFitter + training + posterior sampling
-    comparison          — Cross-validated BE vs SC comparison
-    simulation          — Model simulation for visualisation + timing
-    types               — Parameter specification types (ConstantSpec, etc.)
-    simulator           — Model simulators compatible with sbi package
-    priors              — Multi-session prior construction
-    amortised           — Amortised SBI for static model comparison
-    diagnostics         — SBC, parameter recovery, calibration
+AmortisedSBI: Train once on curriculum data, condition on many animals.
+            Used for static BE vs SC selection, matches GS-CV protocol.
+SBIFitter:    Per-animal training using the animal's stimulus sequence.
+            Supports time-varying parameters (ConstantSpec, GPSpec,
+            RandomWalkSpec). Used for dynamic parameter trajectories.
 """
-
-# ── Types ────────────────────────────────────────────────────────────────────
 from inference.types import (
-    ConstantSpec, GPSpec, RandomWalkSpec, IndependentSpec, HierarchicalSpec,
-    ThetaLayout, LinkSpec, PARAM_CLAMP,
+    ModelType, ParamConfig, ThetaLayout, LinkSpec,
+    ConstantSpec, GPSpec, RandomWalkSpec,
+    get_default_param_configs, get_default_links,
 )
-
-# ── Fitting (canonical API) ──────────────────────────────────────────────────
 from inference.fitting import (
-    SBIResult,
-    SBIFitter,
-    train_sbi,
-    sample_posterior,
+    SBIResult, SBIFitter,
+    train_sbi, sample_posterior,
+    build_prior, build_simulator, compute_observed_stats,
     train_per_animal_snpe,
-    build_prior,
-    build_simulator,
-    compute_observed_stats,
 )
-
-# ── Comparison ───────────────────────────────────────────────────────────────
-from inference.comparison import (
-    compute_cv_comparison,
-    compute_model_comparison,
+from inference.amortised import (
+    AmortisedSBI, compute_pooled_stats, compute_observed_stats_from_sessions,
 )
-
-# ── Simulation ───────────────────────────────────────────────────────────────
-from inference.simulation import (
-    simulate_all_sessions,
-    simulate_example_session,
-    estimate_timing,
-    print_timing_report,
-)
-
-# ── Simulator factories ──────────────────────────────────────────────────────
-# Lazy — only import if needed (avoids torch dependency at module load)
-# from inference.simulator import create_be_simulator, create_sc_simulator
-
-__all__ = [
-    # Types
-    'ConstantSpec', 'GPSpec', 'RandomWalkSpec', 'IndependentSpec',
-    'HierarchicalSpec', 'ThetaLayout', 'LinkSpec',
-    # Fitting
-    'SBIResult', 'SBIFitter',
-    'train_sbi', 'sample_posterior', 'train_per_animal_snpe',
-    'build_prior', 'build_simulator', 'compute_observed_stats',
-    # Comparison
-    'compute_cv_comparison', 'compute_model_comparison',
-    # Simulation
-    'simulate_all_sessions', 'simulate_example_session',
-    'estimate_timing', 'print_timing_report',
-]
+from inference.comparison import compute_cv_comparison, compute_model_comparison

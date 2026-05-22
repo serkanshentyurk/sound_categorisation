@@ -147,13 +147,6 @@ class HierarchicalSpec:
 LinkSpec = Union[ConstantSpec, GPSpec, RandomWalkSpec, IndependentSpec, HierarchicalSpec]
 
 
-# Backwards-compatible aliases (deprecate over time)
-ConstantLink = ConstantSpec
-GPLink = GPSpec
-RandomWalkLink = RandomWalkSpec
-IndependentLink = IndependentSpec
-HierarchicalLink = HierarchicalSpec
-
 
 # =============================================================================
 # THETA LAYOUT

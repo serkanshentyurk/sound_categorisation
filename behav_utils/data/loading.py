@@ -713,45 +713,13 @@ def load_experiment(
             for sess in animal.sessions:
                 if sess.date in dates:
                     sess.masking = True
-    
+                    if sess.trials.opto_on is not None:
+                        sess.trials.opto_on = np.zeros_like(
+                            sess.trials.opto_on, dtype=bool
+                        )    
     print(
         f"Loaded {experiment.n_animals} animals, "
         f"{sum(a.n_sessions for a in experiment.animals.values())} total sessions"
     )
 
     return experiment
-
-
-# =============================================================================
-# CONVENIENCE: LOAD WITH JUST A DATA DIR
-# =============================================================================
-
-def load_from_directory(
-    data_dir: Union[str, Path],
-    config_path: Optional[Union[str, Path]] = None,
-    **config_overrides,
-) -> ExperimentData:
-    """
-    Load experiment with minimal setup.
-
-    If config_path is provided, loads that config (overriding data_dir).
-    If not, looks for config.yaml in data_dir or creates a minimal default.
-    """
-    data_dir = Path(data_dir)
-
-    if config_path is not None:
-        config = load_config(config_path)
-    elif (data_dir / 'config.yaml').exists():
-        config = load_config(data_dir / 'config.yaml')
-    elif (data_dir.parent / 'config.yaml').exists():
-        config = load_config(data_dir.parent / 'config.yaml')
-    else:
-        raise FileNotFoundError(
-            f"No config.yaml found in {data_dir} or parent directory. "
-            f"Provide config_path explicitly or create a config.yaml."
-        )
-
-    # Override data_dir if needed
-    config.file_structure.data_dir = str(data_dir)
-
-    return load_experiment(config)

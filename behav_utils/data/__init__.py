@@ -43,7 +43,6 @@ from behav_utils.data.synthetic import (
     random_choice_simulator,
     noisy_psychometric_simulator,
 )
-from behav_utils.data.neural import NeuralData, Epoch
 
 
 __version__ = '0.1.0'
@@ -79,8 +78,4 @@ __all__ = [
     'generate_synthetic_session',
     'sample_stimuli',
     'noisy_psychometric_simulator',
-
-    # Neural (stub)
-    'NeuralData',
-    'Epoch',
 ]

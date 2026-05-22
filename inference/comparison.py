@@ -20,10 +20,6 @@ Public API:
     compute_cv_comparison    — Cross-validated matrix comparison
     compute_model_comparison — Wilcoxon/ANOVA on paired CV errors
 
-Deprecated:
-    cv_comparison            — use compute_cv_comparison
-    cv_um_comparison         — use compute_cv_comparison(method='update_matrix')
-    compare_models           — use compute_model_comparison
 
 Usage:
     from inference.comparison import compute_cv_comparison, compute_model_comparison
@@ -299,39 +295,3 @@ def compute_model_comparison(
         'be_mean': float(np.mean(be)), 'be_std': float(np.std(be)),
         'sc_mean': float(np.mean(sc)), 'sc_std': float(np.std(sc)),
     }
-
-
-# =============================================================================
-# DEPRECATED WRAPPERS
-# =============================================================================
-
-def cv_comparison(*args, **kwargs):
-    """Deprecated: use compute_cv_comparison instead."""
-    import warnings
-    warnings.warn(
-        "cv_comparison is deprecated. Use compute_cv_comparison instead.",
-        DeprecationWarning, stacklevel=2,
-    )
-    return compute_cv_comparison(*args, **kwargs)
-
-
-def cv_um_comparison(*args, **kwargs):
-    """Deprecated: use compute_cv_comparison(method='update_matrix') instead."""
-    import warnings
-    warnings.warn(
-        "cv_um_comparison is deprecated. "
-        "Use compute_cv_comparison(method='update_matrix') instead.",
-        DeprecationWarning, stacklevel=2,
-    )
-    kwargs.pop('method', None)
-    return compute_cv_comparison(*args, method='update_matrix', **kwargs)
-
-
-def compare_models(*args, **kwargs):
-    """Deprecated: use compute_model_comparison instead."""
-    import warnings
-    warnings.warn(
-        "compare_models is deprecated. Use compute_model_comparison instead.",
-        DeprecationWarning, stacklevel=2,
-    )
-    return compute_model_comparison(*args, **kwargs)

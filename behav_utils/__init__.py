@@ -57,8 +57,6 @@ from behav_utils.data.synthetic import (
     sample_stimuli, noisy_psychometric_simulator,
 )
 
-# ── Neural (stub) ────────────────────────────────────────────────────────────
-from behav_utils.data.neural import NeuralData, Epoch
 
 # ── Analysis: low-level (arrays) ─────────────────────────────────────────────
 from behav_utils.analysis.psychometry import fit_psychometric, compute_psychometric_gof
@@ -71,7 +69,7 @@ from behav_utils.analysis.summary_stats import (
     list_available_stats, register_stat,
 )
 from behav_utils.analysis.session_features import (
-    build_feature_matrix, compute_session_features,
+    compute_session_features,
 )
 from behav_utils.analysis.utils import cumulative_gaussian, generate_stimuli
 
@@ -117,8 +115,6 @@ __all__ = [
     'generate_synthetic_animal', 'generate_synthetic_session',
     'sample_stimuli', 'noisy_psychometric_simulator',
 
-    # Neural
-    'NeuralData', 'Epoch',
 
     # Analysis: low-level
     'fit_psychometric', 'compute_psychometric_gof',
