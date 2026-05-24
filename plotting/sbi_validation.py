@@ -1,7 +1,7 @@
 """
 plotting/sbi_validation.py — Visualisations for SBI validation.
 
-Each plotter consumes a result dict from analysis.sbi_validation:
+Each plotter consumes a result dict from validation.sbi:
 
     plot_sbc_ranks(sbc_result)         ← compute_sbc_ranks
     plot_sbc_ecdf(sbc_result)          ← compute_sbc_ranks

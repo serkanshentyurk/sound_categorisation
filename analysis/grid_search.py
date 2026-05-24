@@ -42,7 +42,7 @@ from typing import Dict, List, Tuple, Optional, Any, TYPE_CHECKING
 from joblib import Parallel, delayed
 
 from behav_utils.analysis.update_matrix import compute_update_matrix, matrix_error
-from analysis.fold_utils import split_folds_by_block
+from utils.fold_utils import split_folds_by_block
 
 if TYPE_CHECKING:
     from behav_utils.data.structures import SessionData

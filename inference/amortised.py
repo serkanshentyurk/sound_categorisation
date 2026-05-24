@@ -216,7 +216,7 @@ def build_curriculum_simulator(
 
     def _sample_stimuli(dist_name, n_trials, rng):
         if dist_name in ('hard_a', 'hard_b'):
-            from analysis.stimulus_distribution import sample_distribution
+            from utils.stimulus_distribution import sample_distribution
             return sample_distribution(n_trials, dist_name, rng=rng)
         else:
             stim = rng.uniform(-1, 1, n_trials)

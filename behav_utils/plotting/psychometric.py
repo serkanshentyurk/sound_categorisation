@@ -22,7 +22,6 @@ from typing import Optional, Tuple
 from behav_utils.plotting.styles import (
     PALETTE, COLOURS, DEFAULT_ALPHA, SEM_ALPHA,
     DEFAULT_LINE_WIDTH, DEFAULT_MARKER_SIZE,
-    get_session_colours,
 )
 
 
@@ -148,8 +147,14 @@ def _draw_overlay(result, ax, color, alpha, linewidth, session_colours):
     """Draw per-session psychometric curves."""
     per_session = result.get('per_session', [])
     n = len(per_session)
-    colours = session_colours or (
-        [color] * n if color else get_session_colours(n))
+    if session_colours is not None:
+        colours = session_colours
+    elif color:
+        colours = [color] * n
+    else:
+        import matplotlib
+        cmap = matplotlib.cm.get_cmap('viridis')
+        colours = [cmap(i / max(n - 1, 1)) for i in range(n)]
 
     for i, entry in enumerate(per_session):
         y_fit = entry.get('y_fit')

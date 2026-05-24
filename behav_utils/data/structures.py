@@ -303,13 +303,18 @@ class SessionData:
 
     def get_arrays(self) -> Dict[str, np.ndarray]:
         """
-        Extract trial arrays. Delegates to trials.get_arrays().
+        Extract trial arrays for analysis. Aborts are excluded.
+
+        Permitted convenience method — 9+ callers use sess.get_arrays()
+        which reads more naturally than get_arrays(sess.trials).
+        Delegates to filtering.get_arrays.
 
         No filtering is done here. Filter before calling:
-            filtered = session.filter()
+            filtered = filter_session(sess, mask)
             arr = filtered.get_arrays()
         """
-        return self.trials.get_arrays()
+        from behav_utils.data.filtering import get_arrays
+        return get_arrays(self.trials)
 
 
     def summary(self) -> Dict[str, Any]:

@@ -104,7 +104,7 @@ def run_grid_search(
         GS_N_SEEDS, GS_N_FOLDS, GS_BURN_IN, GS_N_BINS, BASE_SEED,
         SMOKE_GS_N_SEEDS,
     )
-    from analysis.grid_search import grid_search_cv
+    from analysis.grid_search import compute_grid_search_cv
     from behav_utils.data.filtering import pool_arrays
 
     # Apply defaults
@@ -131,7 +131,7 @@ def run_grid_search(
     for seed_idx in range(n_seeds):
         seed = base_seed + seed_idx
 
-        result = grid_search_cv(
+        result = compute_grid_search_cv(
             sessions=sessions,
             model_type=model_type,
             n_folds=n_folds,

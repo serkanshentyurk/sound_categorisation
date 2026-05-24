@@ -72,10 +72,8 @@ from behav_utils.analysis.summary_stats import (
     FEATURE_MATRIX_STATS,
     DEFAULT_STATS,
 )
-from behav_utils.analysis.session_features import (
-    build_feature_matrix,
-    build_feature_matrix_multi,
-)
+from behav_utils.analysis.session_features import compute_session_features
+
 # Low-level analysis (arrays)
 from behav_utils.analysis.psychometry import fit_psychometric
 from behav_utils.analysis.update_matrix import compute_update_matrix, matrix_error

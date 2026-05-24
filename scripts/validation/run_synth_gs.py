@@ -82,7 +82,7 @@ def main():
     if args.smoke_test:
         print('  ** SMOKE TEST MODE **')
 
-    from analysis.grid_search import grid_search_cv
+    from analysis.grid_search import compute_grid_search_cv
 
     t0 = time.time()
     seed_results = []
@@ -90,7 +90,7 @@ def main():
     for seed in range(1, n_seeds + 1):
         actual_seed = BASE_SEED + seed
         try:
-            r = grid_search_cv(
+            r = compute_grid_search_cv(
                 sessions, args.model,
                 n_folds=GS_N_FOLDS, seed=actual_seed,
                 burn_in=GS_BURN_IN, n_bins=GS_N_BINS,

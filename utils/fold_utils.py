@@ -6,7 +6,7 @@ Splits trial-level data into folds by session (block), preserving
 sequential structure within each fold.
 
 Usage:
-    from analysis.fold_utils import split_folds_by_block
+    from utils.fold_utils import split_folds_by_block
 
     folds = split_folds_by_block(block_ids, n_folds=2)
     for train_mask, test_mask in folds:

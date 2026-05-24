@@ -49,7 +49,7 @@ from scripts.config import (
     SMOKE_DYNAMIC_SBI_N_SIMULATIONS,
     build_metadata, ensure_dirs,
 )
-from analysis.validation import (
+from validation.cohorts import (
     _sample_params, _make_simulator, generate_session_with_distribution,
 )
 
@@ -101,7 +101,7 @@ def generate_synthetic_dynamic_animal(
     """
     Generate one synthetic animal with known per-session parameters.
 
-    Uses _sample_params from analysis.validation (same prior as all
+    Uses _sample_params from validation.cohorts (same prior as all
     other synthetic cohorts).
     """
     from behav_utils.data.structures import AnimalData

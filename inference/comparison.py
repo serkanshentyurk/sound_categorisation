@@ -8,7 +8,7 @@ compute cross-validated errors and compare two models.
 
 Training → inference/fitting.py (train_per_animal_snpe, SBIFitter)
 Simulation → inference/simulation.py (simulate_all_sessions, etc.)
-Fold splitting → analysis/fold_utils.py (merge_smallest_adjacent)
+Fold splitting → utils/fold_utils.py (merge_smallest_adjacent)
 
 Key fix (from original sbi_comparison_utils.py):
     The original cv_um_comparison shuffled individual trials, which
@@ -37,7 +37,7 @@ from typing import Dict, List, Optional, Any
 from behav_utils.data.structures import FittingData
 from behav_utils.analysis.summary_stats import compute_summary_stats
 from behav_utils.analysis.update_matrix import compute_update_matrix, matrix_error
-from analysis.fold_utils import merge_smallest_adjacent
+from utils.fold_utils import merge_smallest_adjacent
 
 
 # =============================================================================

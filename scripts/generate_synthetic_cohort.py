@@ -47,7 +47,7 @@ def main():
     if args.smoke_test:
         print('  ** SMOKE TEST MODE **')
 
-    from analysis.validation import make_synthetic_cohort, make_learning_cohort
+    from validation.cohorts import make_synthetic_cohort, make_learning_cohort
 
     meta = build_metadata('generate_synthetic_cohort.py', vars(args))
 

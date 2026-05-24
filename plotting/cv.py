@@ -3,10 +3,10 @@ Grid-Search CV Plotting
 
 Pure plotting functions for BE/SC model comparison visualisation.
 All computation (seed error extraction, dataframe building, statistical
-tests) has been moved to analysis/cv_utils.py.
+tests) has been moved to utils/cv_utils.py.
 
 Usage:
-    from analysis.cv_utils import compute_gs_seed_errors, compute_cv_dataframes
+    from utils.cv_utils import compute_gs_seed_errors, compute_cv_dataframes
     from plotting.cv import plot_cv_comparison, plot_winner_summary
 
     errors, best = compute_gs_seed_errors(gs_pickle)
