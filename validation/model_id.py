@@ -40,7 +40,7 @@ def run_gs_model_id(
                     )
                     errors[mt].append(r['avg_test_error'])
                     errors_detail[mt].append(r)
-                except Exception:
+                except (KeyError, TypeError):
                     pass
 
         be_mean = np.mean(errors['BE']) if errors['BE'] else np.nan

@@ -75,7 +75,7 @@ def _fit_psychometric_once(stimulus: np.ndarray, choices: np.ndarray,
             'success': True,
             'optimizer_converged': result.success,
         }
-    except Exception:
+    except (ValueError, RuntimeError):
         pass
     
     return {

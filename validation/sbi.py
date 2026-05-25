@@ -144,7 +144,7 @@ def compute_sbc_ranks(
                 post_samples.numpy() if hasattr(post_samples, 'numpy')
                 else np.asarray(post_samples)
             )
-        except Exception:
+        except (RuntimeError, ValueError, torch.linalg.LinAlgError):
             ranks[i] = -1
             continue
 
@@ -250,7 +250,7 @@ def compute_parameter_recovery(
             recovered_mean[i]   = np.mean(post_np, axis=0)
             recovered_ci_lo[i]  = np.percentile(post_np, 5,  axis=0)
             recovered_ci_hi[i]  = np.percentile(post_np, 95, axis=0)
-        except Exception:
+        except (RuntimeError, ValueError, torch.linalg.LinAlgError):
             valid_mask[i] = False
 
     if not valid_mask.all():
@@ -404,7 +404,7 @@ def compute_param_stat_correlations(
             if x is not None and not torch.any(torch.isnan(x)):
                 x_list.append(x.numpy())
                 theta_valid.append(t.numpy())
-        except Exception:
+        except (RuntimeError, ValueError, torch.linalg.LinAlgError):
             pass
 
     if not x_list:

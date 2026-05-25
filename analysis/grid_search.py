@@ -231,7 +231,7 @@ def _evaluate_single_point(
                 f"Use 'update_matrix' or 'conditional_psych'."
             )
         return matrix_error(model_matrix, target_matrix)
-    except Exception:
+    except (ValueError, KeyError):
         return np.nan
 
 

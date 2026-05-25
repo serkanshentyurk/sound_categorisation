@@ -80,7 +80,7 @@ def _load_gs_assignment(
     n = min(len(be_errors), len(sc_errors))
     try:
         _, p_val = wilcoxon(be_errors[:n], sc_errors[:n])
-    except Exception:
+    except ValueError:
         p_val = np.nan
 
     return {

@@ -294,7 +294,7 @@ def compute_cv_dataframes(
     n_paired = min(len(be_vals), len(sc_vals))
     try:
         _, p_val = wilcoxon(be_vals[:n_paired], sc_vals[:n_paired])
-    except Exception:
+    except ValueError:
         p_val = np.nan
 
     comparison_df = pd.DataFrame([{

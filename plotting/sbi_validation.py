@@ -308,7 +308,7 @@ def plot_recovery_bias(
                 running = np.convolve(e_sorted, np.ones(window) / window, mode='valid')
                 x_run = x_sorted[window // 2: window // 2 + len(running)]
                 ax.plot(x_run, running, 'r-', linewidth=2, alpha=0.7)
-        except Exception:
+        except (ValueError, IndexError):
             pass
 
         if prior_bounds is not None and name in prior_bounds:

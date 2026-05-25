@@ -59,6 +59,9 @@ def compute_trajectory(
         raise TypeError(
             f"Expected List[SessionData] or AnimalData, got {type(data).__name__}")
 
+    from behav_utils.analysis.summary_stats import compute_summary_stats
+    from behav_utils.data.structures import _flatten_stats_dict
+
     per_session = []
     for sess in sessions:
         entry = {
@@ -68,12 +71,15 @@ def compute_trajectory(
             'stage': getattr(sess, 'stage', None),
             'distribution': getattr(sess, 'distribution', None),
         }
-        try:
-            stats = sess.stats(stat_names=stat_names)
-            entry.update(stats)
-        except Exception:
-            for sn in stat_names:
-                entry[sn] = np.nan
+        arrays = sess.get_arrays()
+        stats = compute_summary_stats(
+            choices=arrays['choices'],
+            stimuli=arrays['stimuli'],
+            categories=arrays['categories'],
+            stat_names=stat_names,
+            return_dict=True,
+        )
+        entry.update(_flatten_stats_dict(stats))
         per_session.append(entry)
 
     # Build convenience arrays

@@ -37,11 +37,13 @@ if TYPE_CHECKING:
     from behav_utils.data.structures import SessionData
 
 import numpy as np
-from scipy.stats import fisher_exact
+import pandas as pd
+from scipy.stats import fisher_exact, wilcoxon, mannwhitneyu
 
 from behav_utils.analysis.psychometry import fit_psychometric
 from behav_utils.analysis.update_matrix import compute_update_matrix
 
+from behav_utils import pool_arrays
 
 PARAM_NAMES = ('mu', 'sigma', 'lapse_low', 'lapse_high')
 
@@ -356,7 +358,7 @@ def compare_conditions(
             fisher_odds, fisher_p = fisher_exact(table, alternative='two-sided')
             fisher_p = float(fisher_p)
             fisher_odds = float(fisher_odds)
-        except Exception:
+        except (ValueError, ZeroDivisionError):
             pass
 
     # ── Update matrices ──────────────────────────────────────────────
@@ -450,3 +452,70 @@ def compute_comparison(
     result['n_sessions_b'] = len(sessions_b)
 
     return result
+
+def compute_per_animal_stats(animals, sessions_per_animal=None, stat_keys=...):
+    rows = []
+    for animal in animals:
+        sessions = (sessions_per_animal or {}).get(animal.animal_id, animal.sessions)
+        if not sessions:
+            continue
+        # Pool trials within animal
+        pooled = pool_arrays(sessions)
+        # Fit psychometric on pooled trials
+        psych = fit_psychometric(pooled['stimuli'], pooled['choices'])
+        # Accuracy
+        valid = ~np.isnan(pooled['choices'])
+        acc = float(np.mean(pooled['choices'][valid] == pooled['categories'][valid]))
+        row = {
+            'animal_id':      animal.animal_id,
+            'genotype':       getattr(animal, 'genotype', None),
+            'n_sessions':     len(sessions),
+            'n_trials_total': int(valid.sum()),
+            'mu':             psych.get('mu', np.nan),
+            'sigma':          psych.get('sigma', np.nan),
+            'lapse_low':      psych.get('lapse_low', np.nan),
+            'lapse_high':     psych.get('lapse_high', np.nan),
+            'accuracy':       acc,
+        }
+        rows.append({k: v for k, v in row.items() if k == 'animal_id' or k == 'genotype' or k in stat_keys or k.startswith('n_')})
+    return pd.DataFrame(rows)
+
+
+def compute_group_comparison(df_a, df_b, label_a='A', label_b='B',
+                              paired=False, stat_keys=...):
+    medians_a = {k: float(df_a[k].median()) for k in stat_keys if k in df_a.columns}
+    medians_b = {k: float(df_b[k].median()) for k in stat_keys if k in df_b.columns}
+    diffs    = {k: medians_a[k] - medians_b[k] for k in medians_a}
+
+    p_values = {}
+    for k in stat_keys:
+        if k not in df_a.columns or k not in df_b.columns:
+            p_values[k] = np.nan
+            continue
+        vals_a = df_a[k].dropna().values
+        vals_b = df_b[k].dropna().values
+        try:
+            if paired:
+                if len(vals_a) != len(vals_b):
+                    p_values[k] = np.nan
+                    continue
+                _, p = wilcoxon(vals_a, vals_b)
+            else:
+                _, p = mannwhitneyu(vals_a, vals_b, alternative='two-sided')
+            p_values[k] = float(p)
+        except ValueError:
+            p_values[k] = np.nan
+
+    return {
+        'group_a':   {k: df_a[k].values for k in stat_keys if k in df_a.columns},
+        'group_b':   {k: df_b[k].values for k in stat_keys if k in df_b.columns},
+        'medians_a': medians_a,
+        'medians_b': medians_b,
+        'diffs':     diffs,
+        'p_values':  p_values,
+        'n_a':       len(df_a),
+        'n_b':       len(df_b),
+        'paired':    paired,
+        'label_a':   label_a,
+        'label_b':   label_b,
+    }

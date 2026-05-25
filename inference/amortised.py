@@ -59,7 +59,7 @@ def compute_pooled_stats(
     from behav_utils.analysis.summary_stats import compute_summary_stats
 
     if stat_names is None:
-        from scripts.config import SBI_STATS
+        from inference.constants import SBI_STATS
         stat_names = list(SBI_STATS)
 
     valid = np.isfinite(choices)
@@ -150,7 +150,7 @@ def build_curriculum_simulator(
     from behav_utils.analysis.summary_stats import compute_summary_stats
 
     if stat_names is None:
-        from scripts.config import SBI_STATS
+        from inference.constants import SBI_STATS
         stat_names = list(SBI_STATS)
 
     dist_schedule = []
@@ -278,7 +278,7 @@ class AmortisedSBI:
         self.burn_in = burn_in
 
         if stat_names is None:
-            from scripts.config import SBI_STATS
+            from inference.constants import SBI_STATS
             stat_names = list(SBI_STATS)
         self.stat_names = stat_names
 

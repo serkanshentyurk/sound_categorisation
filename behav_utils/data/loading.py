@@ -531,7 +531,7 @@ def _read_and_merge_csvs(
     for csv_path in sorted(csv_paths):
         try:
             df = pd.read_csv(csv_path, low_memory=False)
-        except Exception:
+        except (pd.errors.ParserError, UnicodeDecodeError, OSError):
             continue
 
         # Drop potentially truncated last row
@@ -575,31 +575,7 @@ def load_animal(
     ])
 
     sessions = []
-    for idx, sess_dir in enumerate(session_dirs):
-        # # Find behaviour CSV
-        # pattern = config.file_structure.behaviour_file
-        # csv_files = sorted(glob.glob(str(sess_dir / pattern)))
-
-        # if not csv_files:
-        #     continue
-
-        # csv_path = csv_files[0]  # Take first match
-
-        # # Extract date from directory name
-        # sess_date = parse_date_from_path(
-        #     sess_dir.name, config.file_structure.date_regex,
-        # )
-
-        # try:
-        #     session = load_session_csv(
-        #         csv_path, config,
-        #         session_idx=len(sessions),
-        #         session_date=sess_date,
-        #     )
-        #     sessions.append(session)
-        # except Exception as e:
-        #     warnings.warn(f"Failed to load {csv_path}: {e}")
-        #     continue
+    for sess_dir in session_dirs:
         
         # Find behaviour CSV(s)
         pattern = config.file_structure.behaviour_file

@@ -692,7 +692,7 @@ def compute_logistic_history_weights(
 
             return result
 
-        except Exception:
+        except (ValueError, RuntimeError):
             return nan_result
 
     choices = np.asarray(choices)
@@ -863,7 +863,7 @@ def _fit_pse_only(current_stim: np.ndarray, current_choices: np.ndarray,
         result = minimize_scalar(neg_ll, bounds=(-1.5, 1.5), method='bounded')
         if result.success:
             return float(result.x)
-    except Exception:
+    except (ValueError, RuntimeError):
         pass
 
     return np.nan
@@ -1019,7 +1019,7 @@ def compute_update_matrix_stat(
                 n_bins=n_bins,
                 trial_filter=trial_filter,
             )
-        except Exception:
+        except (ValueError, RuntimeError, KeyError):
             return zero_result
 
         result = {}
@@ -1260,7 +1260,7 @@ def compute_history_interaction_r2(
 
             return float(r2_full - r2_stim)
 
-        except Exception:
+        except (ValueError, np.linalg.LinAlgError):
             return np.nan
 
     choices = np.asarray(choices)
@@ -1373,7 +1373,7 @@ def compute_sd_profile_features(
         try:
             coeffs_1 = np.polyfit(x, y, 1)
             sd_slope = float(coeffs_1[0])
-        except Exception:
+        except (ValueError, np.linalg.LinAlgError):
             sd_slope = np.nan
 
         # Curvature: quadratic fit
@@ -1383,7 +1383,7 @@ def compute_sd_profile_features(
                 sd_curvature = float(coeffs_2[0])
             else:
                 sd_curvature = np.nan
-        except Exception:
+        except (ValueError, np.linalg.LinAlgError):
             sd_curvature = np.nan
 
         # Range

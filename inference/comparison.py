@@ -184,7 +184,7 @@ def compute_cv_comparison(
                     (n_posterior_samples,), x=x_train,
                     max_sampling_batch_size=sample_timeout,
                 ).numpy()
-            except Exception:
+            except (RuntimeError, ValueError):
                 continue
 
             fold_params = {
@@ -230,7 +230,7 @@ def compute_cv_comparison(
                     sim_target = sim_um if method == 'update_matrix' else sim_cm
                     if not np.all(np.isnan(sim_target)):
                         sim_targets.append(sim_target)
-                except Exception:
+                except (RuntimeError, ValueError):
                     continue
 
             if sim_targets:
