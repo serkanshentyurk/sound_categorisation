@@ -122,7 +122,7 @@ __all__ = [
     'compare_conditions', 'permutation_test_params', 'bootstrap_param_diff',
     'compute_summary_stats', 'compute_summary_stats_per_session',
     'list_available_stats', 'register_stat',
-    'build_feature_matrix', 'compute_session_features',
+    'compute_session_features',
     'cumulative_gaussian', 'generate_stimuli',
 
     # Analysis: session-level

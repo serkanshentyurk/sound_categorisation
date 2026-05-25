@@ -109,7 +109,7 @@ def plot_cv_comparison(
         n_paired = min(len(be_vals), len(sc_vals))
         try:
             _, p_val = wilcoxon(be_vals[:n_paired], sc_vals[:n_paired])
-        except Exception:
+        except ValueError:
             p_val = np.nan
         winner = 'BE' if np.mean(be_vals) < np.mean(sc_vals) else 'SC'
 

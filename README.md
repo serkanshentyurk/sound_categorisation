@@ -1,154 +1,337 @@
 # Sound Categorisation
 
-Computational modelling and analysis pipeline for investigating the dynamic necessity of posterior parietal cortex (PPC) during statistical model updating in mice.
+PhD project — Akrami Lab, UCL. Investigating the dynamic causal necessity of posterior parietal cortex (PPC) during statistical model updating in mice performing a 2-AFC auditory categorisation task.
 
-## The Question
+## The hypothesis
 
-Is PPC causally necessary when an animal's internal statistical model of the stimulus distribution is inadequate, and does it become dispensable once that model is sufficient?
+PPC is causally necessary when an animal's internal statistical model of the stimulus distribution is inadequate, and becomes dispensable once that model is sufficient. Dispensability is a natural consequence of model adequacy, not a discrete mode switch.
 
-## Repository Structure
+---
+
+## Repository layout
 
 ```
 sound_categorisation/
-├── behav_utils/          # Cross-lab library (see behav_utils/README.md)
-├── models/               # BE and SC computational models
-├── analysis/             # Project-specific analysis
-├── inference/            # Simulation-based inference (SBI/SNPE)
-├── plotting/             # Project-specific plotting
-├── legacy/               # Old codebase (still imported by analysis/cv_utils.py)
-├── notebooks/            # Analysis notebooks (00–99)
-│   ├── shared_setup.py   # Notebook import boilerplate
-│   └── dev/              # Development/validation notebooks
-├── scripts/              # Cluster and local entry points
-│   └── validation/       # Synthetic validation scripts
-├── slurm/                # SLURM submission scripts
-├── tests/                # pytest tests
-├── config.yaml           # Data loading configuration
-└── shared_setup.py       # Notebook import boilerplate
+├── behav_utils/        # General-purpose 2AFC analysis library
+│
+├── models/             # BE and SC computational models
+│
+├── inference/          # SBI (amortised + dynamic per-animal)
+│   └── constants.py    # SBI_STATS and similar config
+│
+├── analysis/           # Real-data analyses
+├── validation/         # Synthetic-data testing of the pipeline
+├── utils/              # Math primitives + CV helpers
+│
+├── plotting/           # Project-specific visualisations
+│
+├── scripts/            # CLI entry points
+├── slurm/              # Cluster job templates
+├── notebooks/          # Interactive analysis
+├── tests/              # pytest suite
+└── config.yaml         # Column mapping, presets, masking sessions
 ```
+
+## Two repos in one folder
+
+- **`behav_utils/`** is a standalone library (general 2AFC analysis). Eventually pip-installable; currently used via direct import. Nothing project-specific lives here.
+- **All other folders** are project code that builds on `behav_utils`.
+
+## Three project-code folders
+
+- **`analysis/`** — what to compute on real data (consensus, grid_search, opto, adaptation)
+- **`validation/`** — synthetic-data testing of the pipeline (cohorts, model_id, sbi-validation)
+- **`utils/`** — shared math + CV bookkeeping (stimulus_distribution, cv_utils, fold_utils)
+
+## Workflow philosophy
+
+Every analysis follows the same four steps:
+
+```python
+data       = load_experiment(config)                       # LOAD
+filtered   = select_sessions(animal, preset='...')         # FILTER
+result     = compute_X(filtered, ...)                      # COMPUTE
+fig        = plot_X(result, ...)                           # PLOT
+```
+
+Each step is visible at the call site. No function does two pipeline steps in one call. Filtering, grouping, looping → notebook. Math → modules.
 
 ---
 
-## Module Reference
+## Modules
 
-### `models/` — Computational models
+### `behav_utils/`
 
-Two models of how mice update their internal representation:
+| Module | Contents |
+|---|---|
+| `data/` | Loading, filtering, data classes (`ExperimentData → AnimalData → SessionData → TrialData`) |
+| `analysis/` | psychometry, update matrix, summary stats (24-stat registry), comparison (incl. group-level), trajectory, session features |
+| `plotting/` | psychometric, update matrix, trajectory, comparison |
+| `config/` | YAML schema + loader |
+
+### `models/`
 
 | Module | Class / Function | Purpose |
-|:-------|:-----------------|:--------|
-| `BE_core.py` | `BEModel`, `BEParams`, `BEState` | Boundary Estimation: tracks decision boundary via exponential moving average. Params: η (learning rate), σ_n (noise) |
-| `BE_model.py` | `BoundaryEstimationModel` | High-level wrapper for fitting |
-| `SC_core.py` | `SCModel`, `SCParams`, `SCState` | Stimulus Category: tracks category distributions via KDE. Params: γ (category weight), σ_n (noise) |
-| `SC_model.py` | `StimulusCategoryModel` | High-level wrapper for fitting |
-| `perception.py` | `perceive_stimulus()` | Shared perceptual noise model |
+|---|---|---|
+| `BE_core.py` | `BEModel`, `BEParams`, `BEState`, `ModelTrace` | Boundary Estimation. Params: `sigma_percep`, `A_repulsion`, `eta_learning`, `eta_relax` |
+| `SC_core.py` | `SCModel`, `SCParams`, `SCState` | Stimulus Category. Params: `sigma_percep`, `A_repulsion`, `gamma`, `sigma_update` |
+| `perception.py` | `perceive_stimulus` | Shared perceptual noise model |
 
-### `analysis/` — Project-specific analysis (compute_ functions)
+### `inference/`
 
-| Module | Key functions | Purpose |
-|:-------|:-------------|:--------|
-| `opto.py` | `split_opto_session()`, `within_session_effect()`, `phase_pooled_comparison()`, `expert_null_test()`, `compute_opto_psychometric()` | Opto analysis: splitting, comparison, equivalence testing |
-| `adaptation.py` | `detect_all_manipulations()`, `adaptation_trajectory()`, `aggregate_trajectories()` | Post-shift trajectory and recovery analysis |
-| `consensus.py` | `load_all_assignments()`, `majority_vote()` | BE/SC model assignment consensus |
-| `grid_search.py` | `grid_search_cv()`, `_simulate_um()` | Grid-search cross-validation |
-| `cv_utils.py` | `compute_empirical_um()`, `simulate_model_um()`, `sessions_to_old_df()` | CV helper utilities (no legacy dependency) |
-| `validation.py` | `make_synthetic_cohort()`, `generate_session_with_distribution()` | Synthetic data generation for validation |
-| `animal_report.py` | `compute_animal_summary()`, `compute_model_fits()`, `compute_sbi_diagnostics()` | Per-animal report computation |
-| `validation_report.py` | `compute_synth_summary()`, `compute_synth_model_fits()`, `build_confusion_matrix()`, `extract_gs_recovery()` | Synthetic validation report computation |
+| Module | Class / Function | Purpose |
+|---|---|---|
+| `amortised.py` | `AmortisedSBI` | Train once on curriculum, condition on many animals. Static BE-vs-SC selection. |
+| `fitting.py` | `SBIFitter` | Per-animal training. Time-varying parameters via `ConstantSpec`, `GPSpec`, `RandomWalkSpec`. |
+| `comparison.py` | `compute_cv_comparison`, `compute_model_comparison` | CV-based model selection |
+| `types.py` | `ConstantSpec`, `GPSpec`, `RandomWalkSpec`, `ThetaLayout` | Specs for parameter linking |
+| `priors.py` | `MultiSessionPrior`, link classes | Prior construction |
+| `simulator.py` | `create_be_simulator`, `create_sc_simulator` | Wrap models for SBI |
+| `constants.py` | `SBI_STATS` etc. | Shared constants (no CLI dependency) |
 
-### `inference/` — Simulation-based inference
+### `analysis/`
 
-| Module | Key functions / classes | Purpose |
-|:-------|:----------------------|:--------|
-| `fitting.py` | `SBIFitter`, `train_sbi()`, `quick_fit()`, `build_prior()`, `build_simulator()` | Main SBI interface: train SNPE, extract posteriors/trajectories |
-| `priors.py` | `MultiSessionPrior`, `RandomWalkLink`, `GPLink`, `create_multisession_prior()` | Multi-session priors with parameter linking |
-| `simulator.py` | `Simulator`, `create_be_simulator()`, `create_sc_simulator()`, `wrap_for_sbi()` | Model simulators compatible with `sbi` package |
-| `types.py` | `ThetaLayout`, `ConstantSpec`, `RandomWalkSpec`, `GPSpec` | Parameter specification types |
-| `comparison.py` | `run_animal_pipeline()`, `cv_comparison()`, `compare_models()` | SBI-based model comparison pipeline |
-| `diagnostics.py` | `run_sbc()`, `parameter_recovery()`, `plot_recovery_scatter()` | Simulation-based calibration and recovery |
+| Module | Function | Purpose |
+|---|---|---|
+| `consensus.py` | `compute_consensus_summary`, `load_all_assignments` | 4-method model selection vote (GS-UM, GS-CP, SBI-UM, SBI-CP) |
+| `grid_search.py` | `compute_grid_search_cv`, `compute_sessions_blocked`, `compute_static_vs_dynamic`, `simulate_model_matrices`, `ParameterGrid`, `DEFAULT_GRID`, `COARSE_GRID` | GS-CV pipeline |
+| `opto.py` | `assign_opto_phases` | Partition opto-experiment sessions into named phases |
+| `adaptation.py` | `detect_shifts` | Find distribution-shift boundaries |
 
-### `plotting/` — Project-specific plotting
+### `validation/`
 
-| Module | Key functions | Purpose |
-|:-------|:-------------|:--------|
-| `cv.py` | `plot_cv_comparison()`, `gs_seed_errors()`, `plot_winner_summary()` | Grid-search CV visualisation |
-| `assignment.py` | `plot_assignment_strip()` | Cohort-level BE/SC assignment strip |
-| `sbi.py` | `plot_parameter_trajectories()`, `plot_marginal_posteriors()`, `plot_pairplot()` | SBI posterior and trajectory plots |
-| `adaptation.py` | `plot_animal_trajectory()`, `plot_shift_psychometric()`, `plot_group_trajectories()` | Post-shift adaptation plots |
-| `opto.py` | `plot_opto_psychometric()`, `plot_phase_trajectory()`, `plot_opto_um_comparison()`, `plot_equivalence_test()`, `plot_animal_opto_report()` | Opto inactivation plots |
-| `animal_report.py` | `plot_animal_summary()`, `plot_model_fits()`, `plot_sbi_diagnostics()` | Per-animal report rendering |
-| `validation_report.py` | `plot_synth_summary()`, `plot_synth_model_fits()`, `plot_recovery_overlay()`, `plot_confusion_matrix()` | Synthetic validation report rendering |
+| Module | Function | Purpose |
+|---|---|---|
+| `cohorts.py` | `make_synthetic_cohort`, `make_learning_cohort`, `generate_session_with_distribution` | Synthetic cohort generators |
+| `model_id.py` | `run_gs_model_id` | GS-CV identification on synthetic data |
+| `sbi.py` | `compute_sbc_ranks`, `compute_parameter_recovery`, `compute_param_stat_correlations` | SBI calibration + recovery |
 
-### `legacy/` — Deprecated
+### `utils/`
 
-Original codebase from the manuscript. All functionality has been ported:
+| Module | Function | Purpose |
+|---|---|---|
+| `stimulus_distribution.py` | `sample_distribution`, `compute_distribution_density`, `compute_normative_pse` | Hard-A/B density + ideal observer |
+| `cv_utils.py` | `compute_empirical_um`, `simulate_model_um`, `compute_gs_seed_errors`, `compute_cv_dataframes` | UM CV helpers |
+| `fold_utils.py` | `split_folds_by_block`, `merge_smallest_adjacent` | Block-aware CV fold construction |
 
-| Legacy | Replacement |
-|:-------|:-----------|
-| `legacy.fitter.post_correct_update_matrix` | `behav_utils.analysis.update_matrix.compute_update_matrix` |
-| `legacy.fitter.matrix_error` | `behav_utils.analysis.update_matrix.matrix_error` |
-| `legacy.fitter.k_fold_CV` | `analysis.grid_search.grid_search_cv` |
-| `legacy.be.BE_model` | `models.BE_core.BEModel.simulate_session` |
-| `legacy.sc.SC_model` | `models.SC_core.SCModel.simulate_session` |
+### `plotting/`
 
-Only imported by `notebooks/dev/2g_legacy_regression.ipynb` for side-by-side regression testing. No production code depends on legacy/.
-
-Importing `legacy` raises a `DeprecationWarning`.
+| Module | Function |
+|---|---|
+| `assignment.py` | `plot_assignment_strip` |
+| `cv.py` | `plot_cv_comparison`, `plot_winner_summary`, `plot_update_matrix`, `plot_um_comparison`, `plot_param_distributions` |
+| `sbi_posterior.py` | `plot_marginal_posteriors`, `plot_pairplot`, `plot_posterior_psychometric` |
+| `sbi_trajectories.py` | `plot_parameter_trajectories`, `plot_performance_trajectory`, `plot_learning_trajectory` |
+| `sbi_validation.py` | `plot_sbc_ranks`, `plot_sbc_ecdf`, `plot_recovery_scatter`, `plot_recovery_bias`, `plot_param_stat_correlations` |
 
 ---
 
-## Notebooks
+## Quick start
 
-Numbered for reading order. Each has a `MODE` toggle: `'load'` reads cluster results, `'run'` does local analysis.
+```python
+from behav_utils.config import load_config
+from behav_utils.data.loading import load_experiment
+from behav_utils.data.selection import select_sessions
+from behav_utils.analysis.psychometry import compute_psychometric
+from behav_utils.plotting.psychometric import plot_psychometric
 
-| File | Title | Purpose | Depends on |
-|:-----|:------|:--------|:-----------|
-| `00` | Data Exploration | Raw data overview, trial counts, accuracy trajectories | — |
-| `01` | Model Explorer | Interactive BE/SC parameter widgets | — |
-| `02` | Feature Selection | PCA, feature correlations, stat selection for SBI | — |
-| `03` | Parameter Sensitivity | How summary stats respond to model parameters | — |
-| `04` | Model vs Real | Model predictions overlaid on real data | — |
-| `10` | **Validation Summary** | Synthetic validation: accuracy, recovery, calibration | Cluster: synth GS + SBI |
-| `15` | Example Animal | Deep dive on one real animal | Cluster: real GS + SBI |
-| `20` | **GS Model Selection** | Per-animal BE/SC assignment via grid-search CV | Cluster: real GS |
-| `21` | **SBI Model Selection** | Per-animal BE/SC assignment via amortised SNPE | Cluster: real SBI |
-| `22` | **Consensus** | 4-method agreement matrix and final assignments | NB 20, 21 |
-| `30` | Adaptation Analysis | Post-shift behavioural adaptation | NB 22 |
-| `31` | Parameter Dynamics | Dynamic SBI parameter trajectories (RandomWalk) | Cluster: dynamic SBI |
-| `40` | SLDS | Latent behavioural state inference (HMM + SLDS) | — |
-| `50` | Opto Predictions | Optogenetic effect predictions from model + SLDS | NB 22, 40 |
-| `51` | **Expert Opto Analysis** | Expert-phase opto inactivation results + TOST | NB 22, data |
-| `99` | Presentation Figures | Publication-ready figures | All above |
+config = load_config('config.yaml')
+experiment = load_experiment(config)
+animal = experiment.animals['SS01']
 
-`dev/` notebooks (2a–2h) contain detailed synthetic validation development work.
+expert_sessions = select_sessions(animal, preset='expert_uniform')
+result = compute_psychometric(expert_sessions, mode='pooled')
+plot_psychometric(result)
+```
 
 ---
 
-## Pipeline Architecture
+## Example workflows
 
+### Opto: within-session opto-on vs opto-off (one animal)
+
+```python
+from behav_utils.data.filtering import filter_session, opto_mask
+from behav_utils.analysis.comparison import compute_comparison
+from behav_utils.plotting.comparison import plot_comparison
+from analysis.opto import assign_opto_phases
+
+phases = assign_opto_phases(animal.sessions)
+sessions = phases['shift_with_opto']
+
+on  = [filter_session(s, opto_mask(s.trials, 0))         for s in sessions]
+off = [filter_session(s, opto_mask(s.trials, 'control')) for s in sessions]
+
+result = compute_comparison(on, off, label_a='opto_on', label_b='opto_off',
+                              n_bootstrap=1000, n_permutations=1000)
+plot_comparison(result)
 ```
-SLDS (WHERE: learning phase)
-  → per-state static model selection (HOW: BE vs SC)
-    → consistent? → dynamic SBI on winning model (trajectories)
-    → inconsistent? → per-state assignments (strategy switching)
+
+### Adaptation: pre-shift vs post-shift comparison
+
+```python
+from analysis.adaptation import detect_shifts
+from behav_utils.analysis.comparison import compute_comparison
+from behav_utils.plotting.comparison import plot_comparison
+
+shifts = detect_shifts(animal)
+for shift in shifts:
+    pre  = [s for s in animal.sessions
+            if s.session_idx <  shift['session_idx']
+            and s.distribution == shift['from_distribution']]
+    post = [s for s in animal.sessions
+            if s.session_idx >= shift['session_idx']
+            and s.distribution == shift['to_distribution']]
+    result = compute_comparison(pre, post, label_a='pre', label_b='post',
+                                  n_bootstrap=1000)
+    plot_comparison(result)
 ```
 
-## Model Selection Methods
+### Group-level: HET vs WT (unpaired, across animals)
 
-| Method | Fitting | Scoring | Status |
-|:-------|:--------|:--------|:-------|
-| GS × UM | Grid-search CV (2-fold × 64 seeds) | Update matrix MSE | ✓ Secondary |
-| GS × CP | Grid-search CV | Conditional psychometric MSE | ✓ Secondary |
-| SBI × UM | Amortised SNPE | Update matrix MSE | ✓ Primary |
-| SBI × CP | Amortised SNPE | Conditional psychometric MSE | ✓ Secondary |
+```python
+from behav_utils.analysis.comparison import (
+    compute_per_animal_stats, compute_group_comparison,
+)
+from analysis.opto import assign_opto_phases
 
-Current results: 11 BE / 2 SC / 9 unclear from 23 animals.
+het = [a for a in animals if a.genotype == 'HET']
+wt  = [a for a in animals if a.genotype == 'WT']
 
-## Key Design Decisions
+het_shift_sessions = {a.animal_id: assign_opto_phases(a.sessions)['shift_with_opto']
+                       for a in het}
+wt_shift_sessions  = {a.animal_id: assign_opto_phases(a.sessions)['shift_with_opto']
+                       for a in wt}
 
-- Stimulus range normalised to [-1, 1] throughout
-- Session-level granularity for all claims
-- Block-level CV splits (not trial-level) to preserve sequential structure
-- SBI for within-model parameter estimation only (not model comparison)
-- Dynamic SBI uses RandomWalk linking (smooth parameter evolution)
-- `behav_utils` is general; project-specific code stays in this repo
+df_het = compute_per_animal_stats(het, het_shift_sessions)
+df_wt  = compute_per_animal_stats(wt,  wt_shift_sessions)
+
+result = compute_group_comparison(df_het, df_wt,
+                                    label_a='HET', label_b='WT',
+                                    paired=False)
+# result['p_values']['mu'] = Mann-Whitney p for HET vs WT PSE
+```
+
+### Group-level: opto-on vs opto-off within HET (paired, same animals)
+
+```python
+sessions_on  = {a.animal_id: [filter_session(s, opto_mask(s.trials, 0))
+                              for s in assign_opto_phases(a.sessions)['shift_with_opto']]
+                for a in het}
+sessions_off = {a.animal_id: [filter_session(s, opto_mask(s.trials, 'control'))
+                              for s in assign_opto_phases(a.sessions)['shift_with_opto']]
+                for a in het}
+
+df_on  = compute_per_animal_stats(het, sessions_on)
+df_off = compute_per_animal_stats(het, sessions_off)
+
+result = compute_group_comparison(df_on, df_off,
+                                    label_a='opto_on', label_b='opto_off',
+                                    paired=True)
+# result['p_values']['mu'] = Wilcoxon p for within-animal opto effect
+```
+
+### Static SBI on expert data
+
+```python
+from inference import AmortisedSBI
+from behav_utils.data.selection import select_sessions
+
+expert = select_sessions(animal, preset='expert_uniform')
+
+sbi = AmortisedSBI(model_type='be', curriculum=[('uniform', 2500)])
+sbi.train(n_simulations=50_000)
+posterior = sbi.fit(expert)
+```
+
+### Per-session parameter trajectory (naïve → expert)
+
+```python
+import pandas as pd
+
+trajectory = []
+for sess in animal.sessions:
+    posterior = sbi.fit([sess])
+    samples = posterior.sample((1000,))
+    trajectory.append({
+        'session_idx': sess.session_idx,
+        **{name: float(samples[:, i].median())
+            for i, name in enumerate(sbi.param_names)}
+    })
+trajectory_df = pd.DataFrame(trajectory)
+```
+
+### Dynamic SBI with parameter linking
+
+```python
+from inference import SBIFitter, RandomWalkSpec, ConstantSpec
+
+fitter = SBIFitter(
+    fitting_data=animal.fitting_data(),
+    model_type='be',
+    param_links={
+        'eta_learning': RandomWalkSpec(bounds=(0.0, 1.0)),
+        'sigma_percep': ConstantSpec(bounds=(0.05, 0.5)),
+        'A_repulsion':  ConstantSpec(bounds=(0.0, 1.0)),
+        'eta_relax':    RandomWalkSpec(bounds=(0.0, 1.0)),
+    },
+)
+fitter.train(n_simulations=50_000)
+result = fitter.fit()
+trajectory = fitter.extract_trajectories(result)
+```
+
+### SBI validation
+
+```python
+from validation.sbi import compute_sbc_ranks, compute_parameter_recovery
+from plotting.sbi_validation import plot_sbc_ranks, plot_recovery_scatter
+
+sbc = compute_sbc_ranks(posterior, simulator, prior,
+                         n_sbc_runs=1000, n_posterior_samples=1000)
+plot_sbc_ranks(sbc)
+
+recovery = compute_parameter_recovery(posterior, simulator, prior,
+                                        n_recoveries=200)
+plot_recovery_scatter(recovery)
+```
+
+---
+
+## Configuration
+
+`config.yaml` defines:
+- Column mappings (your CSV columns ↔ internal field names)
+- Distribution name mappings (e.g. `Asym_Right → Hard-A`)
+- Session-filter presets (`naive`, `expert_uniform`, etc.)
+- Masking sessions (per-animal list of dates)
+
+See `behav_utils/configs/config_full_reference.yaml` for the full schema.
+
+---
+
+## Models
+
+Two trial-to-trial choice updating models:
+
+- **BE (Boundary-Estimation)** — maintains belief over the decision boundary; updates after each trial based on perceived stimulus and feedback. Four parameters.
+- **SC (Stimulus-Category)** — maintains beliefs over the full stimulus distribution per category; updates the chosen category's belief after each trial. Four parameters.
+
+Likelihood intractable for both → SBI (no MLE).
+
+---
+
+## Naming conventions
+
+- `compute_X(data, ...)` → returns result dict
+- `plot_X(result, ax=...)` → consumes dict, returns `Axes`
+- `fit_X(arrays, ...)` → low-level fit, returns param dict
+- Psychometric fit params: `mu`, `sigma`, `lapse_low`, `lapse_high`, `accuracy` everywhere. Plot labels translate to literature terms (PSE, slope).
+
+For across-animal claims: use `compute_per_animal_stats` + `compute_group_comparison`, not pooled `compute_comparison`. Pooled trials assume trial-level independence — wrong for group-level claims.
+
+---
+
+## Cluster
+
+SLURM templates at `slurm/`. CLI entry points in `scripts/`. Being restructured separately — expect manual editing of cluster paths until that's done.

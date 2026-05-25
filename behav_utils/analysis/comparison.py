@@ -25,9 +25,9 @@ Usage:
         stim_a, choices_a, cat_a,
         stim_b, choices_b, cat_b,
     )
-    # result['diffs']['pse']  → PSE difference (A - B)
-    # result['perm_p']['pse'] → permutation p-value
-    # result['boot_ci']['pse'] → (lower, upper) 95% CI on diff
+    # result['diffs']['mu']  → PSE difference (A - B)
+    # result['perm_p']['mu'] → permutation p-value
+    # result['boot_ci']['mu'] → (lower, upper) 95% CI on diff
     # result['um_rmse']       → UM RMSE between conditions
 """
 
@@ -453,7 +453,9 @@ def compute_comparison(
 
     return result
 
-def compute_per_animal_stats(animals, sessions_per_animal=None, stat_keys=...):
+def compute_per_animal_stats(animals, 
+                             sessions_per_animal=None, 
+                             stat_keys=['mu', 'sigma', 'lapse_low', 'lapse_high', 'accuracy']):
     rows = []
     for animal in animals:
         sessions = (sessions_per_animal or {}).get(animal.animal_id, animal.sessions)
@@ -481,8 +483,12 @@ def compute_per_animal_stats(animals, sessions_per_animal=None, stat_keys=...):
     return pd.DataFrame(rows)
 
 
-def compute_group_comparison(df_a, df_b, label_a='A', label_b='B',
-                              paired=False, stat_keys=...):
+def compute_group_comparison(
+    df_a, df_b, 
+    label_a='A', label_b='B',
+    paired=False, 
+    stat_keys=['mu', 'sigma', 'lapse_low', 'lapse_high', 'accuracy']
+    ):
     medians_a = {k: float(df_a[k].median()) for k in stat_keys if k in df_a.columns}
     medians_b = {k: float(df_b[k].median()) for k in stat_keys if k in df_b.columns}
     diffs    = {k: medians_a[k] - medians_b[k] for k in medians_a}
