@@ -14,7 +14,7 @@ Usage:
     # Session-level (pre-filtered sessions → result dicts)
     psych = compute_psychometric(sessions, mode='pooled')
     um = compute_um(sessions)
-    traj = compute_trajectory(sessions, ['accuracy', 'pse'])
+    traj = compute_trajectory(sessions, ['accuracy', 'mu'])
     comp = compute_comparison(ctrl_sessions, opto_sessions)
     raster = compute_session_raster(session)
 """

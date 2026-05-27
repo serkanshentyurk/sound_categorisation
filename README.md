@@ -16,20 +16,46 @@ sound_categorisation/
 │
 ├── models/             # BE and SC computational models
 │
-├── inference/          # SBI (amortised + dynamic per-animal)
-│   └── constants.py    # SBI_STATS and similar config
+├── inference/          # SBI (amortised + per-animal time-varying)
+│   ├── sbi_core.py     #   - SBIResult, train_sbi, sample_posterior
+│   ├── builders.py     #   - build_prior, build_simulator, defaults
+│   ├── fitter.py       #   - SBIFitter class (high-level API)
+│   ├── train.py        #   - train_per_animal_snpe (CLI-style)
+│   ├── amortised.py    #   - AmortisedSBI class (pooled, manuscript path)
+│   ├── comparison.py   #   - CV-based BE vs SC comparison
+│   ├── priors.py       #   - MultiSessionPrior + link classes
+│   ├── simulator.py    #   - model→simulator wrappers
+│   ├── types.py        #   - ConstantSpec, GPSpec, RandomWalkSpec
+│   └── constants.py    #   - SBI_STATS
 │
 ├── analysis/           # Real-data analyses
+│   ├── consensus.py    #   - 4-method model selection vote
+│   ├── grid_search.py  #   - GS-CV pipeline (manuscript protocol)
+│   ├── opto.py         #   - opto phase assignment
+│   └── adaptation.py   #   - distribution-shift detection
+│
 ├── validation/         # Synthetic-data testing of the pipeline
+│   ├── cohorts.py      #   - synthetic cohort generators
+│   ├── model_id.py     #   - GS-CV model identification accuracy
+│   └── sbi.py          #   - SBC + parameter recovery diagnostics
+│
 ├── utils/              # Math primitives + CV helpers
+│   ├── stimulus_distribution.py   #   - Hard-A/B density + normative observer
+│   ├── cv_utils.py                #   - empirical/simulated UM helpers
+│   └── fold_utils.py              #   - block-aware CV fold construction
 │
 ├── plotting/           # Project-specific visualisations
+│   ├── assignment.py              #   - animal × method assignment strip
+│   ├── cv.py                      #   - CV result summaries
+│   ├── sbi_posterior.py           #   - posterior plots
+│   ├── sbi_trajectories.py        #   - time-varying parameter plots
+│   └── sbi_validation.py          #   - SBC + recovery diagnostics
 │
-├── scripts/            # CLI entry points
-├── slurm/              # Cluster job templates
-├── notebooks/          # Interactive analysis
-├── tests/              # pytest suite
-└── config.yaml         # Column mapping, presets, masking sessions
+├── scripts/            # CLI entry points (being rebuilt; see notes below)
+├── notebooks/          # Interactive analyses
+├── tests/              # pytest suite (>90 tests)
+├── config.yaml         # Column mapping, presets, masking sessions
+└── smoke_test.py       # 10-test functional smoke check
 ```
 
 ## Two repos in one folder
@@ -39,9 +65,11 @@ sound_categorisation/
 
 ## Three project-code folders
 
-- **`analysis/`** — what to compute on real data (consensus, grid_search, opto, adaptation)
-- **`validation/`** — synthetic-data testing of the pipeline (cohorts, model_id, sbi-validation)
-- **`utils/`** — shared math + CV bookkeeping (stimulus_distribution, cv_utils, fold_utils)
+- **`analysis/`** — what to compute on real data
+- **`validation/`** — synthetic-data testing of the pipeline
+- **`utils/`** — shared math + CV bookkeeping
+
+Each has a clear single job. Cross-folder dependencies are shallow and one-directional (project → behav_utils, never reverse).
 
 ## Workflow philosophy
 
@@ -62,7 +90,7 @@ Each step is visible at the call site. No function does two pipeline steps in on
 
 ### `behav_utils/`
 
-| Module | Contents |
+| Submodule | Contents |
 |---|---|
 | `data/` | Loading, filtering, data classes (`ExperimentData → AnimalData → SessionData → TrialData`) |
 | `analysis/` | psychometry, update matrix, summary stats (24-stat registry), comparison (incl. group-level), trajectory, session features |
@@ -71,58 +99,65 @@ Each step is visible at the call site. No function does two pipeline steps in on
 
 ### `models/`
 
-| Module | Class / Function | Purpose |
-|---|---|---|
-| `BE_core.py` | `BEModel`, `BEParams`, `BEState`, `ModelTrace` | Boundary Estimation. Params: `sigma_percep`, `A_repulsion`, `eta_learning`, `eta_relax` |
-| `SC_core.py` | `SCModel`, `SCParams`, `SCState` | Stimulus Category. Params: `sigma_percep`, `A_repulsion`, `gamma`, `sigma_update` |
-| `perception.py` | `perceive_stimulus` | Shared perceptual noise model |
+| File | Contents |
+|---|---|
+| `BE_core.py` | `BEModel`, `BEParams`, `BEState`, `ModelTrace` |
+| `SC_core.py` | `SCModel`, `SCParams`, `SCState` |
+| `perception.py` | Shared perceptual noise + boundary repulsion |
 
 ### `inference/`
 
-| Module | Class / Function | Purpose |
-|---|---|---|
-| `amortised.py` | `AmortisedSBI` | Train once on curriculum, condition on many animals. Static BE-vs-SC selection. |
-| `fitting.py` | `SBIFitter` | Per-animal training. Time-varying parameters via `ConstantSpec`, `GPSpec`, `RandomWalkSpec`. |
-| `comparison.py` | `compute_cv_comparison`, `compute_model_comparison` | CV-based model selection |
-| `types.py` | `ConstantSpec`, `GPSpec`, `RandomWalkSpec`, `ThetaLayout` | Specs for parameter linking |
-| `priors.py` | `MultiSessionPrior`, link classes | Prior construction |
-| `simulator.py` | `create_be_simulator`, `create_sc_simulator` | Wrap models for SBI |
-| `constants.py` | `SBI_STATS` etc. | Shared constants (no CLI dependency) |
+| File | Public API |
+|---|---|
+| `sbi_core.py` | `SBIResult` (posterior container), `train_sbi`, `sample_posterior` |
+| `builders.py` | `build_prior`, `build_simulator`, `compute_observed_stats`, `DEFAULT_*` constants |
+| `fitter.py` | `SBIFitter` (high-level per-animal fitting class) |
+| `train.py` | `train_per_animal_snpe` (script-style training function) |
+| `amortised.py` | `AmortisedSBI` (manuscript-protocol pooled SBI, matches GS-CV) |
+| `comparison.py` | `compute_cv_comparison`, `compute_model_comparison` |
+| `priors.py` | `MultiSessionPrior` + link classes |
+| `simulator.py` | `create_be_simulator`, `create_sc_simulator`, `wrap_for_sbi` |
+| `types.py` | `ConstantSpec`, `GPSpec`, `RandomWalkSpec`, `ThetaLayout` |
+| `constants.py` | `SBI_STATS` |
+
+External code keeps using `from inference import SBIFitter, SBIResult, ...` — the `__init__.py` re-exports everything from the new file layout.
 
 ### `analysis/`
 
-| Module | Function | Purpose |
-|---|---|---|
-| `consensus.py` | `compute_consensus_summary`, `load_all_assignments` | 4-method model selection vote (GS-UM, GS-CP, SBI-UM, SBI-CP) |
-| `grid_search.py` | `compute_grid_search_cv`, `compute_sessions_blocked`, `compute_static_vs_dynamic`, `simulate_model_matrices`, `ParameterGrid`, `DEFAULT_GRID`, `COARSE_GRID` | GS-CV pipeline |
-| `opto.py` | `assign_opto_phases` | Partition opto-experiment sessions into named phases |
-| `adaptation.py` | `detect_shifts` | Find distribution-shift boundaries |
+| File | Public API |
+|---|---|
+| `consensus.py` | `compute_consensus_summary`, `load_all_assignments` |
+| `grid_search.py` | `compute_grid_search_cv`, `compute_sessions_blocked`, `compute_static_vs_dynamic`, `simulate_model_matrices`, `ParameterGrid`, `DEFAULT_GRID`, `COARSE_GRID` |
+| `opto.py` | `assign_opto_phases` |
+| `adaptation.py` | `detect_shifts` |
 
 ### `validation/`
 
-| Module | Function | Purpose |
-|---|---|---|
-| `cohorts.py` | `make_synthetic_cohort`, `make_learning_cohort`, `generate_session_with_distribution` | Synthetic cohort generators |
-| `model_id.py` | `run_gs_model_id` | GS-CV identification on synthetic data |
-| `sbi.py` | `compute_sbc_ranks`, `compute_parameter_recovery`, `compute_param_stat_correlations` | SBI calibration + recovery |
+| File | Public API |
+|---|---|
+| `cohorts.py` | `make_synthetic_cohort`, `make_learning_cohort`, `generate_session_with_distribution` |
+| `model_id.py` | `run_gs_model_id` |
+| `sbi.py` | `compute_sbc_ranks`, `compute_parameter_recovery`, `compute_param_stat_correlations` |
 
 ### `utils/`
 
-| Module | Function | Purpose |
-|---|---|---|
-| `stimulus_distribution.py` | `sample_distribution`, `compute_distribution_density`, `compute_normative_pse` | Hard-A/B density + ideal observer |
-| `cv_utils.py` | `compute_empirical_um`, `simulate_model_um`, `compute_gs_seed_errors`, `compute_cv_dataframes` | UM CV helpers |
-| `fold_utils.py` | `split_folds_by_block`, `merge_smallest_adjacent` | Block-aware CV fold construction |
+| File | Public API |
+|---|---|
+| `stimulus_distribution.py` | `sample_distribution`, `compute_distribution_density`, `compute_normative_pse` |
+| `cv_utils.py` | `compute_empirical_um`, `simulate_model_um`, `compute_gs_seed_errors`, `compute_cv_dataframes`, `params_to_str` |
+| `fold_utils.py` | `split_folds_by_block`, `merge_smallest_adjacent` |
 
 ### `plotting/`
 
-| Module | Function |
+| File | Public API |
 |---|---|
 | `assignment.py` | `plot_assignment_strip` |
 | `cv.py` | `plot_cv_comparison`, `plot_winner_summary`, `plot_update_matrix`, `plot_um_comparison`, `plot_param_distributions` |
 | `sbi_posterior.py` | `plot_marginal_posteriors`, `plot_pairplot`, `plot_posterior_psychometric` |
 | `sbi_trajectories.py` | `plot_parameter_trajectories`, `plot_performance_trajectory`, `plot_learning_trajectory` |
 | `sbi_validation.py` | `plot_sbc_ranks`, `plot_sbc_ecdf`, `plot_recovery_scatter`, `plot_recovery_bias`, `plot_param_stat_correlations` |
+
+For pair-comparison plots (opto, pre/post shift, HET vs WT), use `behav_utils.plotting.comparison.plot_comparison`.
 
 ---
 
@@ -172,7 +207,6 @@ plot_comparison(result)
 ```python
 from analysis.adaptation import detect_shifts
 from behav_utils.analysis.comparison import compute_comparison
-from behav_utils.plotting.comparison import plot_comparison
 
 shifts = detect_shifts(animal)
 for shift in shifts:
@@ -182,83 +216,39 @@ for shift in shifts:
     post = [s for s in animal.sessions
             if s.session_idx >= shift['session_idx']
             and s.distribution == shift['to_distribution']]
-    result = compute_comparison(pre, post, label_a='pre', label_b='post',
-                                  n_bootstrap=1000)
-    plot_comparison(result)
+    result = compute_comparison(pre, post, label_a='pre', label_b='post')
 ```
 
-### Group-level: HET vs WT (unpaired, across animals)
+### Group-level: HET vs WT (unpaired)
 
 ```python
-from behav_utils.analysis.comparison import (
-    compute_per_animal_stats, compute_group_comparison,
-)
-from analysis.opto import assign_opto_phases
+from behav_utils.analysis.comparison import compute_per_animal_stats, compute_group_comparison
 
-het = [a for a in animals if a.genotype == 'HET']
-wt  = [a for a in animals if a.genotype == 'WT']
+df_het = compute_per_animal_stats(het_animals)
+df_wt  = compute_per_animal_stats(wt_animals)
 
-het_shift_sessions = {a.animal_id: assign_opto_phases(a.sessions)['shift_with_opto']
-                       for a in het}
-wt_shift_sessions  = {a.animal_id: assign_opto_phases(a.sessions)['shift_with_opto']
-                       for a in wt}
-
-df_het = compute_per_animal_stats(het, het_shift_sessions)
-df_wt  = compute_per_animal_stats(wt,  wt_shift_sessions)
-
-result = compute_group_comparison(df_het, df_wt,
-                                    label_a='HET', label_b='WT',
-                                    paired=False)
+result = compute_group_comparison(df_het, df_wt, label_a='HET', label_b='WT', paired=False)
 # result['p_values']['mu'] = Mann-Whitney p for HET vs WT PSE
 ```
 
-### Group-level: opto-on vs opto-off within HET (paired, same animals)
+### Group-level: opto-on vs opto-off within HET (paired)
 
 ```python
-sessions_on  = {a.animal_id: [filter_session(s, opto_mask(s.trials, 0))
-                              for s in assign_opto_phases(a.sessions)['shift_with_opto']]
-                for a in het}
-sessions_off = {a.animal_id: [filter_session(s, opto_mask(s.trials, 'control'))
-                              for s in assign_opto_phases(a.sessions)['shift_with_opto']]
-                for a in het}
-
-df_on  = compute_per_animal_stats(het, sessions_on)
-df_off = compute_per_animal_stats(het, sessions_off)
-
-result = compute_group_comparison(df_on, df_off,
-                                    label_a='opto_on', label_b='opto_off',
-                                    paired=True)
+df_on  = compute_per_animal_stats(het_animals, sessions_per_animal=sessions_on)
+df_off = compute_per_animal_stats(het_animals, sessions_per_animal=sessions_off)
+result = compute_group_comparison(df_on, df_off, label_a='opto_on', label_b='opto_off', paired=True)
 # result['p_values']['mu'] = Wilcoxon p for within-animal opto effect
 ```
 
-### Static SBI on expert data
+### Static SBI on expert data (manuscript path)
 
 ```python
 from inference import AmortisedSBI
-from behav_utils.data.selection import select_sessions
 
-expert = select_sessions(animal, preset='expert_uniform')
-
-sbi = AmortisedSBI(model_type='be', curriculum=[('uniform', 2500)])
+sbi = AmortisedSBI(model_type='be', curriculum=[('uniform', 3)])
 sbi.train(n_simulations=50_000)
-posterior = sbi.fit(expert)
-```
-
-### Per-session parameter trajectory (naïve → expert)
-
-```python
-import pandas as pd
-
-trajectory = []
-for sess in animal.sessions:
-    posterior = sbi.fit([sess])
-    samples = posterior.sample((1000,))
-    trajectory.append({
-        'session_idx': sess.session_idx,
-        **{name: float(samples[:, i].median())
-            for i, name in enumerate(sbi.param_names)}
-    })
-trajectory_df = pd.DataFrame(trajectory)
+result = sbi.fit(expert_sessions)
+# result['cv_error'] = held-out CV error, comparable with GS-CV
 ```
 
 ### Dynamic SBI with parameter linking
@@ -281,28 +271,13 @@ result = fitter.fit()
 trajectory = fitter.extract_trajectories(result)
 ```
 
-### SBI validation
-
-```python
-from validation.sbi import compute_sbc_ranks, compute_parameter_recovery
-from plotting.sbi_validation import plot_sbc_ranks, plot_recovery_scatter
-
-sbc = compute_sbc_ranks(posterior, simulator, prior,
-                         n_sbc_runs=1000, n_posterior_samples=1000)
-plot_sbc_ranks(sbc)
-
-recovery = compute_parameter_recovery(posterior, simulator, prior,
-                                        n_recoveries=200)
-plot_recovery_scatter(recovery)
-```
-
 ---
 
 ## Configuration
 
 `config.yaml` defines:
 - Column mappings (your CSV columns ↔ internal field names)
-- Distribution name mappings (e.g. `Asym_Right → Hard-A`)
+- Distribution name mappings (`Asym_Right → Hard-A`, `Asym_Left → Hard-B`)
 - Session-filter presets (`naive`, `expert_uniform`, etc.)
 - Masking sessions (per-animal list of dates)
 
@@ -314,8 +289,8 @@ See `behav_utils/configs/config_full_reference.yaml` for the full schema.
 
 Two trial-to-trial choice updating models:
 
-- **BE (Boundary-Estimation)** — maintains belief over the decision boundary; updates after each trial based on perceived stimulus and feedback. Four parameters.
-- **SC (Stimulus-Category)** — maintains beliefs over the full stimulus distribution per category; updates the chosen category's belief after each trial. Four parameters.
+- **BE (Boundary-Estimation)** — maintains belief over the decision boundary; updates after each trial based on perceived stimulus and feedback. Parameters: `sigma_percep`, `A_repulsion`, `eta_learning`, `eta_relax`.
+- **SC (Stimulus-Category)** — maintains beliefs over the full stimulus distribution per category; updates the chosen category's belief after each trial. Parameters: `sigma_percep`, `A_repulsion`, `gamma`, `sigma_update`.
 
 Likelihood intractable for both → SBI (no MLE).
 
@@ -324,14 +299,46 @@ Likelihood intractable for both → SBI (no MLE).
 ## Naming conventions
 
 - `compute_X(data, ...)` → returns result dict
-- `plot_X(result, ax=...)` → consumes dict, returns `Axes`
+- `plot_X(result, ax=...)` → consumes result dict, returns `Axes`
 - `fit_X(arrays, ...)` → low-level fit, returns param dict
-- Psychometric fit params: `mu`, `sigma`, `lapse_low`, `lapse_high`, `accuracy` everywhere. Plot labels translate to literature terms (PSE, slope).
+- Psychometric fit params use math names everywhere: `mu`, `sigma`, `lapse_low`, `lapse_high`, `accuracy`. Plot labels translate to literature terms (PSE, slope) at display time.
 
-For across-animal claims: use `compute_per_animal_stats` + `compute_group_comparison`, not pooled `compute_comparison`. Pooled trials assume trial-level independence — wrong for group-level claims.
+For across-animal claims: use `compute_per_animal_stats` + `compute_group_comparison`, NOT pooled `compute_comparison`. Pooled trials assume trial-level independence — wrong for group-level claims.
+
+---
+
+## Tests and smoke check
+
+```bash
+pytest tests/                     # full pytest suite (>90 tests)
+python3 smoke_test.py             # 10-test functional check
+```
+
+The smoke test exercises a representative subset of the pipeline end-to-end in seconds, useful for sanity-checking after any change.
+
+---
+
+## What's working, what's coming
+
+**Production-ready now:**
+- Behavioural analyses (psychometry, update matrix, summary stats, trajectory)
+- Group comparisons (pair-level and animal-level)
+- Static SBI for BE vs SC selection (manuscript path)
+- Adaptation analysis (shift detection)
+- Opto phase assignment
+
+**On the horizon:**
+- Sequential SBI architecture (per-session filtering across sessions, supports SLDS-state and opto analyses cleanly). Design captured separately; not yet implemented.
+- Scripts rebuild (CLI entry points for cluster jobs)
+- SLURM templates rebuild
+- Per-animal exploratory notebooks for opto + adaptation transitions
+
+See `HANDOVER.md` for a detailed status snapshot of every cleanup task.
 
 ---
 
 ## Cluster
 
-SLURM templates at `slurm/`. CLI entry points in `scripts/`. Being restructured separately — expect manual editing of cluster paths until that's done.
+`scripts/` is being rebuilt. Currently only `config.py`, `snapshot.py`, `export_snapshot.py` remain as live infrastructure. CLI entry points for SBI training, GS-CV, etc. will be rebuilt when cluster runs resume.
+
+`slurm/` was removed during cleanup and will be rebuilt alongside the new scripts.

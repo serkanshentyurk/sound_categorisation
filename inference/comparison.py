@@ -7,7 +7,6 @@ Single responsibility: given a trained posterior and fitting data,
 compute cross-validated errors and compare two models.
 
 Training → inference/fitting.py (train_per_animal_snpe, SBIFitter)
-Simulation → inference/simulation.py (simulate_all_sessions, etc.)
 Fold splitting → utils/fold_utils.py (merge_smallest_adjacent)
 
 Key fix (from original sbi_comparison_utils.py):

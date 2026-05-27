@@ -508,7 +508,7 @@ class SCModel:
             history: ModelTrace if return_history, else None
         """
         # Lazy import to avoid circular dependency
-        from models.BE_core import ModelTrace
+        from models.trace import ModelTrace
 
         n_trials = len(stimuli)
         choices = np.full(n_trials, np.nan)

@@ -48,13 +48,9 @@ The lowest level — per-trial arrays for a single session.
 | `.no_response` | bool array | True where `choice` is NaN |
 | `.valid_mask` | bool array | `~abort & ~no_response` |
 
-### Key Methods
+### `get_arrays()`
 
-All are thin wrappers to `behav_utils.data.filtering`.
-
-#### `get_arrays()`
-
-Extract analysis-ready arrays. **No kwargs** — always excludes aborts (invalid data), returns everything else. All scientific filtering (opto, no-response, custom) happens upstream via `filter_trials()`.
+Extract analysis-ready arrays. **No kwargs** — always excludes aborts (invalid data), returns everything else. All scientific filtering (opto, no-response, custom) happens upstream via module-level functions.
 
 ```python
 arrays = session.trials.get_arrays()
@@ -70,33 +66,6 @@ Returns dict:
 | `'no_response'` | Boolean mask for NaN choices |
 | `'reaction_times'` | RT values |
 | `'trial_indices'` | Original indices for back-mapping |
-
-#### `build_mask(exclude_abort=True, exclude_opto=True)`
-
-Build a boolean trial mask. Wrapper to `filtering.build_mask()`.
-
-#### `opto_mask(delta=0)`
-
-Boolean mask for trials relative to opto events. Wrapper to `filtering.opto_mask()`.
-
-- `delta=0` — opto trials themselves
-- `delta=1` — first trial after each opto trial
-- `delta=-1` — trial before each opto trial
-- `delta='control'` — non-opto trials (not adjacent to opto)
-
-#### `filter(mask, label='custom')`
-
-Return a new TrialData with only the trials where `mask` is True. Wrapper to `filtering.filter_trial_data()`.
-
-#### `stats(stat_names)`
-
-Compute summary statistics on these trials. **No filtering kwargs** — filter first, then call stats.
-
-```python
-# Correct pattern:
-clean_session = session.filter()
-clean_session.stats(['accuracy', 'pse', 'recency'])
-```
 
 ---
 
@@ -125,19 +94,31 @@ One behavioural session — metadata + trial data.
 | `.distribution` | str | Stimulus distribution |
 | `.is_filtered` | bool | Whether filtering has been applied |
 
-### Key Methods
+### Filtering trials
+
+Filtering uses module-level functions from `behav_utils.data.filtering`:
 
 ```python
-# Filter trials
-clean = session.filter()                              # standard: exclude abort + opto
-opto = session.filter(session.trials.opto_mask(0))    # opto trials only
+from behav_utils.data.filtering import filter_session, opto_mask, filter_trials
 
-# Get arrays from (pre-filtered) session
-arrays = session.get_arrays()
+# Standard filter: drop aborts and opto trials
+clean = filter_session(session)
 
-# Stats (filter first!)
-clean.stats(['accuracy', 'pse', 'slope'])
+# Opto trials only
+opto_only = filter_session(session, opto_mask(session.trials, 0))
+
+# Control trials (non-opto, not adjacent to opto)
+ctrl = filter_session(session, opto_mask(session.trials, 'control'))
+
+# Filter list of sessions at once
+clean_list = filter_trials(sessions)
 ```
+
+`opto_mask(trials, delta)`:
+- `delta=0` — opto trials themselves
+- `delta=1` — first trial after each opto trial
+- `delta=-1` — trial before each opto trial
+- `delta='control'` — non-opto trials (not adjacent to opto)
 
 ---
 
@@ -172,24 +153,25 @@ One animal — all sessions in chronological order.
 | `.n_sessions` | int | Session count |
 | `.session_ids` | list[str] | All session IDs |
 
-### Convenience Plot Methods
-
-These are thin wrappers that call `compute_` then `plot_` internally. For full control, call the functions directly.
+### Working with an animal
 
 ```python
-# Thin wrappers (quick exploration)
-animal.plot_psychometric(ax=ax, mode='pooled')
-animal.plot_trajectory('accuracy', ax=ax)
-animal.plot_um(ax=ax)
+from behav_utils.data.selection import select_sessions
+from behav_utils.data.filtering import filter_trials
+from behav_utils.analysis.psychometry import compute_psychometric
+from behav_utils.plotting.psychometric import plot_psychometric
+from behav_utils.plotting.styles import PALETTE
 
-# Full control (recommended)
-from behav_utils import (
-    select_sessions, filter_trials,
-    compute_psychometric, plot_psychometric, PALETTE,
-)
+# 1. Select sessions
 sessions = select_sessions(animal, preset='expert_uniform')
+
+# 2. Filter trials
 clean = filter_trials(sessions)
+
+# 3. Analyse
 result = compute_psychometric(clean, mode='pooled', n_bootstrap=200)
+
+# 4. Plot
 fig, ax = plt.subplots()
 plot_psychometric(result, ax=ax, color=PALETTE[0])
 ```
@@ -210,6 +192,8 @@ All animals in one project.
 ### Methods
 
 ```python
+from behav_utils.data.loading import load_experiment
+
 experiment = load_experiment('config.yaml')
 animal = experiment.get_animal('SS05')
 all_animals = experiment.get_animals(min_sessions=10)
@@ -222,7 +206,9 @@ all_animals = experiment.get_animals(min_sessions=10)
 Flat per-session arrays for SBI inference. Built from pre-filtered sessions:
 
 ```python
-from behav_utils import select_sessions, filter_trials, fitting_data_from_sessions
+from behav_utils.data.selection import select_sessions
+from behav_utils.data.filtering import filter_trials
+from behav_utils.data.fitting_data import fitting_data_from_sessions
 
 sessions = select_sessions(animal, preset='expert_uniform')
 clean = filter_trials(sessions)
@@ -236,35 +222,38 @@ fd = fitting_data_from_sessions(clean, animal.animal_id)
 
 ---
 
-## Pipeline Pattern
+## Pipeline pattern
 
-Every notebook should follow this pattern:
+Every notebook follows the same four steps:
 
 ```python
-from behav_utils import (
-    load_experiment, select_sessions, filter_trials,
-    compute_psychometric, compute_um, compute_trajectory, compute_comparison,
-    plot_psychometric, plot_um, plot_trajectory, plot_comparison,
-    PALETTE, apply_style,
-)
+from behav_utils.data.loading import load_experiment
+from behav_utils.data.selection import select_sessions
+from behav_utils.data.filtering import filter_trials
+from behav_utils.analysis.psychometry import compute_psychometric
+from behav_utils.analysis.update_matrix import compute_um
+from behav_utils.analysis.trajectory import compute_trajectory
+from behav_utils.plotting.psychometric import plot_psychometric
+from behav_utils.plotting.update_matrix import plot_um
+from behav_utils.plotting.trajectory import plot_trajectory
+from behav_utils.plotting.styles import PALETTE, apply_style
+
 apply_style()
 
-# 1. Load
+# 1. LOAD
 experiment = load_experiment('config.yaml')
 animal = experiment.get_animal('SS05')
 
-# 2. Select sessions (session-level)
+# 2. FILTER (session-level + trial-level)
 sessions = select_sessions(animal, preset='expert_uniform')
-
-# 3. Filter trials (trial-level) — ALWAYS EXPLICIT
 clean = filter_trials(sessions)
 
-# 4. Analyse — returns result dicts
+# 3. COMPUTE
 psych = compute_psychometric(clean, mode='pooled', n_bootstrap=200)
 um = compute_um(clean)
-traj = compute_trajectory(clean, ['accuracy', 'pse'])
+traj = compute_trajectory(clean, ['accuracy', 'mu'])
 
-# 5. Plot — draws result dicts
+# 4. PLOT
 fig, axes = plt.subplots(1, 3, figsize=(15, 4))
 plot_psychometric(psych, ax=axes[0], color=PALETTE[0])
 plot_um(um, ax=axes[1])
@@ -274,20 +263,78 @@ plot_trajectory(traj, 'accuracy', ax=axes[2])
 ### Comparing two conditions
 
 ```python
-ctrl = filter_trials(sessions)
-opto = filter_trials(sessions, lambda s: s.trials.opto_mask(0))
+from behav_utils.data.filtering import filter_session, opto_mask
+from behav_utils.analysis.comparison import compute_comparison
+from behav_utils.plotting.comparison import plot_comparison
 
-# Option A: full statistical comparison
-comp = compute_comparison(ctrl, opto, label_a='Control', label_b='Opto')
-plot_comparison(comp, metric='psychometric')
+ctrl = [filter_session(s, opto_mask(s.trials, 'control')) for s in sessions]
+opto = [filter_session(s, opto_mask(s.trials, 0))         for s in sessions]
 
-# Option B: overlay individually
-ctrl_psych = compute_psychometric(ctrl)
-opto_psych = compute_psychometric(opto)
-fig, ax = plt.subplots()
-plot_psychometric(ctrl_psych, ax=ax, color=PALETTE[0], label='Control')
-plot_psychometric(opto_psych, ax=ax, color=PALETTE[1], label='Opto')
-ax.legend()
+# Full statistical comparison
+comp = compute_comparison(ctrl, opto, label_a='Control', label_b='Opto',
+                            n_bootstrap=1000, n_permutations=1000)
+plot_comparison(comp)
+```
+
+Result dict keys:
+
+| Key | Description |
+|-----|-------------|
+| `params_a`, `params_b` | Fitted psychometric params (mu, sigma, lapse_low, lapse_high) for each condition |
+| `diffs` | params_a − params_b for each key |
+| `perm_p` | Permutation p-values per param key |
+| `boot_ci` | Bootstrap CIs per param key |
+| `boot_band_a`, `boot_band_b` | Bootstrap psychometric bands: dict with `x`, `lo`, `hi`, `median` |
+| `um_rmse` | Update matrix RMSE between conditions |
+
+Note: bootstrap band keys are `lo` and `hi`, not `lower`/`upper`.
+
+### Group-level claims (across animals)
+
+For across-animal comparisons (e.g. HET vs WT, or paired opto effects), use the
+group-level functions — never pool trials across animals.
+
+```python
+from behav_utils.analysis.comparison import (
+    compute_per_animal_stats, compute_group_comparison
+)
+
+# Unpaired (cohort comparison: HET vs WT)
+df_het = compute_per_animal_stats(het_animals)
+df_wt  = compute_per_animal_stats(wt_animals)
+result = compute_group_comparison(df_het, df_wt,
+                                    label_a='HET', label_b='WT', paired=False)
+# result['p_values']['mu'] is the Mann-Whitney p
+
+# Paired (condition comparison: opto-on vs opto-off within same animals)
+df_on  = compute_per_animal_stats(animals, sessions_per_animal=sessions_on)
+df_off = compute_per_animal_stats(animals, sessions_per_animal=sessions_off)
+result = compute_group_comparison(df_on, df_off,
+                                    label_a='opto_on', label_b='opto_off', paired=True)
+# result['p_values']['mu'] is the Wilcoxon p
+```
+
+---
+
+## Psychometric naming convention
+
+Psychometric fit parameters use math names everywhere in code:
+
+| Code key | Display label | Meaning |
+|----------|---------------|---------|
+| `mu` | PSE | Point of subjective equality (boundary) |
+| `sigma` | slope | Noise width (smaller = steeper psychometric) |
+| `lapse_low` | λ_low | Lower asymptote lapse |
+| `lapse_high` | λ_high | Upper asymptote lapse |
+| `accuracy` | Accuracy | Overall correctness |
+
+Plot functions automatically translate `mu`/`sigma` to `PSE`/`slope` for y-axis labels. You write `'mu'` in code; the plot shows "PSE".
+
+```python
+# Trajectory of PSE across sessions
+traj = compute_trajectory(clean, ['accuracy', 'mu', 'sigma'])
+plot_trajectory(traj, 'mu')   # y-axis label: "PSE"
+plot_trajectory(traj, 'sigma') # y-axis label: "slope"
 ```
 
 ---
@@ -297,10 +344,11 @@ ax.legend()
 Generate test data without real experiments:
 
 ```python
-from behav_utils import generate_synthetic_animal
-from behav_utils.data.synthetic import noisy_psychometric_simulator
+from behav_utils.data.synthetic import (
+    generate_synthetic_animal, noisy_psychometric_simulator,
+)
 
-# Built-in simulator: (stimuli, categories, rng, sigma, lapse) -> choices
+# Built-in simulator
 animal, info = generate_synthetic_animal(
     animal_id='SYN01',
     n_sessions=20,
@@ -322,6 +370,7 @@ animal, info = generate_synthetic_animal(
 
 # Custom simulator: any (stimuli, categories, rng, **kwargs) -> choices callable
 def my_simulator(stimuli, categories, rng, **kwargs):
+    ...
     return choices
 
 animal, info = generate_synthetic_animal(

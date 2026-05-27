@@ -26,10 +26,10 @@ def generate_session_with_distribution(
     Generate a synthetic session supporting 'hard_a'/'hard_b' distributions.
 
     Unlike behav_utils.generate_synthetic_session, this uses
-    analysis.stimulus_distribution.sample_distribution for project-specific
+    utils.stimulus_distributions.sample_distribution for project-specific
     distributions.
     """
-    from utils.stimulus_distribution import sample_distribution
+    from utils.stimulus_distributions import sample_distribution
     from behav_utils.data.synthetic import sample_stimuli
     from behav_utils.data.structures import SessionData, SessionMetadata, TrialData
 

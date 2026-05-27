@@ -455,7 +455,7 @@ def compute_comparison(
 
 def compute_per_animal_stats(animals, 
                              sessions_per_animal=None, 
-                             stat_keys=['mu', 'sigma', 'lapse_low', 'lapse_high', 'accuracy']):
+                             stat_keys=('mu', 'sigma', 'lapse_low', 'lapse_high', 'accuracy')):
     rows = []
     for animal in animals:
         sessions = (sessions_per_animal or {}).get(animal.animal_id, animal.sessions)
@@ -487,7 +487,7 @@ def compute_group_comparison(
     df_a, df_b, 
     label_a='A', label_b='B',
     paired=False, 
-    stat_keys=['mu', 'sigma', 'lapse_low', 'lapse_high', 'accuracy']
+    stat_keys=('mu', 'sigma', 'lapse_low', 'lapse_high', 'accuracy')
     ):
     medians_a = {k: float(df_a[k].median()) for k in stat_keys if k in df_a.columns}
     medians_b = {k: float(df_b[k].median()) for k in stat_keys if k in df_b.columns}

@@ -7,10 +7,10 @@ Takes a result dict from compute_trajectory(). Does ZERO computation.
 Just draws the trajectory line.
 
 Usage:
-    result = compute_trajectory(sessions, ['accuracy', 'pse'])
+    result = compute_trajectory(sessions, ['accuracy', 'mu'])
     fig, axes = plt.subplots(1, 2)
     plot_trajectory(result, 'accuracy', ax=axes[0])
-    plot_trajectory(result, 'pse', ax=axes[1])
+    plot_trajectory(result, 'mu', ax=axes[1])
 """
 
 import numpy as np
@@ -20,6 +20,16 @@ from typing import Optional, Tuple
 from behav_utils.plotting.styles import (
     PALETTE, COLOURS, DEFAULT_ALPHA, DEFAULT_LINE_WIDTH, DEFAULT_MARKER_SIZE,
 )
+
+
+# Map dict-key (math name) → display label (literature name)
+_DISPLAY_LABEL = {
+    'mu':         'PSE',
+    'sigma':      'slope',
+    'lapse_low':  'λ_low',
+    'lapse_high': 'λ_high',
+    'accuracy':   'Accuracy',
+}
 
 
 def plot_trajectory(
@@ -78,7 +88,7 @@ def plot_trajectory(
                 ax.axvline(boundary_x, ls=':', color='grey', alpha=0.5, zorder=0)
 
     ax.set_xlabel('Session')
-    ax.set_ylabel(stat_name)
+    ax.set_ylabel(_DISPLAY_LABEL.get(stat_name, stat_name))
 
     if title:
         ax.set_title(title)

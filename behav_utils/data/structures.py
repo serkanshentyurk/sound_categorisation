@@ -51,8 +51,8 @@ if TYPE_CHECKING:
 
 
 _STAT_PARENT = {
-    'pse': 'psychometric',
-    'slope': 'psychometric',
+    'mu': 'psychometric',
+    'sigma': 'psychometric',
     'lapse_low': 'psychometric',
     'lapse_high': 'psychometric',
     'win_stay_rate': 'win_stay',
@@ -68,7 +68,7 @@ _STAT_PARENT = {
 def _flatten_stats_dict(stats_dict: Dict[str, Any]) -> Dict[str, Any]:
     """Flatten nested stat dicts into a single-level dict.
 
-    {'psychometric': {'pse': 0.01, 'slope': 0.3}} → {'pse': 0.01, 'slope': 0.3}
+    {'psychometric': {'mu': 0.01, 'sigma': 0.3}} → {'mu': 0.01, 'sigma': 0.3}
     {'accuracy': 0.85} → {'accuracy': 0.85}
     Arrays are left as-is (e.g. update_matrix).
     """

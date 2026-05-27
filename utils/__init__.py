@@ -2,7 +2,7 @@
 
 Lower-level than `analysis/`. Nothing here is project-specific behaviour.
 """
-from utils.stimulus_distribution import (
+from utils.stimulus_distributions import (
     sample_distribution,
     compute_distribution_density,
     compute_normative_pse,

@@ -38,7 +38,7 @@ clean = filter_trials(sessions)
 # 4. Analyse (returns result dicts)
 psych = compute_psychometric(clean, mode='pooled', n_bootstrap=200)
 um = compute_um(clean)
-traj = compute_trajectory(clean, ['accuracy', 'pse'])
+traj = compute_trajectory(clean, ['accuracy', 'mu'])
 
 # 5. Plot (draws result dicts)
 fig, axes = plt.subplots(1, 3, figsize=(15, 4))
