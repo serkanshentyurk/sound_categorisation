@@ -41,7 +41,7 @@ columns:
     dtype: bool
 ```
 
-Four columns are required: `trial_number`, `stimulus`, `choice`, and `outcome`. Everything else is optional. If your CSV has different column names, just change the `csv_name` values.
+Which columns are *required* is decided by your config, not by the library: any column you list **without** `optional: true` must be present in the CSV. Structurally, only `trial_number` is hard-required by the loader; the example above also makes `stimulus`, `choice`, `outcome`, and `correct` required simply by listing them as non-optional, which is the typical choice for a 2-AFC task. If your CSV uses different names, just change the `csv_name` values; to make any of these tolerated-when-missing, add `optional: true`.
 
 ---
 
@@ -196,9 +196,12 @@ Then make sure your session metadata has a matching field, or use `"identity"` t
 
 Maps your CSV column names to behav_utils internal names. This is the core of the config — get this right and everything works.
 
-#### Required columns
+#### Typical (non-optional) columns
 
-These four must be present in every config:
+A standard 2-AFC config lists these as non-optional, so they must be present in the
+CSV. Only `trial_number` is structurally required by the loader — the rest are
+required *because* this config lists them without `optional: true`. Mark any of them
+`optional: true` if your task lacks them:
 
 ```yaml
 columns:
