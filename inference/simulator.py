@@ -2,13 +2,12 @@
 SBI Simulator for BE and SC models.
 
 Wraps models for use with simulation-based inference.
-Supports single-session and multi-session with state chaining.
+Supports single-session and multi-session simulation.
 """
 
 import numpy as np
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple, Optional, Callable, Union, Any
-from enum import Enum
+from typing import Dict, List, Tuple, Optional, Any, Union
 from scipy.integrate import trapezoid
 
 from behav_utils.analysis.summary_stats import compute_summary_stats, DEFAULT_STATS
@@ -19,78 +18,6 @@ from behav_utils.analysis.summary_stats import compute_summary_stats, DEFAULT_ST
 
 from inference.types import ModelType, ParamConfig, get_default_param_configs
 
-# =============================================================================
-# STATE TRANSITION FUNCTIONS
-# =============================================================================
-
-def state_transition_identity(state: Any, **kwargs) -> Any:
-    """Carry state forward unchanged between sessions."""
-    if hasattr(state, 'copy'):
-        return state.copy()
-    return state
-
-
-def state_transition_decay(state: Any, decay_rate: float = 0.1, **kwargs) -> Any:
-    """
-    Decay belief toward uniform between sessions.
-    
-    Works with both BE states (boundary_belief) and SC states
-    (A_distribution, B_distribution).
-    """
-    new_state = state.copy()
-    
-    if hasattr(state, 'boundary_belief'):
-        # BE model
-        uniform = np.ones_like(state.boundary_belief) / len(state.boundary_belief)
-        new_belief = (1 - decay_rate) * state.boundary_belief + decay_rate * uniform
-        new_belief = new_belief / trapezoid(new_belief, state.x)
-        new_state.boundary_belief = new_belief
-    elif hasattr(state, 'A_distribution'):
-        # SC model
-        uniform = np.ones_like(state.A_distribution) / len(state.A_distribution)
-        A_new = (1 - decay_rate) * state.A_distribution + decay_rate * uniform
-        B_new = (1 - decay_rate) * state.B_distribution + decay_rate * uniform
-        A_new = A_new / trapezoid(A_new, state.x)
-        B_new = B_new / trapezoid(B_new, state.x)
-        new_state.A_distribution = A_new
-        new_state.B_distribution = B_new
-    
-    return new_state
-
-
-def state_transition_reset(state: Any, **kwargs) -> Any:
-    """Reset to uniform/default belief between sessions."""
-    if hasattr(state, 'boundary_belief'):
-        # BE model
-        new_state = state.copy()
-        uniform = np.ones_like(state.boundary_belief)
-        new_state.boundary_belief = uniform / trapezoid(uniform, state.x)
-        return new_state
-    elif hasattr(state, 'A_distribution'):
-        # SC model — reset to default Gaussians
-        from models.SC_core import SCState
-        return SCState.initial_default(state.x_min, state.x_max, state.n_points)
-    return state.copy() if hasattr(state, 'copy') else state
-
-
-# Registry of state transition functions
-STATE_TRANSITIONS: Dict[str, Callable] = {
-    'identity': state_transition_identity,
-    'decay': state_transition_decay,
-    'reset': state_transition_reset,
-}
-
-
-def register_state_transition(name: str, func: Callable) -> None:
-    """Register a custom state transition function."""
-    STATE_TRANSITIONS[name] = func
-
-
-# =============================================================================
-# SIMULATOR CONFIGURATION
-# =============================================================================
-
-@dataclass
 class SimulatorConfig:
     """Configuration for the SBI simulator."""
     
@@ -111,10 +38,6 @@ class SimulatorConfig:
     
     # Summary statistics to compute
     stat_names: List[str] = field(default_factory=lambda: DEFAULT_STATS.copy())
-    
-    # State transition between sessions
-    state_transition: str = 'identity'
-    state_transition_kwargs: Dict[str, Any] = field(default_factory=dict)
     
     # Burn-in settings
     burn_in: int = 0
@@ -211,12 +134,6 @@ class Simulator:
         # Compute parameter structure
         self.free_param_names = config.get_free_param_names()
         self.n_free_params = self._compute_n_free_params()
-        
-        # Get state transition function
-        self.state_transition_fn = STATE_TRANSITIONS.get(
-            config.state_transition, 
-            state_transition_identity
-        )
         
 
     def _compute_n_free_params(self) -> int:
@@ -408,12 +325,6 @@ class Simulator:
                 raise ValueError(f"Unknown model type: {self.config.model_type}")
             
             all_choices[:, s] = choices
-            
-            # Apply state transition for next session
-            if s < self.n_sessions - 1:
-                current_state = self.state_transition_fn(
-                    current_state, **self.config.state_transition_kwargs
-                )
         
         # Compute summary statistics
         summary_stats = compute_summary_stats(
@@ -491,7 +402,6 @@ def create_be_simulator(
     varying_params: Optional[List[str]] = None,
     stat_names: Optional[List[str]] = None,
     burn_in: int = 0,
-    state_transition: str = 'identity',
     seed: Optional[int] = None
 ) -> Simulator:
     """
@@ -504,7 +414,6 @@ def create_be_simulator(
         varying_params: Parameters that vary across sessions
         stat_names: Summary statistics to compute
         burn_in: Burn-in trials for initial belief
-        state_transition: How to transition state between sessions
         seed: Random seed
     
     Returns:
@@ -516,7 +425,6 @@ def create_be_simulator(
         varying_params=varying_params or [],
         stat_names=stat_names or DEFAULT_STATS.copy(),
         burn_in=burn_in,
-        state_transition=state_transition,
     )
     return Simulator(config, stimuli, categories, seed=seed)
 
@@ -528,7 +436,6 @@ def create_sc_simulator(
     varying_params: Optional[List[str]] = None,
     stat_names: Optional[List[str]] = None,
     burn_in: int = 0,
-    state_transition: str = 'identity',
     seed: Optional[int] = None
 ) -> Simulator:
     """
@@ -541,7 +448,6 @@ def create_sc_simulator(
         varying_params: Parameters that vary across sessions
         stat_names: Summary statistics to compute
         burn_in: Burn-in trials for initial belief
-        state_transition: How to transition state between sessions
         seed: Random seed
     
     Returns:
@@ -553,7 +459,6 @@ def create_sc_simulator(
         varying_params=varying_params or [],
         stat_names=stat_names or DEFAULT_STATS.copy(),
         burn_in=burn_in,
-        state_transition=state_transition,
     )
     return Simulator(config, stimuli, categories, seed=seed)
 # =============================================================================

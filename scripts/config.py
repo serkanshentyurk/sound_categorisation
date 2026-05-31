@@ -77,55 +77,6 @@ SBI_N_CV_REPEATS = 64
 SBI_N_POSTERIOR_SAMPLES = 50
 SBI_N_STOCHASTIC_REPS = 10
 
-# Dynamic SBI (per-animal RandomWalk)
-DYNAMIC_SBI_N_SIMULATIONS = 30_000
-
-# Per-parameter sigma_drift — scaled to ~3-5% of each parameter's range.
-# A single global value was too aggressive for narrow-range parameters
-# (gamma range=0.20 with drift=0.05 → 25% per step) and about right
-# for wide-range ones (eta_learning range=0.94 with drift=0.05 → 5%).
-DYNAMIC_SBI_SIGMA_DRIFT = {
-    'BE': {'eta_learning': 0.04, 'eta_relax': 0.02},
-    'SC': {'gamma': 0.015, 'sigma_update': 0.04},
-}
-
-# Parameters to fit with RandomWalk linking (the rest get ConstantSpec).
-# For real data, include all potentially varying params.
-# For synthetic validation, only mark the actually-varying ones (see
-# SYNTH_DYNAMIC_VARYING_PARAMS below).
-DYNAMIC_SBI_VARYING_PARAMS = {
-    'BE': ('eta_learning', 'eta_relax'),
-    'SC': ('gamma', 'sigma_update'),
-}
-
-# Wider bounds for dynamic SBI: must accommodate the full naive→expert
-# learning arc, not just expert-phase values. The static bounds in
-# BEParams.get_bounds() / SCParams.get_bounds() are for expert-phase
-# fitting only. These override them for dynamic fitting.
-DYNAMIC_SBI_BOUNDS = {
-    'BE': {
-        'sigma_percep': (0.05, 0.5),    # same as static
-        'A_repulsion': (0.0, 0.5),      # same as static
-        'eta_learning': (0.01, 0.95),   # was (0.05, 0.90) — learning starts ~0.02
-        'eta_relax': (0.01, 0.4),       # same as static
-    },
-    'SC': {
-        'sigma_percep': (0.05, 0.5),    # same as static
-        'A_repulsion': (0.0, 0.5),      # same as static
-        'gamma': (0.3, 0.999),          # was (0.80, 0.999) — learning starts ~0.5
-        'sigma_update': (0.05, 1.0),    # same as static
-    },
-}
-
-# Synthetic validation: only the params that actually vary in the
-# synthetic trajectory. eta_relax and sigma_update are held constant
-# by _compute_session_params, so fitting them as RandomWalk wastes
-# capacity and produces spurious drift.
-SYNTH_DYNAMIC_VARYING_PARAMS = {
-    'BE': ('eta_learning',),
-    'SC': ('gamma',),
-}
-
 # Synthetic validation cohorts
 SYNTH_N_PER_MODEL = 20
 SYNTH_N_SESSIONS = 15
@@ -135,7 +86,6 @@ SYNTH_TRIALS_PER_SESSION = 350
 SMOKE_GS_N_SEEDS = 2
 SMOKE_SBI_N_SIMULATIONS = 500
 SMOKE_SBI_N_GENERIC_TRIALS = 200
-SMOKE_DYNAMIC_SBI_N_SIMULATIONS = 200
 SMOKE_N_ANIMALS_LIMIT = 2
 SMOKE_SYNTH_N_PER_MODEL = 2
 
@@ -187,15 +137,6 @@ def build_metadata(script_name: str, args: dict) -> dict:
             'SBI_BURN_IN': SBI_BURN_IN,
             'SBI_N_CV_REPEATS': SBI_N_CV_REPEATS,
             'SBI_STATS': list(SBI_STATS),
-            'DYNAMIC_SBI_N_SIMULATIONS': DYNAMIC_SBI_N_SIMULATIONS,
-            'DYNAMIC_SBI_SIGMA_DRIFT': DYNAMIC_SBI_SIGMA_DRIFT,
-            'DYNAMIC_SBI_BOUNDS': DYNAMIC_SBI_BOUNDS,
-            'DYNAMIC_SBI_VARYING_PARAMS': {
-                k: list(v) for k, v in DYNAMIC_SBI_VARYING_PARAMS.items()
-            },
-            'SYNTH_DYNAMIC_VARYING_PARAMS': {
-                k: list(v) for k, v in SYNTH_DYNAMIC_VARYING_PARAMS.items()
-            },
             'EXPERT_MIN_ACCURACY': EXPERT_MIN_ACCURACY,
             'EXPERT_LAST_FRACTION': EXPERT_LAST_FRACTION,
             'MIN_VALID_TRIALS': MIN_VALID_TRIALS,
@@ -260,7 +201,6 @@ def apply_smoke_test_overrides(config_dict: dict) -> dict:
         'GS_N_SEEDS': SMOKE_GS_N_SEEDS,
         'SBI_N_SIMULATIONS': SMOKE_SBI_N_SIMULATIONS,
         'SBI_N_GENERIC_TRIALS': SMOKE_SBI_N_GENERIC_TRIALS,
-        'DYNAMIC_SBI_N_SIMULATIONS': SMOKE_DYNAMIC_SBI_N_SIMULATIONS,
         'SYNTH_N_PER_MODEL': SMOKE_SYNTH_N_PER_MODEL,
         'N_ANIMALS_LIMIT': SMOKE_N_ANIMALS_LIMIT,
     }

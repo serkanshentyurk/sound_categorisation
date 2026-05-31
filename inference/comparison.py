@@ -6,7 +6,7 @@ Cross-validated BE vs SC comparison using trained SNPE posteriors.
 Single responsibility: given a trained posterior and fitting data,
 compute cross-validated errors and compare two models.
 
-Training → inference/fitting.py (train_per_animal_snpe, SBIFitter)
+Training → inference/amortised.py (AmortisedSBI)
 Fold splitting → utils/fold_utils.py (merge_smallest_adjacent)
 
 Key fix (from original sbi_comparison_utils.py):
@@ -70,7 +70,7 @@ def compute_cv_comparison(
         3. Average across folds
 
     Args:
-        snpe_result: Output from train_per_animal_snpe or AmortisedSBI.
+        snpe_result: Output from AmortisedSBI.train().
                      Must contain 'posterior', 'model_type', 'stat_names',
                      'burn_in', 'param_names'.
         fitting_data: FittingData for one animal.
