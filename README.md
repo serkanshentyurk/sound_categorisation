@@ -16,16 +16,11 @@ sound_categorisation/
 │
 ├── models/             # BE and SC computational models
 │
-├── inference/          # SBI (amortised + per-animal time-varying)
-│   ├── sbi_core.py     #   - SBIResult, train_sbi, sample_posterior
-│   ├── builders.py     #   - build_prior, build_simulator, defaults
-│   ├── fitter.py       #   - SBIFitter class (high-level API)
-│   ├── train.py        #   - train_per_animal_snpe (CLI-style)
-│   ├── amortised.py    #   - AmortisedSBI class (pooled, manuscript path)
-│   ├── comparison.py   #   - CV-based BE vs SC comparison
-│   ├── priors.py       #   - MultiSessionPrior + link classes
-│   ├── simulator.py    #   - model→simulator wrappers
-│   ├── types.py        #   - ConstantSpec, GPSpec, RandomWalkSpec
+├── inference/          # SBI (amortised; per-state by conditioning per window)
+│   ├── amortised.py    #   - AmortisedSBI (pooled, manuscript path)
+│   ├── comparison.py   #   - held-out CV: SBI-UM / SBI-CP votes
+│   ├── simulator.py    #   - model→simulator wrappers (CV path)
+│   ├── types.py        #   - ModelType, ParamConfig
 │   └── constants.py    #   - SBI_STATS
 │
 ├── analysis/           # Real-data analyses
@@ -40,7 +35,7 @@ sound_categorisation/
 │   └── sbi.py          #   - SBC + parameter recovery diagnostics
 │
 ├── utils/              # Math primitives + CV helpers
-│   ├── stimulus_distribution.py   #   - Hard-A/B density + normative observer
+│   ├── stimulus_distributions.py  #   - Hard-A/B density + normative observer
 │   ├── cv_utils.py                #   - empirical/simulated UM helpers
 │   └── fold_utils.py              #   - block-aware CV fold construction
 │
@@ -53,14 +48,14 @@ sound_categorisation/
 │
 ├── scripts/            # CLI entry points (being rebuilt; see notes below)
 ├── notebooks/          # Interactive analyses
-├── tests/              # pytest suite (>90 tests)
+├── tests/              # pytest suite (~100 tests)
 ├── config.yaml         # Column mapping, presets, masking sessions
 └── smoke_test.py       # 10-test functional smoke check
 ```
 
 ## Two repos in one folder
 
-- **`behav_utils/`** is a standalone library (general 2AFC analysis). Eventually pip-installable; currently used via direct import. Nothing project-specific lives here.
+- **`behav_utils/`** is a standalone library (general 2AFC analysis), pip-installable (`pip install -e behav_utils/`). Nothing project-specific lives here.
 - **All other folders** are project code that builds on `behav_utils`.
 
 ## Three project-code folders
@@ -101,26 +96,28 @@ Each step is visible at the call site. No function does two pipeline steps in on
 
 | File | Contents |
 |---|---|
-| `BE_core.py` | `BEModel`, `BEParams`, `BEState`, `ModelTrace` |
+| `BE_core.py` | `BEModel`, `BEParams`, `BEState` |
 | `SC_core.py` | `SCModel`, `SCParams`, `SCState` |
 | `perception.py` | Shared perceptual noise + boundary repulsion |
+| `trace.py` | `ModelTrace` (per-trial state record) |
 
 ### `inference/`
 
+Amortised SBI only. The network trains once on a curriculum and conditions on
+many animals; for per-SLDS-state estimation it is conditioned on each state's
+pooled trials (retrained per window length as needed). There is no RandomWalk /
+GP / per-animal linking machinery — the "dynamic" trajectory is a step function
+of independent per-state static fits with flat priors.
+
 | File | Public API |
 |---|---|
-| `sbi_core.py` | `SBIResult` (posterior container), `train_sbi`, `sample_posterior` |
-| `builders.py` | `build_prior`, `build_simulator`, `compute_observed_stats`, `DEFAULT_*` constants |
-| `fitter.py` | `SBIFitter` (high-level per-animal fitting class) |
-| `train.py` | `train_per_animal_snpe` (script-style training function) |
-| `amortised.py` | `AmortisedSBI` (manuscript-protocol pooled SBI, matches GS-CV) |
-| `comparison.py` | `compute_cv_comparison`, `compute_model_comparison` |
-| `priors.py` | `MultiSessionPrior` + link classes |
-| `simulator.py` | `create_be_simulator`, `create_sc_simulator`, `wrap_for_sbi` |
-| `types.py` | `ConstantSpec`, `GPSpec`, `RandomWalkSpec`, `ThetaLayout` |
-| `constants.py` | `SBI_STATS` |
+| `amortised.py` | `AmortisedSBI` (manuscript-protocol pooled SBI, matches GS-CV), `build_curriculum_simulator`, `compute_pooled_stats`, `compute_observed_stats_from_sessions`, `simulate_choices_from_params` |
+| `comparison.py` | `compute_cv_comparison`, `compute_model_comparison` (held-out UM/CP — the SBI-UM / SBI-CP votes) |
+| `simulator.py` | `Simulator`, `SimulatorConfig`, `create_be_simulator`, `create_sc_simulator`, `get_sbi_prior`, `wrap_for_sbi` |
+| `types.py` | `ModelType`, `ParamConfig`, `get_default_param_configs` |
+| `constants.py` | `SBI_STATS` (the ten heuristic summary stats) |
 
-External code keeps using `from inference import SBIFitter, SBIResult, ...` — the `__init__.py` re-exports everything from the new file layout.
+`from inference import AmortisedSBI, compute_cv_comparison, ...` — see `inference/__init__.py` for the full export list.
 
 ### `analysis/`
 
@@ -143,7 +140,7 @@ External code keeps using `from inference import SBIFitter, SBIResult, ...` — 
 
 | File | Public API |
 |---|---|
-| `stimulus_distribution.py` | `sample_distribution`, `compute_distribution_density`, `compute_normative_pse` |
+| `stimulus_distributions.py` | `sample_distribution`, `compute_distribution_density`, `compute_normative_pse` |
 | `cv_utils.py` | `compute_empirical_um`, `simulate_model_um`, `compute_gs_seed_errors`, `compute_cv_dataframes`, `params_to_str` |
 | `fold_utils.py` | `split_folds_by_block`, `merge_smallest_adjacent` |
 
@@ -158,6 +155,31 @@ External code keeps using `from inference import SBIFitter, SBIResult, ...` — 
 | `sbi_validation.py` | `plot_sbc_ranks`, `plot_sbc_ecdf`, `plot_recovery_scatter`, `plot_recovery_bias`, `plot_param_stat_correlations` |
 
 For pair-comparison plots (opto, pre/post shift, HET vs WT), use `behav_utils.plotting.comparison.plot_comparison`.
+
+---
+
+## Notebooks
+
+Organised by epistemic role, not topic: describe → validate → infer → characterise → manipulate.
+
+| Decade | Role | Notebooks |
+|---|---|---|
+| `0x` | Foundations & inspection (real data, descriptive) | `01` data & task · `02` BE vs SC models · `05` opto visualiser (QC tool) |
+| `1x` | Methods & validation (synthetic ground truth) | `10` methods overview · `11` static validation · `12` SLDS + per-state validation |
+| `2x` | Static model selection (real data, single-state) | `20` four-method consensus → BE/SC labels |
+| `3x` | HMM/SLDS (real data) | `30` state assignment · `31` per-state selection + consistency |
+| `4x` | Per-state ("dynamic") SBI | `40` per-state trajectories (flat prior, credible bands) |
+| `5x` | Behavioural adaptation to shifts (Aim 1, model-free) | `50` shift detection, pre/post, recovery, cross-animal diversity |
+| `6x` | Optogenetics (Aim 2, causal) | `60` expert opto · `61` post-shift opto · `62` learning opto (future) |
+| `99` | Figure assembly (cross-cutting) | talks / manuscript figures pulled from 2x–6x |
+
+`05` is the only notebook that is a standalone tool rather than a story step — it
+sits in `0x` because its job is inspecting real data. `12` validates the SLDS +
+per-state machinery that everything in `3x`/`4x` depends on. The consensus in
+`20` produces the BE/SC labels every downstream notebook cites.
+
+`notebooks/shared_setup.py` provides common paths and data loading used across
+the story notebooks.
 
 ---
 
@@ -251,24 +273,23 @@ result = sbi.fit(expert_sessions)
 # result['cv_error'] = held-out CV error, comparable with GS-CV
 ```
 
-### Dynamic SBI with parameter linking
+### Per-state ("dynamic") SBI
+
+Parameter trajectories come from applying the *same* static `AmortisedSBI` to
+each SLDS state separately, with a flat prior per state — a step function, not a
+smooth RandomWalk. Each state is fit independently; read the trajectory with its
+credible bands (overlapping bands across adjacent states are not a parameter
+change).
 
 ```python
-from inference import SBIFitter, RandomWalkSpec, ConstantSpec
+from inference import AmortisedSBI
 
-fitter = SBIFitter(
-    fitting_data=animal.fitting_data(),
-    model_type='be',
-    param_links={
-        'eta_learning': RandomWalkSpec(bounds=(0.0, 1.0)),
-        'sigma_percep': ConstantSpec(bounds=(0.05, 0.5)),
-        'A_repulsion':  ConstantSpec(bounds=(0.0, 1.0)),
-        'eta_relax':    RandomWalkSpec(bounds=(0.0, 1.0)),
-    },
-)
-fitter.train(n_simulations=50_000)
-result = fitter.fit()
-trajectory = fitter.extract_trajectories(result)
+# states: list of (label, [SessionData ...]) from the SLDS assignment (NB 31)
+trajectory = {}
+for label, state_sessions in states:
+    sbi = AmortisedSBI(model_type='be', curriculum=[('uniform', 3)])
+    sbi.train(n_simulations=50_000)          # retrained per window length
+    trajectory[label] = sbi.fit(state_sessions)
 ```
 
 ---
@@ -310,7 +331,7 @@ For across-animal claims: use `compute_per_animal_stats` + `compute_group_compar
 ## Tests and smoke check
 
 ```bash
-pytest tests/                     # full pytest suite (>90 tests)
+pytest tests/                     # full pytest suite (~100 tests)
 python3 smoke_test.py             # 10-test functional check
 ```
 
@@ -325,15 +346,12 @@ The smoke test exercises a representative subset of the pipeline end-to-end in s
 - Group comparisons (pair-level and animal-level)
 - Static SBI for BE vs SC selection (manuscript path)
 - Adaptation analysis (shift detection)
-- Opto phase assignment
+- Opto phase assignment + the `05` opto QC visualiser
 
 **On the horizon:**
-- Sequential SBI architecture (per-session filtering across sessions, supports SLDS-state and opto analyses cleanly). Design captured separately; not yet implemented.
-- Scripts rebuild (CLI entry points for cluster jobs)
-- SLURM templates rebuild
-- Per-animal exploratory notebooks for opto + adaptation transitions
-
-See `HANDOVER.md` for a detailed status snapshot of every cleanup task.
+- Results notebooks `20`–`61` (model selection, SLDS, per-state trajectories, adaptation, opto) — see the Notebooks table.
+- SLDS + per-state validation (`12`) — gates `3x`/`4x`.
+- Scripts / SLURM rebuild (CLI entry points for cluster jobs).
 
 ---
 

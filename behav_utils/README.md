@@ -51,7 +51,8 @@ plot_trajectory(traj, 'accuracy', ax=axes[2])
 
 ```python
 ctrl = filter_trials(sessions)
-opto = filter_trials(sessions, lambda s: s.trials.opto_mask(0))
+from behav_utils import opto_mask
+opto = filter_trials(sessions, lambda s: opto_mask(s.trials, 0))
 
 # Option A: compute_comparison (full statistical comparison)
 comp = compute_comparison(ctrl, opto, label_a='Control', label_b='Opto')
@@ -91,15 +92,14 @@ behav_utils/
 │   ├── loading.py           # CSV → data classes
 │   ├── selection.py         # SessionFilter, presets, fitting_data_from_sessions
 │   ├── filtering.py         # Trial-level filtering (single source of truth)
-│   ├── synthetic.py         # Synthetic data generation
-│   └── neural.py            # NeuralData, Epoch (imaging stub)
+│   └── synthetic.py         # Synthetic data generation
 ├── analysis/
 │   ├── psychometry.py       # fit_psychometric (low), compute_psychometric (session)
 │   ├── update_matrix.py     # compute_update_matrix (low), compute_um (session)
 │   ├── trajectory.py        # compute_trajectory (session)
 │   ├── comparison.py        # compare_conditions (low), compute_comparison (session)
 │   ├── session_raster.py    # compute_session_raster (session)
-│   ├── summary_stats.py     # 25+ registered stats, compute_summary_stats (low)
+│   ├── summary_stats.py     # 24 registered stats, compute_summary_stats (low)
 │   ├── session_features.py  # compute_session_features, build_feature_matrix
 │   └── utils.py             # cumulative_gaussian, generate_stimuli
 └── plotting/
@@ -147,15 +147,22 @@ All filtering logic lives in `filtering.py`. Data classes have thin wrappers.
 
 ### Session Filter Presets
 
+All presets also require ≥10 valid trials and exclude masking sessions.
+Run `list_presets()` for the live list and descriptions.
+
 | Preset | Filters |
 |:-------|:--------|
-| `expert_uniform` | stage=Full_Task_Cont, distribution=Uniform, min_accuracy=0.70, last 50% |
-| `all_uniform` | stage=Full_Task_Cont, distribution=Uniform |
-| `naive_uniform` | stage=Full_Task_Cont, distribution=Uniform, first 5 |
-| `all_hard_a` | stage=Full_Task_Cont, distribution=Hard-A |
-| `expert_hard_a` | stage=Full_Task_Cont, distribution=Hard-A, min_accuracy=0.60, last 50% |
-| `all_full_task` | stage=Full_Task_Cont |
-| `all_stages` | No filter |
+| `expert_uniform` | distribution=Uniform, last 50%, acc≥70% |
+| `naive_uniform` | distribution=Uniform, first 5 |
+| `all_uniform` | distribution=Uniform |
+| `expert_hard_a` | distribution=Hard-A, last 50%, acc≥60% |
+| `early_hard_a` | distribution=Hard-A, first 5 |
+| `all_hard_a` | distribution=Hard-A |
+| `expert_hard_b` | distribution=Hard-B, last 50%, acc≥60% |
+| `early_hard_b` | distribution=Hard-B, first 5 |
+| `all_hard_b` | distribution=Hard-B |
+| `all_full_task` | stage=Full_Task_Cont (any distribution) |
+| `all_stages` | no stage/distribution filter |
 
 ---
 
