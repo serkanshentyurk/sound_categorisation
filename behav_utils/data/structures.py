@@ -255,7 +255,7 @@ class SessionData:
     Filtering:
         session.filter()                              # standard: exclude abort + opto
         session.filter(session.trials.opto_mask(0))   # custom: opto trials only
-        filtered_session.stats(['accuracy'])           # stats on filtered trials
+        filtered_session.summary()['perf']             # accuracy on filtered trials
     """
     session_id: str
     session_idx: int
@@ -350,7 +350,7 @@ class FittingData:
     Structured container for SBI model fitting.
 
     Provides per-session trial arrays with a consistent interface expected
-    by SBIFitter and the ``build_simulator`` function.  Created via
+    by the inference simulators.  Created via
     ``AnimalData.get_fitting_data()``.
 
     Attributes:
@@ -365,7 +365,7 @@ class FittingData:
         not_blockstart: List of boolean masks (True = not first trial).
         n_sessions: Number of sessions.
         trials_per_session: Array of trial counts.
-        time_axis: Alias for ``session_indices`` (used by SBIFitter).
+        time_axis: Alias for ``session_indices``.
     """
     animal_id: str
     session_ids: List[str]
@@ -529,6 +529,56 @@ class AnimalData:
     @property
     def stages(self) -> List[str]:
         return list(dict.fromkeys(s.stage for s in self.sessions))
+
+    @property
+    def session_table(self) -> pd.DataFrame:
+        """One row per session — a tabular view for building selection masks.
+
+        Convenience for picking *sessions* (not trials). Mask against it, e.g.::
+
+            t = animal.session_table
+            opto = t[t.session_type == 'opto']                 # laser-on sessions
+            light = t[t.session_type != 'regular']             # opto or masking
+            good_uniform = t[(t.distribution == 'Uniform') & (t.accuracy > 0.7)]
+
+        Columns:
+            session_idx, session_id, date, stage, distribution,
+            n_trials, n_valid,
+            session_type — one of 'regular' | 'masking' | 'opto'
+                ('masking' = blue light, no laser; 'opto' = laser-on present),
+            accuracy — fraction correct over *valid* (non-aborted) trials.
+
+        Notes:
+            - The three session types are mutually exclusive, so they live in a
+              single categorical column rather than three booleans (which could
+              silently disagree).
+            - This is session-level only. It cannot express trial-level opto
+              masks (opto-on vs opto-off *within* a session) — use
+              ``behav_utils.data.filtering.opto_mask`` for that.
+            - 'accuracy' reuses ``SessionData.summary()['perf']`` so there is a
+              single definition of session accuracy across the library.
+        """
+        rows = []
+        for sess in self.sessions:
+            summ = sess.summary()
+            if getattr(sess, 'masking', False):
+                stype = 'masking'
+            elif sess.trials.opto_on.size > 0 and bool(np.any(sess.trials.opto_on)):
+                stype = 'opto'
+            else:
+                stype = 'regular'
+            rows.append({
+                'session_idx':  summ['session_idx'],
+                'session_id':   summ['session_id'],
+                'date':         summ['date'],
+                'stage':        summ['stage'],
+                'distribution': summ['distribution'],
+                'n_trials':     summ['n_trials'],
+                'n_valid':      summ['n_valid'],
+                'session_type': stype,
+                'accuracy':     summ['perf'],
+            })
+        return pd.DataFrame(rows)
 
     # ── Filtering ───────────────────────────────────────────────────────────
 

@@ -143,7 +143,7 @@ class SessionFilter:
         if self.min_accuracy is not None or self.max_accuracy is not None:
             filtered = []
             for s in sessions:
-                acc = s.stats(['accuracy'])['accuracy']
+                acc = s.summary()['perf']
                 if self.min_accuracy is not None and acc < self.min_accuracy:
                     continue
                 if self.max_accuracy is not None and acc > self.max_accuracy:
@@ -331,7 +331,7 @@ def fitting_data_from_sessions(
         min_valid_trials: Skip sessions below this threshold.
 
     Returns:
-        FittingData ready for SBIFitter.
+        FittingData ready for AmortisedSBI conditioning.
     """
     from behav_utils.data.structures import FittingData
 
