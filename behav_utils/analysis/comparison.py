@@ -456,6 +456,31 @@ def compute_comparison(
 def compute_per_animal_stats(animals, 
                              sessions_per_animal=None, 
                              stat_keys=('mu', 'sigma', 'lapse_low', 'lapse_high', 'accuracy')):
+    """One row of summary stats per animal — the input to group-level comparison.
+
+    For each animal, trials are pooled across its sessions and a single
+    psychometric fit + accuracy are computed, giving one value per stat per
+    animal. This is the correct granularity for across-animal (group) claims:
+    the *animal* is the unit of analysis, not the trial.
+
+    Use this together with ``compute_group_comparison`` whenever the claim is
+    about a group of animals (e.g. HET vs WT). Do NOT use the trial-pooling
+    ``compute_comparison`` for group claims — pooling trials across animals
+    treats trials as independent, which inflates significance and ignores
+    between-animal variability.
+
+    Args:
+        animals: iterable of AnimalData.
+        sessions_per_animal: optional {animal_id: [SessionData]} to override
+            which sessions are used per animal (defaults to all of an animal's
+            sessions). Animals with no sessions are skipped.
+        stat_keys: which stats to keep as columns. Available: 'mu', 'sigma',
+            'lapse_low', 'lapse_high', 'accuracy'.
+
+    Returns:
+        DataFrame with one row per animal: 'animal_id', 'genotype',
+        'n_sessions', 'n_trials_total', plus the requested stat columns.
+    """
     rows = []
     for animal in animals:
         sessions = (sessions_per_animal or {}).get(animal.animal_id, animal.sessions)
@@ -489,6 +514,35 @@ def compute_group_comparison(
     paired=False, 
     stat_keys=('mu', 'sigma', 'lapse_low', 'lapse_high', 'accuracy')
     ):
+    """Compare two groups of animals, one value per animal per stat.
+
+    Takes two per-animal DataFrames (from ``compute_per_animal_stats``) and
+    compares them stat by stat using a rank-based test on the per-animal
+    values — so each animal contributes one data point, not its trials. This
+    is the statistically correct path for group claims; see
+    ``compute_per_animal_stats`` for why trial-pooling is wrong here.
+
+    Args:
+        df_a, df_b: per-animal stat DataFrames for the two groups.
+        label_a, label_b: display labels.
+        paired: if True, use a Wilcoxon signed-rank test (requires equal n and
+            a meaningful pairing, e.g. same animals in two conditions). If
+            False (default), use a Mann-Whitney U test (independent groups,
+            e.g. HET vs WT). NaNs are dropped per stat before testing.
+        stat_keys: which stats to compare.
+
+    Returns:
+        Dict with 'medians_a'/'medians_b' (per-stat group medians),
+        'diffs' (a - b), 'p_values' (per stat; NaN if the test could not run),
+        'group_a'/'group_b' (raw per-animal arrays), 'n_a'/'n_b', 'paired',
+        and the labels.
+
+    Note:
+        With small groups (a handful of animals, or the n=2 case) these
+        rank-based p-values have very low power and wide effective uncertainty
+        — report effect sizes and per-animal values alongside, and treat a
+        non-significant result as inconclusive, not as evidence of no effect.
+    """
     medians_a = {k: float(df_a[k].median()) for k in stat_keys if k in df_a.columns}
     medians_b = {k: float(df_b[k].median()) for k in stat_keys if k in df_b.columns}
     diffs    = {k: medians_a[k] - medians_b[k] for k in medians_a}

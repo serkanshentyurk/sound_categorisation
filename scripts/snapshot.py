@@ -21,7 +21,9 @@ from typing import Dict, Optional, Tuple, Union
 SNAPSHOT_FORMAT_VERSION = 1
 SNAPSHOT_FILENAME = 'sound_cat_snapshot.pkl'
 
-# Cluster path — fixed, will not change
+# Cluster path — fixed for this project's SWC/ceph layout. Off-cluster,
+# snapshot_dir() falls back to a path derived from the repo location, so
+# this constant is only ever used on Linux/cluster.
 _CLUSTER_SNAPSHOT_DIR = Path(
     '/ceph/akrami/Serkan/Head_Fixed_Behavior/Data/Processed/behaviour/snapshots'
 )

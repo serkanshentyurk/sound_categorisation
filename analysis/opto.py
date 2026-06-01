@@ -76,7 +76,9 @@ def assign_opto_phases(
 
         has_opto = _has_real_opto(sess)
         dist = sess.distribution
-
+        if dist is not None:
+            dist = dist.lower()
+            
         if dist == 'uniform':
             if has_opto:
                 out['expert_uniform_opto'].append(sess)

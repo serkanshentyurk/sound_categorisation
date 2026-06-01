@@ -1,5 +1,5 @@
 """
-Tests for utils/stimulus_distribution.py.
+Tests for utils/stimulus_distributions.py.
 
 Covers sample_distribution, compute_distribution_density, compute_normative_pse.
 """

@@ -35,18 +35,21 @@ class TestSimulateModelMatrices:
 
         # Minimal call: a single param set
         try:
-            result = simulate_model_matrices(
-                model_type='be',
-                params={'sigma_percep': 0.1, 'A_repulsion': 0.1,
-                        'eta_learning': 0.3, 'eta_relax': 0.1},
-                stimuli=np.random.default_rng(0).uniform(-1, 1, 500),
-                categories=None,  # auto-determine
-                n_seeds=2,
+            rng = np.random.default_rng(0)
+            stimuli = rng.uniform(-1, 1, 500)
+            categories = (stimuli > 0).astype(int)
+            no_response = np.zeros(500, dtype=bool)
+            not_blockstart = np.ones(500, dtype=bool)
+            um, cm = simulate_model_matrices(
+                'be', stimuli, categories, no_response, not_blockstart,
+                sigma_percep=0.1, A_repulsion=0.1,
+                param1=0.3, param2=0.1,
+                param1_name='eta_learning', param2_name='eta_relax',
+                seed=0, burn_in=50, n_bins=8,
             )
-            # Result should be a dict-like or ndarray
-            assert result is not None
-        except (TypeError, NotImplementedError):
-            pytest.skip("API signature differs — needs adapter")
+            assert um is not None and cm is not None
+        except (TypeError, NotImplementedError) as e:
+            pytest.skip(f"API signature differs: {e}")
 
 
 class TestComputeGridSearchCV:
@@ -62,7 +65,7 @@ class TestComputeGridSearchCV:
         try:
             result = compute_grid_search_cv(
                 clean, model_type='be', grid=COARSE_GRID,
-                n_seeds=2, fit_with='update', n_folds=2,
+                n_folds=2, fit_target='update_matrix',
             )
             assert result is not None
             # Should have some standard keys
