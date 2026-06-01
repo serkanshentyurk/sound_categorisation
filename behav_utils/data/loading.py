@@ -693,6 +693,25 @@ def load_experiment(
                         sess.trials.opto_on = np.zeros_like(
                             sess.trials.opto_on, dtype=bool
                         )    
+    if config.washout_sessions:
+        from datetime import date as dt_date
+        for animal_id, date_strs in config.washout_sessions.items():
+            animal = experiment.animals.get(animal_id)
+            if animal is None:
+                continue
+            dates = set()
+            for ds in date_strs:
+                try:
+                    dates.add(dt_date(int(ds[:4]), int(ds[4:6]), int(ds[6:8])))
+                except (ValueError, IndexError):
+                    continue
+            for sess in animal.sessions:
+                if sess.date in dates:
+                    sess.washout = True
+                    if sess.trials.opto_on is not None:
+                        sess.trials.opto_on = np.zeros_like(
+                            sess.trials.opto_on, dtype=bool
+                        )  
     print(
         f"Loaded {experiment.n_animals} animals, "
         f"{sum(a.n_sessions for a in experiment.animals.values())} total sessions"

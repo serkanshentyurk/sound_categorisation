@@ -228,6 +228,9 @@ class ProjectConfig:
     
     # Masking session overrides: {animal_id: ['YYYYMMDD', ...]}
     masking_sessions: Dict[str, List[str]] = field(default_factory=dict)
+    
+    # Washout session overrides: {animal_id: ['YYYYMMDD', ...]}
+    washout_sessions: Dict[str, List[str]] = field(default_factory=dict)
 
     def __post_init__(self):
         self._validate()
@@ -445,6 +448,17 @@ def load_config(path: Union[str, Path]) -> ProjectConfig:
             masking_sessions[str(aid)] = []
         else:
             masking_sessions[str(aid)] = [str(dates)]
+            
+    # Washout sessions: {animal_id: ['YYYYMMDD', ...]}
+    washout_raw = raw.get('washout_sessions', {})
+    washout_sessions = {}
+    for aid, dates in washout_raw.items():
+        if isinstance(dates, list):
+            washout_sessions[str(aid)] = [str(d) for d in dates]
+        elif dates is None:
+            washout_sessions[str(aid)] = []
+        else:
+            washout_sessions[str(aid)] = [str(dates)]
 
     return ProjectConfig(
         name=raw.get('project', {}).get('name', 'Unnamed Project'),
@@ -457,6 +471,7 @@ def load_config(path: Union[str, Path]) -> ProjectConfig:
         session_metadata=session_metadata,
         extra_columns=raw.get('extra_columns', []),
         masking_sessions=masking_sessions,
+        washout_sessions=washout_sessions,
     )
 
 

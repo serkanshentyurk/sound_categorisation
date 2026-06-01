@@ -263,6 +263,7 @@ class SessionData:
     metadata: SessionMetadata
     trials: TrialData
     masking: bool = False
+    washout: bool = False
 
     csv_path: Optional[str] = None
 
@@ -544,7 +545,7 @@ class AnimalData:
         Columns:
             session_idx, session_id, date, stage, distribution,
             n_trials, n_valid,
-            session_type — one of 'regular' | 'masking' | 'opto'
+            session_type — one of 'regular' | 'masking' | 'opto' | 'washout'
                 ('masking' = blue light, no laser; 'opto' = laser-on present),
             accuracy — fraction correct over *valid* (non-aborted) trials.
 
@@ -565,6 +566,8 @@ class AnimalData:
                 stype = 'masking'
             elif sess.trials.opto_on.size > 0 and bool(np.any(sess.trials.opto_on)):
                 stype = 'opto'
+            elif getattr(sess, 'washout', False):
+                stype = 'washout'
             else:
                 stype = 'regular'
             rows.append({
