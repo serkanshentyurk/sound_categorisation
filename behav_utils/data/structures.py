@@ -589,7 +589,9 @@ class AnimalData:
         self,
         stage: Optional[Union[str, List[str]]] = None,
         distribution: Optional[str] = None,
+        idx: Optional[Union[int, List[int], np.ndarray]] = None,
         idx_range: Optional[Tuple[int, int]] = None,
+        mask: Optional[Union[np.ndarray, pd.Series]] = None,
         date_range: Optional[Tuple[date, date]] = None,
         return_indices: bool = False,
     ) -> Union[List[SessionData], Tuple[List[SessionData], List[int]]]:
@@ -600,7 +602,9 @@ class AnimalData:
             stage: Stage filter. A single string matches exactly;
                 a list matches any (OR logic). None = no filter.
             distribution: Distribution filter (exact match)
+            idx: Specific session indices to include (int or list). 0-based.
             idx_range: (start, end) session index range (inclusive)
+            mask: Boolean mask (length = n_sessions) to select sessions.
             date_range: (start, end) date range (inclusive)
             return_indices: If True, also return session_idx values.
 
@@ -621,13 +625,22 @@ class AnimalData:
                 sessions = [s for s in sessions if s.stage == stage]
         if distribution is not None:
             sessions = [s for s in sessions if s.distribution == distribution]
+        
+        if idx is not None:
+            if isinstance(idx, int):
+                idx = [idx]
+            idx_set = set(idx)
+            sessions = [s for s in sessions if s.session_idx in idx_set]
         if idx_range is not None:
             sessions = [s for s in sessions
                         if idx_range[0] <= s.session_idx <= idx_range[1]]
         if date_range is not None:
             sessions = [s for s in sessions
                         if date_range[0] <= s.date <= date_range[1]]
-
+        
+        if mask is not None:
+            indices = mask[mask].index if isinstance(mask, (pd.DataFrame, pd.Series)) else np.where(mask)[0]
+            sessions = [s for s in sessions if s.session_idx in indices]
         if return_indices:
             return sessions, [s.session_idx for s in sessions]
         return sessions

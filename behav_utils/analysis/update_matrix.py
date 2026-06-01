@@ -4,8 +4,8 @@ Update Matrix Computation
 Computes serial dependence (update) matrices from behavioural data.
 
 Two levels:
-    compute_update_matrix()               — raw arrays (no data class dependency)
-    compute_update_matrix_from_sessions() — List[SessionData], NO filtering
+    compute_update_matrix()  — raw arrays (no data class dependency)
+    compute_um()             — List[SessionData], NO filtering
 
 Data must be pre-filtered via filter_trials / session.filter before calling
 session-level functions.
@@ -213,19 +213,56 @@ def compute_um(
             'method': str
             'info': dict from low-level compute_update_matrix
     """
-    # Delegate to existing compute_update_matrix_from_sessions
-    # which already handles pooling/averaging correctly.
-    from behav_utils.analysis.update_matrix import compute_update_matrix_from_sessions
+    pooled = _sessions_to_pooled_arrays(sessions)
+    if pooled is None:
+        # No usable trials — return an empty, plot-safe result.
+        empty = np.full((n_bins, n_bins), np.nan)
+        return {
+            'um': empty, 'conditional_matrix': empty,
+            'n_sessions': 0, 'n_trials': 0,
+            'method': method, 'n_bins': n_bins, 'info': {},
+        }
 
-    um, conditional, info = compute_update_matrix_from_sessions(
-        sessions, method=method, n_bins=n_bins, trial_filter=trial_filter,
-    )
+    if method == 'pool':
+        um, conditional, info = compute_update_matrix(
+            pooled['stimuli'], pooled['choices'], pooled['categories'],
+            n_bins=n_bins, trial_filter=trial_filter,
+            no_response=pooled['no_response'],
+            not_blockstart=pooled['not_blockstart'],
+        )
+        n_trials = info.get('total_trials', 0)
+
+    elif method == 'average':
+        # Per-session matrices, then nanmean across sessions.
+        mats, conds, n_trials = [], [], 0
+        for sess in sessions:
+            a = sess.get_arrays()
+            if a['n_trials'] == 0:
+                continue
+            m, c, inf = compute_update_matrix(
+                a['stimuli'], a['choices'], a['categories'],
+                n_bins=n_bins, trial_filter=trial_filter,
+                no_response=a['no_response'],
+            )
+            mats.append(m); conds.append(c); n_trials += inf.get('total_trials', 0)
+        if not mats:
+            empty = np.full((n_bins, n_bins), np.nan)
+            um, conditional, info = empty, empty, {}
+        else:
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore', category=RuntimeWarning)
+                um = np.nanmean(np.stack(mats), axis=0)
+                conditional = np.nanmean(np.stack(conds), axis=0)
+            info = {'total_trials': n_trials, 'n_session_matrices': len(mats)}
+
+    else:
+        raise ValueError(f"method must be 'pool' or 'average', got {method!r}")
 
     return {
         'um': um,
         'conditional_matrix': conditional,
-        'n_sessions': info.get('n_sessions', len(sessions)),
-        'n_trials': info.get('total_trials', 0),
+        'n_sessions': pooled['n_sessions'],
+        'n_trials': n_trials,
         'method': method,
         'n_bins': n_bins,
         'info': info,
