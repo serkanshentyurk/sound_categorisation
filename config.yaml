@@ -361,12 +361,59 @@ session_presets:
     last_fraction: 0.50
   all_full_task:
     stage: "Full_Task_Cont"
-  expert_opto:
+  all_stages: {}
+
+  # ── Habituation ─────────────────────────────────────────────
+  habituation:
+    stage: ["Habituation", "Lick_To_Release", "Three_And_Three"]
+    exclude_masking: false
+    exclude_washout: false
+
+  # ── Uniform + session type ──────────────────────────────────
+  uniform_training:
     stage: "Full_Task_Cont"
     distribution: "Uniform"
-  opto_all:
+    session_type: "regular"
+  uniform_training_last5:
     stage: "Full_Task_Cont"
-  all_stages: {}
+    distribution: "Uniform"
+    session_type: "regular"
+    last_n: 5
+  uniform_masking:
+    distribution: "Uniform"
+    session_type: "masking"
+  uniform_opto:
+    distribution: "Uniform"
+    session_type: "opto"
+  uniform_washout:
+    distribution: "Uniform"
+    session_type: "washout"
+
+  # ── Hard + session type ─────────────────────────────────────
+  hard_a_regular:
+    distribution: "Hard-A"
+    session_type: "regular"
+  hard_b_regular:
+    distribution: "Hard-B"
+    session_type: "regular"
+  hard_ab_opto:
+    distribution: ["Hard-A", "Hard-B"]
+    session_type: "opto"
+  hard_ab_masking:
+    distribution: ["Hard-A", "Hard-B"]
+    session_type: "masking"
+  hard_a_opto:
+    distribution: "Hard-A"
+    session_type: "opto"
+  hard_b_opto:
+    distribution: "Hard-B"
+    session_type: "opto"
+  hard_a_masking:
+    distribution: "Hard-A"
+    session_type: "masking"
+  hard_b_masking:
+    distribution: "Hard-B"
+    session_type: "masking"
 
 # =============================================================================
 # Analysis defaults

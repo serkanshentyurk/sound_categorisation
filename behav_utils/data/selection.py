@@ -9,13 +9,15 @@ Design:
     All analysis code calls select_sessions() — never rolls its own filtering.
 
 Filtering order (each step narrows the previous):
-    1. Metadata:   stage, distribution
-    2. Index range: after_session_idx, before_session_idx, session_indices
-    3. Positional:  last_fraction, first_n, last_n
-    4. Quality:     min_accuracy, max_accuracy, min_trials
-    5. Opto:        exclude_opto
-    6. Masking:     exclude_masking
-    7. Custom:      custom_filter callable
+    1. Metadata:      stage, distribution
+    2. Session type:   session_type (if set, overrides exclude_opto/masking/washout)
+    3. Index range:    after_session_idx, before_session_idx, session_indices
+    4. Positional:     last_fraction, first_n, last_n
+    5. Quality:        min_accuracy, max_accuracy, min_trials
+    6. Opto:           exclude_opto      (skipped when session_type is set)
+    7. Masking:        exclude_masking    (skipped when session_type is set)
+    8. Washout:        exclude_washout    (skipped when session_type is set)
+    9. Custom:         custom_filter callable
 
 Usage:
     from behav_utils.data.selection import select_sessions, register_preset, SessionFilter
@@ -67,7 +69,11 @@ class SessionFilter:
 
     Attributes:
         stage: Task stage (exact match, or list for OR-logic)
-        distribution: Stimulus distribution (exact match)
+        distribution: Stimulus distribution (exact match, or list for OR-logic)
+        session_type: Session type — 'regular', 'masking', 'opto', or 'washout'.
+                      Accepts a string or list.  When set, the exclude_opto /
+                      exclude_masking / exclude_washout flags are ignored (the
+                      caller is explicitly choosing which types to include).
         min_accuracy: Minimum session accuracy (fraction correct)
         max_accuracy: Maximum session accuracy
         last_fraction: Keep only the last X fraction of sessions
@@ -78,11 +84,17 @@ class SessionFilter:
         before_session_idx: Only sessions with session_idx < this value
         session_indices: Explicit list of session_idx values to include
         min_trials: Minimum valid (non-abort, responded) trials
-        exclude_opto: If True, only include sessions with no opto trials
+        exclude_opto: If True, exclude sessions with opto trials
+                      (ignored when session_type is set)
+        exclude_masking: If True, exclude masking sessions
+                         (ignored when session_type is set)
+        exclude_washout: If True, exclude washout sessions
+                         (ignored when session_type is set)
         custom_filter: Callable(SessionData) -> bool for arbitrary filtering
     """
     stage: Optional[Union[str, List[str]]] = None
-    distribution: Optional[str] = None
+    distribution: Optional[Union[str, List[str]]] = None
+    session_type: Optional[Union[str, List[str]]] = None
     min_accuracy: Optional[float] = None
     max_accuracy: Optional[float] = None
     last_fraction: Optional[float] = None
@@ -94,7 +106,23 @@ class SessionFilter:
     min_trials: int = 10
     exclude_opto: bool = False
     exclude_masking: bool = True
+    exclude_washout: bool = True
     custom_filter: Optional[Callable] = field(default=None, hash=False)
+
+    @staticmethod
+    def _resolve_session_type(sess: 'SessionData') -> str:
+        """Compute session type from session attributes.
+
+        Priority: washout > masking > opto > regular.
+        Mirrors the logic in AnimalData.session_table.
+        """
+        if getattr(sess, 'washout', False):
+            return 'washout'
+        if getattr(sess, 'masking', False):
+            return 'masking'
+        if sess.trials.opto_on.size > 0 and bool(np.any(sess.trials.opto_on)):
+            return 'opto'
+        return 'regular'
 
     def apply(self, animal: 'AnimalData') -> List['SessionData']:
         """
@@ -112,7 +140,23 @@ class SessionFilter:
             distribution=self.distribution,
         )
 
-        # ── 2. Index range ────────────────────────────────────────────────
+        # ── 2. Session type ───────────────────────────────────────────────
+        # When session_type is set, this is a positive selection — the
+        # exclude_opto / exclude_masking / exclude_washout flags are ignored.
+        if self.session_type is not None:
+            if isinstance(self.session_type, str):
+                sessions = [
+                    s for s in sessions
+                    if self._resolve_session_type(s) == self.session_type
+                ]
+            else:
+                type_set = set(self.session_type)
+                sessions = [
+                    s for s in sessions
+                    if self._resolve_session_type(s) in type_set
+                ]
+
+        # ── 3. Index range ────────────────────────────────────────────────
         if self.after_session_idx is not None:
             sessions = [
                 s for s in sessions
@@ -127,7 +171,7 @@ class SessionFilter:
             idx_set = set(self.session_indices)
             sessions = [s for s in sessions if s.session_idx in idx_set]
 
-        # ── 3. Positional ─────────────────────────────────────────────────
+        # ── 4. Positional ─────────────────────────────────────────────────
         if self.last_fraction is not None and len(sessions) > 0:
             n_total = len(sessions)
             start_idx = int(n_total * (1.0 - self.last_fraction))
@@ -139,7 +183,7 @@ class SessionFilter:
         if self.last_n is not None:
             sessions = sessions[-self.last_n:]
 
-        # ── 4. Quality ────────────────────────────────────────────────────
+        # ── 5. Quality ────────────────────────────────────────────────────
         if self.min_accuracy is not None or self.max_accuracy is not None:
             filtered = []
             for s in sessions:
@@ -157,19 +201,25 @@ class SessionFilter:
                 if s.trials.valid_mask.sum() >= self.min_trials
             ]
 
-        # ── 5. Opto ──────────────────────────────────────────────────────
-        if self.exclude_opto:
-            sessions = [
-                s for s in sessions
-                if not np.any(s.trials.opto_on)
-            ]
+        # ── 6–8. Exclusion flags (skipped when session_type is set) ──────
+        if self.session_type is None:
+            if self.exclude_opto:
+                sessions = [
+                    s for s in sessions
+                    if not np.any(s.trials.opto_on)
+                ]
+            if self.exclude_masking:
+                sessions = [
+                    s for s in sessions
+                    if not getattr(s, 'masking', False)
+                ]
+            if self.exclude_washout:
+                sessions = [
+                    s for s in sessions
+                    if not getattr(s, 'washout', False)
+                ]
 
-        # ── 6. Masking ───────────────────────────────────────────────────
-        if self.exclude_masking:
-            sessions = [s for s in sessions if not getattr(s, 'masking', False)]
-
-
-        # ── 7. Custom ─────────────────────────────────────────────────────
+        # ── 9. Custom ─────────────────────────────────────────────────────
         if self.custom_filter is not None:
             sessions = [s for s in sessions if self.custom_filter(s)]
 
@@ -191,6 +241,8 @@ class SessionFilter:
             parts.append(f"stage={self.stage}")
         if self.distribution is not None:
             parts.append(f"distribution={self.distribution}")
+        if self.session_type is not None:
+            parts.append(f"session_type={self.session_type}")
         if self.last_fraction is not None:
             parts.append(f"last {self.last_fraction:.0%}")
         if self.first_n is not None:
@@ -207,10 +259,13 @@ class SessionFilter:
             parts.append(f"before idx {self.before_session_idx}")
         if self.min_trials > 0:
             parts.append(f"≥{self.min_trials} trials")
-        if self.exclude_opto:
-            parts.append("no opto")
-        if self.exclude_masking:
-            parts.append("no masking")
+        if self.session_type is None:
+            if self.exclude_opto:
+                parts.append("no opto")
+            if self.exclude_masking:
+                parts.append("no masking")
+            if self.exclude_washout:
+                parts.append("no washout")
         if self.custom_filter is not None:
             parts.append("+ custom filter")
         return ', '.join(parts) if parts else '(no constraints)'
@@ -501,4 +556,81 @@ register_preset('all_stages', SessionFilter())
 
 register_preset('all_full_task', SessionFilter(
     stage='Full_Task_Cont',
+))
+
+# ── Habituation ─────────────────────────────────────────────────────────
+register_preset('habituation', SessionFilter(
+    stage=['Habituation', 'Lick_To_Release', 'Three_And_Three'],
+    exclude_masking=False,
+    exclude_washout=False,
+))
+
+# ── Uniform + session type ──────────────────────────────────────────────
+register_preset('uniform_training', SessionFilter(
+    stage='Full_Task_Cont',
+    distribution='Uniform',
+    session_type='regular',
+))
+
+register_preset('uniform_training_last5', SessionFilter(
+    stage='Full_Task_Cont',
+    distribution='Uniform',
+    session_type='regular',
+    last_n=5,
+))
+
+register_preset('uniform_masking', SessionFilter(
+    distribution='Uniform',
+    session_type='masking',
+))
+
+register_preset('uniform_opto', SessionFilter(
+    distribution='Uniform',
+    session_type='opto',
+))
+
+register_preset('uniform_washout', SessionFilter(
+    distribution='Uniform',
+    session_type='washout',
+))
+
+# ── Hard + session type ─────────────────────────────────────────────────
+register_preset('hard_a_regular', SessionFilter(
+    distribution='Hard-A',
+    session_type='regular',
+))
+
+register_preset('hard_b_regular', SessionFilter(
+    distribution='Hard-B',
+    session_type='regular',
+))
+
+register_preset('hard_ab_opto', SessionFilter(
+    distribution=['Hard-A', 'Hard-B'],
+    session_type='opto',
+))
+
+register_preset('hard_ab_masking', SessionFilter(
+    distribution=['Hard-A', 'Hard-B'],
+    session_type='masking',
+))
+
+register_preset('hard_a_opto', SessionFilter(
+    distribution='Hard-A',
+    session_type='opto',
+))
+
+register_preset('hard_b_opto', SessionFilter(
+    distribution='Hard-B',
+    session_type='opto',
+))
+
+register_preset('hard_a_masking', SessionFilter(
+    distribution='Hard-A',
+    session_type='masking',
+))
+
+register_preset('hard_b_masking', SessionFilter(
+    distribution='Hard-B',
+    session_type='masking',
 ))

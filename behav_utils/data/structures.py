@@ -249,6 +249,7 @@ class SessionData:
         metadata:    SessionMetadata (stage, contingency, protocol, ...)
         trials:      TrialData (per-trial arrays)
         masking:     Whether this is a masking (light-only control) session
+        washout:     Whether this is a post-opto washout session
         csv_path:    Path to source CSV file
         filter_info: Metadata about filtering applied (None if unfiltered)
 
@@ -263,6 +264,7 @@ class SessionData:
     metadata: SessionMetadata
     trials: TrialData
     masking: bool = False
+    washout: bool = False
 
     csv_path: Optional[str] = None
 
@@ -544,8 +546,9 @@ class AnimalData:
         Columns:
             session_idx, session_id, date, stage, distribution,
             n_trials, n_valid,
-            session_type — one of 'regular' | 'masking' | 'opto'
-                ('masking' = blue light, no laser; 'opto' = laser-on present),
+            session_type — one of 'regular' | 'masking' | 'opto' | 'washout'
+                ('masking' = blue light, no laser; 'opto' = laser-on present;
+                 'washout' = post-opto washout period, no inactivation),
             accuracy — fraction correct over *valid* (non-aborted) trials.
 
         Notes:
@@ -561,7 +564,9 @@ class AnimalData:
         rows = []
         for sess in self.sessions:
             summ = sess.summary()
-            if getattr(sess, 'masking', False):
+            if getattr(sess, 'washout', False):
+                stype = 'washout'
+            elif getattr(sess, 'masking', False):
                 stype = 'masking'
             elif sess.trials.opto_on.size > 0 and bool(np.any(sess.trials.opto_on)):
                 stype = 'opto'
@@ -585,7 +590,7 @@ class AnimalData:
     def get_sessions(
         self,
         stage: Optional[Union[str, List[str]]] = None,
-        distribution: Optional[str] = None,
+        distribution: Optional[Union[str, List[str]]] = None,
         idx: Optional[Union[int, List[int], np.ndarray]] = None,
         idx_range: Optional[Tuple[int, int]] = None,
         mask: Optional[Union[np.ndarray, pd.Series]] = None,
@@ -598,7 +603,8 @@ class AnimalData:
         Args:
             stage: Stage filter. A single string matches exactly;
                 a list matches any (OR logic). None = no filter.
-            distribution: Distribution filter (exact match)
+            distribution: Distribution filter. A single string matches exactly;
+                a list matches any (OR logic). None = no filter.
             idx: Specific session_idx values to include (int or list).
             idx_range: (start, end) session_idx range (inclusive)
             mask: Boolean mask, length = n_sessions, positionally aligned with
@@ -630,7 +636,11 @@ class AnimalData:
             else:
                 sessions = [s for s in sessions if s.stage == stage]
         if distribution is not None:
-            sessions = [s for s in sessions if s.distribution == distribution]
+            if isinstance(distribution, list):
+                dist_set = set(distribution)
+                sessions = [s for s in sessions if s.distribution in dist_set]
+            else:
+                sessions = [s for s in sessions if s.distribution == distribution]
         if idx is not None:
             if isinstance(idx, (int, np.integer)):
                 idx = [int(idx)]
