@@ -212,78 +212,6 @@ def _bin_data(stimuli, choices, n_bins=8):
     return centres, means, counts
 
 
-def _bootstrap_ci(stimuli, choices, n_bootstrap, n_bins=8, seed=42):
-    """Bootstrap CI for binned P(B)."""
-    rng = np.random.default_rng(seed)
-    n = len(stimuli)
-    boot_curves = []
-    for _ in range(n_bootstrap):
-        idx = rng.integers(0, n, size=n)
-        _, means, _ = _bin_data(stimuli[idx], choices[idx], n_bins)
-        boot_curves.append(means)
-    if not boot_curves:
-        return None, None
-    boot_arr = np.array(boot_curves)
-    return (
-        np.nanpercentile(boot_arr, 2.5, axis=0),
-        np.nanpercentile(boot_arr, 97.5, axis=0),
-    )
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Session-level psychometric computation
-# ─────────────────────────────────────────────────────────────────────────────
-
-def compute_psychometric(
-    data,
-    mode: str = 'pooled',
-    n_bins: int = 8,
-    n_bootstrap: int = 0,
-) -> Dict:
-    """
-    Compute psychometric curve result from pre-filtered sessions.
-
-    This is the session-level entry point. It calls the low-level
-    fit_psychometric(stimuli, choices) internally and packages results
-    into a structured dict ready for plot_psychometric().
-
-    Args:
-        data: Pre-filtered SessionData, List[SessionData], AnimalData,
-              or (stimuli, choices) tuple.
-        mode: 'pooled' (default), 'overlay', or 'session_mean'.
-              Only affects multi-session data.
-        n_bins: Number of stimulus bins for data points.
-        n_bootstrap: Bootstrap iterations for CI (0 = off).
-
-    Returns:
-        Dict with 'mode' key and mode-specific fields.
-        Pass directly to plot_psychometric().
-    """
-    from behav_utils.analysis.psychometry import fit_psychometric
-    from behav_utils.analysis.utils import cumulative_gaussian
-
-    sessions = _resolve_to_sessions(data)
-    x_fit = np.linspace(-1, 1, 200)
-
-    if mode == 'pooled':
-        return _compute_pooled(
-            sessions, x_fit, n_bins, n_bootstrap,
-            fit_psychometric, cumulative_gaussian)
-
-    elif mode == 'overlay':
-        return _compute_overlay(
-            sessions, x_fit, n_bins,
-            fit_psychometric, cumulative_gaussian)
-
-    elif mode == 'session_mean':
-        return _compute_session_mean(
-            sessions, x_fit, n_bins, n_bootstrap,
-            fit_psychometric, cumulative_gaussian)
-
-    else:
-        raise ValueError(f"Unknown mode '{mode}'. Use 'pooled', 'overlay', or 'session_mean'.")
-
-
 def _resolve_to_sessions(data):
     """Normalise input to a list of SessionData."""
     from behav_utils.data.structures import SessionData, AnimalData
@@ -307,46 +235,173 @@ def _get_stim_choices(item):
     return _extract_stim_choices(item)
 
 
-def _compute_pooled(sessions, x_fit, n_bins, n_bootstrap, fit_fn, cg_fn):
-    """Pool all trials, fit one curve."""
+def compute_psychometric(
+    data,
+    mode: str = 'pooled',
+    n_bins: int = 8,
+    n_bootstrap: int = 1000,
+    seed: int = 42,
+    min_session_trials: int = 20,
+) -> Dict:
+    """
+    Psychometric curve from pre-filtered sessions, with parameter uncertainty.
+
+    Modes 'pooled' and 'per_session' both produce a *set of fits* and reduce it
+    identically to a point estimate, per-parameter CIs, and a curve band. The
+    set differs by mode:
+
+      'pooled'      : pool all trials; point estimate = single fit on all trials;
+                      CI/band from bootstrapping TRIALS (n_bootstrap resamples).
+                      Uncertainty is trial-sampling within this group.
+      'per_session' : fit each session; point estimate = median over session
+                      fits; CI/band = spread ACROSS sessions (no trial bootstrap).
+                      Uncertainty is between-session variability (usually wider,
+                      more honest). CI is None if fewer than 3 sessions fit.
+      'overlay'     : per-session curves for plotting (no aggregation).
+
+    The CI means different things in 'pooled' (trial-level) vs 'per_session'
+    (session-level); the return *shape* is identical so plot_psychometric and
+    downstream code never branch on mode.
+
+    Args:
+        data: SessionData, List[SessionData], AnimalData, or (stimuli, choices).
+        mode: 'pooled' | 'per_session' | 'overlay'.
+        n_bins: Bins for the raw scatter (pooled over all trials).
+        n_bootstrap: Trial resamples for 'pooled' CIs (ignored otherwise).
+        seed: RNG seed.
+        min_session_trials: 'per_session' drops sessions below this trial count.
+
+    Returns (same keys for 'pooled'/'per_session'):
+        mode, params, params_ci, curve_band,
+        bin_centres, bin_means, bin_counts, x_fit, y_fit,
+        n_trials, n_fits, success.
+    'overlay' returns {mode, per_session, n_sessions} for plotting.
+    """
+    from behav_utils.analysis.psychometry import fit_psychometric
+    from behav_utils.analysis.utils import cumulative_gaussian
+
+    sessions = _resolve_to_sessions(data)
+    x_fit = np.linspace(-1, 1, 200)
+
+    if mode == 'overlay':
+        return _compute_overlay(sessions, x_fit, n_bins,
+                                fit_psychometric, cumulative_gaussian)
+    if mode == 'pooled':
+        return _compute_pooled(sessions, x_fit, n_bins, n_bootstrap, seed,
+                               fit_psychometric, cumulative_gaussian)
+    if mode == 'per_session':
+        return _compute_per_session(sessions, x_fit, n_bins, min_session_trials,
+                                    fit_psychometric, cumulative_gaussian)
+    raise ValueError(
+        f"mode must be 'pooled', 'per_session', or 'overlay', got {mode!r}")
+
+
+_PARAMS = ('mu', 'sigma', 'lapse_low', 'lapse_high')
+
+
+def _empty_result(mode, x_fit):
+    return {'mode': mode, 'params': {}, 'params_ci': None, 'curve_band': None,
+            'bin_centres': None, 'bin_means': None, 'bin_counts': None,
+            'x_fit': x_fit, 'y_fit': None, 'n_trials': 0, 'n_fits': 0,
+            'success': False}
+
+
+def _pooled_scatter(sessions, n_bins):
+    """Raw binned scatter, pooled over all trials (no bootstrap)."""
     all_stim, all_ch = [], []
     for s in sessions:
         st, ch = _get_stim_choices(s)
         if len(st) > 0:
-            all_stim.append(st)
-            all_ch.append(ch)
-
+            all_stim.append(np.asarray(st, float))
+            all_ch.append(np.asarray(ch, float))
     if not all_stim:
-        return {'mode': 'pooled', 'params': {}, 'n_trials': 0}
+        return None, None, None, None, None
+    stim = np.concatenate(all_stim)
+    ch = np.concatenate(all_ch)
+    valid = ~np.isnan(stim) & ~np.isnan(ch)
+    stim, ch = stim[valid], ch[valid]
+    centres, means, counts = _bin_data(stim, ch, n_bins)
+    return stim, ch, centres, means, counts
 
-    stimuli = np.concatenate(all_stim)
-    choices = np.concatenate(all_ch)
-    n_trials = len(stimuli)
 
-    params = fit_fn(stimuli, choices)
-    centres, means, counts = _bin_data(stimuli, choices, n_bins)
+def _compute_pooled(sessions, x_fit, n_bins, n_bootstrap, seed, fit_fn, cg_fn):
+    """Pool all trials; point estimate = full-data fit; CI from trial bootstrap."""
+    stim, ch, centres, means, counts = _pooled_scatter(sessions, n_bins)
+    if stim is None:
+        return _empty_result('pooled', x_fit)
 
-    y_fit = None
-    if params.get('success', False) and not np.isnan(params.get('mu', np.nan)):
-        y_fit = cg_fn(x_fit, params['mu'], params['sigma'],
-                       params['lapse_low'], params['lapse_high'])
+    fit = fit_fn(stim, ch, x_eval=x_fit, n_bootstrap=n_bootstrap, seed=seed)
+    if not fit.get('success', False):
+        out = _empty_result('pooled', x_fit)
+        out.update({'bin_centres': centres, 'bin_means': means,
+                    'bin_counts': counts, 'n_trials': len(stim)})
+        return out
 
-    ci_lo, ci_hi = None, None
-    if n_bootstrap > 0:
-        ci_lo, ci_hi = _bootstrap_ci(stimuli, choices, n_bootstrap, n_bins)
+    params = {k: fit[k] for k in _PARAMS}
+    y_fit = fit['y_fit']
+    n_fits = fit.get('n_bootstrap_success', 0)
+    if n_bootstrap > 0 and n_fits > 0:
+        params_ci = {k: fit.get(f'{k}_ci', (np.nan, np.nan)) for k in _PARAMS}
+        lo, hi = fit.get('y_fit_ci', (None, None))
+        band = ({'x': x_fit, 'median': y_fit, 'lo': lo, 'hi': hi}
+                if lo is not None else None)
+    else:
+        params_ci, band = None, None
 
-    return {
-        'mode': 'pooled',
-        'params': params,
-        'x_fit': x_fit,
-        'y_fit': y_fit,
-        'bin_centres': centres,
-        'bin_means': means,
-        'bin_counts': counts,
-        'n_trials': n_trials,
-        'ci_lo': ci_lo,
-        'ci_hi': ci_hi,
-    }
+    return {'mode': 'pooled', 'params': params, 'params_ci': params_ci,
+            'curve_band': band, 'bin_centres': centres, 'bin_means': means,
+            'bin_counts': counts, 'x_fit': x_fit, 'y_fit': y_fit,
+            'n_trials': len(stim), 'n_fits': n_fits, 'success': True}
+
+
+def _compute_per_session(sessions, x_fit, n_bins, min_session_trials, fit_fn, cg_fn):
+    """Fit each session; point estimate = median over fits; CI = across-session spread."""
+    stim, ch, centres, means, counts = _pooled_scatter(sessions, n_bins)
+    if stim is None:
+        return _empty_result('per_session', x_fit)
+    n_trials = len(stim)
+
+    boot = {k: [] for k in _PARAMS}
+    curves = []
+    for s in sessions:
+        st, c = _get_stim_choices(s)
+        st, c = np.asarray(st, float), np.asarray(c, float)
+        m = ~np.isnan(st) & ~np.isnan(c)
+        st, c = st[m], c[m]
+        if len(st) < min_session_trials:
+            continue
+        f = fit_fn(st, c, x_eval=x_fit, n_bootstrap=0)
+        if not f.get('success', False) or np.isnan(f.get('mu', np.nan)):
+            continue
+        for k in _PARAMS:
+            boot[k].append(f[k])
+        curves.append(f['y_fit'])
+
+    n_fits = len(curves)
+    if n_fits == 0:
+        out = _empty_result('per_session', x_fit)
+        out.update({'bin_centres': centres, 'bin_means': means,
+                    'bin_counts': counts, 'n_trials': n_trials})
+        return out
+
+    params = {k: float(np.median(boot[k])) for k in _PARAMS}
+    y_fit = cg_fn(x_fit, params['mu'], params['sigma'],
+                  params['lapse_low'], params['lapse_high'])
+    if n_fits >= 3:
+        params_ci = {k: (float(np.percentile(boot[k], 2.5)),
+                         float(np.percentile(boot[k], 97.5))) for k in _PARAMS}
+        arr = np.array(curves)
+        band = {'x': x_fit, 'median': np.median(arr, axis=0),
+                'lo': np.percentile(arr, 2.5, axis=0),
+                'hi': np.percentile(arr, 97.5, axis=0)}
+    else:
+        params_ci, band = None, None
+
+    return {'mode': 'per_session', 'params': params, 'params_ci': params_ci,
+            'curve_band': band, 'bin_centres': centres, 'bin_means': means,
+            'bin_counts': counts, 'x_fit': x_fit, 'y_fit': y_fit,
+            'n_trials': n_trials, 'n_fits': n_fits, 'success': True}
+
 
 
 def _compute_overlay(sessions, x_fit, n_bins, fit_fn, cg_fn):
@@ -381,60 +436,6 @@ def _compute_overlay(sessions, x_fit, n_bins, fit_fn, cg_fn):
     }
 
 
-def _compute_session_mean(sessions, x_fit, n_bins, n_bootstrap, fit_fn, cg_fn):
-    """Per-session binning, then mean P(B) ± SEM across sessions."""
-    all_binned = []
-    per_session_fits = []
-    centres = None
-
-    for s in sessions:
-        st, ch = _get_stim_choices(s)
-        if len(st) < 10:
-            continue
-
-        c, m, _ = _bin_data(st, ch, n_bins)
-        all_binned.append(m)
-        centres = c
-
-        params = fit_fn(st, ch)
-        y_fit = None
-        if params.get('success', False) and not np.isnan(params.get('mu', np.nan)):
-            y_fit = cg_fn(x_fit, params['mu'], params['sigma'],
-                           params['lapse_low'], params['lapse_high'])
-        per_session_fits.append({
-            'params': params,
-            'x_fit': x_fit,
-            'y_fit': y_fit,
-        })
-
-    if not all_binned:
-        return {'mode': 'session_mean', 'n_sessions': 0}
-
-    arr = np.array(all_binned)
-    mean_p = np.nanmean(arr, axis=0)
-    n_valid = np.sum(~np.isnan(arr), axis=0)
-    sem_p = np.nanstd(arr, axis=0, ddof=1) / np.sqrt(np.maximum(n_valid, 1))
-
-    # Fit to the mean curve
-    valid = ~np.isnan(mean_p)
-    pooled_params = fit_fn(centres[valid], mean_p[valid]) if valid.sum() >= 4 else {}
-    pooled_y = None
-    if pooled_params.get('success', False):
-        pooled_y = cg_fn(x_fit, pooled_params['mu'], pooled_params['sigma'],
-                          pooled_params['lapse_low'], pooled_params['lapse_high'])
-
-    return {
-        'mode': 'session_mean',
-        'bin_centres': centres,
-        'mean_p': mean_p,
-        'sem_p': sem_p,
-        'pooled_fit': {'params': pooled_params, 'x_fit': x_fit, 'y_fit': pooled_y},
-        'per_session_fits': per_session_fits,
-        'n_sessions': len(all_binned),
-    }
-
-
-    
 def compute_psychometric_gof(stimuli: np.ndarray, choices: np.ndarray,
                              psych_params: Dict, n_bins: int = 8) -> Dict:
     """

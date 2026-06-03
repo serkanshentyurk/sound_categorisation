@@ -263,7 +263,6 @@ class SessionData:
     metadata: SessionMetadata
     trials: TrialData
     masking: bool = False
-    washout: bool = False
 
     csv_path: Optional[str] = None
 
@@ -545,7 +544,7 @@ class AnimalData:
         Columns:
             session_idx, session_id, date, stage, distribution,
             n_trials, n_valid,
-            session_type — one of 'regular' | 'masking' | 'opto' | 'washout'
+            session_type — one of 'regular' | 'masking' | 'opto'
                 ('masking' = blue light, no laser; 'opto' = laser-on present),
             accuracy — fraction correct over *valid* (non-aborted) trials.
 
@@ -566,8 +565,6 @@ class AnimalData:
                 stype = 'masking'
             elif sess.trials.opto_on.size > 0 and bool(np.any(sess.trials.opto_on)):
                 stype = 'opto'
-            elif getattr(sess, 'washout', False):
-                stype = 'washout'
             else:
                 stype = 'regular'
             rows.append({
@@ -602,9 +599,10 @@ class AnimalData:
             stage: Stage filter. A single string matches exactly;
                 a list matches any (OR logic). None = no filter.
             distribution: Distribution filter (exact match)
-            idx: Specific session indices to include (int or list). 0-based.
-            idx_range: (start, end) session index range (inclusive)
-            mask: Boolean mask (length = n_sessions) to select sessions.
+            idx: Specific session_idx values to include (int or list).
+            idx_range: (start, end) session_idx range (inclusive)
+            mask: Boolean mask, length = n_sessions, positionally aligned with
+                self.sessions (i.e. with session_table rows). Selects sessions.
             date_range: (start, end) date range (inclusive)
             return_indices: If True, also return session_idx values.
 
@@ -617,6 +615,14 @@ class AnimalData:
         """
         sessions = self.sessions
 
+        if mask is not None:
+            # Mask is positional over self.sessions (the order session_table is
+            # built in), NOT keyed by session_idx. Resolve it to the concrete
+            # sessions first, so it stays correct when session_idx is
+            # non-contiguous and doesn't misalign with the other filters below.
+            m = mask.to_numpy() if isinstance(mask, (pd.Series, pd.DataFrame)) else np.asarray(mask)
+            sessions = [s for s, keep in zip(sessions, m) if keep]
+
         if stage is not None:
             if isinstance(stage, list):
                 stage_set = set(stage)
@@ -625,11 +631,10 @@ class AnimalData:
                 sessions = [s for s in sessions if s.stage == stage]
         if distribution is not None:
             sessions = [s for s in sessions if s.distribution == distribution]
-        
         if idx is not None:
-            if isinstance(idx, int):
-                idx = [idx]
-            idx_set = set(idx)
+            if isinstance(idx, (int, np.integer)):
+                idx = [int(idx)]
+            idx_set = set(int(i) for i in idx)
             sessions = [s for s in sessions if s.session_idx in idx_set]
         if idx_range is not None:
             sessions = [s for s in sessions
@@ -637,10 +642,7 @@ class AnimalData:
         if date_range is not None:
             sessions = [s for s in sessions
                         if date_range[0] <= s.date <= date_range[1]]
-        
-        if mask is not None:
-            indices = mask[mask].index if isinstance(mask, (pd.DataFrame, pd.Series)) else np.where(mask)[0]
-            sessions = [s for s in sessions if s.session_idx in indices]
+
         if return_indices:
             return sessions, [s.session_idx for s in sessions]
         return sessions

@@ -78,9 +78,10 @@ def plot_psychometric(
     elif mode == 'overlay':
         _draw_overlay(result, ax, color, alpha, linewidth, session_colours)
 
-    elif mode == 'session_mean':
-        _draw_session_mean(result, ax, color, label, alpha, linewidth,
-                           show_data, show_ci, show_individual, individual_alpha)
+    elif mode == 'per_session':
+        _draw_per_session(result, ax, color, label, alpha, linewidth,
+                          show_data, show_ci, show_params, show_lapse,
+                          show_individual, individual_alpha)
 
     if show_reference:
         ax.axhline(0.5, ls='--', color='grey', alpha=0.3, zorder=0)
@@ -124,13 +125,11 @@ def _draw_pooled(result, ax, color, label, alpha, linewidth, linestyle,
                     markersize=DEFAULT_MARKER_SIZE, alpha=alpha * 0.7,
                     zorder=3, label=label if y_fit is None else None)
 
-    # Bootstrap CI
+    # Bootstrap CI band on the fitted curve (from parameter bootstrap)
     if show_ci:
-        ci_lo = result.get('ci_lo')
-        ci_hi = result.get('ci_hi')
-        centres = result.get('bin_centres')
-        if ci_lo is not None and ci_hi is not None and centres is not None:
-            ax.fill_between(centres, ci_lo, ci_hi, color=color,
+        band = result.get('curve_band')
+        if band is not None and band.get('lo') is not None:
+            ax.fill_between(band['x'], band['lo'], band['hi'], color=color,
                             alpha=SEM_ALPHA, zorder=1)
 
     # Lapse lines
@@ -165,33 +164,45 @@ def _draw_overlay(result, ax, color, alpha, linewidth, session_colours):
                     alpha=a, zorder=2)
 
 
-def _draw_session_mean(result, ax, color, label, alpha, linewidth,
-                       show_data, show_ci, show_individual, individual_alpha):
-    """Draw mean P(B) ± SEM across sessions."""
-    centres = result.get('bin_centres')
-    mean_p = result.get('mean_p')
-    sem_p = result.get('sem_p')
+def _draw_per_session(result, ax, color, label, alpha, linewidth,
+                      show_data, show_ci, show_params, show_lapse,
+                      show_individual, individual_alpha):
+    """Draw per-session-aggregated psychometric: median curve + across-session band."""
+    params = result.get('params', {})
+    x_fit = result.get('x_fit')
+    y_fit = result.get('y_fit')
+    band = result.get('curve_band')
 
-    if centres is None or mean_p is None:
-        return
+    # Faint individual session curves (from the band's source, if present)
+    # Not stored individually here; the band conveys the spread. Skip if absent.
 
-    # Faint individual session fits
-    if show_individual:
-        for fit in result.get('per_session_fits', []):
-            y = fit.get('y_fit')
-            x = fit.get('x_fit')
-            if y is not None and x is not None:
-                ax.plot(x, y, color=color, alpha=individual_alpha,
-                        lw=0.8, zorder=1)
+    # Across-session CI band on the fitted curve
+    if show_ci and band is not None and band.get('lo') is not None:
+        ax.fill_between(band['x'], band['lo'], band['hi'], color=color,
+                        alpha=SEM_ALPHA, zorder=1)
 
-    # Mean data points
-    v = ~np.isnan(mean_p)
+    # Median fitted curve
+    if y_fit is not None and x_fit is not None:
+        lbl = label
+        if show_params and params.get('mu') is not None:
+            lbl = f"{label or ''} (PSE={params['mu']:.2f}, \u03c3={params['sigma']:.2f})".strip()
+        ax.plot(x_fit, y_fit, color=color, lw=linewidth, alpha=alpha,
+                label=lbl, zorder=2)
+
+    # Binned data points (pooled scatter)
     if show_data:
-        ax.plot(centres[v], mean_p[v], 'o-', color=color,
-                markersize=DEFAULT_MARKER_SIZE, lw=linewidth,
-                alpha=alpha, label=label, zorder=3)
+        centres = result.get('bin_centres')
+        means = result.get('bin_means')
+        if centres is not None and means is not None:
+            v = ~np.isnan(means)
+            ax.plot(centres[v], means[v], 'o', color=color,
+                    markersize=DEFAULT_MARKER_SIZE, alpha=alpha * 0.7,
+                    zorder=3, label=label if y_fit is None else None)
 
-    # SEM band
-    if show_ci and sem_p is not None:
-        ax.fill_between(centres, mean_p - sem_p, mean_p + sem_p,
-                        color=color, alpha=SEM_ALPHA, zorder=1)
+    # Lapse lines
+    if show_lapse and params:
+        ll = params.get('lapse_low'); lh = params.get('lapse_high')
+        if ll is not None:
+            ax.axhline(ll, color='grey', ls=':', alpha=0.4)
+        if lh is not None:
+            ax.axhline(1 - lh, color='grey', ls=':', alpha=0.4)

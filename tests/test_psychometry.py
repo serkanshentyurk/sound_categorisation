@@ -102,11 +102,33 @@ class TestComputePsychometric:
         assert 'per_session' in result
         assert result['n_sessions'] == 5
 
-    def test_session_mean_mode(self, synthetic_animal):
-        """Session-mean mode returns mean ± SEM."""
+    def test_per_session_mode(self, synthetic_animal):
+        """Per-session mode: median over session fits + across-session CI."""
         from behav_utils.analysis.psychometry import compute_psychometric
 
         clean = [s for s in synthetic_animal.sessions if not s.masking][:5]
-        result = compute_psychometric(clean, mode='session_mean')
+        result = compute_psychometric(clean, mode='per_session')
 
-        assert result['mode'] == 'session_mean'
+        assert result['mode'] == 'per_session'
+        assert 'mu' in result['params']
+        assert 'params_ci' in result and 'curve_band' in result and 'n_fits' in result
+
+    def test_pooled_has_param_ci(self, synthetic_animal):
+        """Pooled mode with bootstrap returns parameter CIs and a curve band."""
+        from behav_utils.analysis.psychometry import compute_psychometric
+
+        clean = [s for s in synthetic_animal.sessions if not s.masking]
+        result = compute_psychometric(clean, mode='pooled', n_bootstrap=100)
+        if result['success'] and result['n_fits'] > 0:
+            assert result['params_ci'] is not None
+            assert 'mu' in result['params_ci']
+            assert result['curve_band'] is not None
+
+    def test_per_session_ci_none_below_three(self, synthetic_animal):
+        """Per-session CI is None when fewer than 3 sessions fit."""
+        from behav_utils.analysis.psychometry import compute_psychometric
+
+        clean = [s for s in synthetic_animal.sessions if not s.masking][:2]
+        result = compute_psychometric(clean, mode='per_session')
+        if result['n_fits'] < 3:
+            assert result['params_ci'] is None

@@ -85,8 +85,18 @@ def compute_trajectory(
     # Build convenience arrays
     values = {}
     for sn in stat_names:
-        values[sn] = np.array([
-            e.get(sn, np.nan) for e in per_session], dtype=float)
+        if sn is 'psychometric':
+            values['mu'] = np.array([
+                e.get('mu', np.nan) for e in per_session], dtype=float)
+            values['sigma'] = np.array([
+                e.get('sigma', np.nan) for e in per_session], dtype=float)
+            values['lapse_low'] = np.array([
+                e.get('lapse_low', np.nan) for e in per_session], dtype=float)
+            values['lapse_high'] = np.array([
+                e.get('lapse_high', np.nan) for e in per_session], dtype=float)
+        else:
+            values[sn] = np.array([
+                e.get(sn, np.nan) for e in per_session], dtype=float)
 
     return {
         'stat_names': stat_names,

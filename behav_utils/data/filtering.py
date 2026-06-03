@@ -290,52 +290,67 @@ def filter_trials(
     mask_fn: Optional[Callable] = None,
     min_trials: int = 10,
     label: str = '',
+    exclude_abort: bool = True,
+    exclude_opto: bool = True,
 ) -> 'List[SessionData]':
     """
     Filter trials within each session. Returns new SessionData objects.
 
-    Each session is independently filtered: mask_fn is called per session
-    to produce a boolean mask, then filter_session creates a new
-    SessionData with only the selected trials.
+    Each session is independently filtered, then filter_session creates a new
+    SessionData with only the selected trials. Sessions with fewer than
+    min_trials surviving trials are dropped.
 
-    Sessions with fewer than min_trials surviving trials are dropped.
+    Two ways to specify the mask:
+      - Leave mask_fn=None: the standard exclusion mask is built per session
+        via build_mask, controlled by exclude_abort / exclude_opto. This is the
+        common case (e.g. exclude_opto=False to KEEP opto trials in an opto
+        session, instead of writing a build_mask lambda by hand).
+      - Pass mask_fn: a callable session -> boolean mask. This OVERRIDES the
+        exclude_* flags entirely (they are ignored), for positive selections
+        like opto-only or post-opto trials.
 
     Args:
-        sessions:   List of SessionData.
-        mask_fn:    Callable: session → boolean mask (length n_trials).
-                    If None, applies standard exclusions (abort + opto).
-        min_trials: Drop sessions below this threshold.
-        label:      Human-readable description.
+        sessions:      List of SessionData.
+        mask_fn:       Callable: session -> boolean mask (length n_trials).
+                       If given, exclude_abort/exclude_opto are ignored.
+        min_trials:    Drop sessions below this surviving-trial count.
+        label:         Human-readable description.
+        exclude_abort: (mask_fn=None only) drop aborted trials.
+        exclude_opto:  (mask_fn=None only) drop opto (laser-on) trials. Set
+                       False to keep all valid trials in an opto session.
 
     Returns:
         List of new SessionData with filter_info set.
 
     Examples:
-        # Standard (exclude abort + opto)
+        # Standard clean trials (abort + opto excluded)
         clean = filter_trials(sessions)
 
-        # Opto trials only
-        opto = filter_trials(sessions,
+        # All valid trials in an opto session (keep opto trials)
+        allv = filter_trials(sessions_opto, exclude_opto=False)
+
+        # Opto trials only (positive selection -> needs mask_fn)
+        opto = filter_trials(sessions_opto,
             mask_fn=lambda s: opto_mask(s.trials, delta=0),
             label='opto trials')
 
-        # Post-opto
-        post = filter_trials(sessions,
+        # Post-opto trials
+        post = filter_trials(sessions_opto,
             mask_fn=lambda s: opto_mask(s.trials, delta=1),
             label='post-opto')
-
-        # Custom: fast correct
-        fast = filter_trials(sessions,
-            mask_fn=lambda s: (build_mask(s.trials)
-                              & s.trials.correct
-                              & (s.trials.reaction_time < 0.5)),
-            label='fast correct')
     """
-    auto_label = label or ('standard (exclude abort + opto)' if mask_fn is None else 'custom')
+    if mask_fn is None:
+        auto_label = label or _standard_mask_label(exclude_abort, exclude_opto)
+    else:
+        auto_label = label or 'custom'
 
     result = []
     for s in sessions:
-        mask = build_mask(s.trials) if mask_fn is None else mask_fn(s)
+        if mask_fn is None:
+            mask = build_mask(s.trials, exclude_abort=exclude_abort,
+                              exclude_opto=exclude_opto)
+        else:
+            mask = mask_fn(s)
 
         if mask.sum() < min_trials:
             continue
@@ -343,6 +358,15 @@ def filter_trials(
         result.append(filter_session(s, mask, label=auto_label))
 
     return result
+
+
+def _standard_mask_label(exclude_abort: bool, exclude_opto: bool) -> str:
+    parts = []
+    if exclude_abort:
+        parts.append('abort')
+    if exclude_opto:
+        parts.append('opto')
+    return f"standard (exclude {' + '.join(parts)})" if parts else 'all trials'
 
 
 # =============================================================================
