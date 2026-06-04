@@ -279,6 +279,7 @@ def filter_session(
         metadata=session.metadata,
         trials=new_trials,
         masking=session.masking,
+        washout=session.washout,
         csv_path=session.csv_path,
         filter_info=filter_info,
         _days_since_first=session._days_since_first,
