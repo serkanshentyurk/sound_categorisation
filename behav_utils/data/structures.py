@@ -131,7 +131,52 @@ class SessionMetadata:
     def stim_range_max(self) -> float:
         return self.fields.get('stim_range_max', 1.0)
 
+def _prev_nonabort_index(abort: np.ndarray) -> np.ndarray:
+    """
+    For each trial i, the index of the most recent NON-ABORT trial strictly
+    before i within this session, or -1 if none. Aborts are skipped (bridged)
+    so the carried view matches the sequence once aborts are filtered out;
+    opto / no-response trials are real and are NOT skipped. The session is the
+    block. Abort trials themselves get -1.
+    """
+    n = len(abort)
+    prev_idx = np.full(n, -1, dtype=int)
+    last = -1
+    for i in range(n):
+        if abort[i]:
+            continue
+        prev_idx[i] = last
+        last = i
+    return prev_idx
 
+
+def _gather_prev(arr: np.ndarray, prev_idx: np.ndarray) -> np.ndarray:
+    """Gather arr at prev_idx, as float, NaN where prev_idx < 0."""
+    out = np.full(len(arr), np.nan, dtype=float)
+    valid = prev_idx >= 0
+    if valid.any():
+        out[valid] = np.asarray(arr, dtype=float)[prev_idx[valid]]
+    return out
+
+
+@dataclass
+class PrevTrial:
+    """
+    Lag-1 view of the previous trial's values, aligned to the current trial.
+    Built once on the raw session and carried (not recomputed) through
+    filtering and pooling. Numeric fields are NaN where there is no
+    within-session predecessor or the previous trial was a no-response;
+    ``has_prev`` flags trials with a real predecessor (the per-trial
+    replacement for ``not_blockstart``).
+    """
+    stimulus: np.ndarray
+    choice: np.ndarray
+    correct: np.ndarray
+    category: np.ndarray
+    reaction_time: np.ndarray
+    opto_on: np.ndarray
+    has_prev: np.ndarray
+    
 # =============================================================================
 # TRIAL DATA
 # =============================================================================
@@ -187,6 +232,16 @@ class TrialData:
     optional_fields: Dict[str, np.ndarray] = field(default_factory=dict)
     extra: Dict[str, np.ndarray] = field(default_factory=dict)
 
+    # ── Derived: lag-1 (previous trial) ───────────────────────────────────────
+    # Frozen on the raw session and carried (sliced) through filtering/pooling.
+    prev_stimulus: np.ndarray = field(default_factory=lambda: np.array([]))
+    prev_choice: np.ndarray = field(default_factory=lambda: np.array([]))
+    prev_correct: np.ndarray = field(default_factory=lambda: np.array([]))
+    prev_category: np.ndarray = field(default_factory=lambda: np.array([]))
+    prev_reaction_time: np.ndarray = field(default_factory=lambda: np.array([]))
+    prev_opto_on: np.ndarray = field(default_factory=lambda: np.array([]))
+    prev_has_prev: np.ndarray = field(default_factory=lambda: np.array([], dtype=bool))
+
     def __post_init__(self):
         """Set defaults for empty optional arrays."""
         n = len(self.stimulus)
@@ -197,6 +252,15 @@ class TrialData:
         if len(self.opto_on) == 0:
             self.opto_on = np.zeros(n, dtype=bool)
 
+        if len(self.prev_stimulus) == 0 and n > 0:
+            prev_idx = _prev_nonabort_index(self.abort)
+            self.prev_stimulus = _gather_prev(self.stimulus, prev_idx)
+            self.prev_choice = _gather_prev(self.choice, prev_idx)
+            self.prev_correct = _gather_prev(self.correct, prev_idx)
+            self.prev_category = _gather_prev(self.category, prev_idx)
+            self.prev_reaction_time = _gather_prev(self.reaction_time, prev_idx)
+            self.prev_opto_on = _gather_prev(self.opto_on, prev_idx)
+            self.prev_has_prev = prev_idx >= 0
     # ── Properties ──────────────────────────────────────────────────────────
 
     @property
@@ -213,7 +277,24 @@ class TrialData:
     def valid_mask(self) -> np.ndarray:
         """Boolean mask: non-abort, responded trials."""
         return ~self.abort & ~self.no_response
-
+    
+    @property
+    def prev_trial(self) -> 'PrevTrial':
+        """
+        Lag-1 view of the previous trial's values (see PrevTrial). Frozen on
+        the raw session and carried through filtering/pooling, so it stays the
+        real predecessor even after interleaved trials are removed.
+        """
+        return PrevTrial(
+            stimulus=self.prev_stimulus,
+            choice=self.prev_choice,
+            correct=self.prev_correct,
+            category=self.prev_category,
+            reaction_time=self.prev_reaction_time,
+            opto_on=self.prev_opto_on,
+            has_prev=self.prev_has_prev,
+        )
+        
     # ── Field access ────────────────────────────────────────────────────────
 
     def get_field(self, name: str) -> Optional[np.ndarray]:
@@ -315,7 +396,7 @@ class SessionData:
             filtered = filter_session(sess, mask)
             arr = filtered.get_arrays()
         """
-        from behav_utils.data.filtering import get_arrays
+        from behav_utils.data.ops.filtering import get_arrays
         return get_arrays(self.trials)
 
 

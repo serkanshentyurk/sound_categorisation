@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from behav_utils.data.structures import AnimalData, SessionData
 
 # Re-export for convenience — callers can import from here or from selection
-from behav_utils.data.selection import select_sessions
+from behav_utils.data.ops.selection import select_sessions
 
 
 # =============================================================================

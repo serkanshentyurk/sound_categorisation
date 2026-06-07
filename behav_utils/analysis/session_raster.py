@@ -22,8 +22,9 @@ def compute_session_raster(session: 'SessionData') -> Dict:
     """
     Extract trial-by-trial data from a pre-filtered session for raster plotting.
 
-    Does zero filtering — expects a pre-filtered session. Calls
-    session.get_arrays() which only excludes aborts (always invalid).
+    Does zero filtering — expects a pre-filtered session. get_arrays() is now
+    a pure projection and no longer drops aborts, so aborts must already be
+    removed via filter_trials (default exclude_abort=True).
 
     Args:
         session: Pre-filtered SessionData.

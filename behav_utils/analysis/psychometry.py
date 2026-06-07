@@ -246,36 +246,28 @@ def compute_psychometric(
     """
     Psychometric curve from pre-filtered sessions, with parameter uncertainty.
 
-    Modes 'pooled' and 'per_session' both produce a *set of fits* and reduce it
-    identically to a point estimate, per-parameter CIs, and a curve band. The
-    set differs by mode:
+    Two modes, which return DIFFERENT shapes:
 
-      'pooled'      : pool all trials; point estimate = single fit on all trials;
-                      CI/band from bootstrapping TRIALS (n_bootstrap resamples).
-                      Uncertainty is trial-sampling within this group.
-      'per_session' : fit each session; point estimate = median over session
-                      fits; CI/band = spread ACROSS sessions (no trial bootstrap).
-                      Uncertainty is between-session variability (usually wider,
-                      more honest). CI is None if fewer than 3 sessions fit.
-      'overlay'     : per-session curves for plotting (no aggregation).
-
-    The CI means different things in 'pooled' (trial-level) vs 'per_session'
-    (session-level); the return *shape* is identical so plot_psychometric and
-    downstream code never branch on mode.
+      'pooled'      : pool all trials and fit once. Returns a point estimate
+                      with per-parameter CIs and a curve band from bootstrapping
+                      TRIALS (n_bootstrap resamples). Keys: mode, params,
+                      params_ci, curve_band, bin_centres, bin_means, bin_counts,
+                      x_fit, y_fit, n_trials, n_fits, success.
+      'per_session' : fit each session separately and return the individual fits
+                      as a LIST, with NO cross-session reduction — aggregate
+                      (mean/median over the list) downstream if you want a
+                      summary. Returns {mode, per_session, n_sessions}, where
+                      each per_session entry has session_id, session_idx, params,
+                      x_fit, y_fit, n_trials.
 
     Args:
         data: SessionData, List[SessionData], AnimalData, or (stimuli, choices).
-        mode: 'pooled' | 'per_session' | 'overlay'.
-        n_bins: Bins for the raw scatter (pooled over all trials).
+        mode: 'pooled' | 'per_session'.
+        n_bins: Bins for the raw scatter (pooled mode).
         n_bootstrap: Trial resamples for 'pooled' CIs (ignored otherwise).
         seed: RNG seed.
-        min_session_trials: 'per_session' drops sessions below this trial count.
-
-    Returns (same keys for 'pooled'/'per_session'):
-        mode, params, params_ci, curve_band,
-        bin_centres, bin_means, bin_counts, x_fit, y_fit,
-        n_trials, n_fits, success.
-    'overlay' returns {mode, per_session, n_sessions} for plotting.
+        min_session_trials: 'per_session' skips sessions below this trial count
+                            (their entry has empty params and y_fit=None).
     """
     from behav_utils.analysis.psychometry import fit_psychometric
     from behav_utils.analysis.utils import cumulative_gaussian
@@ -283,17 +275,13 @@ def compute_psychometric(
     sessions = _resolve_to_sessions(data)
     x_fit = np.linspace(-1, 1, 200)
 
-    if mode == 'overlay':
-        return _compute_overlay(sessions, x_fit, n_bins,
-                                fit_psychometric, cumulative_gaussian)
     if mode == 'pooled':
         return _compute_pooled(sessions, x_fit, n_bins, n_bootstrap, seed,
                                fit_psychometric, cumulative_gaussian)
     if mode == 'per_session':
         return _compute_per_session(sessions, x_fit, n_bins, min_session_trials,
                                     fit_psychometric, cumulative_gaussian)
-    raise ValueError(
-        f"mode must be 'pooled', 'per_session', or 'overlay', got {mode!r}")
+    raise ValueError(f"mode must be 'pooled' or 'per_session', got {mode!r}")
 
 
 _PARAMS = ('mu', 'sigma', 'lapse_low', 'lapse_high')
@@ -355,85 +343,37 @@ def _compute_pooled(sessions, x_fit, n_bins, n_bootstrap, seed, fit_fn, cg_fn):
 
 
 def _compute_per_session(sessions, x_fit, n_bins, min_session_trials, fit_fn, cg_fn):
-    """Fit each session; point estimate = median over fits; CI = across-session spread."""
-    stim, ch, centres, means, counts = _pooled_scatter(sessions, n_bins)
-    if stim is None:
-        return _empty_result('per_session', x_fit)
-    n_trials = len(stim)
-
-    boot = {k: [] for k in _PARAMS}
-    curves = []
-    for s in sessions:
-        st, c = _get_stim_choices(s)
-        st, c = np.asarray(st, float), np.asarray(c, float)
-        m = ~np.isnan(st) & ~np.isnan(c)
-        st, c = st[m], c[m]
-        if len(st) < min_session_trials:
-            continue
-        f = fit_fn(st, c, x_eval=x_fit, n_bootstrap=0)
-        if not f.get('success', False) or np.isnan(f.get('mu', np.nan)):
-            continue
-        for k in _PARAMS:
-            boot[k].append(f[k])
-        curves.append(f['y_fit'])
-
-    n_fits = len(curves)
-    if n_fits == 0:
-        out = _empty_result('per_session', x_fit)
-        out.update({'bin_centres': centres, 'bin_means': means,
-                    'bin_counts': counts, 'n_trials': n_trials})
-        return out
-
-    params = {k: float(np.median(boot[k])) for k in _PARAMS}
-    y_fit = cg_fn(x_fit, params['mu'], params['sigma'],
-                  params['lapse_low'], params['lapse_high'])
-    if n_fits >= 3:
-        params_ci = {k: (float(np.percentile(boot[k], 2.5)),
-                         float(np.percentile(boot[k], 97.5))) for k in _PARAMS}
-        arr = np.array(curves)
-        band = {'x': x_fit, 'median': np.median(arr, axis=0),
-                'lo': np.percentile(arr, 2.5, axis=0),
-                'hi': np.percentile(arr, 97.5, axis=0)}
-    else:
-        params_ci, band = None, None
-
-    return {'mode': 'per_session', 'params': params, 'params_ci': params_ci,
-            'curve_band': band, 'bin_centres': centres, 'bin_means': means,
-            'bin_counts': counts, 'x_fit': x_fit, 'y_fit': y_fit,
-            'n_trials': n_trials, 'n_fits': n_fits, 'success': True}
-
-
-
-def _compute_overlay(sessions, x_fit, n_bins, fit_fn, cg_fn):
-    """Fit per-session curves."""
+    """
+    Fit each session separately and return the individual fits as a LIST, with
+    no cross-session reduction. Each entry carries session_id / session_idx and
+    its own params / x_fit / y_fit / n_trials. Aggregate (mean or median over
+    the list) downstream if needed.
+    """
     per_session = []
     for s in sessions:
         st, ch = _get_stim_choices(s)
-        if len(st) < 10:
-            per_session.append({'params': {}, 'n_trials': len(st)})
-            continue
-
-        params = fit_fn(st, ch)
-        y_fit = None
-        if params.get('success', False) and not np.isnan(params.get('mu', np.nan)):
-            y_fit = cg_fn(x_fit, params['mu'], params['sigma'],
-                           params['lapse_low'], params['lapse_high'])
-
         entry = {
-            'params': params,
+            'session_id': getattr(s, 'session_id', None),
+            'session_idx': getattr(s, 'session_idx', None),
+            'params': {},
             'x_fit': x_fit,
-            'y_fit': y_fit,
+            'y_fit': None,
             'n_trials': len(st),
         }
-        if hasattr(s, 'session_id'):
-            entry['session_id'] = s.session_id
+        if len(st) >= min_session_trials:
+            params = fit_fn(st, ch)
+            entry['params'] = params
+            if params.get('success', False) and not np.isnan(params.get('mu', np.nan)):
+                entry['y_fit'] = cg_fn(x_fit, params['mu'], params['sigma'],
+                                       params['lapse_low'], params['lapse_high'])
         per_session.append(entry)
 
     return {
-        'mode': 'overlay',
+        'mode': 'per_session',
         'per_session': per_session,
         'n_sessions': len(per_session),
     }
+
 
 
 def compute_psychometric_gof(stimuli: np.ndarray, choices: np.ndarray,

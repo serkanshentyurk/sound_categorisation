@@ -24,7 +24,7 @@ from behav_utils.data.loading import (
     load_animal,
     load_session_csv,
 )
-from behav_utils.data.selection import (
+from behav_utils.data.ops.selection import (
     select_sessions,
     SessionFilter,
     fitting_data_from_sessions,
@@ -32,7 +32,7 @@ from behav_utils.data.selection import (
     list_presets,
     register_presets_from_config,
 )
-from behav_utils.data.filtering import (
+from behav_utils.data.ops.filtering import (
     filter_trials,
     pool_arrays,
 )

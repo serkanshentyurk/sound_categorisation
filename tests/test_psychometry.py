@@ -90,28 +90,27 @@ class TestComputePsychometric:
         assert 'params' in result
         assert 'mu' in result['params']
 
-    def test_overlay_mode(self, synthetic_animal):
-        """Overlay mode returns one curve per session."""
-        from behav_utils.analysis.psychometry import compute_psychometric
-
-        clean = [s for s in synthetic_animal.sessions if not s.masking][:5]
-        result = compute_psychometric(clean, mode='overlay')
-
-        assert result['mode'] == 'overlay'
-        # Overlay returns per_session list of psychometric fits
-        assert 'per_session' in result
-        assert result['n_sessions'] == 5
-
     def test_per_session_mode(self, synthetic_animal):
-        """Per-session mode: median over session fits + across-session CI."""
+        """Per-session mode returns the individual fits as a list (no reduction)."""
         from behav_utils.analysis.psychometry import compute_psychometric
 
         clean = [s for s in synthetic_animal.sessions if not s.masking][:5]
         result = compute_psychometric(clean, mode='per_session')
 
         assert result['mode'] == 'per_session'
-        assert 'mu' in result['params']
-        assert 'params_ci' in result and 'curve_band' in result and 'n_fits' in result
+        assert isinstance(result['per_session'], list)
+        assert result['n_sessions'] == 5
+        entry = result['per_session'][0]
+        for k in ('session_id', 'session_idx', 'params', 'x_fit', 'y_fit', 'n_trials'):
+            assert k in entry
+
+    def test_overlay_mode_removed(self, synthetic_animal):
+        """'overlay' was folded into 'per_session' and is no longer valid."""
+        from behav_utils.analysis.psychometry import compute_psychometric
+
+        clean = [s for s in synthetic_animal.sessions if not s.masking][:5]
+        with pytest.raises(ValueError):
+            compute_psychometric(clean, mode='overlay')
 
     def test_pooled_has_param_ci(self, synthetic_animal):
         """Pooled mode with bootstrap returns parameter CIs and a curve band."""
@@ -123,12 +122,3 @@ class TestComputePsychometric:
             assert result['params_ci'] is not None
             assert 'mu' in result['params_ci']
             assert result['curve_band'] is not None
-
-    def test_per_session_ci_none_below_three(self, synthetic_animal):
-        """Per-session CI is None when fewer than 3 sessions fit."""
-        from behav_utils.analysis.psychometry import compute_psychometric
-
-        clean = [s for s in synthetic_animal.sessions if not s.masking][:2]
-        result = compute_psychometric(clean, mode='per_session')
-        if result['n_fits'] < 3:
-            assert result['params_ci'] is None

@@ -92,7 +92,7 @@ class ModelTrace:
         
         trial_data should be from a pre-filtered session.
         """
-        from behav_utils.data.filtering import get_arrays
+        from behav_utils.data.ops.filtering import get_arrays
         arrays = get_arrays(trial_data)
         
         # Add not_blockstart (models need this)

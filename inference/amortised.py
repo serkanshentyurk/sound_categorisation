@@ -77,7 +77,7 @@ def compute_observed_stats_from_sessions(
     stat_names: List[str] = None,
 ) -> np.ndarray:
     """Pool all sessions' trials, compute stats on the pool."""
-    from behav_utils.data.filtering import pool_arrays
+    from behav_utils.data.ops.filtering import pool_arrays
 
     pooled = pool_arrays(sessions)
     return compute_pooled_stats(
@@ -552,7 +552,7 @@ class AmortisedSBI:
 
         Convenience wrapper around condition_from_arrays.
         """
-        from behav_utils.data.filtering import pool_arrays
+        from behav_utils.data.ops.filtering import pool_arrays
 
         pooled = pool_arrays(sessions)
         return self.condition_from_arrays(
@@ -699,7 +699,7 @@ class AmortisedSBI:
 
         See _run_cv for protocol details.
         """
-        from behav_utils.data.filtering import pool_arrays
+        from behav_utils.data.ops.filtering import pool_arrays
 
         # Convert SessionData → dicts with arrays
         session_arrays = []

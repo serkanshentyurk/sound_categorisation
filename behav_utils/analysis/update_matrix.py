@@ -12,10 +12,10 @@ session-level functions.
 """
 
 import numpy as np
-import warnings
 from typing import Optional, Dict, List, Tuple, Literal, TYPE_CHECKING
 
 from behav_utils.analysis.psychometry import fit_psychometric
+from behav_utils.data.ops.filtering import pool_arrays
 
 if TYPE_CHECKING:
     from behav_utils.data.structures import SessionData
@@ -29,6 +29,10 @@ def compute_update_matrix(
     trial_filter: Literal['all', 'post_correct'] = 'post_correct',
     no_response: Optional[np.ndarray] = None,
     not_blockstart: Optional[np.ndarray] = None,
+    prev_stimulus: Optional[np.ndarray] = None,
+    prev_choice: Optional[np.ndarray] = None,
+    prev_category: Optional[np.ndarray] = None,
+    prev_has_prev: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, np.ndarray, Dict]:
     """
     Compute update matrix from raw behavioural arrays.
@@ -44,6 +48,13 @@ def compute_update_matrix(
         trial_filter: 'post_correct' (only after correct) or 'all'.
         no_response: Bool array (True = no response). Inferred from NaN if None.
         not_blockstart: Bool array (True = not start of block). Auto if None.
+        prev_stimulus, prev_choice, prev_category, prev_has_prev: Frozen,
+            abort-aware lag-1 arrays aligned to every trial. If prev_stimulus is
+            given, the previous trial is taken from these (NOT from array
+            adjacency), so the matrix is correct on a non-consecutive subset
+            (e.g. opto-only or post-opto trials). If None, the previous trial is
+            the immediately preceding array element via not_blockstart (the
+            simulated / SBI path, unchanged).
 
     Returns:
         update_matrix: (n_bins, n_bins) shift in P(B)
@@ -60,34 +71,63 @@ def compute_update_matrix(
     else:
         no_response = np.asarray(no_response, dtype=bool)
 
-    if not_blockstart is None:
-        not_blockstart = np.ones(n_trials, dtype=bool)
-        if n_trials > 0:
-            not_blockstart[0] = False
-    else:
-        not_blockstart = np.asarray(not_blockstart, dtype=bool)
-
-    rewards = (choices == categories).astype(float)
-    rewards[np.isnan(choices)] = np.nan
-
     bin_edges = np.linspace(-1, 1, n_bins + 1)
     midpoints = (bin_edges[:-1] + bin_edges[1:]) / 2
-    bin_indices = np.clip(np.digitize(stimuli, bin_edges) - 1, 0, n_bins - 1)
 
-    curr_responded = ~no_response[1:]
-    prev_responded = ~no_response[:-1]
-    is_not_blockstart = not_blockstart[1:]
+    if prev_stimulus is not None:
+        # SESSION PATH: previous trial from the frozen, abort-aware lag-1 view.
+        # Current trial = every trial; valid pairs gated by has_prev. Correct on
+        # a non-consecutive subset (opto-only / post-opto), where array adjacency
+        # would otherwise give the wrong predecessor.
+        prev_stimulus = np.asarray(prev_stimulus, dtype=np.float64)
+        prev_choice = np.asarray(prev_choice, dtype=np.float64)
+        prev_category = np.asarray(prev_category, dtype=np.float64)
+        has_prev = np.asarray(prev_has_prev, dtype=bool)
 
-    if trial_filter == 'post_correct':
-        prev_correct = rewards[:-1] == 1
-        base_condition = prev_correct & curr_responded & prev_responded & is_not_blockstart
-    elif trial_filter == 'all':
-        base_condition = curr_responded & prev_responded & is_not_blockstart
+        curr_stim = stimuli
+        curr_choice = choices
+        prev_bin = np.clip(np.digitize(prev_stimulus, bin_edges) - 1, 0, n_bins - 1)
+        prev_reward = (prev_choice == prev_category)   # mirrors rewards, on prev
+        curr_responded = ~no_response
+        prev_responded = ~np.isnan(prev_choice)
+
+        if trial_filter == 'post_correct':
+            base = prev_reward & curr_responded & prev_responded & has_prev
+        elif trial_filter == 'all':
+            base = curr_responded & prev_responded & has_prev
+        else:
+            raise ValueError(f"trial_filter must be 'post_correct' or 'all', got '{trial_filter}'")
     else:
-        raise ValueError(f"trial_filter must be 'post_correct' or 'all', got '{trial_filter}'")
+        # ADJACENCY PATH: previous trial = the immediately preceding array
+        # element (simulated / SBI arrays, which carry no prev_trial view).
+        if not_blockstart is None:
+            not_blockstart = np.ones(n_trials, dtype=bool)
+            if n_trials > 0:
+                not_blockstart[0] = False
+        else:
+            not_blockstart = np.asarray(not_blockstart, dtype=bool)
 
-    total_stimuli = stimuli[1:][base_condition]
-    total_choices = choices[1:][base_condition]
+        rewards = (choices == categories).astype(float)
+        rewards[np.isnan(choices)] = np.nan
+        bin_indices = np.clip(np.digitize(stimuli, bin_edges) - 1, 0, n_bins - 1)
+
+        curr_stim = stimuli[1:]
+        curr_choice = choices[1:]
+        prev_bin = bin_indices[:-1]
+        curr_responded = ~no_response[1:]
+        prev_responded = ~no_response[:-1]
+        is_not_blockstart = not_blockstart[1:]
+
+        if trial_filter == 'post_correct':
+            prev_correct = rewards[:-1] == 1
+            base = prev_correct & curr_responded & prev_responded & is_not_blockstart
+        elif trial_filter == 'all':
+            base = curr_responded & prev_responded & is_not_blockstart
+        else:
+            raise ValueError(f"trial_filter must be 'post_correct' or 'all', got '{trial_filter}'")
+
+    total_stimuli = curr_stim[base]
+    total_choices = curr_choice[base]
     total_psych = fit_psychometric(total_stimuli, total_choices, midpoints)
 
     total_curve = total_psych['y_fit'] if total_psych['success'] else np.full(n_bins, np.nan)
@@ -98,10 +138,10 @@ def compute_update_matrix(
     conditional_psychs = []
 
     for j in range(n_bins):
-        prev_in_bin = bin_indices[:-1] == j
-        condition = base_condition & prev_in_bin
-        cond_stimuli = stimuli[1:][condition]
-        cond_choices = choices[1:][condition]
+        prev_in_bin = prev_bin == j
+        condition = base & prev_in_bin
+        cond_stimuli = curr_stim[condition]
+        cond_choices = curr_choice[condition]
         bin_counts[j] = len(cond_stimuli)
 
         if len(cond_stimuli) < 10:
@@ -144,97 +184,61 @@ def matrix_error(matrix1: np.ndarray, matrix2: np.ndarray) -> float:
 # SESSION-LEVEL (NO FILTERING — data must be pre-filtered)
 # =============================================================================
 
-def _sessions_to_pooled_arrays(
-    sessions: List['SessionData'],
-) -> Optional[Dict[str, np.ndarray]]:
-    """
-    Concatenate trials from multiple sessions into flat arrays.
-
-    No filtering. Data must be pre-filtered via filter_trials.
-    Session boundaries are marked as block starts.
-    """
-    all_stim, all_choice, all_cat = [], [], []
-    all_no_resp, all_nbs = [], []
-
-    for sess in sessions:
-        arrays = sess.get_arrays()
-        n = arrays['n_trials']
-        if n == 0:
-            continue
-
-        all_stim.append(arrays['stimuli'])
-        all_choice.append(arrays['choices'])
-        all_cat.append(arrays['categories'])
-        all_no_resp.append(arrays['no_response'])
-
-        nbs = np.ones(n, dtype=bool)
-        nbs[0] = False  # block boundary
-        all_nbs.append(nbs)
-
-    if not all_stim:
-        return None
-
-    return {
-        'stimuli': np.concatenate(all_stim),
-        'choices': np.concatenate(all_choice),
-        'categories': np.concatenate(all_cat),
-        'no_response': np.concatenate(all_no_resp),
-        'not_blockstart': np.concatenate(all_nbs),
-        'n_sessions': len(all_stim),
-        'n_trials_pooled': sum(len(s) for s in all_stim),
-    }
-
-
-
 def compute_um(
     sessions: List['SessionData'],
-    method: Literal['pool', 'average'] = 'pool',
+    mode: Literal['pooled', 'per_session'] = 'pooled',
     n_bins: int = 8,
     trial_filter: Literal['all', 'post_correct'] = 'post_correct',
 ) -> Dict:
     """
     Compute update matrix from pre-filtered sessions.
 
-    Session-level wrapper around compute_update_matrix(). Returns a
-    structured dict ready for plot_um().
+    Session-level wrapper around compute_update_matrix(). Two modes, which
+    return DIFFERENT shapes:
+
+      'pooled'      : concatenate all sessions, compute one update matrix.
+                      Returns {mode, um, conditional_matrix, n_sessions,
+                      n_trials, n_bins, info}.
+      'per_session' : compute an update matrix per session and return the
+                      individual matrices as a LIST, with NO reduction —
+                      aggregate (e.g. a nan-aware mean over the list) downstream.
+                      Returns {mode, per_session, n_sessions, n_bins}, where each
+                      entry has session_id, session_idx, um, conditional_matrix,
+                      n_trials, info. Note the UM is data-hungry (9 fits, ≥10
+                      pairs/bin), so single-session matrices are often sparse.
 
     Args:
         sessions: Pre-filtered List[SessionData].
-        method: 'pool' (concatenate then compute) or 'average' (per-session then mean).
+        mode: 'pooled' | 'per_session'.
         n_bins: Number of stimulus bins.
         trial_filter: 'post_correct' or 'all'.
-
-    Returns:
-        Dict with:
-            'um': ndarray (n_bins × n_bins) update matrix
-            'conditional_matrix': ndarray (n_bins × n_bins)
-            'n_sessions': int
-            'n_trials': int
-            'method': str
-            'info': dict from low-level compute_update_matrix
     """
-    pooled = _sessions_to_pooled_arrays(sessions)
-    if pooled is None:
-        # No usable trials — return an empty, plot-safe result.
-        empty = np.full((n_bins, n_bins), np.nan)
-        return {
-            'um': empty, 'conditional_matrix': empty,
-            'n_sessions': 0, 'n_trials': 0,
-            'method': method, 'n_bins': n_bins, 'info': {},
-        }
-
-    if method == 'pool':
+    if mode == 'pooled':
+        pooled = pool_arrays(sessions)
+        if pooled['n_trials'] == 0:
+            empty = np.full((n_bins, n_bins), np.nan)
+            return {
+                'mode': 'pooled', 'um': empty, 'conditional_matrix': empty,
+                'n_sessions': 0, 'n_trials': 0, 'n_bins': n_bins, 'info': {},
+            }
         um, conditional, info = compute_update_matrix(
             pooled['stimuli'], pooled['choices'], pooled['categories'],
             n_bins=n_bins, trial_filter=trial_filter,
             no_response=pooled['no_response'],
-            not_blockstart=pooled['not_blockstart'],
+            prev_stimulus=pooled['prev_stimulus'],
+            prev_choice=pooled['prev_choice'],
+            prev_category=pooled['prev_category'],
+            prev_has_prev=pooled['prev_has_prev'],
         )
-        n_trials = info.get('total_trials', 0)
+        return {
+            'mode': 'pooled', 'um': um, 'conditional_matrix': conditional,
+            'n_sessions': pooled['n_sessions'],
+            'n_trials': info.get('total_trials', 0),
+            'n_bins': n_bins, 'info': info,
+        }
 
-    elif method == 'average':
-        # Per-session matrices, then nanmean across sessions.
-        mats, conds, n_trials = [], [], 0
+    if mode == 'per_session':
+        per_session = []
         for sess in sessions:
             a = sess.get_arrays()
             if a['n_trials'] == 0:
@@ -243,27 +247,24 @@ def compute_um(
                 a['stimuli'], a['choices'], a['categories'],
                 n_bins=n_bins, trial_filter=trial_filter,
                 no_response=a['no_response'],
+                prev_stimulus=a['prev_stimulus'],
+                prev_choice=a['prev_choice'],
+                prev_category=a['prev_category'],
+                prev_has_prev=a['prev_has_prev'],
             )
-            mats.append(m); conds.append(c); n_trials += inf.get('total_trials', 0)
-        if not mats:
-            empty = np.full((n_bins, n_bins), np.nan)
-            um, conditional, info = empty, empty, {}
-        else:
-            with warnings.catch_warnings():
-                warnings.simplefilter('ignore', category=RuntimeWarning)
-                um = np.nanmean(np.stack(mats), axis=0)
-                conditional = np.nanmean(np.stack(conds), axis=0)
-            info = {'total_trials': n_trials, 'n_session_matrices': len(mats)}
+            per_session.append({
+                'session_id': getattr(sess, 'session_id', None),
+                'session_idx': getattr(sess, 'session_idx', None),
+                'um': m,
+                'conditional_matrix': c,
+                'n_trials': inf.get('total_trials', 0),
+                'info': inf,
+            })
+        return {
+            'mode': 'per_session',
+            'per_session': per_session,
+            'n_sessions': len(per_session),
+            'n_bins': n_bins,
+        }
 
-    else:
-        raise ValueError(f"method must be 'pool' or 'average', got {method!r}")
-
-    return {
-        'um': um,
-        'conditional_matrix': conditional,
-        'n_sessions': pooled['n_sessions'],
-        'n_trials': n_trials,
-        'method': method,
-        'n_bins': n_bins,
-        'info': info,
-    }
+    raise ValueError(f"mode must be 'pooled' or 'per_session', got {mode!r}")

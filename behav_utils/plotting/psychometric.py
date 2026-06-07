@@ -57,7 +57,7 @@ def plot_psychometric(
         show_lapse: Show lapse rate reference lines.
         show_reference: Show 0.5 horizontal and 0 vertical lines.
         show_individual: For session_mean, show faint per-session fits.
-        session_colours: Per-session colours for overlay mode.
+        session_colours: Per-session colours for per_session mode.
         title: Axes title.
 
     Returns:
@@ -75,13 +75,8 @@ def plot_psychometric(
         _draw_pooled(result, ax, color, label, alpha, linewidth, linestyle,
                      show_data, show_ci, show_params, show_lapse)
 
-    elif mode == 'overlay':
-        _draw_overlay(result, ax, color, alpha, linewidth, session_colours)
-
     elif mode == 'per_session':
-        _draw_per_session(result, ax, color, label, alpha, linewidth,
-                          show_data, show_ci, show_params, show_lapse,
-                          show_individual, individual_alpha)
+        _draw_per_session(result, ax, color, alpha, linewidth, session_colours)
 
     if show_reference:
         ax.axhline(0.5, ls='--', color='grey', alpha=0.3, zorder=0)
@@ -142,8 +137,8 @@ def _draw_pooled(result, ax, color, label, alpha, linewidth, linestyle,
             ax.axhline(1 - lh, color='grey', ls=':', alpha=0.4)
 
 
-def _draw_overlay(result, ax, color, alpha, linewidth, session_colours):
-    """Draw per-session psychometric curves."""
+def _draw_per_session(result, ax, color, alpha, linewidth, session_colours):
+    """Draw the individual per-session psychometric curves (one per fit)."""
     per_session = result.get('per_session', [])
     n = len(per_session)
     if session_colours is not None:
@@ -161,48 +156,4 @@ def _draw_overlay(result, ax, color, alpha, linewidth, session_colours):
         if y_fit is not None and x_fit is not None:
             a = 0.3 + 0.5 * (i / max(n - 1, 1))
             ax.plot(x_fit, y_fit, color=colours[i], lw=linewidth,
-                    alpha=a, zorder=2)
-
-
-def _draw_per_session(result, ax, color, label, alpha, linewidth,
-                      show_data, show_ci, show_params, show_lapse,
-                      show_individual, individual_alpha):
-    """Draw per-session-aggregated psychometric: median curve + across-session band."""
-    params = result.get('params', {})
-    x_fit = result.get('x_fit')
-    y_fit = result.get('y_fit')
-    band = result.get('curve_band')
-
-    # Faint individual session curves (from the band's source, if present)
-    # Not stored individually here; the band conveys the spread. Skip if absent.
-
-    # Across-session CI band on the fitted curve
-    if show_ci and band is not None and band.get('lo') is not None:
-        ax.fill_between(band['x'], band['lo'], band['hi'], color=color,
-                        alpha=SEM_ALPHA, zorder=1)
-
-    # Median fitted curve
-    if y_fit is not None and x_fit is not None:
-        lbl = label
-        if show_params and params.get('mu') is not None:
-            lbl = f"{label or ''} (PSE={params['mu']:.2f}, \u03c3={params['sigma']:.2f})".strip()
-        ax.plot(x_fit, y_fit, color=color, lw=linewidth, alpha=alpha,
-                label=lbl, zorder=2)
-
-    # Binned data points (pooled scatter)
-    if show_data:
-        centres = result.get('bin_centres')
-        means = result.get('bin_means')
-        if centres is not None and means is not None:
-            v = ~np.isnan(means)
-            ax.plot(centres[v], means[v], 'o', color=color,
-                    markersize=DEFAULT_MARKER_SIZE, alpha=alpha * 0.7,
-                    zorder=3, label=label if y_fit is None else None)
-
-    # Lapse lines
-    if show_lapse and params:
-        ll = params.get('lapse_low'); lh = params.get('lapse_high')
-        if ll is not None:
-            ax.axhline(ll, color='grey', ls=':', alpha=0.4)
-        if lh is not None:
-            ax.axhline(1 - lh, color='grey', ls=':', alpha=0.4)
+                    alpha=alpha, zorder=2)

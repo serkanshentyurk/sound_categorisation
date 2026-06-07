@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from datetime import date, timedelta
 
-from behav_utils.data.selection import SessionFilter, list_presets
+from behav_utils.data.ops.selection import SessionFilter, list_presets
 from conftest import _make_trial_data, _make_session
 
 
@@ -91,7 +91,7 @@ class TestPresets:
         """Each preset should be a SessionFilter."""
         presets = list_presets()
         for name in presets:
-            from behav_utils.data.selection import get_preset
+            from behav_utils.data.ops.selection import get_preset
             f = get_preset(name)
             assert isinstance(f, SessionFilter)
 

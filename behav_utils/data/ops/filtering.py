@@ -170,6 +170,10 @@ _TRIAL_ARRAY_FIELDS = [
     'trial_number', 'stimulus', 'choice', 'outcome', 'correct',
     'category', 'choice_raw', 'reaction_time', 'abort', 'opto_on',
     'distribution',
+    # lag-1 view — sliced like any other per-trial array so the previous
+    # trial is carried (frozen on the raw session), not recomputed on the subset
+    'prev_stimulus', 'prev_choice', 'prev_correct', 'prev_category',
+    'prev_reaction_time', 'prev_opto_on', 'prev_has_prev',
 ]
 
 
@@ -376,93 +380,98 @@ def _standard_mask_label(exclude_abort: bool, exclude_opto: bool) -> str:
 
 def get_arrays(trials: 'TrialData') -> Dict[str, np.ndarray]:
     """
-    Extract trial arrays from a TrialData object.
+    Extract trial arrays from a TrialData object — a pure projection.
 
-    Aborts are always excluded (they are invalid data, not a
-    scientific choice). All other filtering should be done BEFORE
-    calling this, via filter_session / filter_trials.
-
-    On pre-filtered data (where clear_flags=True was used),
-    abort is already all-False, so this is effectively a no-op filter.
-
-    Args:
-        trials: TrialData object (ideally pre-filtered).
+    NO filtering is done here. ALL filtering, INCLUDING abort removal, must be
+    done BEFORE calling this, via filter_session / filter_trials (abort removal
+    lives in build_mask, default ``exclude_abort=True``). Passing an unfiltered
+    session will therefore include abort trials.
 
     Returns:
         Dict with:
-            stimuli        np.ndarray
-            categories     np.ndarray
-            choices        np.ndarray  (may contain NaN = no response)
-            no_response    np.ndarray  (bool)
-            reaction_times np.ndarray
-            trial_indices  np.ndarray  (original indices within the TrialData)
-            n_trials       int
+            stimuli         np.ndarray
+            categories      np.ndarray
+            choices         np.ndarray  (may contain NaN = no response)
+            no_response     np.ndarray  (bool)
+            reaction_times  np.ndarray
+            prev_stimulus   np.ndarray  ┐ carried lag-1 view (abort-aware,
+            prev_choice     np.ndarray  │ frozen on the raw session); NaN where
+            prev_correct    np.ndarray  │ there is no predecessor or the
+            prev_category   np.ndarray  │ previous trial was a no-response
+            prev_reaction_time np.ndarray
+            prev_opto_on    np.ndarray  │
+            prev_has_prev   np.ndarray  ┘ bool (per-trial not_blockstart)
+            n_trials        int
     """
-    mask = ~trials.abort
-    choices = trials.choice[mask].astype(float)
-
+    choices = trials.choice.astype(float)
     return {
-        'stimuli': trials.stimulus[mask],
-        'categories': trials.category[mask],
+        'stimuli': trials.stimulus,
+        'categories': trials.category,
         'choices': choices,
         'no_response': np.isnan(choices),
-        'reaction_times': trials.reaction_time[mask],
-        'trial_indices': np.where(mask)[0],
-        'n_trials': int(mask.sum()),
+        'reaction_times': trials.reaction_time,
+        'prev_stimulus': trials.prev_stimulus,
+        'prev_choice': trials.prev_choice,
+        'prev_correct': trials.prev_correct,
+        'prev_category': trials.prev_category,
+        'prev_reaction_time': trials.prev_reaction_time,
+        'prev_opto_on': trials.prev_opto_on,
+        'prev_has_prev': trials.prev_has_prev,
+        'n_trials': len(choices),
     }
 
 
 def pool_arrays(
     sessions: 'List[SessionData]',
-    min_trials: int = 0,
 ) -> Dict[str, Any]:
     """
     Concatenate trial arrays across sessions.
 
-    Calls get_arrays() on each session's trials and concatenates.
-    No additional filtering — filter BEFORE calling this.
+    Calls get_arrays() on each session's trials and concatenates. Pooling only —
+    no filtering of any kind; filter BEFORE calling this (filter_trials drops
+    short sessions).
 
     Args:
-        sessions:   List of SessionData (typically pre-filtered).
-        min_trials: Skip sessions with fewer trials.
+        sessions:   List of SessionData (must be pre-filtered).
 
     Returns:
         Dict with:
             stimuli, categories, choices, no_response, reaction_times
-                — concatenated arrays
+                — concatenated current-trial arrays
+            prev_stimulus, prev_choice, prev_correct, prev_category,
+            prev_reaction_time, prev_opto_on, prev_has_prev
+                — concatenated carried lag-1 view (prev_has_prev is the pooled
+                  not_blockstart)
             n_trials       int   — total trial count
             n_sessions     int   — number of sessions included
             session_boundaries  list  — cumulative trial counts [0, n1, n1+n2, ...]
     """
+    # Current-trial arrays + the carried lag-1 view. prev_* are concatenated
+    # like the rest: each session's prev_* already carry the seam (NaN /
+    # has_prev=False at that session's first completed trial), so the pooled
+    # prev_has_prev equals not_blockstart with no re-shift across the seam.
+    array_keys = [
+        'stimuli', 'categories', 'choices', 'no_response', 'reaction_times',
+        'prev_stimulus', 'prev_choice', 'prev_correct', 'prev_category',
+        'prev_reaction_time', 'prev_opto_on', 'prev_has_prev',
+    ]
+
     all_arrays = []
     boundaries = [0]
-
     for s in sessions:
         arr = get_arrays(s.trials)
-        if arr['n_trials'] < min_trials:
-            continue
         all_arrays.append(arr)
         boundaries.append(boundaries[-1] + arr['n_trials'])
 
     if not all_arrays:
-        return {
-            'stimuli': np.array([]),
-            'categories': np.array([]),
-            'choices': np.array([]),
-            'no_response': np.array([], dtype=bool),
-            'reaction_times': np.array([]),
-            'n_trials': 0,
-            'n_sessions': 0,
-            'session_boundaries': [],
-        }
+        out = {k: np.array([]) for k in array_keys}
+        out['no_response'] = np.array([], dtype=bool)
+        out['prev_has_prev'] = np.array([], dtype=bool)
+        out.update({'n_trials': 0, 'n_sessions': 0, 'session_boundaries': []})
+        return out
 
-    return {
-        'stimuli': np.concatenate([a['stimuli'] for a in all_arrays]),
-        'categories': np.concatenate([a['categories'] for a in all_arrays]),
-        'choices': np.concatenate([a['choices'] for a in all_arrays]),
-        'no_response': np.concatenate([a['no_response'] for a in all_arrays]),
-        'reaction_times': np.concatenate([a['reaction_times'] for a in all_arrays]),
-        'n_trials': sum(a['n_trials'] for a in all_arrays),
-        'n_sessions': len(all_arrays),
-        'session_boundaries': boundaries,
-    }
+    out = {k: np.concatenate([a[k] for a in all_arrays]) for k in array_keys}
+    out['n_trials'] = sum(a['n_trials'] for a in all_arrays)
+    out['n_sessions'] = len(all_arrays)
+    out['session_boundaries'] = boundaries
+    return out

@@ -55,8 +55,8 @@ from behav_utils.data.structures import (
     ExperimentData, AnimalData, SessionData, FittingData,
 )
 from behav_utils.data.loading import load_experiment
-from behav_utils.data.selection import select_sessions, SessionFilter
-from behav_utils.data.filtering import (
+from behav_utils.data.ops.selection import select_sessions, SessionFilter
+from behav_utils.data.ops.filtering import (
     filter_trials, pool_arrays,
     build_mask, opto_mask,
     filter_session, get_arrays,

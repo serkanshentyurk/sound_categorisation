@@ -38,14 +38,14 @@ from behav_utils.data.structures import (
 from behav_utils.data.loading import load_experiment, load_session_csv, load_animal
 
 # ── Session selection ────────────────────────────────────────────────────────
-from behav_utils.data.selection import (
+from behav_utils.data.ops.selection import (
     select_sessions, SessionFilter,
     fitting_data_from_sessions,
     register_preset, list_presets, register_presets_from_config,
 )
 
 # ── Trial filtering ──────────────────────────────────────────────────────────
-from behav_utils.data.filtering import (
+from behav_utils.data.ops.filtering import (
     filter_trials, pool_arrays,
     build_mask, opto_mask,
     filter_session, filter_trial_data, get_arrays,

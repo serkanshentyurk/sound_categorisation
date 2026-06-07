@@ -39,7 +39,8 @@ def compute_session_features(
     """
     Compute all features for a single session.
 
-    No filtering. Data must be pre-filtered via filter_session() if needed.
+    No filtering here. get_arrays() no longer drops aborts, so the session
+    must be pre-filtered via filter_trials (default exclude_abort=True).
 
     Args:
         session: SessionData with valid trials.
@@ -98,8 +99,7 @@ def compute_session_features(
 
     # ── RT features (inlined) ─────────────────────────────────────
     features.update(_compute_rt_features(
-        session, arrays['trial_indices'],
-        stimuli, categories, choices,
+        session, stimuli, categories, choices,
         hard_threshold=hard_threshold,
         fast_threshold=fast_threshold,
     ))
@@ -111,7 +111,6 @@ def compute_session_features(
 
 def _compute_rt_features(
     session: 'SessionData',
-    trial_indices: np.ndarray,
     stimuli: np.ndarray,
     categories: np.ndarray,
     choices: np.ndarray,
@@ -121,11 +120,16 @@ def _compute_rt_features(
     """
     Extract reaction times from session.trials.reaction_time, then compute
     RT summary features on the valid subset.
+
+    Assumes a pre-filtered session (aborts already removed via filter_trials);
+    abort / no-response RTs are set to NaN here and excluded from the valid
+    subset regardless. ``rt`` aligns 1:1 with ``choices`` (both span the whole
+    session, since get_arrays no longer drops aborts).
     """
     rt_full = session.trials.reaction_time.copy().astype(float)
     rt_full[session.trials.abort] = np.nan
     rt_full[session.trials.no_response] = np.nan
-    rt = rt_full[trial_indices]
+    rt = rt_full
 
     nan_keys = [
         'rt_median', 'rt_iqr', 'rt_skewness', 'proportion_fast',

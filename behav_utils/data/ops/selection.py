@@ -371,9 +371,9 @@ def fitting_data_from_sessions(
     Convert a list of (pre-filtered) SessionData into FittingData for SBI.
 
     Sessions must be pre-filtered via filter_trials() before calling.
-    Internally calls sess.get_arrays() which only excludes aborts
-    (always invalid). Since filter_trials clears flags on survivors,
-    this is a no-op if filtering was already done.
+    get_arrays() is now a pure projection and no longer drops aborts, so
+    filter_trials (default exclude_abort=True) must remove them first.
+
 
     Pipeline:
         sessions = select_sessions(animal, 'expert_uniform')

@@ -428,7 +428,7 @@ def compute_comparison(
             'n_sessions_a', 'n_sessions_b': session counts
         Pass to plot_comparison() for drawing.
     """
-    from behav_utils.data.filtering import pool_arrays
+    from behav_utils.data.ops.filtering import pool_arrays
     from behav_utils.analysis.comparison import compare_conditions
 
     arr_a = pool_arrays(sessions_a)

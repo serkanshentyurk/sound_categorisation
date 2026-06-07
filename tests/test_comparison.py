@@ -98,7 +98,7 @@ class TestComputeComparison:
     def test_basic_call(self, synthetic_animal):
         """Returns dict with same shape as compare_conditions."""
         from behav_utils.analysis.comparison import compute_comparison
-        from behav_utils.data.filtering import filter_session, opto_mask
+        from behav_utils.data.ops.filtering import filter_session, opto_mask
 
         sessions_with_opto = [s for s in synthetic_animal.sessions
                               if not s.masking and s.trials.opto_on.any()]
