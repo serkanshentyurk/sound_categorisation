@@ -9,8 +9,8 @@ Three levels (mirroring the rest of the library):
     @register_stat functions  — single-block stat on raw arrays
 
 Each stat function has signature:
-    (choices, stimuli, categories, prev_choices=None, prev_stimuli=None,
-     prev_categories=None) -> scalar or dict
+    (choices, stimuli, categories, prev_choice=None, prev_stimulus=None,
+     prev_category=None) -> scalar or dict
 The lag-1 history stats use the frozen, abort-aware prev_* arrays when given
 (so they are block-aware on pooled data and match compute_um's notion of the
 previous trial); other stats ignore them. When prev_* are None they fall back
@@ -28,7 +28,7 @@ Used by:
 To add a new stat:
     @register_stat('my_stat')
     def compute_my_stat(choices, stimuli, categories,
-                        prev_choices=None, prev_stimuli=None, prev_categories=None):
+                        prev_choice=None, prev_stimulus=None, prev_category=None):
         ...
         return scalar_or_dict
 """
@@ -90,7 +90,7 @@ def _valid_trials(choices: np.ndarray) -> np.ndarray:
     return ~np.isnan(choices)
 
 
-def _prev_pairs(c, s, cat, prev_choices, prev_stimuli, prev_categories):
+def _prev_pairs(c, s, cat, prev_choice, prev_stimulus, prev_category):
     """
     Align current/previous arrays for lag-1 serial-dependence stats.
 
@@ -113,13 +113,13 @@ def _prev_pairs(c, s, cat, prev_choices, prev_stimuli, prev_categories):
     curr_resp = ~np.isnan(c)
     n = len(c)
 
-    if prev_choices is not None:
-        pc = _ensure_1d(prev_choices).astype(float)
-        ps = (_ensure_1d(prev_stimuli).astype(float)
-              if prev_stimuli is not None else np.full(n, np.nan))
-        pcat = (_ensure_1d(prev_categories).astype(float)
-                if prev_categories is not None else np.full(n, np.nan))
-        # NaN in prev_choices marks block start OR a no-response predecessor.
+    if prev_choice is not None:
+        pc = _ensure_1d(prev_choice).astype(float)
+        ps = (_ensure_1d(prev_stimulus).astype(float)
+              if prev_stimulus is not None else np.full(n, np.nan))
+        pcat = (_ensure_1d(prev_category).astype(float)
+                if prev_category is not None else np.full(n, np.nan))
+        # NaN in prev_choice marks block start OR a no-response predecessor.
         has_prev = ~np.isnan(pc)
     else:
         pc = np.roll(c, 1)
@@ -147,7 +147,7 @@ def _prev_pairs(c, s, cat, prev_choices, prev_stimuli, prev_categories):
 @register_stat('accuracy')
 def compute_accuracy(choices: np.ndarray, stimuli: np.ndarray,
                      categories: np.ndarray,
-    prev_choices: Optional[np.ndarray] = None, prev_stimuli: Optional[np.ndarray] = None, prev_categories: Optional[np.ndarray] = None,
+    prev_choice: Optional[np.ndarray] = None, prev_stimulus: Optional[np.ndarray] = None, prev_category: Optional[np.ndarray] = None,
 ) -> Union[float, np.ndarray]:
     """
     Overall proportion correct.
@@ -170,7 +170,7 @@ def compute_accuracy(choices: np.ndarray, stimuli: np.ndarray,
 def compute_psychometric_params(choices: np.ndarray, stimuli: np.ndarray,
                                 categories: np.ndarray,
                                 slope_threshold: float = PSYCHOMETRIC_SLOPE_THRESHOLD,
-    prev_choices: Optional[np.ndarray] = None, prev_stimuli: Optional[np.ndarray] = None, prev_categories: Optional[np.ndarray] = None,
+    prev_choice: Optional[np.ndarray] = None, prev_stimulus: Optional[np.ndarray] = None, prev_category: Optional[np.ndarray] = None,
 ) -> Dict[str, Union[float, np.ndarray]]:
     """
     Fit psychometric curve and return parameters.
@@ -216,9 +216,9 @@ def compute_psychometric_params(choices: np.ndarray, stimuli: np.ndarray,
 @register_stat('recency')
 def compute_recency_index(choices: np.ndarray, stimuli: np.ndarray,
                           categories: np.ndarray,
-                          prev_choices: Optional[np.ndarray] = None,
-                          prev_stimuli: Optional[np.ndarray] = None,
-                          prev_categories: Optional[np.ndarray] = None) -> float:
+                          prev_choice: Optional[np.ndarray] = None,
+                          prev_stimulus: Optional[np.ndarray] = None,
+                          prev_category: Optional[np.ndarray] = None) -> float:
     """
     Effect of previous trial category on current choice.
 
@@ -232,7 +232,7 @@ def compute_recency_index(choices: np.ndarray, stimuli: np.ndarray,
         return np.nan
 
     p = _prev_pairs(choices, stimuli, categories,
-                    prev_choices, prev_stimuli, prev_categories)
+                    prev_choice, prev_stimulus, prev_category)
     if len(p['curr_choice']) < 5:
         return np.nan
 
@@ -248,9 +248,9 @@ def compute_recency_index(choices: np.ndarray, stimuli: np.ndarray,
 @register_stat('win_stay')
 def compute_win_stay_index(choices: np.ndarray, stimuli: np.ndarray,
                            categories: np.ndarray,
-                           prev_choices: Optional[np.ndarray] = None,
-                           prev_stimuli: Optional[np.ndarray] = None,
-                           prev_categories: Optional[np.ndarray] = None) -> float:
+                           prev_choice: Optional[np.ndarray] = None,
+                           prev_stimulus: Optional[np.ndarray] = None,
+                           prev_category: Optional[np.ndarray] = None) -> float:
     """
     Win-stay tendency: P(repeat | rewarded) - P(repeat | unrewarded).
 
@@ -261,7 +261,7 @@ def compute_win_stay_index(choices: np.ndarray, stimuli: np.ndarray,
         return np.nan
 
     p = _prev_pairs(choices, stimuli, categories,
-                    prev_choices, prev_stimuli, prev_categories)
+                    prev_choice, prev_stimulus, prev_category)
     if len(p['curr_choice']) < 5:
         return np.nan
 
@@ -277,9 +277,9 @@ def compute_win_stay_index(choices: np.ndarray, stimuli: np.ndarray,
 @register_stat('win_stay_rate')
 def compute_win_stay_rate(choices: np.ndarray, stimuli: np.ndarray,
                           categories: np.ndarray,
-                          prev_choices: Optional[np.ndarray] = None,
-                          prev_stimuli: Optional[np.ndarray] = None,
-                          prev_categories: Optional[np.ndarray] = None) -> float:
+                          prev_choice: Optional[np.ndarray] = None,
+                          prev_stimulus: Optional[np.ndarray] = None,
+                          prev_category: Optional[np.ndarray] = None) -> float:
     """
     Raw win-stay rate: P(repeat choice | previous trial rewarded).
     """
@@ -288,7 +288,7 @@ def compute_win_stay_rate(choices: np.ndarray, stimuli: np.ndarray,
         return np.nan
 
     p = _prev_pairs(choices, stimuli, categories,
-                    prev_choices, prev_stimuli, prev_categories)
+                    prev_choice, prev_stimulus, prev_category)
     won = p['prev_reward'] == 1
     if won.sum() == 0:
         return np.nan
@@ -299,9 +299,9 @@ def compute_win_stay_rate(choices: np.ndarray, stimuli: np.ndarray,
 @register_stat('lose_shift')
 def compute_lose_shift_index(choices: np.ndarray, stimuli: np.ndarray,
                              categories: np.ndarray,
-                             prev_choices: Optional[np.ndarray] = None,
-                             prev_stimuli: Optional[np.ndarray] = None,
-                             prev_categories: Optional[np.ndarray] = None) -> float:
+                             prev_choice: Optional[np.ndarray] = None,
+                             prev_stimulus: Optional[np.ndarray] = None,
+                             prev_category: Optional[np.ndarray] = None) -> float:
     """
     Lose-shift tendency: P(switch | unrewarded).
 
@@ -312,7 +312,7 @@ def compute_lose_shift_index(choices: np.ndarray, stimuli: np.ndarray,
         return np.nan
 
     p = _prev_pairs(choices, stimuli, categories,
-                    prev_choices, prev_stimuli, prev_categories)
+                    prev_choice, prev_stimulus, prev_category)
     if len(p['curr_choice']) < 5:
         return np.nan
 
@@ -327,9 +327,9 @@ def compute_lose_shift_index(choices: np.ndarray, stimuli: np.ndarray,
 @register_stat('choice_autocorr')
 def compute_choice_autocorrelation(choices: np.ndarray, stimuli: np.ndarray,
                                    categories: np.ndarray, lag: int = 1,
-                                   prev_choices: Optional[np.ndarray] = None,
-                                   prev_stimuli: Optional[np.ndarray] = None,
-                                   prev_categories: Optional[np.ndarray] = None) -> float:
+                                   prev_choice: Optional[np.ndarray] = None,
+                                   prev_stimulus: Optional[np.ndarray] = None,
+                                   prev_category: Optional[np.ndarray] = None) -> float:
     """
     Choice autocorrelation at lag 1: correlation between choice_t and choice_{t-1}.
     """
@@ -339,7 +339,7 @@ def compute_choice_autocorrelation(choices: np.ndarray, stimuli: np.ndarray,
 
     if lag == 1:
         p = _prev_pairs(choices, stimuli, categories,
-                        prev_choices, prev_stimuli, prev_categories)
+                        prev_choice, prev_stimulus, prev_category)
         c_current, c_lagged = p['curr_choice'], p['prev_choice']
     else:
         # lag > 1: the frozen lag-1 view can't express deeper lags, so fall
@@ -356,7 +356,7 @@ def compute_choice_autocorrelation(choices: np.ndarray, stimuli: np.ndarray,
 @register_stat('side_bias')
 def compute_side_bias(choices: np.ndarray, stimuli: np.ndarray,
                       categories: np.ndarray,
-    prev_choices: Optional[np.ndarray] = None, prev_stimuli: Optional[np.ndarray] = None, prev_categories: Optional[np.ndarray] = None,
+    prev_choice: Optional[np.ndarray] = None, prev_stimulus: Optional[np.ndarray] = None, prev_category: Optional[np.ndarray] = None,
 ) -> Union[float, np.ndarray]:
     """
     Overall tendency to choose B: P(choose B) - 0.5.
@@ -375,7 +375,7 @@ def compute_side_bias(choices: np.ndarray, stimuli: np.ndarray,
 @register_stat('stimulus_sensitivity')
 def compute_stimulus_sensitivity(choices: np.ndarray, stimuli: np.ndarray,
                                  categories: np.ndarray,
-    prev_choices: Optional[np.ndarray] = None, prev_stimuli: Optional[np.ndarray] = None, prev_categories: Optional[np.ndarray] = None,
+    prev_choice: Optional[np.ndarray] = None, prev_stimulus: Optional[np.ndarray] = None, prev_category: Optional[np.ndarray] = None,
 ) -> Union[float, np.ndarray]:
     """
     Correlation between stimulus value and choice.
@@ -410,7 +410,7 @@ def compute_stimulus_sensitivity(choices: np.ndarray, stimuli: np.ndarray,
 def compute_choice_entropy(choices: np.ndarray, stimuli: np.ndarray,
                            categories: np.ndarray,
                            n_bins: int = DEFAULT_N_BINS,
-    prev_choices: Optional[np.ndarray] = None, prev_stimuli: Optional[np.ndarray] = None, prev_categories: Optional[np.ndarray] = None,
+    prev_choice: Optional[np.ndarray] = None, prev_stimulus: Optional[np.ndarray] = None, prev_category: Optional[np.ndarray] = None,
 ) -> Union[float, np.ndarray]:
     """
     Mean entropy of choice distribution across stimulus bins.
@@ -453,9 +453,9 @@ def compute_choice_entropy(choices: np.ndarray, stimuli: np.ndarray,
 @register_stat('perseveration')
 def compute_perseveration(choices: np.ndarray, stimuli: np.ndarray,
                           categories: np.ndarray,
-                          prev_choices: Optional[np.ndarray] = None,
-                          prev_stimuli: Optional[np.ndarray] = None,
-                          prev_categories: Optional[np.ndarray] = None) -> float:
+                          prev_choice: Optional[np.ndarray] = None,
+                          prev_stimulus: Optional[np.ndarray] = None,
+                          prev_category: Optional[np.ndarray] = None) -> float:
     """
     Perseveration index: excess same-choice repetition beyond stimulus prediction.
 
@@ -474,7 +474,7 @@ def compute_perseveration(choices: np.ndarray, stimuli: np.ndarray,
         return np.nan
 
     p = _prev_pairs(choices, stimuli, categories,
-                    prev_choices, prev_stimuli, prev_categories)
+                    prev_choice, prev_stimulus, prev_category)
     if len(p['curr_choice']) == 0:
         return np.nan
 
@@ -515,7 +515,7 @@ def compute_logistic_history_weights(
     choices: np.ndarray, stimuli: np.ndarray,
     categories: np.ndarray, n_back: int = 3,
     l2_penalty: float = LOGISTIC_L2_PENALTY,
-    prev_choices: Optional[np.ndarray] = None, prev_stimuli: Optional[np.ndarray] = None, prev_categories: Optional[np.ndarray] = None,
+    prev_choice: Optional[np.ndarray] = None, prev_stimulus: Optional[np.ndarray] = None, prev_category: Optional[np.ndarray] = None,
 ) -> Union[Dict[str, float], np.ndarray]:
     """
     L2-regularised logistic regression of current choice on stimulus + trial history.
@@ -641,7 +641,7 @@ def compute_hard_easy_accuracy_ratio(
     choices: np.ndarray, stimuli: np.ndarray,
     categories: np.ndarray,
     hard_threshold: float = 0.3,
-    prev_choices: Optional[np.ndarray] = None, prev_stimuli: Optional[np.ndarray] = None, prev_categories: Optional[np.ndarray] = None,
+    prev_choice: Optional[np.ndarray] = None, prev_stimulus: Optional[np.ndarray] = None, prev_category: Optional[np.ndarray] = None,
 ) -> Union[float, np.ndarray]:
     """
     Ratio of accuracy on hard trials (near boundary) to easy trials (far from boundary).
@@ -687,7 +687,7 @@ def compute_hard_accuracy(
     choices: np.ndarray, stimuli: np.ndarray,
     categories: np.ndarray,
     hard_threshold: float = 0.3,
-    prev_choices: Optional[np.ndarray] = None, prev_stimuli: Optional[np.ndarray] = None, prev_categories: Optional[np.ndarray] = None,
+    prev_choice: Optional[np.ndarray] = None, prev_stimulus: Optional[np.ndarray] = None, prev_category: Optional[np.ndarray] = None,
 ) -> Union[float, np.ndarray]:
     """
     Accuracy on hard trials only (|stimulus| < hard_threshold).
@@ -718,7 +718,7 @@ def compute_easy_accuracy(
     choices: np.ndarray, stimuli: np.ndarray,
     categories: np.ndarray,
     hard_threshold: float = 0.3,
-    prev_choices: Optional[np.ndarray] = None, prev_stimuli: Optional[np.ndarray] = None, prev_categories: Optional[np.ndarray] = None,
+    prev_choice: Optional[np.ndarray] = None, prev_stimulus: Optional[np.ndarray] = None, prev_category: Optional[np.ndarray] = None,
 ) -> Union[float, np.ndarray]:
     """
     Accuracy on easy trials only (|stimulus| >= hard_threshold).
@@ -793,9 +793,9 @@ def compute_conditional_psychometric(
     categories: np.ndarray,
     n_bins: int = DEFAULT_N_BINS,
     min_trials_per_bin: int = 15,
-    prev_choices: Optional[np.ndarray] = None,
-    prev_stimuli: Optional[np.ndarray] = None,
-    prev_categories: Optional[np.ndarray] = None,
+    prev_choice: Optional[np.ndarray] = None,
+    prev_stimulus: Optional[np.ndarray] = None,
+    prev_category: Optional[np.ndarray] = None,
 ) -> Dict[str, float]:
     """
     Conditional psychometric curves: fit a full cumulative Gaussian for each
@@ -839,7 +839,7 @@ def compute_conditional_psychometric(
 
     # Bin by previous stimulus (frozen, block-aware lag-1 view)
     p = _prev_pairs(choices, stimuli, categories,
-                    prev_choices, prev_stimuli, prev_categories)
+                    prev_choice, prev_stimulus, prev_category)
     prev_stim = p['prev_stim']
     curr_stim = p['curr_stim']
     curr_choices = p['curr_choice']
@@ -888,7 +888,7 @@ def compute_update_matrix_stat(
     categories: np.ndarray,
     n_bins: int = DEFAULT_N_BINS,
     trial_filter: str = 'post_correct',
-    prev_choices: Optional[np.ndarray] = None, prev_stimuli: Optional[np.ndarray] = None, prev_categories: Optional[np.ndarray] = None,
+    prev_choice: Optional[np.ndarray] = None, prev_stimulus: Optional[np.ndarray] = None, prev_category: Optional[np.ndarray] = None,
 ) -> Union[Dict[str, float], np.ndarray]:
     """
     Empirical update matrix via canonical psychometric-fit method.
@@ -901,7 +901,7 @@ def compute_update_matrix_stat(
     where i = current stimulus bin, j = previous stimulus bin.
     Total: n_bins * n_bins values (64 for default n_bins=8).
     """
-    from behav_utils.analysis.update_matrix import compute_update_matrix as canonical_um
+    from behav_utils.analysis.update_matrix import fit_update_matrix as canonical_um
 
     def _compute_single(c, s, cat):
         c = _ensure_1d(c).astype(float)
@@ -952,7 +952,7 @@ def compute_update_matrix_stat(
 def compute_psychometric_gof_stat(
     choices: np.ndarray, stimuli: np.ndarray,
     categories: np.ndarray,
-    prev_choices: Optional[np.ndarray] = None, prev_stimuli: Optional[np.ndarray] = None, prev_categories: Optional[np.ndarray] = None,
+    prev_choice: Optional[np.ndarray] = None, prev_stimulus: Optional[np.ndarray] = None, prev_category: Optional[np.ndarray] = None,
 ) -> Union[float, np.ndarray]:
     """
     Psychometric curve goodness-of-fit (R²).
@@ -989,9 +989,9 @@ def compute_psychometric_gof_stat(
 def compute_stimulus_recency(
     choices: np.ndarray, stimuli: np.ndarray,
     categories: np.ndarray,
-    prev_choices: Optional[np.ndarray] = None,
-    prev_stimuli: Optional[np.ndarray] = None,
-    prev_categories: Optional[np.ndarray] = None,
+    prev_choice: Optional[np.ndarray] = None,
+    prev_stimulus: Optional[np.ndarray] = None,
+    prev_category: Optional[np.ndarray] = None,
 ) -> float:
     """
     Effect of previous stimulus VALUE on current choice.
@@ -1011,7 +1011,7 @@ def compute_stimulus_recency(
         return np.nan
 
     p = _prev_pairs(choices, stimuli, categories,
-                    prev_choices, prev_stimuli, prev_categories)
+                    prev_choice, prev_stimulus, prev_category)
     if len(p['curr_choice']) < 5:
         return np.nan
 
@@ -1027,7 +1027,7 @@ def compute_stimulus_recency(
 def compute_recency_divergence(
     choices: np.ndarray, stimuli: np.ndarray,
     categories: np.ndarray,
-    prev_choices: Optional[np.ndarray] = None, prev_stimuli: Optional[np.ndarray] = None, prev_categories: Optional[np.ndarray] = None,
+    prev_choice: Optional[np.ndarray] = None, prev_stimulus: Optional[np.ndarray] = None, prev_category: Optional[np.ndarray] = None,
 ) -> Union[float, np.ndarray]:
     """
     Difference between stimulus-based and category-based recency.
@@ -1053,14 +1053,14 @@ def compute_recency_divergence(
 def compute_history_interaction_r2(
     choices: np.ndarray, stimuli: np.ndarray,
     categories: np.ndarray, n_back: int = 3,
-    prev_choices: Optional[np.ndarray] = None, prev_stimuli: Optional[np.ndarray] = None, prev_categories: Optional[np.ndarray] = None,
+    prev_choice: Optional[np.ndarray] = None, prev_stimulus: Optional[np.ndarray] = None, prev_category: Optional[np.ndarray] = None,
 ) -> Union[float, np.ndarray]:
     """
     How much does trial history improve choice prediction beyond stimulus?
 
     Computes McFadden's pseudo-R² for two logistic models:
         1. Stimulus-only: choice ~ stimulus
-        2. Full: choice ~ stimulus + prev_choices + prev_outcomes
+        2. Full: choice ~ stimulus + prev_choice + prev_outcomes
 
     Returns R²_full - R²_stimulus, i.e., the additional variance explained
     by trial history. High values = history-dependent behaviour (high η),
@@ -1152,7 +1152,7 @@ def compute_sd_profile_features(
     choices: np.ndarray, stimuli: np.ndarray,
     categories: np.ndarray,
     n_bins: int = DEFAULT_N_BINS,
-    prev_choices: Optional[np.ndarray] = None, prev_stimuli: Optional[np.ndarray] = None, prev_categories: Optional[np.ndarray] = None,
+    prev_choice: Optional[np.ndarray] = None, prev_stimulus: Optional[np.ndarray] = None, prev_category: Optional[np.ndarray] = None,
 ) -> Union[Dict[str, float], np.ndarray]:
     """
     Scalar features from the serial dependence profile.
@@ -1410,7 +1410,7 @@ def compute_conditional_psychometry_full(
 def compute_binned_accuracy(choices: np.ndarray, stimuli: np.ndarray,
                             categories: np.ndarray,
                             n_bins: int = DEFAULT_N_BINS,
-    prev_choices: Optional[np.ndarray] = None, prev_stimuli: Optional[np.ndarray] = None, prev_categories: Optional[np.ndarray] = None,
+    prev_choice: Optional[np.ndarray] = None, prev_stimulus: Optional[np.ndarray] = None, prev_category: Optional[np.ndarray] = None,
 ) -> Union[np.ndarray, np.ndarray]:
     """
     Accuracy binned by stimulus value. Shape (n_bins,) or (n_bins, n_sessions).
@@ -1444,7 +1444,7 @@ def compute_binned_accuracy(choices: np.ndarray, stimuli: np.ndarray,
 def compute_binned_choice_probability(choices: np.ndarray, stimuli: np.ndarray,
                                       categories: np.ndarray,
                                       n_bins: int = DEFAULT_N_BINS,
-    prev_choices: Optional[np.ndarray] = None, prev_stimuli: Optional[np.ndarray] = None, prev_categories: Optional[np.ndarray] = None,
+    prev_choice: Optional[np.ndarray] = None, prev_stimulus: Optional[np.ndarray] = None, prev_category: Optional[np.ndarray] = None,
 ) -> Union[np.ndarray, np.ndarray]:
     """
     P(choose B) binned by stimulus value (empirical psychometric curve).
@@ -1500,9 +1500,9 @@ def fit_summary_stats(
     choices: np.ndarray,
     stimuli: np.ndarray,
     categories: np.ndarray,
-    prev_choices: Optional[np.ndarray] = None,
-    prev_stimuli: Optional[np.ndarray] = None,
-    prev_categories: Optional[np.ndarray] = None,
+    prev_choice: Optional[np.ndarray] = None,
+    prev_stimulus: Optional[np.ndarray] = None,
+    prev_category: Optional[np.ndarray] = None,
     stat_names: Optional[List[str]] = None,
     return_dict: bool = False,
 ) -> Union[np.ndarray, Dict]:
@@ -1518,7 +1518,7 @@ def fit_summary_stats(
         choices: Binary choices, shape (n_trials,).
         stimuli: Stimulus values, shape (n_trials,).
         categories: True categories, shape (n_trials,).
-        prev_choices, prev_stimuli, prev_categories: Frozen, abort-aware lag-1
+        prev_choice, prev_stimulus, prev_category: Frozen, abort-aware lag-1
             arrays aligned to each trial (NaN where there is no within-block
             predecessor). When provided, history stats take the previous trial
             from these rather than by array adjacency — which keeps them correct
@@ -1551,8 +1551,8 @@ def fit_summary_stats(
         func = SUMMARY_REGISTRY[name]
         results[name] = func(
             choices, stimuli, categories,
-            prev_choices=prev_choices, prev_stimuli=prev_stimuli,
-            prev_categories=prev_categories,
+            prev_choice=prev_choice, prev_stimulus=prev_stimulus,
+            prev_category=prev_category,
         )
 
     if return_dict:
@@ -1713,9 +1713,9 @@ def compute_summary_stats(
         pooled = pool_arrays(sessions)
         stats = fit_summary_stats(
             pooled['choices'], pooled['stimuli'], pooled['categories'],
-            prev_choices=pooled['prev_choice'],
-            prev_stimuli=pooled['prev_stimulus'],
-            prev_categories=pooled['prev_category'],
+            prev_choice=pooled['prev_choice'],
+            prev_stimulus=pooled['prev_stimulus'],
+            prev_category=pooled['prev_category'],
             stat_names=stat_names, return_dict=True,
         )
         return {
@@ -1731,9 +1731,9 @@ def compute_summary_stats(
                 continue
             stats = fit_summary_stats(
                 a['choices'], a['stimuli'], a['categories'],
-                prev_choices=a['prev_choice'],
-                prev_stimuli=a['prev_stimulus'],
-                prev_categories=a['prev_category'],
+                prev_choice=a['prev_choice'],
+                prev_stimulus=a['prev_stimulus'],
+                prev_category=a['prev_category'],
                 stat_names=stat_names, return_dict=True,
             )
             per_session.append({

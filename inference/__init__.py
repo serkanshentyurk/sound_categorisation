@@ -1,35 +1,48 @@
-"""
-inference — Simulation-based inference for BE and SC models.
+"""inference -- static simulation-based inference for the BE and SC models.
 
-AmortisedSBI: Train once on curriculum data, condition on many animals.
-              Used for static BE vs SC selection (matches GS-CV protocol),
-              and for per-SLDS-state fits by conditioning on each state's
-              pooled trials.
-compute_cv_comparison / compute_model_comparison:
-              Held-out UM/CP evaluation of the trained posterior — the
-              SBI-UM / SBI-CP votes in the four-method consensus.
+Flow:
+    build_simulator(model, dist_schedule, N, T, burn_in, mode, stat_names)
+        -> (sim_fn, prior, param_names)            simulator.py
+    AmortisedSBI(...).train(n_sims) / .save / .load / .condition(sessions)
+        -> posterior, point estimates              amortised.py   (train once,
+                                                                    condition many)
+    compare_models(sessions, nets, ...)
+        -> {winner, per_model, p_value}            selection.py   (held-out UM/CP
+                                                                    CV, same protocol
+                                                                    as grid_search;
+                                                                    feeds consensus)
+
+The observation x is built by to_stat_vector (representation.py) for BOTH
+simulation (training) and conditioning, so train and test representations match.
 
 Module structure:
-    types.py      — ModelType, ParamConfig, get_default_param_configs
-    constants.py  — SBI_STATS (the ten heuristic summary stats)
-    simulator.py  — Simulator, create_be/sc_simulator, wrap_for_sbi (CV path)
-    amortised.py  — AmortisedSBI, build_curriculum_simulator, pooled stats
-    comparison.py — held-out CV / model comparison
+    types.py          -- ModelType, ParamConfig, get_default_param_configs
+    constants.py      -- SBI_STATS
+    representation.py  -- to_stat_vector (pooled / moments), the shared x-builder
+    simulator.py      -- build_simulator, theta_to_params, get_param_names,
+                          get_bounds_arrays, wrap_for_sbi
+    amortised.py      -- AmortisedSBI (SNPE engine)
+    selection.py      -- compare_models (BE vs SC, held-out CV)
 """
+
 from inference.types import (
     ModelType, ParamConfig, get_default_param_configs,
 )
 from inference.constants import SBI_STATS
+from inference.representation import to_stat_vector
 from inference.simulator import (
-    Simulator, SimulatorConfig,
-    create_be_simulator, create_sc_simulator,
-    get_sbi_prior, wrap_for_sbi,
+    build_simulator, theta_to_params,
+    get_param_names, get_bounds_arrays, wrap_for_sbi,
 )
-from inference.amortised import (
-    AmortisedSBI,
-    compute_pooled_stats,
-    compute_observed_stats_from_sessions,
-    simulate_choices_from_params,
-    build_curriculum_simulator,
-)
-from inference.comparison import compute_cv_comparison, compute_model_comparison
+from inference.amortised import AmortisedSBI
+from inference.selection import compare_models
+
+__all__ = [
+    'ModelType', 'ParamConfig', 'get_default_param_configs',
+    'SBI_STATS',
+    'to_stat_vector',
+    'build_simulator', 'theta_to_params',
+    'get_param_names', 'get_bounds_arrays', 'wrap_for_sbi',
+    'AmortisedSBI',
+    'compare_models',
+]

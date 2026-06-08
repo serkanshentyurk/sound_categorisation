@@ -40,10 +40,7 @@ class ModelTrace:
         choices, p_B, final_state, trace = BEModel.simulate_session(
             params, state, stimuli, categories, rng, return_history=True
         )
-        
-        # From experimental TrialData + model outputs
-        trace = ModelTrace.from_trial_data(trial_data, p_B, s_hat, beliefs, x)
-        
+
         # Compute update matrix
         update_matrix = compute_model_update_matrix(trace, method='deterministic')
     """
@@ -73,83 +70,6 @@ class ModelTrace:
             self.not_blockstart = np.ones(n_trials, dtype=bool)
             if n_trials > 0:
                 self.not_blockstart[0] = False
-    
-    # =========================================================================
-    # FACTORY METHODS
-    # =========================================================================
-    
-    @classmethod
-    def from_trial_data(
-        cls,
-        trial_data: 'Any',
-        p_B: np.ndarray,
-        s_hat: np.ndarray,
-        beliefs: np.ndarray,
-        x: np.ndarray,
-    ) -> 'ModelTrace':
-        """
-        Create ModelTrace from a TrialData object and model outputs.
-        
-        trial_data should be from a pre-filtered session.
-        """
-        from behav_utils.data.ops.filtering import get_arrays
-        arrays = get_arrays(trial_data)
-        
-        # Add not_blockstart (models need this)
-        n = arrays['n_trials']
-        not_blockstart = np.ones(n, dtype=bool)
-        if n > 0:
-            not_blockstart[0] = False
-        
-        return cls(
-            stimuli=arrays['stimuli'],
-            categories=arrays['categories'],
-            choices=arrays['choices'],
-            no_response=arrays['no_response'],
-            not_blockstart=not_blockstart,
-            p_B=p_B,
-            s_hat=s_hat,
-            beliefs=beliefs,
-            x=x,
-        )
-    
-    @classmethod
-    def from_arrays(
-        cls,
-        stimuli: np.ndarray,
-        categories: np.ndarray,
-        choices: np.ndarray,
-        p_B: np.ndarray,
-        s_hat: np.ndarray,
-        beliefs: np.ndarray,
-        x: np.ndarray,
-        no_response: Optional[np.ndarray] = None,
-        not_blockstart: Optional[np.ndarray] = None,
-    ) -> 'ModelTrace':
-        """
-        Create ModelTrace from raw arrays (e.g., from simulation).
-        
-        Convenience constructor for when you have arrays but not a TrialData object.
-        """
-        n_trials = len(stimuli)
-        if no_response is None:
-            no_response = np.isnan(choices)
-        if not_blockstart is None:
-            not_blockstart = np.ones(n_trials, dtype=bool)
-            if n_trials > 0:
-                not_blockstart[0] = False
-        
-        return cls(
-            stimuli=stimuli,
-            categories=categories,
-            choices=choices,
-            no_response=no_response,
-            not_blockstart=not_blockstart,
-            p_B=p_B,
-            s_hat=s_hat,
-            beliefs=beliefs,
-            x=x,
-        )
     
     # =========================================================================
     # PROPERTIES

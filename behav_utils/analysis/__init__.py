@@ -22,7 +22,7 @@ Usage:
 from behav_utils.analysis.utils import cumulative_gaussian, generate_stimuli
 
 # Low-level (arrays)
-from behav_utils.analysis.psychometry import fit_psychometric, compute_psychometric_gof
+from behav_utils.analysis.psychometry import fit_psychometric, fit_psychometric_gof
 from behav_utils.analysis.update_matrix import fit_update_matrix, matrix_error
 from behav_utils.analysis.comparison import compare_conditions, permutation_test_params, bootstrap_param_diff
 from behav_utils.analysis.summary_stats import (
@@ -44,7 +44,7 @@ __all__ = [
     'cumulative_gaussian', 'generate_stimuli',
 
     # Low-level
-    'fit_psychometric', 'compute_psychometric_gof',
+    'fit_psychometric', 'fit_psychometric_gof',
     'fit_update_matrix', 'matrix_error',
     'compare_conditions', 'permutation_test_params', 'bootstrap_param_diff',
     'fit_summary_stats',

@@ -6,6 +6,8 @@ import warnings
 
 from scipy.optimize import minimize
 
+from behav_utils.data.ops.filtering import pool_arrays
+from behav_utils.data.structures import SessionData
 
 def _neg_log_likelihood_psychometric(params: List[float], stimulus: np.ndarray,
                                       choices: np.ndarray) -> float:
@@ -212,31 +214,8 @@ def _bin_data(stimuli, choices, n_bins=8):
     return centres, means, counts
 
 
-def _resolve_to_sessions(data):
-    """Normalise input to a list of SessionData."""
-    from behav_utils.data.structures import SessionData, AnimalData
-
-    if isinstance(data, tuple) and len(data) == 2:
-        # (stimuli, choices) tuple — wrap in a fake structure
-        return [data]
-    if isinstance(data, SessionData):
-        return [data]
-    if isinstance(data, AnimalData):
-        return list(data.sessions)
-    if isinstance(data, (list, tuple)):
-        return list(data)
-    raise TypeError(f"Expected SessionData/List/AnimalData/(stim,ch) tuple, got {type(data).__name__}")
-
-
-def _get_stim_choices(item):
-    """Extract (stimuli, choices) from a session or raw tuple."""
-    if isinstance(item, tuple) and len(item) == 2:
-        return np.asarray(item[0]), np.asarray(item[1])
-    return _extract_stim_choices(item)
-
-
 def compute_psychometric(
-    data,
+    sessions: List['SessionData'],
     mode: str = 'pooled',
     n_bins: int = 8,
     n_bootstrap: int = 1000,
@@ -261,7 +240,7 @@ def compute_psychometric(
                       x_fit, y_fit, n_trials.
 
     Args:
-        data: SessionData, List[SessionData], AnimalData, or (stimuli, choices).
+        sessions: Pre-filtered List[SessionData].
         mode: 'pooled' | 'per_session'.
         n_bins: Bins for the raw scatter (pooled mode).
         n_bootstrap: Trial resamples for 'pooled' CIs (ignored otherwise).
@@ -272,7 +251,6 @@ def compute_psychometric(
     from behav_utils.analysis.psychometry import fit_psychometric
     from behav_utils.analysis.utils import cumulative_gaussian
 
-    sessions = _resolve_to_sessions(data)
     x_fit = np.linspace(-1, 1, 200)
 
     if mode == 'pooled':
@@ -295,19 +273,16 @@ def _empty_result(mode, x_fit):
 
 
 def _pooled_scatter(sessions, n_bins):
-    """Raw binned scatter, pooled over all trials (no bootstrap)."""
-    all_stim, all_ch = [], []
-    for s in sessions:
-        st, ch = _get_stim_choices(s)
-        if len(st) > 0:
-            all_stim.append(np.asarray(st, float))
-            all_ch.append(np.asarray(ch, float))
-    if not all_stim:
+    """Raw binned scatter, pooled over all sessions via pool_arrays."""
+    pooled = pool_arrays(sessions)
+    if pooled['n_trials'] == 0:
         return None, None, None, None, None
-    stim = np.concatenate(all_stim)
-    ch = np.concatenate(all_ch)
-    valid = ~np.isnan(stim) & ~np.isnan(ch)
+    stim = np.asarray(pooled['stimuli'], float)
+    ch = np.asarray(pooled['choices'], float)
+    valid = ~pooled['no_response'] & ~np.isnan(stim) & ~np.isnan(ch)
     stim, ch = stim[valid], ch[valid]
+    if len(stim) == 0:
+        return None, None, None, None, None
     centres, means, counts = _bin_data(stim, ch, n_bins)
     return stim, ch, centres, means, counts
 
@@ -351,7 +326,7 @@ def _compute_per_session(sessions, x_fit, n_bins, min_session_trials, fit_fn, cg
     """
     per_session = []
     for s in sessions:
-        st, ch = _get_stim_choices(s)
+        st, ch = _extract_stim_choices(s)
         entry = {
             'session_id': getattr(s, 'session_id', None),
             'session_idx': getattr(s, 'session_idx', None),
@@ -376,7 +351,7 @@ def _compute_per_session(sessions, x_fit, n_bins, min_session_trials, fit_fn, cg
 
 
 
-def compute_psychometric_gof(stimuli: np.ndarray, choices: np.ndarray,
+def fit_psychometric_gof(stimuli: np.ndarray, choices: np.ndarray,
                              psych_params: Dict, n_bins: int = 8) -> Dict:
     """
     Compute goodness-of-fit metrics for psychometric curve.

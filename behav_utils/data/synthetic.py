@@ -164,6 +164,104 @@ def noisy_psychometric_simulator(
 # SESSION GENERATION
 # =============================================================================
 
+def session_from_arrays(
+    stimuli: np.ndarray,
+    choices: np.ndarray,
+    categories: np.ndarray,
+    session_idx: int = 0,
+    distribution: Optional[str] = None,
+    abort: Optional[np.ndarray] = None,
+    reaction_time: Optional[np.ndarray] = None,
+    animal_id: str = 'SIM',
+    stage: str = 'Full_Task_Cont',
+    base_date: Optional[date] = None,
+    stim_range: Tuple[float, float] = (-1.0, 1.0),
+) -> SessionData:
+    """Assemble a SessionData from raw per-trial arrays.
+
+    Shared construction used by ``generate_synthetic_session`` and by the SBI
+    simulator. Building a real SessionData (rather than pooling arrays by hand)
+    means ``prev_*`` are frozen by ``TrialData.__post_init__`` and pooling is
+    identical to real sessions.
+
+    Args:
+        stimuli, choices, categories: Per-trial arrays, shape (T,). ``choices``
+            may contain NaN for abort / non-response trials.
+        session_idx: Ordinal session index (sets session_id and date offset).
+        distribution: Optional distribution label, stored in metadata
+            (best-effort; nothing in the SBI path depends on it).
+        abort: Boolean abort mask. None -> all False (the simulated case).
+        reaction_time: Per-trial RT. None -> all NaN (RT is unused by stats).
+        animal_id, stage, base_date, stim_range: Metadata.
+
+    Returns:
+        SessionData.
+    """
+    stimuli = np.asarray(stimuli, dtype=float)
+    choices = np.asarray(choices, dtype=float)
+    categories = np.asarray(categories)
+    n_trials = len(stimuli)
+
+    if abort is None:
+        abort = np.zeros(n_trials, dtype=bool)
+    else:
+        abort = np.asarray(abort, dtype=bool)
+
+    if reaction_time is None:
+        reaction_time = np.full(n_trials, np.nan)
+    else:
+        reaction_time = np.asarray(reaction_time, dtype=float)
+
+    if base_date is None:
+        base_date = date(2025, 1, 1)
+    session_date = base_date + timedelta(days=session_idx)
+
+    # Derive correct (NaN choices -> not correct)
+    correct = (choices == categories)
+    correct[np.isnan(choices)] = False
+
+    # Outcome strings
+    outcome = np.where(
+        abort, 'Abort',
+        np.where(correct, 'Correct', 'Incorrect'),
+    )
+
+    trials = TrialData(
+        trial_number=np.arange(1, n_trials + 1),
+        stimulus=stimuli,
+        choice=choices,
+        choice_raw=choices.copy(),
+        outcome=outcome,
+        correct=correct,
+        category=categories,
+        reaction_time=reaction_time,
+        abort=abort,
+        opto_on=np.zeros(n_trials, dtype=bool),
+    )
+
+    fields = {
+        'animal_id': animal_id,
+        'stage': stage,
+        'protocol': 'Synthetic',
+        'sound_contingency': 'Low_Left_High_Right',
+        'stim_range_min': stim_range[0],
+        'stim_range_max': stim_range[1],
+    }
+    if distribution is not None:
+        fields['distribution'] = distribution
+    metadata = SessionMetadata(fields=fields)
+
+    session_id = f'{animal_id}_S{session_idx:03d}'
+
+    return SessionData(
+        session_id=session_id,
+        session_idx=session_idx,
+        date=session_date,
+        metadata=metadata,
+        trials=trials,
+    )
+
+
 def generate_synthetic_session(
     session_idx: int = 0,
     n_trials: int = 300,
@@ -207,10 +305,6 @@ def generate_synthetic_session(
         simulator = random_choice_simulator
     if simulator_kwargs is None:
         simulator_kwargs = {}
-    if base_date is None:
-        base_date = date(2025, 1, 1)
-
-    session_date = base_date + timedelta(days=session_idx)
 
     # Generate stimuli
     stimuli, categories = sample_stimuli(
@@ -222,58 +316,24 @@ def generate_synthetic_session(
     # Generate aborts
     abort = rng.random(n_trials) < abort_rate
 
-    # Generate choices via simulator
+    # Generate choices via simulator, mark aborts as NaN
     choices = simulator(stimuli, categories, rng, **simulator_kwargs)
-
-    # Mark aborts as NaN
     choices[abort] = np.nan
-
-    # Derive correct
-    correct = (choices == categories)
-    correct[np.isnan(choices)] = False
-
-    # Outcome strings
-    outcome = np.where(
-        abort, 'Abort',
-        np.where(correct, 'Correct', 'Incorrect'),
-    )
 
     # Synthetic RT
     rt = np.abs(rng.normal(300, 100, n_trials))
     rt[abort] = np.nan
 
-    # Build TrialData
-    trials = TrialData(
-        trial_number=np.arange(1, n_trials + 1),
-        stimulus=stimuli,
-        choice=choices,
-        choice_raw=choices.copy(),
-        outcome=outcome,
-        correct=correct,
-        category=categories,
-        reaction_time=rt,
-        abort=abort,
-        opto_on=np.zeros(n_trials, dtype=bool),
-    )
-
-    # Metadata
-    metadata = SessionMetadata(fields={
-        'animal_id': animal_id,
-        'stage': stage,
-        'protocol': 'Synthetic',
-        'sound_contingency': 'Low_Left_High_Right',
-        'stim_range_min': stim_range[0],
-        'stim_range_max': stim_range[1],
-    })
-
-    session_id = f'{animal_id}_S{session_idx:03d}'
-
-    return SessionData(
-        session_id=session_id,
+    return session_from_arrays(
+        stimuli, choices, categories,
         session_idx=session_idx,
-        date=session_date,
-        metadata=metadata,
-        trials=trials,
+        distribution=distribution,
+        abort=abort,
+        reaction_time=rt,
+        animal_id=animal_id,
+        stage=stage,
+        base_date=base_date,
+        stim_range=stim_range,
     )
 
 

@@ -31,7 +31,7 @@ from behav_utils.config.schema import load_config, ProjectConfig
 # ── Data structures ──────────────────────────────────────────────────────────
 from behav_utils.data.structures import (
     ExperimentData, AnimalData, SessionData,
-    SessionMetadata, TrialData, FittingData,
+    SessionMetadata, TrialData,
 )
 
 # ── Loading ──────────────────────────────────────────────────────────────────
@@ -40,7 +40,6 @@ from behav_utils.data.loading import load_experiment, load_session_csv, load_ani
 # ── Session selection ────────────────────────────────────────────────────────
 from behav_utils.data.ops.selection import (
     select_sessions, SessionFilter,
-    fitting_data_from_sessions,
     register_preset, list_presets, register_presets_from_config,
 )
 
@@ -59,7 +58,7 @@ from behav_utils.data.synthetic import (
 
 
 # ── Analysis: low-level (arrays) ─────────────────────────────────────────────
-from behav_utils.analysis.psychometry import fit_psychometric, compute_psychometric_gof
+from behav_utils.analysis.psychometry import fit_psychometric, fit_psychometric_gof
 from behav_utils.analysis.update_matrix import fit_update_matrix, matrix_error
 from behav_utils.analysis.comparison import (
     compare_conditions, permutation_test_params, bootstrap_param_diff,
@@ -96,14 +95,13 @@ __all__ = [
 
     # Structures
     'ExperimentData', 'AnimalData', 'SessionData',
-    'SessionMetadata', 'TrialData', 'FittingData',
+    'SessionMetadata', 'TrialData',
 
     # Loading
     'load_experiment', 'load_session_csv', 'load_animal',
 
     # Session selection
     'select_sessions', 'SessionFilter',
-    'fitting_data_from_sessions',
     'register_preset', 'list_presets', 'register_presets_from_config',
 
     # Trial filtering
@@ -117,7 +115,7 @@ __all__ = [
 
 
     # Analysis: low-level
-    'fit_psychometric', 'compute_psychometric_gof',
+    'fit_psychometric', 'fit_psychometric_gof',
     'fit_update_matrix', 'matrix_error',
     'compare_conditions', 'permutation_test_params', 'bootstrap_param_diff',
     'compute_summary_stats', 'fit_summary_stats',
