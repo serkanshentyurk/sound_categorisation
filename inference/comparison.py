@@ -34,7 +34,7 @@ import warnings
 from typing import Dict, List, Optional, Any
 
 from behav_utils.data.structures import FittingData
-from behav_utils.analysis.summary_stats import compute_summary_stats
+from behav_utils.analysis.summary_stats import fit_summary_stats
 from behav_utils.analysis.update_matrix import compute_update_matrix, matrix_error
 from utils.fold_utils import merge_smallest_adjacent
 
@@ -170,7 +170,7 @@ def compute_cv_comparison(
             if len(train_stim) < 100:
                 continue
 
-            train_obs = compute_summary_stats(
+            train_obs = fit_summary_stats(
                 train_ch, train_stim, train_cat,
                 stat_names=stat_names, return_dict=False,
             )

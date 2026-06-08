@@ -2,17 +2,33 @@
 Behavioural Summary Statistics
 
 Modular design with registry pattern for easy extension.
-Each stat function has signature: (choices, stimuli, categories) -> scalar or dict
-Handles both single-session (n_trials,) and multi-session (n_trials, n_sessions) arrays.
+
+Three levels (mirroring the rest of the library):
+    compute_summary_stats(sessions, mode=...)  — session-level entry (result dict)
+    fit_summary_stats(choices, stimuli, categories, prev_*=None, ...)  — raw worker
+    @register_stat functions  — single-block stat on raw arrays
+
+Each stat function has signature:
+    (choices, stimuli, categories, prev_choices=None, prev_stimuli=None,
+     prev_categories=None) -> scalar or dict
+The lag-1 history stats use the frozen, abort-aware prev_* arrays when given
+(so they are block-aware on pooled data and match compute_um's notion of the
+previous trial); other stats ignore them. When prev_* are None they fall back
+to single-block adjacency.
+
+Multi-session data is handled by compute_summary_stats(sessions, mode=...), NOT
+by passing 2-D arrays to a stat. Each stat operates on a single block of 1-D
+arrays; pooling/per-session aggregation lives in compute_summary_stats.
 
 Used by:
-    - SBI inference pipeline (flattened vector)
-    - Session feature matrix for HMM (per-session dict)
+    - SBI inference pipeline (flattened vector, via fit_summary_stats)
+    - Session feature matrix for HMM/SLDS (per-session dict)
     - General behavioural analysis
 
 To add a new stat:
     @register_stat('my_stat')
-    def compute_my_stat(choices, stimuli, categories):
+    def compute_my_stat(choices, stimuli, categories,
+                        prev_choices=None, prev_stimuli=None, prev_categories=None):
         ...
         return scalar_or_dict
 """
@@ -69,35 +85,59 @@ def _ensure_1d(arr: np.ndarray) -> np.ndarray:
     return arr
 
 
-def _is_multisession(arr: np.ndarray) -> bool:
-    """
-    Check if array is multi-session (2D with n_sessions > 1).
-    
-    WARNING: This 2D format requires equal-length sessions (columns).
-    For real data with variable-length sessions, call single-session
-    functions in a loop (as compute_session_features does).
-    """
-    return arr.ndim == 2 and arr.shape[1] > 1
-
-
-def _apply_per_session(func: Callable, choices: np.ndarray, stimuli: np.ndarray,
-                       categories: np.ndarray) -> np.ndarray:
-    """Apply a single-session function to each session of multi-session data."""
-    if not _is_multisession(choices):
-        return func(_ensure_1d(choices), _ensure_1d(stimuli), _ensure_1d(categories))
-
-    n_sessions = choices.shape[1]
-    results = []
-    for i in range(n_sessions):
-        result = func(choices[:, i], stimuli[:, i], categories[:, i])
-        results.append(result)
-
-    return np.array(results)
-
-
 def _valid_trials(choices: np.ndarray) -> np.ndarray:
     """Boolean mask for trials with valid (non-NaN) choices."""
     return ~np.isnan(choices)
+
+
+def _prev_pairs(c, s, cat, prev_choices, prev_stimuli, prev_categories):
+    """
+    Align current/previous arrays for lag-1 serial-dependence stats.
+
+    If ``prev_*`` are given (frozen, abort-aware, block-aware lag-1 arrays from
+    ``pool_arrays`` / ``get_arrays``), the previous trial is taken from them.
+    These are NaN at each block's first trial and where the predecessor was a
+    no-response, so on pooled data the stats do NOT bridge session seams and use
+    the same notion of "previous" as ``compute_um``. If ``prev_*`` are None, the
+    previous trial is the immediately preceding array element (single contiguous
+    block, the simulated / standalone path) — which equals the frozen view once
+    aborts are filtered out, so single-session results are unchanged.
+
+    Returns a dict of arrays restricted to trials with a responded current AND a
+    responded predecessor: ``curr_choice, curr_stim, prev_choice, prev_stim,
+    prev_cat, prev_reward`` (reward = choice matched category), plus ``mask``.
+    """
+    c = _ensure_1d(c).astype(float)
+    s = _ensure_1d(s).astype(float)
+    cat = _ensure_1d(cat).astype(float)
+    curr_resp = ~np.isnan(c)
+    n = len(c)
+
+    if prev_choices is not None:
+        pc = _ensure_1d(prev_choices).astype(float)
+        ps = (_ensure_1d(prev_stimuli).astype(float)
+              if prev_stimuli is not None else np.full(n, np.nan))
+        pcat = (_ensure_1d(prev_categories).astype(float)
+                if prev_categories is not None else np.full(n, np.nan))
+        # NaN in prev_choices marks block start OR a no-response predecessor.
+        has_prev = ~np.isnan(pc)
+    else:
+        pc = np.roll(c, 1)
+        ps = np.roll(s, 1)
+        pcat = np.roll(cat, 1)
+        prev_resp = np.roll(curr_resp, 1)
+        has_prev = np.ones(n, dtype=bool)
+        if n > 0:
+            has_prev[0] = False
+        has_prev &= prev_resp
+
+    mask = curr_resp & has_prev
+    return {
+        'curr_choice': c[mask], 'curr_stim': s[mask],
+        'prev_choice': pc[mask], 'prev_stim': ps[mask], 'prev_cat': pcat[mask],
+        'prev_reward': (pc[mask] == pcat[mask]).astype(float),
+        'mask': mask,
+    }
 
 
 # =============================================================================
@@ -106,7 +146,9 @@ def _valid_trials(choices: np.ndarray) -> np.ndarray:
 
 @register_stat('accuracy')
 def compute_accuracy(choices: np.ndarray, stimuli: np.ndarray,
-                     categories: np.ndarray) -> Union[float, np.ndarray]:
+                     categories: np.ndarray,
+    prev_choices: Optional[np.ndarray] = None, prev_stimuli: Optional[np.ndarray] = None, prev_categories: Optional[np.ndarray] = None,
+) -> Union[float, np.ndarray]:
     """
     Overall proportion correct.
 
@@ -116,22 +158,20 @@ def compute_accuracy(choices: np.ndarray, stimuli: np.ndarray,
     choices = np.asarray(choices)
     categories = np.asarray(categories)
 
-    if _is_multisession(choices):
-        return np.mean(choices == categories, axis=0)
-    else:
-        c = _ensure_1d(choices)
-        cat = _ensure_1d(categories)
-        valid = _valid_trials(c)
-        if valid.sum() == 0:
-            return np.nan
-        return float(np.mean(c[valid] == cat[valid]))
+    c = _ensure_1d(choices)
+    cat = _ensure_1d(categories)
+    valid = _valid_trials(c)
+    if valid.sum() == 0:
+        return np.nan
+    return float(np.mean(c[valid] == cat[valid]))
 
 
 @register_stat('psychometric')
 def compute_psychometric_params(choices: np.ndarray, stimuli: np.ndarray,
                                 categories: np.ndarray,
                                 slope_threshold: float = PSYCHOMETRIC_SLOPE_THRESHOLD,
-                                ) -> Dict[str, Union[float, np.ndarray]]:
+    prev_choices: Optional[np.ndarray] = None, prev_stimuli: Optional[np.ndarray] = None, prev_categories: Optional[np.ndarray] = None,
+) -> Dict[str, Union[float, np.ndarray]]:
     """
     Fit psychometric curve and return parameters.
 
@@ -170,23 +210,15 @@ def compute_psychometric_params(choices: np.ndarray, stimuli: np.ndarray,
     choices = np.asarray(choices)
     stimuli = np.asarray(stimuli)
 
-    if _is_multisession(choices):
-        n_sessions = choices.shape[1]
-        results = {k: [] for k in ['mu', 'sigma', 'lapse_low', 'lapse_high']}
-
-        for i in range(n_sessions):
-            single_result = _fit_single(choices[:, i], stimuli[:, i], categories[:, i])
-            for k, v in single_result.items():
-                results[k].append(v)
-
-        return {k: np.array(v) for k, v in results.items()}
-    else:
-        return _fit_single(_ensure_1d(choices), _ensure_1d(stimuli), _ensure_1d(categories))
+    return _fit_single(_ensure_1d(choices), _ensure_1d(stimuli), _ensure_1d(categories))
 
 
 @register_stat('recency')
 def compute_recency_index(choices: np.ndarray, stimuli: np.ndarray,
-                          categories: np.ndarray) -> Union[float, np.ndarray]:
+                          categories: np.ndarray,
+                          prev_choices: Optional[np.ndarray] = None,
+                          prev_stimuli: Optional[np.ndarray] = None,
+                          prev_categories: Optional[np.ndarray] = None) -> float:
     """
     Effect of previous trial category on current choice.
 
@@ -195,225 +227,137 @@ def compute_recency_index(choices: np.ndarray, stimuli: np.ndarray,
     High recency = recent trials strongly influence choice (high learning rate)
     Low recency = stable behaviour (low learning rate)
     """
-    def _compute_single(c, s, cat):
-        c = _ensure_1d(c)
-        cat = _ensure_1d(cat)
-        valid = _valid_trials(c)
+    c = _ensure_1d(np.asarray(choices)).astype(float)
+    if _valid_trials(c).sum() < 10:
+        return np.nan
 
-        if valid.sum() < 10:
-            return np.nan
+    p = _prev_pairs(choices, stimuli, categories,
+                    prev_choices, prev_stimuli, prev_categories)
+    if len(p['curr_choice']) < 5:
+        return np.nan
 
-        prev_cat = np.roll(cat, 1)
-        # Exclude first trial (no valid previous) and NaN choices
-        mask = np.ones(len(c), dtype=bool)
-        mask[0] = False
-        mask &= valid
-        # Also need previous trial to be valid
-        prev_valid = np.roll(valid, 1)
-        prev_valid[0] = False
-        mask &= prev_valid
+    prev_was_b = p['prev_cat'] == 1
+    prev_was_a = p['prev_cat'] == 0
+    if prev_was_b.sum() == 0 or prev_was_a.sum() == 0:
+        return np.nan
 
-        if mask.sum() < 5:
-            return np.nan
-
-        c_m = c[mask]
-        prev_cat_m = prev_cat[mask]
-
-        prev_was_b = prev_cat_m == 1
-        prev_was_a = prev_cat_m == 0
-
-        if prev_was_b.sum() == 0 or prev_was_a.sum() == 0:
-            return np.nan
-
-        p_b_after_b = np.mean(c_m[prev_was_b])
-        p_b_after_a = np.mean(c_m[prev_was_a])
-
-        return p_b_after_b - p_b_after_a
-
-    choices = np.asarray(choices)
-
-    if _is_multisession(choices):
-        return _apply_per_session(_compute_single, choices, stimuli, categories)
-    else:
-        return _compute_single(choices, stimuli, categories)
+    return float(np.mean(p['curr_choice'][prev_was_b])
+                 - np.mean(p['curr_choice'][prev_was_a]))
 
 
 @register_stat('win_stay')
 def compute_win_stay_index(choices: np.ndarray, stimuli: np.ndarray,
-                           categories: np.ndarray) -> Union[float, np.ndarray]:
+                           categories: np.ndarray,
+                           prev_choices: Optional[np.ndarray] = None,
+                           prev_stimuli: Optional[np.ndarray] = None,
+                           prev_categories: Optional[np.ndarray] = None) -> float:
     """
     Win-stay tendency: P(repeat | rewarded) - P(repeat | unrewarded).
 
     Positive = exploits correct responses. Near zero = ignores feedback.
     """
-    def _compute_single(c, s, cat):
-        c = _ensure_1d(c)
-        cat = _ensure_1d(cat)
-        valid = _valid_trials(c)
+    c = _ensure_1d(np.asarray(choices)).astype(float)
+    if _valid_trials(c).sum() < 10:
+        return np.nan
 
-        if valid.sum() < 10:
-            return np.nan
+    p = _prev_pairs(choices, stimuli, categories,
+                    prev_choices, prev_stimuli, prev_categories)
+    if len(p['curr_choice']) < 5:
+        return np.nan
 
-        rewards = (c == cat).astype(float)
-        rewards[~valid] = np.nan
+    repeat = (p['curr_choice'] == p['prev_choice'])
+    won = p['prev_reward'] == 1
+    lost = p['prev_reward'] == 0
+    if won.sum() == 0 or lost.sum() == 0:
+        return np.nan
 
-        prev_choice = np.roll(c, 1)
-        prev_reward = np.roll(rewards, 1)
-
-        mask = np.ones(len(c), dtype=bool)
-        mask[0] = False
-        mask &= valid
-        prev_valid = np.roll(valid, 1)
-        prev_valid[0] = False
-        mask &= prev_valid
-
-        if mask.sum() < 5:
-            return np.nan
-
-        c_m = c[mask]
-        pc_m = prev_choice[mask]
-        pr_m = prev_reward[mask]
-
-        repeat = (c_m == pc_m)
-        won = pr_m == 1
-        lost = pr_m == 0
-
-        if won.sum() == 0 or lost.sum() == 0:
-            return np.nan
-
-        return float(np.mean(repeat[won]) - np.mean(repeat[lost]))
-
-    choices = np.asarray(choices)
-
-    if _is_multisession(choices):
-        return _apply_per_session(_compute_single, choices, stimuli, categories)
-    else:
-        return _compute_single(choices, stimuli, categories)
+    return float(np.mean(repeat[won]) - np.mean(repeat[lost]))
 
 
 @register_stat('win_stay_rate')
 def compute_win_stay_rate(choices: np.ndarray, stimuli: np.ndarray,
-                          categories: np.ndarray) -> Union[float, np.ndarray]:
+                          categories: np.ndarray,
+                          prev_choices: Optional[np.ndarray] = None,
+                          prev_stimuli: Optional[np.ndarray] = None,
+                          prev_categories: Optional[np.ndarray] = None) -> float:
     """
     Raw win-stay rate: P(repeat choice | previous trial rewarded).
     """
-    def _compute_single(c, s, cat):
-        c = _ensure_1d(c)
-        cat = _ensure_1d(cat)
-        valid = _valid_trials(c)
+    c = _ensure_1d(np.asarray(choices)).astype(float)
+    if _valid_trials(c).sum() < 10:
+        return np.nan
 
-        if valid.sum() < 10:
-            return np.nan
+    p = _prev_pairs(choices, stimuli, categories,
+                    prev_choices, prev_stimuli, prev_categories)
+    won = p['prev_reward'] == 1
+    if won.sum() == 0:
+        return np.nan
 
-        rewards = (c == cat).astype(float)
-        rewards[~valid] = np.nan
-        prev_choice = np.roll(c, 1)
-        prev_reward = np.roll(rewards, 1)
-
-        mask = np.ones(len(c), dtype=bool)
-        mask[0] = False
-        mask &= valid
-        prev_valid = np.roll(valid, 1)
-        prev_valid[0] = False
-        mask &= prev_valid
-
-        won = prev_reward[mask] == 1
-        if won.sum() == 0:
-            return np.nan
-
-        return float(np.mean(c[mask][won] == prev_choice[mask][won]))
-
-    choices = np.asarray(choices)
-    if _is_multisession(choices):
-        return _apply_per_session(_compute_single, choices, stimuli, categories)
-    else:
-        return _compute_single(choices, stimuli, categories)
+    return float(np.mean(p['curr_choice'][won] == p['prev_choice'][won]))
 
 
 @register_stat('lose_shift')
 def compute_lose_shift_index(choices: np.ndarray, stimuli: np.ndarray,
-                             categories: np.ndarray) -> Union[float, np.ndarray]:
+                             categories: np.ndarray,
+                             prev_choices: Optional[np.ndarray] = None,
+                             prev_stimuli: Optional[np.ndarray] = None,
+                             prev_categories: Optional[np.ndarray] = None) -> float:
     """
     Lose-shift tendency: P(switch | unrewarded).
 
     High = responsive to negative feedback. Low = perseverative.
     """
-    def _compute_single(c, s, cat):
-        c = _ensure_1d(c)
-        cat = _ensure_1d(cat)
-        valid = _valid_trials(c)
+    c = _ensure_1d(np.asarray(choices)).astype(float)
+    if _valid_trials(c).sum() < 10:
+        return np.nan
 
-        if valid.sum() < 10:
-            return np.nan
+    p = _prev_pairs(choices, stimuli, categories,
+                    prev_choices, prev_stimuli, prev_categories)
+    if len(p['curr_choice']) < 5:
+        return np.nan
 
-        rewards = (c == cat).astype(float)
-        rewards[~valid] = np.nan
-        prev_choice = np.roll(c, 1)
-        prev_reward = np.roll(rewards, 1)
+    switch = (p['curr_choice'] != p['prev_choice'])
+    lost = p['prev_reward'] == 0
+    if lost.sum() == 0:
+        return np.nan
 
-        mask = np.ones(len(c), dtype=bool)
-        mask[0] = False
-        mask &= valid
-        prev_valid = np.roll(valid, 1)
-        prev_valid[0] = False
-        mask &= prev_valid
-
-        if mask.sum() < 5:
-            return np.nan
-
-        c_m = c[mask]
-        pc_m = prev_choice[mask]
-        pr_m = prev_reward[mask]
-
-        switch = (c_m != pc_m)
-        lost = pr_m == 0
-
-        if lost.sum() == 0:
-            return np.nan
-
-        return float(np.mean(switch[lost]))
-
-    choices = np.asarray(choices)
-
-    if _is_multisession(choices):
-        return _apply_per_session(_compute_single, choices, stimuli, categories)
-    else:
-        return _compute_single(choices, stimuli, categories)
+    return float(np.mean(switch[lost]))
 
 
 @register_stat('choice_autocorr')
 def compute_choice_autocorrelation(choices: np.ndarray, stimuli: np.ndarray,
-                                   categories: np.ndarray, lag: int = 1) -> Union[float, np.ndarray]:
+                                   categories: np.ndarray, lag: int = 1,
+                                   prev_choices: Optional[np.ndarray] = None,
+                                   prev_stimuli: Optional[np.ndarray] = None,
+                                   prev_categories: Optional[np.ndarray] = None) -> float:
     """
     Choice autocorrelation at lag 1: correlation between choice_t and choice_{t-1}.
     """
-    def _compute_single(c, s, cat):
-        c = _ensure_1d(c).astype(float)
-        valid = _valid_trials(c)
-        c_clean = c[valid]
+    c = _ensure_1d(np.asarray(choices)).astype(float)
+    if _valid_trials(c).sum() < lag + 10:
+        return np.nan
 
-        if len(c_clean) < lag + 10:
-            return np.nan
-
-        c_current = c_clean[lag:]
-        c_lagged = c_clean[:-lag]
-
-        if np.std(c_current) == 0 or np.std(c_lagged) == 0:
-            return np.nan
-
-        return float(np.corrcoef(c_current, c_lagged)[0, 1])
-
-    choices = np.asarray(choices)
-
-    if _is_multisession(choices):
-        return _apply_per_session(_compute_single, choices, stimuli, categories)
+    if lag == 1:
+        p = _prev_pairs(choices, stimuli, categories,
+                        prev_choices, prev_stimuli, prev_categories)
+        c_current, c_lagged = p['curr_choice'], p['prev_choice']
     else:
-        return _compute_single(choices, stimuli, categories)
+        # lag > 1: the frozen lag-1 view can't express deeper lags, so fall
+        # back to single-block adjacency (bridges seams on pooled data).
+        c_clean = c[_valid_trials(c)]
+        c_current, c_lagged = c_clean[lag:], c_clean[:-lag]
+
+    if len(c_current) < 2 or np.std(c_current) == 0 or np.std(c_lagged) == 0:
+        return np.nan
+
+    return float(np.corrcoef(c_current, c_lagged)[0, 1])
 
 
 @register_stat('side_bias')
 def compute_side_bias(choices: np.ndarray, stimuli: np.ndarray,
-                      categories: np.ndarray) -> Union[float, np.ndarray]:
+                      categories: np.ndarray,
+    prev_choices: Optional[np.ndarray] = None, prev_stimuli: Optional[np.ndarray] = None, prev_categories: Optional[np.ndarray] = None,
+) -> Union[float, np.ndarray]:
     """
     Overall tendency to choose B: P(choose B) - 0.5.
 
@@ -421,19 +365,18 @@ def compute_side_bias(choices: np.ndarray, stimuli: np.ndarray,
     """
     choices = np.asarray(choices)
 
-    if _is_multisession(choices):
-        return np.nanmean(choices, axis=0) - 0.5
-    else:
-        c = _ensure_1d(choices)
-        valid = _valid_trials(c)
-        if valid.sum() == 0:
-            return np.nan
-        return float(np.nanmean(c[valid]) - 0.5)
+    c = _ensure_1d(choices)
+    valid = _valid_trials(c)
+    if valid.sum() == 0:
+        return np.nan
+    return float(np.nanmean(c[valid]) - 0.5)
 
 
 @register_stat('stimulus_sensitivity')
 def compute_stimulus_sensitivity(choices: np.ndarray, stimuli: np.ndarray,
-                                 categories: np.ndarray) -> Union[float, np.ndarray]:
+                                 categories: np.ndarray,
+    prev_choices: Optional[np.ndarray] = None, prev_stimuli: Optional[np.ndarray] = None, prev_categories: Optional[np.ndarray] = None,
+) -> Union[float, np.ndarray]:
     """
     Correlation between stimulus value and choice.
 
@@ -456,10 +399,7 @@ def compute_stimulus_sensitivity(choices: np.ndarray, stimuli: np.ndarray,
     choices = np.asarray(choices)
     stimuli = np.asarray(stimuli)
 
-    if _is_multisession(choices):
-        return _apply_per_session(_compute_single, choices, stimuli, categories)
-    else:
-        return _compute_single(choices, stimuli, categories)
+    return _compute_single(choices, stimuli, categories)
 
 
 # =============================================================================
@@ -469,7 +409,9 @@ def compute_stimulus_sensitivity(choices: np.ndarray, stimuli: np.ndarray,
 @register_stat('choice_entropy')
 def compute_choice_entropy(choices: np.ndarray, stimuli: np.ndarray,
                            categories: np.ndarray,
-                           n_bins: int = DEFAULT_N_BINS) -> Union[float, np.ndarray]:
+                           n_bins: int = DEFAULT_N_BINS,
+    prev_choices: Optional[np.ndarray] = None, prev_stimuli: Optional[np.ndarray] = None, prev_categories: Optional[np.ndarray] = None,
+) -> Union[float, np.ndarray]:
     """
     Mean entropy of choice distribution across stimulus bins.
 
@@ -505,15 +447,15 @@ def compute_choice_entropy(choices: np.ndarray, stimuli: np.ndarray,
 
     choices = np.asarray(choices)
 
-    if _is_multisession(choices):
-        return _apply_per_session(_compute_single, choices, stimuli, categories)
-    else:
-        return _compute_single(choices, stimuli, categories)
+    return _compute_single(choices, stimuli, categories)
 
 
 @register_stat('perseveration')
 def compute_perseveration(choices: np.ndarray, stimuli: np.ndarray,
-                          categories: np.ndarray) -> Union[float, np.ndarray]:
+                          categories: np.ndarray,
+                          prev_choices: Optional[np.ndarray] = None,
+                          prev_stimuli: Optional[np.ndarray] = None,
+                          prev_categories: Optional[np.ndarray] = None) -> float:
     """
     Perseveration index: excess same-choice repetition beyond stimulus prediction.
 
@@ -521,58 +463,51 @@ def compute_perseveration(choices: np.ndarray, stimuli: np.ndarray,
     The stimulus prediction comes from the overall P(B|stimulus_bin).
     Positive = animal repeats choices more than stimulus alone would predict.
     """
-    def _compute_single(c, s, cat):
-        c = _ensure_1d(c).astype(float)
-        s = _ensure_1d(s).astype(float)
-        valid = _valid_trials(c)
+    c = _ensure_1d(np.asarray(choices)).astype(float)
+    s = _ensure_1d(np.asarray(stimuli)).astype(float)
+    valid = _valid_trials(c)
+    if valid.sum() < 20:
+        return np.nan
 
-        if valid.sum() < 20:
-            return np.nan
+    c_v, s_v = c[valid], s[valid]
+    if len(c_v) < 10:
+        return np.nan
 
-        c_v, s_v = c[valid], s[valid]
+    p = _prev_pairs(choices, stimuli, categories,
+                    prev_choices, prev_stimuli, prev_categories)
+    if len(p['curr_choice']) == 0:
+        return np.nan
 
-        if len(c_v) < 10:
-            return np.nan
+    # Observed repetition over (previous, current) pairs (block-aware)
+    observed_repeat = float(np.mean(p['curr_choice'] == p['prev_choice']))
 
-        # Observed repetition rate (excluding first valid trial)
-        observed_repeat = float(np.mean(c_v[1:] == c_v[:-1]))
+    # P(B) per stimulus bin from all valid current trials
+    n_bins = 8
+    bin_edges = np.linspace(-1, 1, n_bins + 1)
+    bin_v = np.clip(np.digitize(s_v, bin_edges) - 1, 0, n_bins - 1)
+    p_b_bin = np.full(n_bins, np.nan)
+    for b in range(n_bins):
+        m = bin_v == b
+        if m.sum() > 0:
+            p_b_bin[b] = np.mean(c_v[m])
 
-        # Predicted repetition rate from stimulus alone
-        # Use binned P(B|stimulus) to compute expected repetition
-        n_bins = 8
-        bin_edges = np.linspace(-1, 1, n_bins + 1)
-        bin_idx = np.clip(np.digitize(s_v, bin_edges) - 1, 0, n_bins - 1)
+    # Expected repeat per pair from stimulus alone: P(both B) + P(both A)
+    cur_bin = np.clip(np.digitize(p['curr_stim'], bin_edges) - 1, 0, n_bins - 1)
+    prv_bin = np.clip(np.digitize(p['prev_stim'], bin_edges) - 1, 0, n_bins - 1)
+    expected_repeats = []
+    for b_curr, b_prev in zip(cur_bin, prv_bin):
+        if np.isnan(p_b_bin[b_curr]) or np.isnan(p_b_bin[b_prev]):
+            continue
+        expected_repeats.append(
+            p_b_bin[b_curr] * p_b_bin[b_prev]
+            + (1 - p_b_bin[b_curr]) * (1 - p_b_bin[b_prev])
+        )
 
-        # P(B) per bin
-        p_b_bin = np.full(n_bins, np.nan)
-        for b in range(n_bins):
-            mask = bin_idx == b
-            if mask.sum() > 0:
-                p_b_bin[b] = np.mean(c_v[mask])
+    if len(expected_repeats) == 0:
+        return np.nan
 
-        # Expected repeat rate: for consecutive pairs, P(both B) + P(both A)
-        expected_repeats = []
-        for t in range(1, len(c_v)):
-            b_curr = bin_idx[t]
-            b_prev = bin_idx[t - 1]
-            if np.isnan(p_b_bin[b_curr]) or np.isnan(p_b_bin[b_prev]):
-                continue
-            p_repeat = (p_b_bin[b_curr] * p_b_bin[b_prev] +
-                        (1 - p_b_bin[b_curr]) * (1 - p_b_bin[b_prev]))
-            expected_repeats.append(p_repeat)
-
-        if len(expected_repeats) == 0:
-            return np.nan
-
-        predicted_repeat = float(np.mean(expected_repeats))
-        return observed_repeat - predicted_repeat
-
-    choices = np.asarray(choices)
-
-    if _is_multisession(choices):
-        return _apply_per_session(_compute_single, choices, stimuli, categories)
-    else:
-        return _compute_single(choices, stimuli, categories)
+    predicted_repeat = float(np.mean(expected_repeats))
+    return observed_repeat - predicted_repeat
 
 
 @register_stat('logistic_history')
@@ -580,6 +515,7 @@ def compute_logistic_history_weights(
     choices: np.ndarray, stimuli: np.ndarray,
     categories: np.ndarray, n_back: int = 3,
     l2_penalty: float = LOGISTIC_L2_PENALTY,
+    prev_choices: Optional[np.ndarray] = None, prev_stimuli: Optional[np.ndarray] = None, prev_categories: Optional[np.ndarray] = None,
 ) -> Union[Dict[str, float], np.ndarray]:
     """
     L2-regularised logistic regression of current choice on stimulus + trial history.
@@ -697,19 +633,7 @@ def compute_logistic_history_weights(
 
     choices = np.asarray(choices)
 
-    if _is_multisession(choices):
-        # For multi-session: return per-key arrays
-        n_sessions = choices.shape[1]
-        all_results = []
-        for i in range(n_sessions):
-            all_results.append(
-                _compute_single(choices[:, i], stimuli[:, i], categories[:, i])
-            )
-        # Combine into dict of arrays
-        keys = all_results[0].keys()
-        return {k: np.array([r[k] for r in all_results]) for k in keys}
-    else:
-        return _compute_single(choices, stimuli, categories)
+    return _compute_single(choices, stimuli, categories)
 
 
 @register_stat('hard_easy_ratio')
@@ -717,6 +641,7 @@ def compute_hard_easy_accuracy_ratio(
     choices: np.ndarray, stimuli: np.ndarray,
     categories: np.ndarray,
     hard_threshold: float = 0.3,
+    prev_choices: Optional[np.ndarray] = None, prev_stimuli: Optional[np.ndarray] = None, prev_categories: Optional[np.ndarray] = None,
 ) -> Union[float, np.ndarray]:
     """
     Ratio of accuracy on hard trials (near boundary) to easy trials (far from boundary).
@@ -754,10 +679,7 @@ def compute_hard_easy_accuracy_ratio(
 
     choices = np.asarray(choices)
 
-    if _is_multisession(choices):
-        return _apply_per_session(_compute_single, choices, stimuli, categories)
-    else:
-        return _compute_single(choices, stimuli, categories)
+    return _compute_single(choices, stimuli, categories)
 
 
 @register_stat('hard_accuracy')
@@ -765,6 +687,7 @@ def compute_hard_accuracy(
     choices: np.ndarray, stimuli: np.ndarray,
     categories: np.ndarray,
     hard_threshold: float = 0.3,
+    prev_choices: Optional[np.ndarray] = None, prev_stimuli: Optional[np.ndarray] = None, prev_categories: Optional[np.ndarray] = None,
 ) -> Union[float, np.ndarray]:
     """
     Accuracy on hard trials only (|stimulus| < hard_threshold).
@@ -787,10 +710,7 @@ def compute_hard_accuracy(
         return float(np.mean(c_v[hard] == cat_v[hard]))
 
     choices = np.asarray(choices)
-    if _is_multisession(choices):
-        return _apply_per_session(_compute_single, choices, stimuli, categories)
-    else:
-        return _compute_single(choices, stimuli, categories)
+    return _compute_single(choices, stimuli, categories)
 
 
 @register_stat('easy_accuracy')
@@ -798,6 +718,7 @@ def compute_easy_accuracy(
     choices: np.ndarray, stimuli: np.ndarray,
     categories: np.ndarray,
     hard_threshold: float = 0.3,
+    prev_choices: Optional[np.ndarray] = None, prev_stimuli: Optional[np.ndarray] = None, prev_categories: Optional[np.ndarray] = None,
 ) -> Union[float, np.ndarray]:
     """
     Accuracy on easy trials only (|stimulus| >= hard_threshold).
@@ -820,10 +741,7 @@ def compute_easy_accuracy(
         return float(np.mean(c_v[easy] == cat_v[easy]))
 
     choices = np.asarray(choices)
-    if _is_multisession(choices):
-        return _apply_per_session(_compute_single, choices, stimuli, categories)
-    else:
-        return _compute_single(choices, stimuli, categories)
+    return _compute_single(choices, stimuli, categories)
 
 
 # =============================================================================
@@ -875,7 +793,10 @@ def compute_conditional_psychometric(
     categories: np.ndarray,
     n_bins: int = DEFAULT_N_BINS,
     min_trials_per_bin: int = 15,
-) -> Union[Dict[str, float], np.ndarray]:
+    prev_choices: Optional[np.ndarray] = None,
+    prev_stimuli: Optional[np.ndarray] = None,
+    prev_categories: Optional[np.ndarray] = None,
+) -> Dict[str, float]:
     """
     Conditional psychometric curves: fit a full cumulative Gaussian for each
     previous-stimulus bin.
@@ -890,91 +811,76 @@ def compute_conditional_psychometric(
         'cond_lapse_high_0'..'cond_lapse_high_7': upper lapse per bin
     Total: 4 * n_bins values.
     """
-    def _compute_single(c, s, cat):
-        c = _ensure_1d(c).astype(float)
-        s = _ensure_1d(s).astype(float)
-        valid = _valid_trials(c)
+    c = _ensure_1d(np.asarray(choices)).astype(float)
+    s = _ensure_1d(np.asarray(stimuli)).astype(float)
+    valid = _valid_trials(c)
 
-        # Build NaN result
-        nan_result = {}
-        for b in range(n_bins):
-            nan_result[f'cond_mu_{b}'] = np.nan
-            nan_result[f'cond_sigma_{b}'] = np.nan
-            nan_result[f'cond_lapse_low_{b}'] = np.nan
-            nan_result[f'cond_lapse_high_{b}'] = np.nan
+    # Build NaN result
+    nan_result = {}
+    for b in range(n_bins):
+        nan_result[f'cond_mu_{b}'] = np.nan
+        nan_result[f'cond_sigma_{b}'] = np.nan
+        nan_result[f'cond_lapse_low_{b}'] = np.nan
+        nan_result[f'cond_lapse_high_{b}'] = np.nan
 
-        if valid.sum() < 50:
-            return nan_result
+    if valid.sum() < 50:
+        return nan_result
 
-        c_v, s_v = c[valid], s[valid]
+    c_v, s_v = c[valid], s[valid]
 
-        # Unconditional fit as fallback (null: prev_stim has no effect)
-        uncond = fit_psychometric(s_v, c_v)
-        if not uncond.get('success', False):
-            return nan_result
-        fallback_mu = uncond['mu']
-        fallback_sigma = uncond['sigma']
-        fallback_ll = uncond['lapse_low']
-        fallback_lh = uncond['lapse_high']
+    # Unconditional fit as fallback (null: prev_stim has no effect)
+    uncond = fit_psychometric(s_v, c_v)
+    if not uncond.get('success', False):
+        return nan_result
+    fallback_mu = uncond['mu']
+    fallback_sigma = uncond['sigma']
+    fallback_ll = uncond['lapse_low']
+    fallback_lh = uncond['lapse_high']
 
-        # Bin by previous stimulus (skip first trial - no previous)
-        bin_edges = np.linspace(-1, 1, n_bins + 1)
-        prev_stim = s_v[:-1]
-        curr_stim = s_v[1:]
-        curr_choices = c_v[1:]
-        prev_bin_idx = np.clip(np.digitize(prev_stim, bin_edges) - 1, 0, n_bins - 1)
+    # Bin by previous stimulus (frozen, block-aware lag-1 view)
+    p = _prev_pairs(choices, stimuli, categories,
+                    prev_choices, prev_stimuli, prev_categories)
+    prev_stim = p['prev_stim']
+    curr_stim = p['curr_stim']
+    curr_choices = p['curr_choice']
+    bin_edges = np.linspace(-1, 1, n_bins + 1)
+    prev_bin_idx = np.clip(np.digitize(prev_stim, bin_edges) - 1, 0, n_bins - 1)
 
-        result = {}
-        for b in range(n_bins):
-            mask = prev_bin_idx == b
-            if mask.sum() < min_trials_per_bin:
-                # Not enough trials: fall back to unconditional
-                result[f'cond_mu_{b}'] = fallback_mu
-                result[f'cond_sigma_{b}'] = fallback_sigma
-                result[f'cond_lapse_low_{b}'] = fallback_ll
-                result[f'cond_lapse_high_{b}'] = fallback_lh
-                continue
+    result = {}
+    for b in range(n_bins):
+        mask = prev_bin_idx == b
+        if mask.sum() < min_trials_per_bin:
+            # Not enough trials: fall back to unconditional
+            result[f'cond_mu_{b}'] = fallback_mu
+            result[f'cond_sigma_{b}'] = fallback_sigma
+            result[f'cond_lapse_low_{b}'] = fallback_ll
+            result[f'cond_lapse_high_{b}'] = fallback_lh
+            continue
 
-            psych = fit_psychometric(curr_stim[mask], curr_choices[mask])
-            if psych.get('success', False):
-                mu_val = psych['mu']
-                sigma_val = psych['sigma']
-                unreliable = (
-                    sigma_val > PSYCHOMETRIC_SLOPE_THRESHOLD
-                    or abs(mu_val) > 0.99
-                )
-                if unreliable:
-                    result[f'cond_mu_{b}'] = fallback_mu
-                    result[f'cond_sigma_{b}'] = fallback_sigma
-                else:
-                    result[f'cond_mu_{b}'] = mu_val
-                    result[f'cond_sigma_{b}'] = sigma_val
-                result[f'cond_lapse_low_{b}'] = psych['lapse_low']
-                result[f'cond_lapse_high_{b}'] = psych['lapse_high']
-            else:
-                # Fit failed: fall back to unconditional
-                result[f'cond_mu_{b}'] = fallback_mu
-                result[f'cond_sigma_{b}'] = fallback_sigma
-                result[f'cond_lapse_low_{b}'] = fallback_ll
-                result[f'cond_lapse_high_{b}'] = fallback_lh
-
-        return result
-
-    choices = np.asarray(choices)
-    stimuli = np.asarray(stimuli)
-
-    if _is_multisession(choices):
-        n_sessions = choices.shape[1]
-        all_results = []
-        for i in range(n_sessions):
-            all_results.append(
-                _compute_single(choices[:, i], stimuli[:, i], categories[:, i])
+        psych = fit_psychometric(curr_stim[mask], curr_choices[mask])
+        if psych.get('success', False):
+            mu_val = psych['mu']
+            sigma_val = psych['sigma']
+            unreliable = (
+                sigma_val > PSYCHOMETRIC_SLOPE_THRESHOLD
+                or abs(mu_val) > 0.99
             )
-        keys = all_results[0].keys()
-        return {k: np.array([r[k] for r in all_results]) for k in keys}
-    else:
-        return _compute_single(choices, stimuli, categories)
+            if unreliable:
+                result[f'cond_mu_{b}'] = fallback_mu
+                result[f'cond_sigma_{b}'] = fallback_sigma
+            else:
+                result[f'cond_mu_{b}'] = mu_val
+                result[f'cond_sigma_{b}'] = sigma_val
+            result[f'cond_lapse_low_{b}'] = psych['lapse_low']
+            result[f'cond_lapse_high_{b}'] = psych['lapse_high']
+        else:
+            # Fit failed: fall back to unconditional
+            result[f'cond_mu_{b}'] = fallback_mu
+            result[f'cond_sigma_{b}'] = fallback_sigma
+            result[f'cond_lapse_low_{b}'] = fallback_ll
+            result[f'cond_lapse_high_{b}'] = fallback_lh
 
+    return result
 
 @register_stat('update_matrix')
 def compute_update_matrix_stat(
@@ -982,6 +888,7 @@ def compute_update_matrix_stat(
     categories: np.ndarray,
     n_bins: int = DEFAULT_N_BINS,
     trial_filter: str = 'post_correct',
+    prev_choices: Optional[np.ndarray] = None, prev_stimuli: Optional[np.ndarray] = None, prev_categories: Optional[np.ndarray] = None,
 ) -> Union[Dict[str, float], np.ndarray]:
     """
     Empirical update matrix via canonical psychometric-fit method.
@@ -1034,17 +941,7 @@ def compute_update_matrix_stat(
     stimuli = np.asarray(stimuli)
     categories = np.asarray(categories)
 
-    if _is_multisession(choices):
-        n_sessions = choices.shape[1]
-        all_results = []
-        for i in range(n_sessions):
-            all_results.append(
-                _compute_single(choices[:, i], stimuli[:, i], categories[:, i])
-            )
-        keys = all_results[0].keys()
-        return {k: np.array([r[k] for r in all_results]) for k in keys}
-    else:
-        return _compute_single(choices, stimuli, categories)
+    return _compute_single(choices, stimuli, categories)
 
 
 # =============================================================================
@@ -1055,6 +952,7 @@ def compute_update_matrix_stat(
 def compute_psychometric_gof_stat(
     choices: np.ndarray, stimuli: np.ndarray,
     categories: np.ndarray,
+    prev_choices: Optional[np.ndarray] = None, prev_stimuli: Optional[np.ndarray] = None, prev_categories: Optional[np.ndarray] = None,
 ) -> Union[float, np.ndarray]:
     """
     Psychometric curve goodness-of-fit (R²).
@@ -1084,17 +982,17 @@ def compute_psychometric_gof_stat(
 
     choices = np.asarray(choices)
 
-    if _is_multisession(choices):
-        return _apply_per_session(_compute_single, choices, stimuli, categories)
-    else:
-        return _compute_single(choices, stimuli, categories)
+    return _compute_single(choices, stimuli, categories)
 
 
 @register_stat('stimulus_recency')
 def compute_stimulus_recency(
     choices: np.ndarray, stimuli: np.ndarray,
     categories: np.ndarray,
-) -> Union[float, np.ndarray]:
+    prev_choices: Optional[np.ndarray] = None,
+    prev_stimuli: Optional[np.ndarray] = None,
+    prev_categories: Optional[np.ndarray] = None,
+) -> float:
     """
     Effect of previous stimulus VALUE on current choice.
 
@@ -1108,45 +1006,28 @@ def compute_stimulus_recency(
     Positive = previous stimulus on the B side biases current choice
     toward B (assimilative serial dependence).
     """
-    def _compute_single(c, s, cat):
-        c = _ensure_1d(c).astype(float)
-        s = _ensure_1d(s).astype(float)
-        valid = _valid_trials(c)
+    c = _ensure_1d(np.asarray(choices)).astype(float)
+    if _valid_trials(c).sum() < 10:
+        return np.nan
 
-        if valid.sum() < 10:
-            return np.nan
+    p = _prev_pairs(choices, stimuli, categories,
+                    prev_choices, prev_stimuli, prev_categories)
+    if len(p['curr_choice']) < 5:
+        return np.nan
 
-        c_v, s_v = c[valid], s[valid]
+    prev_b_side = p['prev_stim'] > 0
+    prev_a_side = p['prev_stim'] <= 0
+    if prev_b_side.sum() == 0 or prev_a_side.sum() == 0:
+        return np.nan
 
-        if len(c_v) < 5:
-            return np.nan
-
-        # Previous stimulus values (skip first trial)
-        prev_stim = s_v[:-1]
-        curr_choice = c_v[1:]
-
-        prev_b_side = prev_stim > 0
-        prev_a_side = prev_stim <= 0
-
-        if prev_b_side.sum() == 0 or prev_a_side.sum() == 0:
-            return np.nan
-
-        p_b_after_high = np.mean(curr_choice[prev_b_side])
-        p_b_after_low = np.mean(curr_choice[prev_a_side])
-
-        return p_b_after_high - p_b_after_low
-
-    choices = np.asarray(choices)
-
-    if _is_multisession(choices):
-        return _apply_per_session(_compute_single, choices, stimuli, categories)
-    else:
-        return _compute_single(choices, stimuli, categories)
+    return float(np.mean(p['curr_choice'][prev_b_side])
+                 - np.mean(p['curr_choice'][prev_a_side]))
 
 @register_stat('recency_divergence')
 def compute_recency_divergence(
     choices: np.ndarray, stimuli: np.ndarray,
     categories: np.ndarray,
+    prev_choices: Optional[np.ndarray] = None, prev_stimuli: Optional[np.ndarray] = None, prev_categories: Optional[np.ndarray] = None,
 ) -> Union[float, np.ndarray]:
     """
     Difference between stimulus-based and category-based recency.
@@ -1165,16 +1046,14 @@ def compute_recency_divergence(
         return stim_rec - cat_rec
 
     choices = np.asarray(choices)
-    if _is_multisession(choices):
-        return _apply_per_session(_compute_single, choices, stimuli, categories)
-    else:
-        return _compute_single(choices, stimuli, categories)
+    return _compute_single(choices, stimuli, categories)
 
 
 @register_stat('history_interaction_r2')
 def compute_history_interaction_r2(
     choices: np.ndarray, stimuli: np.ndarray,
     categories: np.ndarray, n_back: int = 3,
+    prev_choices: Optional[np.ndarray] = None, prev_stimuli: Optional[np.ndarray] = None, prev_categories: Optional[np.ndarray] = None,
 ) -> Union[float, np.ndarray]:
     """
     How much does trial history improve choice prediction beyond stimulus?
@@ -1265,10 +1144,7 @@ def compute_history_interaction_r2(
 
     choices = np.asarray(choices)
 
-    if _is_multisession(choices):
-        return _apply_per_session(_compute_single, choices, stimuli, categories)
-    else:
-        return _compute_single(choices, stimuli, categories)
+    return _compute_single(choices, stimuli, categories)
 
 
 @register_stat('sd_profile')
@@ -1276,6 +1152,7 @@ def compute_sd_profile_features(
     choices: np.ndarray, stimuli: np.ndarray,
     categories: np.ndarray,
     n_bins: int = DEFAULT_N_BINS,
+    prev_choices: Optional[np.ndarray] = None, prev_stimuli: Optional[np.ndarray] = None, prev_categories: Optional[np.ndarray] = None,
 ) -> Union[Dict[str, float], np.ndarray]:
     """
     Scalar features from the serial dependence profile.
@@ -1397,17 +1274,7 @@ def compute_sd_profile_features(
 
     choices = np.asarray(choices)
 
-    if _is_multisession(choices):
-        n_sessions = choices.shape[1]
-        all_results = []
-        for i in range(n_sessions):
-            all_results.append(
-                _compute_single(choices[:, i], stimuli[:, i], categories[:, i])
-            )
-        keys = all_results[0].keys()
-        return {k: np.array([r[k] for r in all_results]) for k in keys}
-    else:
-        return _compute_single(choices, stimuli, categories)
+    return _compute_single(choices, stimuli, categories)
 
 
 def compute_conditional_psychometry_full(
@@ -1542,7 +1409,9 @@ def compute_conditional_psychometry_full(
 @register_stat('binned_accuracy')
 def compute_binned_accuracy(choices: np.ndarray, stimuli: np.ndarray,
                             categories: np.ndarray,
-                            n_bins: int = DEFAULT_N_BINS) -> Union[np.ndarray, np.ndarray]:
+                            n_bins: int = DEFAULT_N_BINS,
+    prev_choices: Optional[np.ndarray] = None, prev_stimuli: Optional[np.ndarray] = None, prev_categories: Optional[np.ndarray] = None,
+) -> Union[np.ndarray, np.ndarray]:
     """
     Accuracy binned by stimulus value. Shape (n_bins,) or (n_bins, n_sessions).
     """
@@ -1568,20 +1437,15 @@ def compute_binned_accuracy(choices: np.ndarray, stimuli: np.ndarray,
     stimuli = np.asarray(stimuli)
     categories = np.asarray(categories)
 
-    if _is_multisession(choices):
-        n_sessions = choices.shape[1]
-        results = []
-        for i in range(n_sessions):
-            results.append(_compute_single(choices[:, i], stimuli[:, i], categories[:, i]))
-        return np.array(results).T
-    else:
-        return _compute_single(choices, stimuli, categories)
+    return _compute_single(choices, stimuli, categories)
 
 
 @register_stat('binned_choice_prob')
 def compute_binned_choice_probability(choices: np.ndarray, stimuli: np.ndarray,
                                       categories: np.ndarray,
-                                      n_bins: int = DEFAULT_N_BINS) -> Union[np.ndarray, np.ndarray]:
+                                      n_bins: int = DEFAULT_N_BINS,
+    prev_choices: Optional[np.ndarray] = None, prev_stimuli: Optional[np.ndarray] = None, prev_categories: Optional[np.ndarray] = None,
+) -> Union[np.ndarray, np.ndarray]:
     """
     P(choose B) binned by stimulus value (empirical psychometric curve).
     Shape (n_bins,) or (n_bins, n_sessions).
@@ -1606,14 +1470,7 @@ def compute_binned_choice_probability(choices: np.ndarray, stimuli: np.ndarray,
     choices = np.asarray(choices)
     stimuli = np.asarray(stimuli)
 
-    if _is_multisession(choices):
-        n_sessions = choices.shape[1]
-        results = []
-        for i in range(n_sessions):
-            results.append(_compute_single(choices[:, i], stimuli[:, i], categories[:, i]))
-        return np.array(results).T
-    else:
-        return _compute_single(choices, stimuli, categories)
+    return _compute_single(choices, stimuli, categories)
 
 
 # =============================================================================
@@ -1639,26 +1496,48 @@ FEATURE_MATRIX_STATS = [
 ]
 
 
-def compute_summary_stats(
+def fit_summary_stats(
     choices: np.ndarray,
     stimuli: np.ndarray,
     categories: np.ndarray,
+    prev_choices: Optional[np.ndarray] = None,
+    prev_stimuli: Optional[np.ndarray] = None,
+    prev_categories: Optional[np.ndarray] = None,
     stat_names: Optional[List[str]] = None,
-    return_dict: bool = False
+    return_dict: bool = False,
 ) -> Union[np.ndarray, Dict]:
     """
-    Compute summary statistics.
+    Compute summary statistics from raw single-block arrays.
+
+    This is the low-level worker (the session-level entry point is
+    ``compute_summary_stats(sessions, ...)``). It expects one contiguous block
+    of trials — pre-filtered, aborts already dropped. For multi-session data
+    use ``compute_summary_stats`` with a list of SessionData.
 
     Args:
-        choices: Binary choices, shape (n_trials,) or (n_trials, n_sessions)
-        stimuli: Stimulus values, same shape as choices
-        categories: True categories, same shape as choices
-        stat_names: List of stat names to compute. If None, uses DEFAULT_STATS
-        return_dict: If True, return dict; if False, return flattened array for SBI
+        choices: Binary choices, shape (n_trials,).
+        stimuli: Stimulus values, shape (n_trials,).
+        categories: True categories, shape (n_trials,).
+        prev_choices, prev_stimuli, prev_categories: Frozen, abort-aware lag-1
+            arrays aligned to each trial (NaN where there is no within-block
+            predecessor). When provided, history stats take the previous trial
+            from these rather than by array adjacency — which keeps them correct
+            on pooled data, where these carry the seam (NaN at each session's
+            first trial). When None, history stats shift by one internally
+            (the simulated / standalone path).
+
+            The lag-1 history stats (recency, win_stay, win_stay_rate,
+            lose_shift, choice_autocorr, perseveration, conditional_psychometric,
+            stimulus_recency) consume these; other stats ignore them. The
+            multi-lag stats (logistic_history, recency_divergence,
+            history_interaction_r2) self-shift and so bridge session seams in
+            pooled mode — use per-session for boundary-exact history.
+        stat_names: List of stat names to compute. If None, uses DEFAULT_STATS.
+        return_dict: If True, return dict; if False, return flattened array.
 
     Returns:
-        If return_dict=True: Dict mapping stat names to values
-        If return_dict=False: 1D array of all stats concatenated (suitable for SBI)
+        If return_dict=True: Dict mapping stat names to values.
+        If return_dict=False: 1D array of all stats concatenated (for SBI).
     """
     if stat_names is None:
         stat_names = DEFAULT_STATS
@@ -1670,7 +1549,11 @@ def compute_summary_stats(
     results = {}
     for name in stat_names:
         func = SUMMARY_REGISTRY[name]
-        results[name] = func(choices, stimuli, categories)
+        results[name] = func(
+            choices, stimuli, categories,
+            prev_choices=prev_choices, prev_stimuli=prev_stimuli,
+            prev_categories=prev_categories,
+        )
 
     if return_dict:
         return results
@@ -1697,95 +1580,6 @@ def flatten_stats(stats_dict: Dict) -> np.ndarray:
 
     return np.array(flat, dtype=np.float64)
 
-def compute_summary_stats_per_session(
-    session_data: Union[List[Dict[str, np.ndarray]], np.ndarray],
-    stat_names: Optional[List[str]] = None,
-    return_dict: bool = False,
-) -> List[Union[np.ndarray, Dict]]:
-    """
-    Compute summary statistics for multiple sessions.
-
-    Auto-detects input format:
-        - List of dicts (variable-length sessions): loops per session
-        - 2D arrays (equal-length sessions): vectorised batch computation
-
-    The vectorised path is faster for SBI where all simulated sessions
-    have the same trial count. The loop path handles real data where
-    sessions have different lengths.
-
-    Args:
-        session_data: Either:
-            - List of dicts with 'choices', 'stimuli', 'categories' keys
-              (as from TrialData.get_arrays() or FittingData)
-            - Dict with 'choices', 'stimuli', 'categories' as 2D arrays
-              of shape (n_trials, n_sessions) — equal-length sessions
-        stat_names: Which stats to compute (default: DEFAULT_STATS)
-        return_dict: If True return list of dicts, else list of arrays
-
-    Returns:
-        List of results, one per session
-    """
-    if stat_names is None:
-        stat_names = DEFAULT_STATS
-
-    # Auto-detect format
-    if isinstance(session_data, dict):
-        # 2D arrays — vectorised path
-        choices = np.asarray(session_data['choices'])
-        stimuli = np.asarray(session_data['stimuli'])
-        categories = np.asarray(session_data['categories'])
-
-        if choices.ndim == 2:
-            # Equal-length: use the vectorised multi-session path
-            result = compute_summary_stats(
-                choices, stimuli, categories,
-                stat_names=stat_names,
-                return_dict=return_dict,
-            )
-            if return_dict:
-                # Result is a dict of arrays — convert to list of dicts
-                n_sessions = choices.shape[1]
-                keys = list(result.keys())
-                return [
-                    {k: (result[k][i] if hasattr(result[k], '__len__')
-                         else result[k])
-                     for k in keys}
-                    for i in range(n_sessions)
-                ]
-            else:
-                return result  # Already in the right format for SBI
-        else:
-            # 1D — single session, wrap in list
-            return [compute_summary_stats(
-                choices, stimuli, categories,
-                stat_names=stat_names,
-                return_dict=return_dict,
-            )]
-
-    elif isinstance(session_data, list):
-        # List of dicts — variable-length, loop
-        results = []
-        for sa in session_data:
-            if isinstance(sa, dict):
-                choices = sa['choices']
-                stimuli = sa['stimuli']
-                categories = sa['categories']
-            else:
-                # Assume tuple (choices, stimuli, categories)
-                choices, stimuli, categories = sa[0], sa[1], sa[2]
-
-            results.append(compute_summary_stats(
-                choices, stimuli, categories,
-                stat_names=stat_names,
-                return_dict=return_dict,
-            ))
-        return results
-
-    else:
-        raise TypeError(
-            f"session_data must be a list of dicts or a dict of 2D arrays, "
-            f"got {type(session_data)}"
-        )
 
 
 
@@ -1843,7 +1637,7 @@ def compute_stats_for_sbi(
     Convenience function for SBI simulator.
     Returns flattened 1D array of summary statistics.
     """
-    return compute_summary_stats(choices, stimuli, categories, stat_names, return_dict=False)
+    return fit_summary_stats(choices, stimuli, categories, stat_names, return_dict=False)
 
 
 def describe_stats(stat_names: Optional[List[str]] = None) -> None:
@@ -1878,3 +1672,79 @@ def add_custom_stat(name: str, func: Callable) -> None:
     """
     SUMMARY_REGISTRY[name] = func
     print(f"Registered custom stat: '{name}'")
+
+
+# =============================================================================
+# SESSION-LEVEL ENTRY POINT (NO FILTERING — data must be pre-filtered)
+# =============================================================================
+
+def compute_summary_stats(
+    sessions: list,
+    stat_names: Optional[List[str]] = None,
+    mode: str = 'pooled',
+) -> Dict:
+    """
+    Compute summary statistics from pre-filtered sessions (session-level entry).
+
+    ``sessions`` is a List[SessionData], pre-filtered via filter_trials /
+    filter_session. Wraps :func:`fit_summary_stats`; returns a result dict in
+    both modes, mirroring ``compute_um``:
+
+      'pooled'      : concatenate sessions via ``pool_arrays`` and compute one
+                      set of stats. The pooled ``prev_*`` (NaN at each session's
+                      first trial) are threaded through, so the lag-1 history
+                      stats stay block-aware across the seam.
+                      Returns {mode, stats, n_sessions, n_trials}.
+      'per_session' : compute stats per session, NO reduction — aggregate
+                      downstream. Returns {mode, per_session, n_sessions}, where
+                      each entry is {session_id, session_idx, stats, n_trials}.
+
+    The flattened SBI vector is NOT produced here — call ``fit_summary_stats``
+    with ``return_dict=False`` on pooled arrays for that.
+
+    Args:
+        sessions: Pre-filtered List[SessionData].
+        stat_names: Stats to compute (default: DEFAULT_STATS).
+        mode: 'pooled' | 'per_session'.
+    """
+    from behav_utils.data.ops.filtering import pool_arrays
+
+    if mode == 'pooled':
+        pooled = pool_arrays(sessions)
+        stats = fit_summary_stats(
+            pooled['choices'], pooled['stimuli'], pooled['categories'],
+            prev_choices=pooled['prev_choice'],
+            prev_stimuli=pooled['prev_stimulus'],
+            prev_categories=pooled['prev_category'],
+            stat_names=stat_names, return_dict=True,
+        )
+        return {
+            'mode': 'pooled', 'stats': stats,
+            'n_sessions': pooled['n_sessions'], 'n_trials': pooled['n_trials'],
+        }
+
+    if mode == 'per_session':
+        per_session = []
+        for sess in sessions:
+            a = sess.get_arrays()
+            if a['n_trials'] == 0:
+                continue
+            stats = fit_summary_stats(
+                a['choices'], a['stimuli'], a['categories'],
+                prev_choices=a['prev_choice'],
+                prev_stimuli=a['prev_stimulus'],
+                prev_categories=a['prev_category'],
+                stat_names=stat_names, return_dict=True,
+            )
+            per_session.append({
+                'session_id': getattr(sess, 'session_id', None),
+                'session_idx': getattr(sess, 'session_idx', None),
+                'stats': stats,
+                'n_trials': a['n_trials'],
+            })
+        return {
+            'mode': 'per_session', 'per_session': per_session,
+            'n_sessions': len(per_session),
+        }
+
+    raise ValueError(f"mode must be 'pooled' or 'per_session', got {mode!r}")

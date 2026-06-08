@@ -52,7 +52,7 @@ FT_LABEL = {'update_matrix': 'UM', 'conditional_psych': 'CP'}
 
 # ── Common imports ──────────────────────────────────────────────────────────
 from behav_utils.data.structures import (
-    ExperimentData, AnimalData, SessionData, FittingData,
+    ExperimentData, AnimalData, SessionData, 
 )
 from behav_utils.data.loading import load_experiment
 from behav_utils.data.ops.selection import select_sessions, SessionFilter
@@ -68,6 +68,7 @@ from behav_utils.data.synthetic import (
 )
 from behav_utils.analysis.summary_stats import (
     compute_summary_stats,
+    fit_summary_stats,
     list_available_stats,
     FEATURE_MATRIX_STATS,
     DEFAULT_STATS,

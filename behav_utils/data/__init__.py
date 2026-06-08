@@ -17,7 +17,6 @@ from behav_utils.data.structures import (
     SessionData,
     SessionMetadata,
     TrialData,
-    FittingData,
 )
 from behav_utils.data.loading import (
     load_experiment,
@@ -27,7 +26,6 @@ from behav_utils.data.loading import (
 from behav_utils.data.ops.selection import (
     select_sessions,
     SessionFilter,
-    fitting_data_from_sessions,
     register_preset,
     list_presets,
     register_presets_from_config,
@@ -59,12 +57,10 @@ __all__ = [
     'SessionData',
     'SessionMetadata',
     'TrialData',
-    'FittingData',
 
     # Selection (session-level)
     'select_sessions',
     'SessionFilter',
-    'fitting_data_from_sessions',
     'register_preset',
     'list_presets',
     'register_presets_from_config',

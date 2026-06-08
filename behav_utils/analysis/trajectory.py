@@ -85,7 +85,7 @@ def compute_trajectory(
     # Build convenience arrays
     values = {}
     for sn in stat_names:
-        if sn is 'psychometric':
+        if sn == 'psychometric':
             values['mu'] = np.array([
                 e.get('mu', np.nan) for e in per_session], dtype=float)
             values['sigma'] = np.array([

@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Optional, Any, Union
 from scipy.integrate import trapezoid
 
-from behav_utils.analysis.summary_stats import compute_summary_stats, DEFAULT_STATS
+from behav_utils.analysis.summary_stats import fit_summary_stats, DEFAULT_STATS
 
 # =============================================================================
 # MODEL TYPE ENUM
@@ -327,7 +327,7 @@ class Simulator:
             all_choices[:, s] = choices
         
         # Compute summary statistics
-        summary_stats = compute_summary_stats(
+        summary_stats = fit_summary_stats(
             all_choices, self.stimuli, self.categories,
             stat_names=self.config.stat_names,
             return_dict=False

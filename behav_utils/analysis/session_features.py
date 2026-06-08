@@ -23,7 +23,7 @@ from typing import Callable, Dict, List, Union, Optional, TYPE_CHECKING
 from behav_utils.analysis.summary_stats import (
     SUMMARY_REGISTRY,
     FEATURE_MATRIX_STATS,
-    compute_summary_stats,
+    fit_summary_stats,
 )
 
 if TYPE_CHECKING:
@@ -81,8 +81,11 @@ def compute_session_features(
     }
 
     # ── Summary stats from registry ───────────────────────────────
-    stats_dict = compute_summary_stats(
+    stats_dict = fit_summary_stats(
         choices=choices, stimuli=stimuli, categories=categories,
+        prev_choices=arrays['prev_choice'],
+        prev_stimuli=arrays['prev_stimulus'],
+        prev_categories=arrays['prev_category'],
         stat_names=stat_names, return_dict=True,
     )
     for stat_name, value in stats_dict.items():

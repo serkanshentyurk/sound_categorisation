@@ -4,7 +4,7 @@ Update Matrix Computation
 Computes serial dependence (update) matrices from behavioural data.
 
 Two levels:
-    compute_update_matrix()  — raw arrays (no data class dependency)
+    fit_update_matrix()  — raw arrays (no data class dependency)
     compute_um()             — List[SessionData], NO filtering
 
 Data must be pre-filtered via filter_trials / session.filter before calling
@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from behav_utils.data.structures import SessionData
 
 
-def compute_update_matrix(
+def fit_update_matrix(
     stimuli: np.ndarray,
     choices: np.ndarray,
     categories: np.ndarray,
@@ -193,7 +193,7 @@ def compute_um(
     """
     Compute update matrix from pre-filtered sessions.
 
-    Session-level wrapper around compute_update_matrix(). Two modes, which
+    Session-level wrapper around fit_update_matrix(). Two modes, which
     return DIFFERENT shapes:
 
       'pooled'      : concatenate all sessions, compute one update matrix.
@@ -221,7 +221,7 @@ def compute_um(
                 'mode': 'pooled', 'um': empty, 'conditional_matrix': empty,
                 'n_sessions': 0, 'n_trials': 0, 'n_bins': n_bins, 'info': {},
             }
-        um, conditional, info = compute_update_matrix(
+        um, conditional, info = fit_update_matrix(
             pooled['stimuli'], pooled['choices'], pooled['categories'],
             n_bins=n_bins, trial_filter=trial_filter,
             no_response=pooled['no_response'],
@@ -243,7 +243,7 @@ def compute_um(
             a = sess.get_arrays()
             if a['n_trials'] == 0:
                 continue
-            m, c, inf = compute_update_matrix(
+            m, c, inf = fit_update_matrix(
                 a['stimuli'], a['choices'], a['categories'],
                 n_bins=n_bins, trial_filter=trial_filter,
                 no_response=a['no_response'],
@@ -268,3 +268,10 @@ def compute_um(
         }
 
     raise ValueError(f"mode must be 'pooled' or 'per_session', got {mode!r}")
+
+# compute_update_matrix calls compute_um, which calls fit_update_matrix, so we only export the latter. 
+def compute_update_matrix(*args, **kwargs):
+    """DEPRECATED: use compute_um() instead."""
+    import warnings
+    warnings.warn("compute_update_matrix() is deprecated; use compute_um() instead.", DeprecationWarning, stacklevel=2)
+    return compute_um(*args, **kwargs)

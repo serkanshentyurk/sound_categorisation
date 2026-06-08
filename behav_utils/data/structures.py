@@ -9,7 +9,6 @@ Hierarchical containers for behavioural data:
             ├── SessionMetadata   Constant within session (stage, contingency, ...)
             └── TrialData         Per-trial arrays (stimulus, choice, correct, ...)
 
-    FittingData             Flat per-session arrays for SBI inference
 
 Convention — three levels per domain:
     Low-level:     fit_psychometric(stim, ch)       — raw arrays
@@ -131,27 +130,46 @@ class SessionMetadata:
     def stim_range_max(self) -> float:
         return self.fields.get('stim_range_max', 1.0)
 
+
+# =============================================================================
+# PREVIOUS-TRIAL (LAG-1) VIEW
+# =============================================================================
+
+
 def _prev_nonabort_index(abort: np.ndarray) -> np.ndarray:
     """
-    For each trial i, the index of the most recent NON-ABORT trial strictly
-    before i within this session, or -1 if none. Aborts are skipped (bridged)
-    so the carried view matches the sequence once aborts are filtered out;
-    opto / no-response trials are real and are NOT skipped. The session is the
-    block. Abort trials themselves get -1.
+    For each trial ``i``, the index of the most recent NON-ABORT trial strictly
+    before ``i`` within this session, or ``-1`` if there is none.
+
+    An abort is not a trial the animal completed, so it is skipped when
+    determining the previous trial: a trial that follows one or more aborts
+    takes the last completed trial before them as its predecessor (the abort is
+    "bridged"). This matches the sequence once aborts are filtered out, while
+    opto and no-response trials — real, completed trials — are NOT skipped. The
+    session is the block, so there is no predecessor before its first completed
+    trial. Abort trials themselves get ``-1`` (no valid predecessor, and they
+    are not a predecessor for later trials).
     """
     n = len(abort)
     prev_idx = np.full(n, -1, dtype=int)
     last = -1
     for i in range(n):
         if abort[i]:
-            continue
+            continue          # abort: keep -1, and do not become a predecessor
         prev_idx[i] = last
         last = i
     return prev_idx
 
 
 def _gather_prev(arr: np.ndarray, prev_idx: np.ndarray) -> np.ndarray:
-    """Gather arr at prev_idx, as float, NaN where prev_idx < 0."""
+    """
+    Gather ``arr`` at ``prev_idx`` (previous-non-abort index), as float, with
+    NaN where there is no predecessor (``prev_idx < 0``).
+
+    Float so booleans/ints carry a NaN sentinel; a NaN already present in
+    ``arr`` (e.g. a no-response choice) carries through, so a NaN in the result
+    means "no predecessor" or "the previous trial was a no-response".
+    """
     out = np.full(len(arr), np.nan, dtype=float)
     valid = prev_idx >= 0
     if valid.any():
@@ -163,11 +181,16 @@ def _gather_prev(arr: np.ndarray, prev_idx: np.ndarray) -> np.ndarray:
 class PrevTrial:
     """
     Lag-1 view of the previous trial's values, aligned to the current trial.
+
     Built once on the raw session and carried (not recomputed) through
-    filtering and pooling. Numeric fields are NaN where there is no
-    within-session predecessor or the previous trial was a no-response;
-    ``has_prev`` flags trials with a real predecessor (the per-trial
-    replacement for ``not_blockstart``).
+    filtering and pooling, so each trial keeps its *real* predecessor even
+    after interleaved trials are removed. The predecessor is the previous
+    NON-ABORT trial within the session (the block): aborts are skipped, since
+    an abort is not a completed trial, whereas opto and no-response trials are
+    real and are not skipped. Numeric fields are NaN where there is no
+    predecessor or the previous trial was a no-response; ``has_prev`` flags
+    trials with a real predecessor (the per-trial replacement for
+    ``not_blockstart``).
     """
     stimulus: np.ndarray
     choice: np.ndarray
@@ -176,7 +199,8 @@ class PrevTrial:
     reaction_time: np.ndarray
     opto_on: np.ndarray
     has_prev: np.ndarray
-    
+
+
 # =============================================================================
 # TRIAL DATA
 # =============================================================================
@@ -234,6 +258,8 @@ class TrialData:
 
     # ── Derived: lag-1 (previous trial) ───────────────────────────────────────
     # Frozen on the raw session and carried (sliced) through filtering/pooling.
+    # Empty on construction → computed in __post_init__; non-empty (e.g. from a
+    # filter slice) → carried as-is. Exposed via the `prev_trial` property.
     prev_stimulus: np.ndarray = field(default_factory=lambda: np.array([]))
     prev_choice: np.ndarray = field(default_factory=lambda: np.array([]))
     prev_correct: np.ndarray = field(default_factory=lambda: np.array([]))
@@ -243,7 +269,7 @@ class TrialData:
     prev_has_prev: np.ndarray = field(default_factory=lambda: np.array([], dtype=bool))
 
     def __post_init__(self):
-        """Set defaults for empty optional arrays."""
+        """Set defaults for empty optional arrays, then build the lag-1 view."""
         n = len(self.stimulus)
         if len(self.reaction_time) == 0:
             self.reaction_time = np.full(n, np.nan)
@@ -252,7 +278,16 @@ class TrialData:
         if len(self.opto_on) == 0:
             self.opto_on = np.zeros(n, dtype=bool)
 
+        # Lag-1 view: compute on the raw sequence, but ONLY if not already
+        # supplied. A filter/pool slice passes these in, and they must not be
+        # recomputed — otherwise prev would point at the previous *surviving*
+        # trial instead of the real one.
         if len(self.prev_stimulus) == 0 and n > 0:
+            # Abort-aware, block(session)-aware: the predecessor is the most
+            # recent NON-ABORT trial earlier in this session. Aborts are skipped
+            # (bridged) so the carried view still matches the sequence once
+            # aborts are filtered out; opto / no-response trials are real and
+            # are NOT skipped. With no aborts this is an ordinary one-trial lag.
             prev_idx = _prev_nonabort_index(self.abort)
             self.prev_stimulus = _gather_prev(self.stimulus, prev_idx)
             self.prev_choice = _gather_prev(self.choice, prev_idx)
@@ -261,6 +296,7 @@ class TrialData:
             self.prev_reaction_time = _gather_prev(self.reaction_time, prev_idx)
             self.prev_opto_on = _gather_prev(self.opto_on, prev_idx)
             self.prev_has_prev = prev_idx >= 0
+
     # ── Properties ──────────────────────────────────────────────────────────
 
     @property
@@ -277,7 +313,7 @@ class TrialData:
     def valid_mask(self) -> np.ndarray:
         """Boolean mask: non-abort, responded trials."""
         return ~self.abort & ~self.no_response
-    
+
     @property
     def prev_trial(self) -> 'PrevTrial':
         """
@@ -294,7 +330,7 @@ class TrialData:
             opto_on=self.prev_opto_on,
             has_prev=self.prev_has_prev,
         )
-        
+
     # ── Field access ────────────────────────────────────────────────────────
 
     def get_field(self, name: str) -> Optional[np.ndarray]:
@@ -424,143 +460,6 @@ class SessionData:
 
 
 # =============================================================================
-# FITTING DATA (bridge between AnimalData and SBI inference)
-# =============================================================================
-
-@dataclass
-class FittingData:
-    """
-    Structured container for SBI model fitting.
-
-    Provides per-session trial arrays with a consistent interface expected
-    by the inference simulators.  Created via
-    ``AnimalData.get_fitting_data()``.
-
-    Attributes:
-        animal_id: Identifier string.
-        session_ids: Per-session identifiers.
-        session_dates: Per-session dates.
-        session_indices: Ordinal session indices (int array).
-        stimuli: List of 1-D stimulus arrays (one per session).
-        categories: List of 1-D category arrays.
-        choices: List of 1-D choice arrays (NaN = no response).
-        no_response: List of boolean masks (True = no response).
-        not_blockstart: List of boolean masks (True = not first trial).
-        n_sessions: Number of sessions.
-        trials_per_session: Array of trial counts.
-        time_axis: Alias for ``session_indices``.
-    """
-    animal_id: str
-    session_ids: List[str]
-    session_dates: List[Any]
-    session_indices: np.ndarray
-    stimuli: List[np.ndarray]
-    categories: List[np.ndarray]
-    choices: List[np.ndarray]
-    no_response: List[np.ndarray]
-    not_blockstart: List[np.ndarray]
-    n_sessions: int
-    trials_per_session: np.ndarray
-
-    @property
-    def time_axis(self) -> np.ndarray:
-        """Session indices as a float array (for trajectory plotting)."""
-        return self.session_indices.astype(float)
-
-    def get_session(self, idx: int) -> Dict[str, np.ndarray]:
-        """Return a single session's arrays as a dict."""
-        return {
-            'stimuli': self.stimuli[idx],
-            'categories': self.categories[idx],
-            'choices': self.choices[idx],
-            'no_response': self.no_response[idx],
-            'not_blockstart': self.not_blockstart[idx],
-        }
-
-    def pool(self) -> Dict[str, np.ndarray]:
-        """
-        Concatenate all sessions into single arrays.
-
-        Only valid (responded) trials are included.
-
-        Returns:
-            Dict with 'stimuli', 'categories', 'choices' (1-D each).
-        """
-        all_stim, all_cat, all_choice = [], [], []
-        for i in range(self.n_sessions):
-            valid = ~self.no_response[i]
-            all_stim.append(self.stimuli[i][valid])
-            all_cat.append(self.categories[i][valid])
-            all_choice.append(self.choices[i][valid])
-        return {
-            'stimuli': np.concatenate(all_stim),
-            'categories': np.concatenate(all_cat),
-            'choices': np.concatenate(all_choice),
-        }
-    @classmethod
-    def from_arrays(
-        cls,
-        session_arrays: list,
-        animal_id: str = 'synthetic',
-    ) -> 'FittingData':
-        """
-        Create FittingData from a list of session dicts.
-
-        Each dict must have 'stimuli', 'choices', 'categories' keys
-        (1D numpy arrays). Optionally 'no_response' and 'not_blockstart'.
-
-        Usage:
-            sessions = [
-                {'stimuli': stim0, 'choices': ch0, 'categories': cat0},
-                {'stimuli': stim1, 'choices': ch1, 'categories': cat1},
-                ...
-            ]
-            fd = FittingData.from_arrays(sessions, animal_id='synth_BE_00')
-        """
-        n = len(session_arrays)
-
-        stim_list, cat_list, ch_list = [], [], []
-        no_resp_list, nbs_list = [], []
-
-        for s in session_arrays:
-            stim = np.asarray(s['stimuli'])
-            cat = np.asarray(s['categories'])
-            ch = np.asarray(s['choices'], dtype=float)
-
-            stim_list.append(stim)
-            cat_list.append(cat)
-            ch_list.append(ch)
-
-            if 'no_response' in s:
-                no_resp_list.append(np.asarray(s['no_response'], dtype=bool))
-            else:
-                no_resp_list.append(np.isnan(ch))
-
-            if 'not_blockstart' in s:
-                nbs_list.append(np.asarray(s['not_blockstart'], dtype=bool))
-            else:
-                nbs = np.ones(len(stim), dtype=bool)
-                if len(stim) > 0:
-                    nbs[0] = False
-                nbs_list.append(nbs)
-
-        return cls(
-            animal_id=animal_id,
-            session_ids=[f'sess_{i:03d}' for i in range(n)],
-            session_dates=[None] * n,
-            session_indices=np.arange(n, dtype=int),
-            stimuli=stim_list,
-            categories=cat_list,
-            choices=ch_list,
-            no_response=no_resp_list,
-            not_blockstart=nbs_list,
-            n_sessions=n,
-            trials_per_session=np.array([len(s['stimuli']) for s in session_arrays]),
-        )
-
-
-
-# =============================================================================
 # ANIMAL DATA
 # =============================================================================
 
@@ -638,7 +537,7 @@ class AnimalData:
               silently disagree).
             - This is session-level only. It cannot express trial-level opto
               masks (opto-on vs opto-off *within* a session) — use
-              ``behav_utils.data.filtering.opto_mask`` for that.
+              ``behav_utils.data.ops.filtering.opto_mask`` for that.
             - 'accuracy' reuses ``SessionData.summary()['perf']`` so there is a
               single definition of session accuracy across the library.
         """
@@ -738,43 +637,6 @@ class AnimalData:
             return sessions, [s.session_idx for s in sessions]
         return sessions
 
-    def _resolve_sessions(
-        self,
-        sessions: Union[str, List[int]],
-        stage: Optional[str] = None,
-    ) -> List[SessionData]:
-        """
-        Resolve session selector to list of SessionData.
-
-        Args:
-            sessions: Selector string or list of indices.
-                'all'      — all sessions
-                'last_N'   — last N sessions (e.g. 'last_5')
-                'first_N'  — first N sessions
-                [0, 5, 10] — specific session indices
-            stage: Filter to this training stage first.
-
-        Returns:
-            List of SessionData in chronological order.
-        """
-        pool = self.get_sessions(stage=stage) if stage else self.sessions
-
-        if isinstance(sessions, str):
-            if sessions == 'all':
-                return pool
-            elif sessions.startswith('last_'):
-                n = int(sessions.split('_')[1])
-                return pool[-n:]
-            elif sessions.startswith('first_'):
-                n = int(sessions.split('_')[1])
-                return pool[:n]
-            else:
-                raise ValueError(f"Unknown session selector: '{sessions}'")
-        elif isinstance(sessions, list):
-            return [pool[i] for i in sessions if i < len(pool)]
-        else:
-            raise TypeError(f"sessions must be str or list, got {type(sessions)}")
-
     # ── Persistence ─────────────────────────────────────────────────────────
 
     def save(self, path: Union[str, Path]) -> None:
@@ -825,68 +687,6 @@ class ExperimentData:
             )
         return self.animals[animal_id]
 
-    # ── Filtering ───────────────────────────────────────────────────────────
-
-    def get_animals(
-        self,
-        min_sessions: int = 1,
-        stage: Optional[Union[str, List[str]]] = None,
-        animal_ids: Optional[List[str]] = None,
-    ) -> List[AnimalData]:
-        """
-        Filter animals by criteria.
-
-        Args:
-            min_sessions: Minimum sessions (of given stage) required
-            stage: Only count sessions of this stage
-            animal_ids: Restrict to these animals
-
-        Returns:
-            List of qualifying AnimalData
-        """
-        result = []
-        for animal in self.animals.values():
-            if animal_ids is not None and animal.animal_id not in animal_ids:
-                continue
-            if stage is not None:
-                n = len(animal.get_sessions(stage=stage))
-            else:
-                n = animal.n_sessions
-            if n >= min_sessions:
-                result.append(animal)
-        return result
-
-    def get_sessions(
-        self,
-        stage: Optional[Union[str, List[str]]] = None,
-        min_sessions_per_animal: int = 1,
-        return_indices: bool = False,
-        **kwargs,
-    ) -> Union[List[SessionData], Tuple[List[SessionData], List[int]]]:
-        """
-        Get all sessions matching criteria across all animals.
-
-        Args:
-            stage: Stage filter (str or list)
-            min_sessions_per_animal: Minimum sessions per animal
-            return_indices: If True, also return session_idx values.
-            **kwargs: Passed to AnimalData.get_sessions (e.g. distribution)
-
-        Returns:
-            If return_indices=False: List of SessionData
-            If return_indices=True: (sessions, indices)
-        """
-        animals = self.get_animals(
-            min_sessions=min_sessions_per_animal, stage=stage,
-        )
-        sessions = []
-        for animal in animals:
-            sessions.extend(animal.get_sessions(stage=stage, **kwargs))
-
-        if return_indices:
-            return sessions, [s.session_idx for s in sessions]
-        return sessions
-
     def summary(self) -> pd.DataFrame:
         """One-row-per-animal summary."""
         rows = []
@@ -900,12 +700,6 @@ class ExperimentData:
             })
         return pd.DataFrame(rows)
 
-    def _resolve_animals(self, animals='all', min_sessions=5, stage=None):
-        """Resolve animal selector to list of AnimalData."""
-        if animals == 'all':
-            return self.get_animals(min_sessions=min_sessions, stage=stage)
-        return [self.get_animal(aid) for aid in animals]
-        
     # ── Persistence ─────────────────────────────────────────────────────────
     def save(self, path: Union[str, Path]) -> None:
         path = Path(path)

@@ -56,14 +56,14 @@ def compute_pooled_stats(
     Returns a flat numpy array of length n_stats.
     NaN values are left in place (handled by caller).
     """
-    from behav_utils.analysis.summary_stats import compute_summary_stats
+    from behav_utils.analysis.summary_stats import fit_summary_stats
 
     if stat_names is None:
         from inference.constants import SBI_STATS
         stat_names = list(SBI_STATS)
 
     valid = np.isfinite(choices)
-    return compute_summary_stats(
+    return fit_summary_stats(
         choices=choices[valid],
         stimuli=stimuli[valid],
         categories=categories[valid],
@@ -147,7 +147,7 @@ def build_curriculum_simulator(
     Returns:
         (simulator_fn, prior, param_names)
     """
-    from behav_utils.analysis.summary_stats import compute_summary_stats
+    from behav_utils.analysis.summary_stats import fit_summary_stats
 
     if stat_names is None:
         from inference.constants import SBI_STATS

@@ -25,6 +25,35 @@ def _session(n: int = 6) -> TrialData:
     )
 
 
+def _session_with_aborts() -> TrialData:
+    """Session of 5 trials with aborts at idx1 and idx4 (stim 10..14)."""
+    n = 5
+    return TrialData(
+        trial_number=np.arange(1, n + 1),
+        stimulus=np.array([10.0, 11, 12, 13, 14]),
+        choice=np.array([0.0, 1, 0, 1, 1]),
+        outcome=np.array(["x"] * n, dtype=object),
+        correct=np.array([1, 0, 1, 0, 1], dtype=bool),
+        category=np.array([0, 0, 1, 1, 1]),
+        opto_on=np.array([False] * n),
+        abort=np.array([False, True, False, False, True]),
+    )
+
+
+def _expected_prev(values: np.ndarray, abort: np.ndarray) -> np.ndarray:
+    """Reference implementation of abort-aware prev: previous non-abort value."""
+    n = len(values)
+    out = np.full(n, np.nan)
+    last = -1
+    for i in range(n):
+        if abort[i]:
+            continue
+        if last >= 0:
+            out[i] = values[last]
+        last = i
+    return out
+
+
 def test_prev_trial_returns_view():
     assert isinstance(_session().prev_trial, PrevTrial)
 
@@ -98,6 +127,48 @@ def test_synthetic_session_has_prev_trial():
     )
     trials = animal.sessions[0].trials
     pt = trials.prev_trial
+    abort = np.asarray(trials.abort, dtype=bool)
     assert pt.stimulus.shape[0] == trials.n_trials
-    assert np.allclose(pt.stimulus[1:], trials.stimulus[:-1], equal_nan=True)
+    # Abort-aware: predecessor is the previous NON-ABORT trial, not cur[i-1].
+    expected = _expected_prev(np.asarray(trials.stimulus, dtype=float), abort)
+    assert np.allclose(pt.stimulus, expected, equal_nan=True)
+    # has_prev is False at abort trials and at the first completed trial.
+    assert not pt.has_prev[abort].any()
+    first_completed = int(np.flatnonzero(~abort)[0])
+    assert not pt.has_prev[first_completed]
+
+
+def test_abort_is_bridged():
+    """A trial after an abort takes the last COMPLETED trial as its predecessor."""
+    pt = _session_with_aborts().prev_trial
+    assert np.isclose(pt.stimulus[2], 10.0)   # idx2 skips abort idx1 -> idx0
+    assert np.isclose(pt.stimulus[3], 12.0)   # idx3 -> idx2
+
+
+def test_abort_trial_has_no_prev_view():
+    """An abort is not a valid current trial: no predecessor view."""
+    td = _session_with_aborts()
+    pt = td.prev_trial
+    ab = np.asarray(td.abort, dtype=bool)
+    assert not pt.has_prev[ab].any()
+    assert np.isnan(pt.stimulus[ab]).all()
+
+
+def test_abort_bridged_matches_post_filter_sequence():
+    """After aborts are filtered out, the carried prev matches the bridged
+    sequence and prev_has_prev equals not_blockstart for the survivors."""
+    td = _session_with_aborts()
+    ab = np.asarray(td.abort, dtype=bool)
+    ft = filter_trial_data(td, ~ab, clear_flags=True)        # drop the aborts
+    # survivors are stim [10, 12, 13]; prev bridges -> [nan, 10, 12]
+    assert np.allclose(ft.prev_stimulus, [np.nan, 10.0, 12.0], equal_nan=True)
+    # not_blockstart for a 3-trial block is [False, True, True]
+    assert list(ft.prev_has_prev) == [False, True, True]
+
+
+def test_no_abort_matches_naive_lag():
+    """With no aborts, prev_* is an ordinary one-trial lag (Phase-1 behaviour)."""
+    td = _session()                                          # no aborts
+    pt = td.prev_trial
+    assert np.allclose(pt.stimulus[1:], td.stimulus[:-1], equal_nan=True)
     assert not pt.has_prev[0] and pt.has_prev[1:].all()

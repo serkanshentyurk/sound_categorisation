@@ -41,7 +41,7 @@ import pandas as pd
 from scipy.stats import fisher_exact, wilcoxon, mannwhitneyu
 
 from behav_utils.analysis.psychometry import fit_psychometric
-from behav_utils.analysis.update_matrix import compute_update_matrix
+from behav_utils.analysis.update_matrix import fit_update_matrix
 
 from behav_utils import pool_arrays
 
@@ -362,8 +362,8 @@ def compare_conditions(
             pass
 
     # ── Update matrices ──────────────────────────────────────────────
-    um_a, _, _ = compute_update_matrix(stim_a, ch_a, cat_a, n_bins=n_bins)
-    um_b, _, _ = compute_update_matrix(stim_b, ch_b, cat_b, n_bins=n_bins)
+    um_a, _, _ = fit_update_matrix(stim_a, ch_a, cat_a, n_bins=n_bins)
+    um_b, _, _ = fit_update_matrix(stim_b, ch_b, cat_b, n_bins=n_bins)
 
     um_diff = um_a - um_b
     valid_um = ~np.isnan(um_a) & ~np.isnan(um_b)

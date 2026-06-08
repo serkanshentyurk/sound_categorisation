@@ -340,18 +340,6 @@ def load_session_csv(
     if len(df) == 0:
         warnings.warn(f"Empty CSV: {csv_path}")
         
-    # # Read CSV with robust parsing
-    # try:
-    #     df = pd.read_csv(csv_path, low_memory=False)
-    # except Exception as e:
-    #     raise IOError(f"Failed to read {csv_path}: {e}")
-
-    # # Drop last row if configured (Bonsai CSVs may have truncated final row)
-    # if getattr(config.file_structure, 'drop_last_row', True) and len(df) > 1:
-    #     df = df.iloc[:-1]
-
-    # if len(df) == 0:
-    #     warnings.warn(f"Empty CSV: {csv_path}")
 
     # Validate columns
     validation = validate_csv_against_config(list(df.columns), config)
