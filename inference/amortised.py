@@ -230,3 +230,20 @@ class AmortisedSBI:
             'point_estimate': point_estimate,
             'theta_median': theta_median,
         }
+
+    # ── Accessors (for validation / plotting) ────────────────────────────────
+
+    @property
+    def posterior(self):
+        """The trained sbi posterior (None until train()/load())."""
+        return self._trained_posterior
+
+    @property
+    def simulator(self):
+        """The simulator callable theta -> x, matching this net's config."""
+        return self._sim_fn
+
+    @property
+    def prior(self):
+        """The sbi prior (BoxUniform; None if sbi/torch unavailable)."""
+        return self._prior
