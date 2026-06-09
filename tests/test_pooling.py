@@ -58,11 +58,11 @@ class TestGetArraysProjection:
         """The frozen lag-1 view is projected through, length-aligned."""
         from behav_utils.data.ops.filtering import get_arrays
         arr = get_arrays(_trials_with_aborts())
-        for k in ('prev_stimulus', 'prev_choice', 'prev_correct',
-                  'prev_category', 'prev_reaction_time', 'prev_opto_on',
+        for k in ('prev_stimuli', 'prev_choices', 'prev_correct',
+                  'prev_categories', 'prev_reaction_time', 'prev_opto_on',
                   'prev_has_prev'):
             assert k in arr
-        assert len(arr['prev_stimulus']) == len(arr['stimuli']) == 5
+        assert len(arr['prev_stimuli']) == len(arr['stimuli']) == 5
 
     def test_aborts_removed_only_by_filter(self):
         """get_arrays keeps everything; filter_trials is what drops aborts."""
@@ -115,9 +115,9 @@ class TestPoolArrays:
 
     def test_prev_stimulus_nan_at_each_session_start(self, synthetic_animal):
         """No pair bridges a session seam: the first trial of each session has
-        no predecessor (NaN prev_stimulus)."""
+        no predecessor (NaN prev_stimuli)."""
         from behav_utils.data.ops.filtering import pool_arrays
         sessions = synthetic_animal.sessions[:3]
         pooled = pool_arrays(sessions)
         for start in pooled['session_boundaries'][:-1]:  # start index of each session
-            assert np.isnan(pooled['prev_stimulus'][start])
+            assert np.isnan(pooled['prev_stimuli'][start])

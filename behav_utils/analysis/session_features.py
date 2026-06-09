@@ -83,9 +83,9 @@ def compute_session_features(
     # ── Summary stats from registry ───────────────────────────────
     stats_dict = fit_summary_stats(
         choices=choices, stimuli=stimuli, categories=categories,
-        prev_choices=arrays['prev_choice'],
-        prev_stimuli=arrays['prev_stimulus'],
-        prev_categories=arrays['prev_category'],
+        prev_choices=arrays['prev_choices'],
+        prev_stimuli=arrays['prev_stimuli'],
+        prev_categories=arrays['prev_categories'],
         stat_names=stat_names, return_dict=True,
     )
     for stat_name, value in stats_dict.items():

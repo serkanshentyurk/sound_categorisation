@@ -9,12 +9,12 @@ from scipy.optimize import minimize
 from behav_utils.data.ops.filtering import pool_arrays
 from behav_utils.data.structures import SessionData
 
-def _neg_log_likelihood_psychometric(params: List[float], stimulus: np.ndarray,
+def _neg_log_likelihood_psychometric(params: List[float], stimuli: np.ndarray,
                                       choices: np.ndarray) -> float:
     """Negative log-likelihood for psychometric curve fitting."""
     mu, sigma, lapse_low, lapse_high = params
     
-    y = cumulative_gaussian(stimulus, mu, sigma, lapse_low, lapse_high)
+    y = cumulative_gaussian(stimuli, mu, sigma, lapse_low, lapse_high)
     eps = np.finfo(float).eps
     y = np.clip(y, eps, 1 - eps)
     
@@ -22,7 +22,7 @@ def _neg_log_likelihood_psychometric(params: List[float], stimulus: np.ndarray,
     return -np.sum(log_lik)
 
 
-def _fit_psychometric_once(stimulus: np.ndarray, choices: np.ndarray,
+def _fit_psychometric_once(stimuli: np.ndarray, choices: np.ndarray,
                            x_eval: np.ndarray) -> Dict:
     """
     Single psychometric fit (helper for bootstrap).
@@ -35,7 +35,7 @@ def _fit_psychometric_once(stimulus: np.ndarray, choices: np.ndarray,
     even though it found a perfectly usable set of parameters.  Only
     truly degenerate outputs (NaN / inf) are rejected.
     """
-    if len(stimulus) < 10:
+    if len(stimuli) < 10:
         return {
             'mu': np.nan, 'sigma': np.nan,
             'lapse_low': np.nan, 'lapse_high': np.nan,
@@ -50,7 +50,7 @@ def _fit_psychometric_once(stimulus: np.ndarray, choices: np.ndarray,
     try:
         result = minimize(
             _neg_log_likelihood_psychometric,
-            p0, args=(stimulus, choices),
+            p0, args=(stimuli, choices),
             bounds=bounds, method='L-BFGS-B'
         )
         
@@ -87,14 +87,14 @@ def _fit_psychometric_once(stimulus: np.ndarray, choices: np.ndarray,
     }
 
 
-def fit_psychometric(stimulus: np.ndarray, choices: np.ndarray,
+def fit_psychometric(stimuli: np.ndarray, choices: np.ndarray,
                      x_eval: Optional[np.ndarray] = None,
                      n_bootstrap: int = 0, seed: int = 42) -> Dict:
     """
     Fit psychometric curve to choice data.
     
     Args:
-        stimulus: Array of stimulus values
+        stimuli: Array of stimulus values
         choices: Array of binary choices (0 = A, 1 = B)
         x_eval: Points at which to evaluate fitted curve (default: linspace(-1, 1, 100))
         n_bootstrap: Number of bootstrap samples for confidence intervals (0 = no bootstrap)
@@ -119,19 +119,19 @@ def fit_psychometric(stimulus: np.ndarray, choices: np.ndarray,
             'y_fit_ci': (lower, upper) curves for 95% CI band
             'bootstrap_params': DataFrame with all bootstrap parameter values
     """
-    stimulus = np.asarray(stimulus, dtype=np.float64)
+    stimuli = np.asarray(stimuli, dtype=np.float64)
     choices = np.asarray(choices, dtype=np.float64)
     
     # Remove NaNs
-    valid = ~np.isnan(stimulus) & ~np.isnan(choices)
-    stimulus = stimulus[valid]
+    valid = ~np.isnan(stimuli) & ~np.isnan(choices)
+    stimuli = stimuli[valid]
     choices = choices[valid]
     
     if x_eval is None:
         x_eval = np.linspace(-1, 1, 100)
     
     # Fit on original data
-    result = _fit_psychometric_once(stimulus, choices, x_eval)
+    result = _fit_psychometric_once(stimuli, choices, x_eval)
     
     if not result['success']:
         return result
@@ -139,7 +139,7 @@ def fit_psychometric(stimulus: np.ndarray, choices: np.ndarray,
     # Bootstrap if requested
     if n_bootstrap > 0:
         rng = np.random.default_rng(seed)
-        n_trials = len(stimulus)
+        n_trials = len(stimuli)
         
         boot_params = {
             'mu': [], 'sigma': [], 'lapse_low': [], 'lapse_high': []
@@ -149,7 +149,7 @@ def fit_psychometric(stimulus: np.ndarray, choices: np.ndarray,
         for _ in range(n_bootstrap):
             # Resample with replacement
             idx = rng.choice(n_trials, size=n_trials, replace=True)
-            boot_stim = stimulus[idx]
+            boot_stim = stimuli[idx]
             boot_choices = choices[idx]
             
             boot_fit = _fit_psychometric_once(boot_stim, boot_choices, x_eval)

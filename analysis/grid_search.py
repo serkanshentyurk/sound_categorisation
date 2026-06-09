@@ -136,7 +136,7 @@ def simulate_model_matrices(
     """
     rng = np.random.default_rng(seed)
 
-    if model_type == 'BE':
+    if model_type.upper() == 'BE':
         from models.BE_core import BEParams, BEModel
 
         params = BEParams(
@@ -154,7 +154,7 @@ def simulate_model_matrices(
             return_history=False,
         )
 
-    elif model_type == 'SC':
+    elif model_type.upper() == 'SC':
         from models.SC_core import SCParams, SCModel
 
         params = SCParams(

@@ -54,9 +54,9 @@ def to_stat_vector(
         pooled = pool_arrays(sessions)
         return fit_summary_stats(
             pooled['choices'], pooled['stimuli'], pooled['categories'],
-            prev_choice=pooled.get('prev_choice'),
-            prev_stimulus=pooled.get('prev_stimulus'),
-            prev_category=pooled.get('prev_category'),
+            prev_choices=pooled.get('prev_choices'),
+            prev_stimuli=pooled.get('prev_stimuli'),
+            prev_categories=pooled.get('prev_categories'),
             stat_names=stat_names, return_dict=False,
         )
 
@@ -70,9 +70,9 @@ def to_stat_vector(
             a = s.get_arrays()
             rows.append(fit_summary_stats(
                 a['choices'], a['stimuli'], a['categories'],
-                prev_choice=a.get('prev_choice'),
-                prev_stimulus=a.get('prev_stimulus'),
-                prev_category=a.get('prev_category'),
+                prev_choices=a.get('prev_choices'),
+                prev_stimuli=a.get('prev_stimuli'),
+                prev_categories=a.get('prev_categories'),
                 stat_names=stat_names, return_dict=False,
             ))
         X = np.vstack(rows)                       # (N, D)

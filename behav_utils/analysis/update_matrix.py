@@ -29,9 +29,9 @@ def fit_update_matrix(
     trial_filter: Literal['all', 'post_correct'] = 'post_correct',
     no_response: Optional[np.ndarray] = None,
     not_blockstart: Optional[np.ndarray] = None,
-    prev_stimulus: Optional[np.ndarray] = None,
-    prev_choice: Optional[np.ndarray] = None,
-    prev_category: Optional[np.ndarray] = None,
+    prev_stimuli: Optional[np.ndarray] = None,
+    prev_choices: Optional[np.ndarray] = None,
+    prev_categories: Optional[np.ndarray] = None,
     prev_has_prev: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, np.ndarray, Dict]:
     """
@@ -48,8 +48,8 @@ def fit_update_matrix(
         trial_filter: 'post_correct' (only after correct) or 'all'.
         no_response: Bool array (True = no response). Inferred from NaN if None.
         not_blockstart: Bool array (True = not start of block). Auto if None.
-        prev_stimulus, prev_choice, prev_category, prev_has_prev: Frozen,
-            abort-aware lag-1 arrays aligned to every trial. If prev_stimulus is
+        prev_stimuli, prev_choices, prev_categories, prev_has_prev: Frozen,
+            abort-aware lag-1 arrays aligned to every trial. If prev_stimuli is
             given, the previous trial is taken from these (NOT from array
             adjacency), so the matrix is correct on a non-consecutive subset
             (e.g. opto-only or post-opto trials). If None, the previous trial is
@@ -74,22 +74,22 @@ def fit_update_matrix(
     bin_edges = np.linspace(-1, 1, n_bins + 1)
     midpoints = (bin_edges[:-1] + bin_edges[1:]) / 2
 
-    if prev_stimulus is not None:
+    if prev_stimuli is not None:
         # SESSION PATH: previous trial from the frozen, abort-aware lag-1 view.
         # Current trial = every trial; valid pairs gated by has_prev. Correct on
         # a non-consecutive subset (opto-only / post-opto), where array adjacency
         # would otherwise give the wrong predecessor.
-        prev_stimulus = np.asarray(prev_stimulus, dtype=np.float64)
-        prev_choice = np.asarray(prev_choice, dtype=np.float64)
-        prev_category = np.asarray(prev_category, dtype=np.float64)
+        prev_stimuli = np.asarray(prev_stimuli, dtype=np.float64)
+        prev_choices = np.asarray(prev_choices, dtype=np.float64)
+        prev_categories = np.asarray(prev_categories, dtype=np.float64)
         has_prev = np.asarray(prev_has_prev, dtype=bool)
 
         curr_stim = stimuli
         curr_choice = choices
-        prev_bin = np.clip(np.digitize(prev_stimulus, bin_edges) - 1, 0, n_bins - 1)
-        prev_reward = (prev_choice == prev_category)   # mirrors rewards, on prev
+        prev_bin = np.clip(np.digitize(prev_stimuli, bin_edges) - 1, 0, n_bins - 1)
+        prev_reward = (prev_choices == prev_categories)   # mirrors rewards, on prev
         curr_responded = ~no_response
-        prev_responded = ~np.isnan(prev_choice)
+        prev_responded = ~np.isnan(prev_choices)
 
         if trial_filter == 'post_correct':
             base = prev_reward & curr_responded & prev_responded & has_prev
@@ -225,9 +225,9 @@ def compute_um(
             pooled['stimuli'], pooled['choices'], pooled['categories'],
             n_bins=n_bins, trial_filter=trial_filter,
             no_response=pooled['no_response'],
-            prev_stimulus=pooled['prev_stimulus'],
-            prev_choice=pooled['prev_choice'],
-            prev_category=pooled['prev_category'],
+            prev_stimuli=pooled['prev_stimuli'],
+            prev_choices=pooled['prev_choices'],
+            prev_categories=pooled['prev_categories'],
             prev_has_prev=pooled['prev_has_prev'],
         )
         return {
@@ -247,9 +247,9 @@ def compute_um(
                 a['stimuli'], a['choices'], a['categories'],
                 n_bins=n_bins, trial_filter=trial_filter,
                 no_response=a['no_response'],
-                prev_stimulus=a['prev_stimulus'],
-                prev_choice=a['prev_choice'],
-                prev_category=a['prev_category'],
+                prev_stimuli=a['prev_stimuli'],
+                prev_choices=a['prev_choices'],
+                prev_categories=a['prev_categories'],
                 prev_has_prev=a['prev_has_prev'],
             )
             per_session.append({

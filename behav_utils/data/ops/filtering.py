@@ -394,10 +394,10 @@ def get_arrays(trials: 'TrialData') -> Dict[str, np.ndarray]:
             choices         np.ndarray  (may contain NaN = no response)
             no_response     np.ndarray  (bool)
             reaction_times  np.ndarray
-            prev_stimulus   np.ndarray  ┐ carried lag-1 view (abort-aware,
-            prev_choice     np.ndarray  │ frozen on the raw session); NaN where
+            prev_stimuli    np.ndarray  ┐ carried lag-1 view (abort-aware,
+            prev_choices    np.ndarray  │ frozen on the raw session); NaN where
             prev_correct    np.ndarray  │ there is no predecessor or the
-            prev_category   np.ndarray  │ previous trial was a no-response
+            prev_categories np.ndarray  │ previous trial was a no-response
             prev_reaction_time np.ndarray
             prev_opto_on    np.ndarray  │
             prev_has_prev   np.ndarray  ┘ bool (per-trial not_blockstart)
@@ -410,10 +410,10 @@ def get_arrays(trials: 'TrialData') -> Dict[str, np.ndarray]:
         'choices': choices,
         'no_response': np.isnan(choices),
         'reaction_times': trials.reaction_time,
-        'prev_stimulus': trials.prev_stimulus,
-        'prev_choice': trials.prev_choice,
+        'prev_stimuli': trials.prev_stimulus,
+        'prev_choices': trials.prev_choice,
         'prev_correct': trials.prev_correct,
-        'prev_category': trials.prev_category,
+        'prev_categories': trials.prev_category,
         'prev_reaction_time': trials.prev_reaction_time,
         'prev_opto_on': trials.prev_opto_on,
         'prev_has_prev': trials.prev_has_prev,
@@ -438,7 +438,7 @@ def pool_arrays(
         Dict with:
             stimuli, categories, choices, no_response, reaction_times
                 — concatenated current-trial arrays
-            prev_stimulus, prev_choice, prev_correct, prev_category,
+            prev_stimuli, prev_choices, prev_correct, prev_categories,
             prev_reaction_time, prev_opto_on, prev_has_prev
                 — concatenated carried lag-1 view (prev_has_prev is the pooled
                   not_blockstart)
@@ -452,7 +452,7 @@ def pool_arrays(
     # prev_has_prev equals not_blockstart with no re-shift across the seam.
     array_keys = [
         'stimuli', 'categories', 'choices', 'no_response', 'reaction_times',
-        'prev_stimulus', 'prev_choice', 'prev_correct', 'prev_category',
+        'prev_stimuli', 'prev_choices', 'prev_correct', 'prev_categories',
         'prev_reaction_time', 'prev_opto_on', 'prev_has_prev',
     ]
 

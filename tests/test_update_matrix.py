@@ -4,12 +4,12 @@ import numpy as np
 import pytest
 
 from behav_utils.analysis.update_matrix import (
-    compute_update_matrix, compute_um, matrix_error,
+    fit_update_matrix, compute_um, matrix_error,
 )
 from behav_utils.data.ops.filtering import filter_trials, pool_arrays
 
 
-class TestComputeUpdateMatrix:
+class TestFitUpdateMatrix:
     """Tests for update matrix computation."""
 
     def test_shape(self, rng):
@@ -19,7 +19,7 @@ class TestComputeUpdateMatrix:
         categories = (stimuli > 0).astype(float)
         choices = categories.copy()
 
-        um, _, _ = compute_update_matrix(stimuli, choices, categories, n_bins=8)
+        um, _, _ = fit_update_matrix(stimuli, choices, categories, n_bins=8)
         assert um.shape == (8, 8)
 
     def test_symmetric_data_symmetric_um(self, rng):
@@ -29,7 +29,7 @@ class TestComputeUpdateMatrix:
         categories = (stimuli > 0).astype(float)
         choices = categories.copy()  # perfect observer
 
-        um, _, _ = compute_update_matrix(stimuli, choices, categories, n_bins=8)
+        um, _, _ = fit_update_matrix(stimuli, choices, categories, n_bins=8)
         # UM should be close to zero for a perfect observer
         assert np.nanmax(np.abs(um)) < 0.05
 
@@ -41,7 +41,7 @@ class TestComputeUpdateMatrix:
         choices = rng.choice([0.0, 1.0], n)
 
         for n_bins in [4, 6, 8, 10]:
-            um, _, _ = compute_update_matrix(
+            um, _, _ = fit_update_matrix(
                 stimuli, choices, categories, n_bins=n_bins)
             assert um.shape == (n_bins, n_bins)
 
@@ -100,7 +100,7 @@ class TestComputeUm:
         (prev_has_prev is the adjacency not_blockstart)."""
         clean = filter_trials(synthetic_animal.sessions[:5])
         p = pool_arrays(clean)
-        um_adj, _, _ = compute_update_matrix(
+        um_adj, _, _ = fit_update_matrix(
             p['stimuli'], p['choices'], p['categories'],
             no_response=p['no_response'], not_blockstart=p['prev_has_prev'])
         um_cu = compute_um(clean, mode='pooled')['um']
@@ -127,7 +127,7 @@ class TestComputeUmOpto:
         um = compute_um(trials_opto, mode='pooled')['um']
         # subset array-adjacency = the WRONG pairing
         p = pool_arrays(trials_opto)
-        um_wrong, _, _ = compute_update_matrix(
+        um_wrong, _, _ = fit_update_matrix(
             p['stimuli'], p['choices'], p['categories'],
             no_response=p['no_response'], not_blockstart=p['prev_has_prev'])
         assert np.isfinite(um).any(), 'UM all-NaN: not enough opto trials to test'
