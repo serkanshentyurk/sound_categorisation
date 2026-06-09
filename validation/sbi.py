@@ -377,35 +377,32 @@ def compute_param_stat_correlations(
             'x':                   (n_valid, n_stats_expanded) summary stats
             'n_valid':             int
     """
-    import torch
-    from behav_utils.data.synthetic import sample_stimuli
+    from inference.simulator import build_simulator, get_bounds_arrays
     from behav_utils.analysis.summary_stats import get_stat_names_expanded
-    from inference.simulator import (
-        create_be_simulator, create_sc_simulator,
-        get_sbi_prior, wrap_for_sbi,
+
+    # One pooled session of n_trials per theta. The prior is uniform over the
+    # model's parameter bounds, so we sample it directly with numpy -- this
+    # diagnostic therefore needs neither torch nor sbi.
+    sim_fn, _prior, param_names = build_simulator(
+        model_type, dist_schedule='uniform', N=1, T=n_trials,
+        burn_in=burn_in, mode='pooled', stat_names=stat_names,
     )
-
-    rng = np.random.default_rng(seed)
-    stim, cat = sample_stimuli(n_trials, 'uniform', rng)
-
-    creator = create_be_simulator if model_type == 'be' else create_sc_simulator
-    sim = creator(stim, cat, stat_names=stat_names, burn_in=burn_in, seed=seed)
-    prior = get_sbi_prior(sim)
-    sbi_sim = wrap_for_sbi(sim)
-
-    param_names = sim.get_param_names()
     stat_names_expanded = get_stat_names_expanded(stat_names)
 
-    theta_samples = prior.sample((n_samples,))
+    lower, upper = get_bounds_arrays(model_type)
+    rng = np.random.default_rng(seed)
+    theta_samples = rng.uniform(lower, upper, size=(n_samples, len(lower)))
+
     x_list, theta_valid = [], []
-    for t in theta_samples:
+    for k in range(n_samples):
+        t = theta_samples[k]
         try:
-            x = sbi_sim(t)
-            if x is not None and not torch.any(torch.isnan(x)):
-                x_list.append(x.numpy())
-                theta_valid.append(t.numpy())
-        except (RuntimeError, ValueError, torch.linalg.LinAlgError):
-            pass
+            x = sim_fn(t, seed=seed + k)
+        except (RuntimeError, ValueError):
+            continue
+        if np.all(np.isfinite(x)):
+            x_list.append(x)
+            theta_valid.append(t)
 
     if not x_list:
         raise RuntimeError('All simulations failed during parameter-stat correlation')

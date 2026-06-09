@@ -54,9 +54,9 @@ def to_stat_vector(
         pooled = pool_arrays(sessions)
         return fit_summary_stats(
             pooled['choices'], pooled['stimuli'], pooled['categories'],
-            prev_choices=pooled.get('prev_choice'),
-            prev_stimuli=pooled.get('prev_stimulus'),
-            prev_categories=pooled.get('prev_category'),
+            prev_choice=pooled.get('prev_choice'),
+            prev_stimulus=pooled.get('prev_stimulus'),
+            prev_category=pooled.get('prev_category'),
             stat_names=stat_names, return_dict=False,
         )
 
@@ -70,9 +70,9 @@ def to_stat_vector(
             a = s.get_arrays()
             rows.append(fit_summary_stats(
                 a['choices'], a['stimuli'], a['categories'],
-                prev_choices=a.get('prev_choice'),
-                prev_stimuli=a.get('prev_stimulus'),
-                prev_categories=a.get('prev_category'),
+                prev_choice=a.get('prev_choice'),
+                prev_stimulus=a.get('prev_stimulus'),
+                prev_category=a.get('prev_category'),
                 stat_names=stat_names, return_dict=False,
             ))
         X = np.vstack(rows)                       # (N, D)
@@ -85,19 +85,33 @@ def _nan_moments(X: np.ndarray) -> np.ndarray:
     """Per-feature (column) moments across sessions, NaN-aware.
 
     Returns (4*D,) = [mean(D), var(D), skew(D), kurtosis(D)], computed ignoring
-    NaNs. Raises if any feature has < 4 finite values across sessions (a moment
-    would be undefined or silently degenerate -- fail loudly rather than impute).
+    NaNs.
+
+    A column with fewer than 4 finite values across sessions cannot support
+    four moments. Rather than raising (which, called inside the simulator,
+    would crash a whole training run on a single bad draw), such a column's
+    four moments are set to NaN -- mirroring how the pooled path emits a NaN
+    for an undefined stat. The downstream contract then handles it uniformly:
+    train() row-filters any simulation carrying a NaN, and condition() raises
+    if the *real-data* observation contains a NaN (the single loud-failure
+    point). Note this is distinct from the < 4 *sessions* case, which
+    to_stat_vector rejects up front.
     """
     X = np.asarray(X, dtype=float)
+    n_cols = X.shape[1]
     finite = np.sum(np.isfinite(X), axis=0)       # per-column count
-    bad = np.where(finite < 4)[0]
-    if bad.size:
-        raise ValueError(
-            f"Columns {bad.tolist()} have < 4 finite values across sessions; "
-            f"cannot form moments. Choose stats that stay finite at this "
-            f"session length, or use mode='pooled'.")
-    mean = np.nanmean(X, axis=0)
-    var = np.nanvar(X, axis=0)
-    sk = np.asarray(skew(X, axis=0, nan_policy='omit'), dtype=float)
-    ku = np.asarray(kurtosis(X, axis=0, nan_policy='omit'), dtype=float)
+    supported = finite >= 4
+
+    mean = np.full(n_cols, np.nan)
+    var = np.full(n_cols, np.nan)
+    sk = np.full(n_cols, np.nan)
+    ku = np.full(n_cols, np.nan)
+
+    if np.any(supported):
+        Xs = X[:, supported]
+        mean[supported] = np.nanmean(Xs, axis=0)
+        var[supported] = np.nanvar(Xs, axis=0)
+        sk[supported] = np.asarray(skew(Xs, axis=0, nan_policy='omit'), dtype=float)
+        ku[supported] = np.asarray(kurtosis(Xs, axis=0, nan_policy='omit'), dtype=float)
+
     return np.concatenate([mean, var, sk, ku])

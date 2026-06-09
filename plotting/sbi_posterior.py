@@ -16,7 +16,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import Dict, List, Tuple, Optional, Any
 
-from plotting.sbi_trajectories import PARAM_COLOURS
+from plotting._style import PARAM_COLOURS
 
 
 # =============================================================================
@@ -24,93 +24,72 @@ from plotting.sbi_trajectories import PARAM_COLOURS
 # =============================================================================
 
 def plot_marginal_posteriors(
-    trajectories: Dict[str, Dict[str, np.ndarray]],
-    ground_truth: Optional[Dict[str, Any]] = None,
-    param_names: Optional[List[str]] = None,
-    sessions_to_show: Optional[List[int]] = None,
+    posterior_samples: np.ndarray,
+    param_names: List[str],
+    true_theta: Optional[np.ndarray] = None,
     figsize: Optional[Tuple[float, float]] = None,
     n_bins: int = 40,
 ) -> plt.Figure:
-    """
-    Plot marginal posterior distributions for each parameter.
+    """Marginal posterior histogram per parameter.
 
-    For constant params: single histogram.
-    For varying params: one histogram per selected session, colour-coded.
+    Static design: one posterior per conditioning, so one marginal histogram
+    per parameter (no per-session panels).
 
     Args:
-        trajectories: From SBIFitter.extract_trajectories().
-        ground_truth: Optional ground truth values.
-        param_names: Which params to plot.
-        sessions_to_show: Which session indices for varying params.
-                         Default: first, middle, last.
+        posterior_samples: (n_samples, n_params), from
+            AmortisedSBI.condition()['posterior_samples'].
+        param_names: Parameter names, length == n_params
+            (condition()['param_names']).
+        true_theta: Optional (n_params,) ground-truth values (for synthetic
+            recovery checks); drawn as a dashed line per panel.
         figsize: Figure size.
         n_bins: Histogram bins.
 
     Returns:
-        Matplotlib figure.
+        Matplotlib figure (one panel per parameter).
     """
-    if param_names is None:
-        param_names = list(trajectories.keys())
+    samples = np.asarray(posterior_samples, dtype=float)
+    if samples.ndim != 2:
+        raise ValueError(
+            f"posterior_samples must be 2-D (n_samples, n_params); "
+            f"got shape {samples.shape}")
+    n_params = samples.shape[1]
+    if len(param_names) != n_params:
+        raise ValueError(
+            f"{len(param_names)} param_names but posterior_samples has "
+            f"{n_params} columns")
 
-    n_params = len(param_names)
     n_cols = min(4, n_params)
     n_rows = int(np.ceil(n_params / n_cols))
-
     if figsize is None:
-        figsize = (5 * n_cols, 4 * n_rows)
+        figsize = (4 * n_cols, 3.2 * n_rows)
 
     fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize, squeeze=False)
     axes_flat = axes.flatten()
 
+    true_theta = None if true_theta is None else np.atleast_1d(true_theta)
+
     for i, name in enumerate(param_names):
         ax = axes_flat[i]
-        traj = trajectories[name]
         colour = PARAM_COLOURS.get(name, f'C{i}')
-        samples = traj['samples']
+        col = samples[:, i]
+        col = col[np.isfinite(col)]
 
-        if traj['link_type'] == 'constant':
-            ax.hist(samples, bins=n_bins, color=colour, alpha=0.7,
+        if col.size:
+            ax.hist(col, bins=n_bins, color=colour, alpha=0.75,
                     edgecolor='white', density=True)
+            med = float(np.median(col))
+            ax.axvline(med, color=colour, linewidth=1.5,
+                       label=f'median {med:.3g}')
 
-            if ground_truth is not None and name in ground_truth:
-                gt = ground_truth[name]
-                gt_val = gt[0] if hasattr(gt, '__len__') else gt
-                ax.axvline(gt_val, color='k', linestyle='--', linewidth=2,
-                           label=f'True: {gt_val:.3f}')
+        if true_theta is not None and i < len(true_theta):
+            ax.axvline(true_theta[i], color='k', linestyle='--', linewidth=2,
+                       label=f'true {true_theta[i]:.3g}')
 
-            ax.set_xlabel(name)
-            ax.set_ylabel('Density')
-            ax.set_title(name)
-            ax.legend(fontsize=8)
-
-        else:
-            # Select sessions to show
-            n_sess = samples.shape[1]
-            if sessions_to_show is None:
-                if n_sess <= 5:
-                    sess_idx = list(range(n_sess))
-                else:
-                    sess_idx = [0, n_sess // 4, n_sess // 2,
-                                3 * n_sess // 4, n_sess - 1]
-            else:
-                sess_idx = sessions_to_show
-
-            cmap = plt.cm.viridis(np.linspace(0.2, 0.9, len(sess_idx)))
-
-            for j, s in enumerate(sess_idx):
-                ax.hist(samples[:, s], bins=n_bins, alpha=0.5,
-                        color=cmap[j], density=True, label=f'S{s}')
-
-                if ground_truth is not None and name in ground_truth:
-                    gt = np.atleast_1d(ground_truth[name])
-                    if s < len(gt):
-                        ax.axvline(gt[s], color=cmap[j], linestyle='--',
-                                   linewidth=1.5)
-
-            ax.set_xlabel(name)
-            ax.set_ylabel('Density')
-            ax.set_title(f'{name} (selected sessions)')
-            ax.legend(fontsize=7, loc='upper right')
+        ax.set_xlabel(name)
+        ax.set_ylabel('Density')
+        ax.set_title(name)
+        ax.legend(fontsize=8)
 
     for j in range(n_params, len(axes_flat)):
         axes_flat[j].set_visible(False)

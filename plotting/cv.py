@@ -17,7 +17,6 @@ Usage:
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import Optional, Dict, Tuple
-from pathlib import Path
 
 from behav_utils.plotting.styles import COLOURS, UM_CMAP
 
@@ -35,13 +34,6 @@ MODEL_COLOURS = {
 # HELPERS
 # =============================================================================
 
-def _save_fig(fig, output_dir, prefix):
-    """Save as both PNG and PDF."""
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_dir / f'{prefix}.png', dpi=200, bbox_inches='tight')
-    fig.savefig(output_dir / f'{prefix}.pdf', bbox_inches='tight')
-
 
 # =============================================================================
 # PER-ANIMAL: VIOLIN + PAIRED SCATTER
@@ -54,7 +46,6 @@ def plot_cv_comparison(
     fit_target: str = 'UM',
     suptitle: Optional[str] = None,
     figsize: Tuple[float, float] = (12, 5),
-    output_dir: Optional[str] = None,
 ) -> plt.Figure:
     """
     Per-animal split violin + paired scatter plot (manuscript style).
@@ -71,7 +62,6 @@ def plot_cv_comparison(
         fit_target: Label for y-axis (e.g. 'UM', 'CP').
         suptitle: Override figure title. Default: '{animal_id} — CV — {fit_target}'.
         figsize: Figure size.
-        output_dir: If provided, saves PNG + PDF.
 
     Returns:
         Figure.
@@ -135,9 +125,6 @@ def plot_cv_comparison(
         fontsize=14, fontweight='bold',
     )
     plt.tight_layout()
-
-    if output_dir:
-        _save_fig(fig, output_dir, f'cv_comparison_{animal_id}')
 
     return fig
 
@@ -221,7 +208,6 @@ def _draw_paired_scatter(ax, be_p, sc_p):
 def plot_winner_summary(
     comparison_df,
     figsize: Tuple[float, float] = (4, 3),
-    output_dir: Optional[str] = None,
 ) -> plt.Figure:
     """Bar chart of winning model counts across animals."""
     if len(comparison_df) == 0:
@@ -250,9 +236,6 @@ def plot_winner_summary(
     ax.spines['right'].set_visible(False)
     plt.tight_layout()
 
-    if output_dir:
-        _save_fig(fig, output_dir, 'winner_summary')
-
     return fig
 
 
@@ -269,34 +252,17 @@ def plot_update_matrix(
     cmap=None,
     show_colourbar: bool = True,
 ) -> plt.Axes:
+    """Plot a single update matrix as a heatmap.
+
+    Thin wrapper over the library ``behav_utils.plotting.plot_um`` (single
+    source of UM-heatmap styling); kept for the local call sites and the
+    ``show_colourbar`` keyword.
     """
-    Plot a single 8x8 update matrix as a heatmap.
-
-    Uses UM_CMAP from behav_utils styles by default.
-    """
-    if cmap is None:
-        cmap = UM_CMAP
-
-    if ax is None:
-        _, ax = plt.subplots(figsize=(5, 4))
-
-    if vmin is None:
-        vmax_auto = np.nanmax(np.abs(um))
-        vmin, vmax = -vmax_auto, vmax_auto
-
-    im = ax.imshow(
-        um, cmap=cmap, vmin=vmin, vmax=vmax,
-        aspect='equal', interpolation='nearest',
+    from behav_utils.plotting.update_matrix import plot_um
+    _, ax = plot_um(
+        um, ax=ax, vmin=vmin, vmax=vmax, cmap=cmap,
+        colorbar=show_colourbar, title=title,
     )
-    ax.set_title(title, fontsize=10)
-    ax.set_xlabel('Previous stim bin', fontsize=9)
-    ax.set_ylabel('Current stim bin', fontsize=9)
-    ax.set_xticks(range(8))
-    ax.set_yticks(range(8))
-
-    if show_colourbar:
-        plt.colorbar(im, ax=ax, shrink=0.8)
-
     return ax
 
 
@@ -306,7 +272,6 @@ def plot_um_comparison(
     model_errors: Dict[str, float],
     animal_id: str,
     figsize: Optional[Tuple[float, float]] = None,
-    output_dir: Optional[str] = None,
 ) -> plt.Figure:
     """Side-by-side empirical vs model update matrices."""
     n_panels = 1 + len(model_ums)
@@ -338,9 +303,6 @@ def plot_um_comparison(
     plt.suptitle(f'{animal_id}: Empirical vs Best-Fit Models', fontsize=13)
     plt.tight_layout()
 
-    if output_dir:
-        _save_fig(fig, output_dir, f'um_comparison_{animal_id}')
-
     return fig
 
 
@@ -352,7 +314,6 @@ def plot_param_distributions(
     param_df,
     animal_id: str,
     figsize: Tuple[float, float] = (16, 6),
-    output_dir: Optional[str] = None,
 ) -> plt.Figure:
     """
     Parameter histograms across seeds for one animal.
@@ -388,8 +349,5 @@ def plot_param_distributions(
         f'{animal_id}: Parameter distributions across seeds', fontsize=12,
     )
     plt.tight_layout()
-
-    if output_dir:
-        _save_fig(fig, output_dir, f'param_distributions_{animal_id}')
 
     return fig
