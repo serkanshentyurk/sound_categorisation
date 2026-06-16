@@ -49,21 +49,6 @@ if TYPE_CHECKING:
     from behav_utils.config.schema import ProjectConfig
 
 
-_STAT_PARENT = {
-    'mu': 'psychometric',
-    'sigma': 'psychometric',
-    'lapse_low': 'psychometric',
-    'lapse_high': 'psychometric',
-    'win_stay_rate': 'win_stay',
-    'lose_shift_rate': 'lose_shift',
-    'w_stimulus': 'logistic_history',
-    'w_prev_choice_1': 'logistic_history',
-    'w_prev_choice_2': 'logistic_history',
-    'w_prev_choice_3': 'logistic_history',
-    'psychometric_gof': 'psychometric',
-}
-
-
 def _flatten_stats_dict(stats_dict: Dict[str, Any]) -> Dict[str, Any]:
     """Flatten nested stat dicts into a single-level dict.
 
@@ -511,9 +496,15 @@ class AnimalData:
     @property
     def stages(self) -> List[str]:
         return list(dict.fromkeys(s.stage for s in self.sessions))
-
+    
     @property
     def session_table(self) -> pd.DataFrame:
+        """One-row-per-session summary table for selection masks."""
+        if self._feature_matrix_cache is None:
+            self._feature_matrix_cache = self.create_session_table()
+        return self._feature_matrix_cache
+
+    def create_session_table(self) -> pd.DataFrame:
         """One row per session — a tabular view for building selection masks.
 
         Convenience for picking *sessions* (not trials). Mask against it, e.g.::
@@ -528,19 +519,22 @@ class AnimalData:
             n_trials, n_valid,
             session_type — one of 'regular' | 'masking' | 'opto' | 'washout'
                 ('masking' = blue light, no laser; 'opto' = laser-on present;
-                 'washout' = post-opto washout period, no inactivation),
+                    'washout' = post-opto washout period, no inactivation),
             accuracy — fraction correct over *valid* (non-aborted) trials.
 
         Notes:
             - The three session types are mutually exclusive, so they live in a
-              single categorical column rather than three booleans (which could
-              silently disagree).
+                single categorical column rather than three booleans (which could
+                silently disagree).
             - This is session-level only. It cannot express trial-level opto
-              masks (opto-on vs opto-off *within* a session) — use
-              ``behav_utils.data.ops.filtering.opto_mask`` for that.
+                masks (opto-on vs opto-off *within* a session) — use
+                ``behav_utils.data.ops.filtering.opto_mask`` for that.
             - 'accuracy' reuses ``SessionData.summary()['perf']`` so there is a
-              single definition of session accuracy across the library.
+                single definition of session accuracy across the library.
         """
+        from behav_utils.analysis.session_features import fit_summary_stats
+        from behav_utils.analysis.summary_stats import list_available_stats, _MULTI_STATS, _STAT_CHILDREN
+        
         rows = []
         for sess in self.sessions:
             summ = sess.summary()
@@ -552,17 +546,26 @@ class AnimalData:
                 stype = 'opto'
             else:
                 stype = 'regular'
-            rows.append({
-                'session_idx':  summ['session_idx'],
-                'session_id':   summ['session_id'],
-                'date':         summ['date'],
-                'stage':        summ['stage'],
-                'distribution': summ['distribution'],
-                'n_trials':     summ['n_trials'],
-                'n_valid':      summ['n_valid'],
-                'session_type': stype,
-                'accuracy':     summ['perf'],
-            })
+            
+            sess_stats = fit_summary_stats(sess.trials.choice, sess.trials.stimulus, sess.trials.category,
+                                           stat_names = list_available_stats(),
+                                           return_dict = True)
+            dict_to_append = {'session_idx':  summ['session_idx'],
+                            'session_id':   summ['session_id'],
+                            'date':         summ['date'],
+                            'stage':        summ['stage'],
+                            'distribution': summ['distribution'],
+                            'n_trials':     summ['n_trials'],
+                            'n_valid':      summ['n_valid'],
+                            'session_type': stype}
+            for stat in sess_stats:
+                if stat in _MULTI_STATS:
+                    for substat in _STAT_CHILDREN[stat]:
+                        dict_to_append[substat] = sess_stats[stat][substat]
+                else:
+                    dict_to_append[stat] = sess_stats[stat]
+            
+            rows.append(dict_to_append)
         return pd.DataFrame(rows)
 
     # ── Filtering ───────────────────────────────────────────────────────────

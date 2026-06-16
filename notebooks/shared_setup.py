@@ -77,13 +77,13 @@ from behav_utils.analysis.session_features import compute_session_features
 
 # Low-level analysis (arrays)
 from behav_utils.analysis.psychometry import fit_psychometric
-from behav_utils.analysis.update_matrix import compute_update_matrix, matrix_error
+from behav_utils.analysis.update_matrix import fit_update_matrix, matrix_error
 from behav_utils.analysis.comparison import compare_conditions
 from behav_utils.analysis.utils import cumulative_gaussian
 
 # Session-level analysis (sessions → result dicts)
 from behav_utils.analysis.psychometry import compute_psychometric
-from behav_utils.analysis.update_matrix import compute_um
+from behav_utils.analysis.update_matrix import compute_um, compute_update_matrix
 from behav_utils.analysis.trajectory import compute_trajectory
 from behav_utils.analysis.comparison import compute_comparison
 from behav_utils.analysis.session_raster import compute_session_raster

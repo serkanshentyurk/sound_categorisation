@@ -32,7 +32,6 @@ def fit_update_matrix(
     prev_stimuli: Optional[np.ndarray] = None,
     prev_choices: Optional[np.ndarray] = None,
     prev_categories: Optional[np.ndarray] = None,
-    prev_has_prev: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, np.ndarray, Dict]:
     """
     Compute update matrix from raw behavioural arrays.
@@ -48,7 +47,7 @@ def fit_update_matrix(
         trial_filter: 'post_correct' (only after correct) or 'all'.
         no_response: Bool array (True = no response). Inferred from NaN if None.
         not_blockstart: Bool array (True = not start of block). Auto if None.
-        prev_stimuli, prev_choices, prev_categories, prev_has_prev: Frozen,
+        prev_stimuli, prev_choices, prev_categories: Frozen,
             abort-aware lag-1 arrays aligned to every trial. If prev_stimuli is
             given, the previous trial is taken from these (NOT from array
             adjacency), so the matrix is correct on a non-consecutive subset
@@ -82,7 +81,6 @@ def fit_update_matrix(
         prev_stimuli = np.asarray(prev_stimuli, dtype=np.float64)
         prev_choices = np.asarray(prev_choices, dtype=np.float64)
         prev_categories = np.asarray(prev_categories, dtype=np.float64)
-        has_prev = np.asarray(prev_has_prev, dtype=bool)
 
         curr_stim = stimuli
         curr_choice = choices
@@ -92,9 +90,9 @@ def fit_update_matrix(
         prev_responded = ~np.isnan(prev_choices)
 
         if trial_filter == 'post_correct':
-            base = prev_reward & curr_responded & prev_responded & has_prev
+            base = prev_reward & curr_responded & prev_responded
         elif trial_filter == 'all':
-            base = curr_responded & prev_responded & has_prev
+            base = curr_responded & prev_responded
         else:
             raise ValueError(f"trial_filter must be 'post_correct' or 'all', got '{trial_filter}'")
     else:

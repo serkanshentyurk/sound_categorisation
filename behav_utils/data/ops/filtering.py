@@ -32,7 +32,7 @@ Public API:
 """
 
 import numpy as np
-from typing import Optional, List, Dict, Callable, Tuple, Union, Any, TYPE_CHECKING
+from typing import Optional, List, Dict, Callable, Tuple, Union, Any, TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from behav_utils.data.structures import TrialData, SessionData
@@ -297,6 +297,7 @@ def filter_trials(
     label: str = '',
     exclude_abort: bool = True,
     exclude_opto: bool = True,
+    trial_type: Optional[Literal['all', 'non_opto', 'opto', 'post_opto']] = None,
 ) -> 'List[SessionData]':
     """
     Filter trials within each session. Returns new SessionData objects.
@@ -323,11 +324,23 @@ def filter_trials(
         exclude_abort: (mask_fn=None only) drop aborted trials.
         exclude_opto:  (mask_fn=None only) drop opto (laser-on) trials. Set
                        False to keep all valid trials in an opto session.
+        trial_type:    Optional preset for common trial types, overrides mask_fn if given:
+                       'all'       → all non-abort trials (ignore exclude_opto)
+                       'non_opto'  → non-opto non-abort (exclude_opto controls)
+                       'opto'      → opto trials only (positive selection)
+                       'post_opto' → first non-opto after each opto run (positive selection
 
     Returns:
         List of new SessionData with filter_info set.
 
     Examples:
+        # Using trial_type presets (overrides mask_fn if given):
+        clean = filter_trials(sessions)  # standard clean trials (abort + opto excluded)
+        clean = filter_trials(sessions, trial_type='non_opto')  # same as above
+        allv = filter_trials(sessions_opto, trial_type='all')  # all valid trials in an opto session (keep opto trials)
+        opto = filter_trials(sessions_opto, trial_type='opto')  # opto trials only (positive selection)
+        post = filter_trials(sessions_opto, trial_type='post_opto')  # post-opto trials
+    
         # Standard clean trials (abort + opto excluded)
         clean = filter_trials(sessions)
 
@@ -344,6 +357,18 @@ def filter_trials(
             mask_fn=lambda s: opto_mask(s.trials, delta=1),
             label='post-opto')
     """
+    if trial_type is not None:
+        if trial_type == 'all':
+            mask_fn = lambda s: build_mask(s.trials, exclude_abort = False, exclude_opto = False)
+        elif trial_type == 'non_opto':
+            mask_fn = lambda s: build_mask(s.trials, exclude_abort=exclude_abort, exclude_opto=True)
+        elif trial_type == 'opto':
+            mask_fn = lambda s: build_mask(s.trials, exclude_abort=exclude_abort, exclude_opto=False) & opto_mask(s.trials, delta=0)
+        elif trial_type == 'post_opto':
+            mask_fn = lambda s: build_mask(s.trials, exclude_abort=exclude_abort, exclude_opto=False) & opto_mask(s.trials, delta=1)
+        else:
+            raise ValueError(f"Invalid trial_type '{trial_type}'. Choose from: 'all', 'non_opto', 'opto', 'post_opto'.")
+        
     if mask_fn is None:
         auto_label = label or _standard_mask_label(exclude_abort, exclude_opto)
     else:
@@ -474,4 +499,6 @@ def pool_arrays(
     out['n_trials'] = sum(a['n_trials'] for a in all_arrays)
     out['n_sessions'] = len(all_arrays)
     out['session_boundaries'] = boundaries
+    not_blockstart = out['prev_has_prev']  # alias for clarity
+    out['prev_has_prev'] = not_blockstart
     return out

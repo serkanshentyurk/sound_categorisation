@@ -1477,24 +1477,6 @@ def compute_binned_choice_probability(choices: np.ndarray, stimuli: np.ndarray,
 # MAIN INTERFACE
 # =============================================================================
 
-# Default statistics for SBI (keep backwards compatible)
-DEFAULT_STATS = ['accuracy', 'psychometric', 'recency', 'win_stay', 'stimulus_sensitivity']
-
-# Extended set for session feature matrix
-FEATURE_MATRIX_STATS = [
-    'accuracy', 'psychometric', 'psychometric_gof',
-    'recency', 'stimulus_recency', 'recency_divergence',
-    'win_stay', 'lose_shift',
-    'stimulus_sensitivity', 'side_bias', 'choice_autocorr', 'choice_entropy',
-    'perseveration', 'hard_easy_ratio', 'hard_accuracy', 'easy_accuracy',
-    'history_interaction_r2',
-    # NOTE: 'sd_profile' excluded — produces NaN on short sessions, which
-    # corrupts HMM/SLDS feature matrices.  Use explicitly if needed.
-    'logistic_history',
-    'update_matrix',
-    'conditional_psychometric',
-]
-
 
 def fit_summary_stats(
     choices: np.ndarray,
@@ -1581,8 +1563,6 @@ def flatten_stats(stats_dict: Dict) -> np.ndarray:
     return np.array(flat, dtype=np.float64)
 
 
-
-
 def get_stat_names_expanded(stat_names: Optional[List[str]] = None) -> List[str]:
     """
     Get expanded list of stat names (for labelling flattened array).
@@ -1622,7 +1602,29 @@ def get_stat_names_expanded(stat_names: Optional[List[str]] = None) -> List[str]
 
     return expanded
 
+# Default statistics for SBI (keep backwards compatible)
+DEFAULT_STATS = ['accuracy', 'psychometric', 'recency', 'win_stay', 'stimulus_sensitivity']
 
+# Extended set for session feature matrix
+FEATURE_MATRIX_STATS = [
+    'accuracy', 'psychometric', 'psychometric_gof',
+    'recency', 'stimulus_recency', 'recency_divergence',
+    'win_stay', 'lose_shift',
+    'stimulus_sensitivity', 'side_bias', 'choice_autocorr', 'choice_entropy',
+    'perseveration', 'hard_easy_ratio', 'hard_accuracy', 'easy_accuracy',
+    'history_interaction_r2',
+    'logistic_history',
+    'update_matrix',
+    'conditional_psychometric',
+]
+
+_MULTI_STATS = ['psychometric', 'logistic_history', 
+                'conditional_psychometric', 'update_matrix', 'sd_profile']
+
+_STAT_CHILDREN = {}
+for stat in _MULTI_STATS:
+    _STAT_CHILDREN[stat] = get_stat_names_expanded([stat])
+    
 # =============================================================================
 # CONVENIENCE FUNCTIONS
 # =============================================================================

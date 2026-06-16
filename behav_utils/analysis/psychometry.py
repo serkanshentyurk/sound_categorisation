@@ -176,6 +176,13 @@ def fit_psychometric(stimuli: np.ndarray, choices: np.ndarray,
                 np.percentile(boot_curves, 2.5, axis=0),
                 np.percentile(boot_curves, 97.5, axis=0)
             )
+            lo, hi = result.get('y_fit_ci', (None, None))
+            result['curve_band'] = {
+                'x':      result['x_fit'],
+                'median': result['y_fit'],
+                'lo':     lo,
+                'hi':     hi,
+            }
         else:
             result['y_fit_ci'] = (None, None)
         
