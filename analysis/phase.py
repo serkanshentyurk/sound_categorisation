@@ -1,207 +1,182 @@
 """Phase-level behavioural analysis for the sound-categorisation task.
 
-A *phase* is a (distribution-stage, opto-trial-spec) condition — e.g. ``uniform_opto``
-with trial_spec ``opto``. For each requested phase this module selects and cleans the
-relevant sessions, then computes the pooled psychometric curve, the update matrix, and
-per-session summary statistics.
+New architecture:
+  filter_phase(animal, dist, session_type, trial_type, ...)  → flat [SessionData]
+      select_sessions + filter_trials in one call. Feed to compute_psychometric /
+      compute_um, or to compute_ds_x (behav_utils.analysis.downsample) for matched-n.
 
-Everything is built on the canonical behav_utils primitives — ``select_sessions``,
-``filter_trials``, ``pool_arrays``, ``compute_summary_stats``, ``fit_psychometric`` and
-``fit_update_matrix`` — so this stays a thin, project-specific orchestration layer.
+`compute_phase` is the report's per-condition assembler, now built on filter_phase via the
+PANELS specs — it produces the same {clean, psyc, um} dicts the plot helpers consume.
+`downsample_phase` wraps compute_ds_x.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import List, Optional
+from collections import OrderedDict
 
 import numpy as np
+import pandas as pd
 
-from behav_utils import select_sessions, filter_trials, pool_arrays, fit_psychometric
-from behav_utils.analysis.update_matrix import fit_update_matrix
-from behav_utils.analysis.summary_stats import compute_summary_stats
+from behav_utils.data.ops.selection import select_sessions
+from behav_utils.data.ops.filtering import filter_trials, opto_mask
+from behav_utils.analysis.psychometry import compute_psychometric
+from behav_utils.analysis.update_matrix import compute_um
+from behav_utils.analysis.downsample import calculate_min_n, compute_ds_x
+from behav_utils.analysis.session_features import compute_session_features
 from behav_utils.data.structures import AnimalData
 
-PHASES = ('uniform_training_last5', 'uniform_masking', 'uniform_opto',
-          'hard_a_masking', 'hard_a_opto', 'hard_b_masking', 'hard_b_opto')
-TRIAL_SPECS = ('all', 'non_opto', 'opto', 'post_opto')
+MIN_TRIALS = 10
+N_BOOTSTRAP = 200
+PHASE_ORDER = ['uniform', 'hard_a', 'hard_b']
 
-DEFAULT_STATS = ('accuracy', 'win_stay', 'lose_shift', 'recency')
+_DIST = {'uniform': 'Uniform', 'hard_a': 'Hard-A', 'hard_b': 'Hard-B'}
+# trial_type -> opto_mask delta ('all'/None handled separately as the all-valid mask)
+_TRIAL_DELTA = {'opto': 0, 'opto_off': 'control', 'post_opto': 1}
 
 
-@dataclass
-class Phase:
-    """One condition plus the analysis filled in by :func:`calculate_phase`.
+def filter_phase(animal: AnimalData, dist, session_type, trial_type=None,
+                 min_accuracy=None, exclude_abort=True, min_trials=MIN_TRIALS,
+                 stage=None, last_n=None, first_n=None, last_fraction=None):
+    """Select a phase's sessions and filter its trials in one step → [SessionData].
 
-    The first four fields describe the condition; the last four are populated in place
-    (left as ``None`` until then). Read results by name, e.g. ``p.psyc_fit``.
+    Args:
+        animal:        AnimalData.
+        dist:          'uniform' | 'hard_a' | 'hard_b'.
+        session_type:  'regular' | 'masking' | 'opto' | 'washout'.
+        trial_type:    None/'all' (all valid trials, incl. laser) | 'opto' (laser) |
+                       'opto_off' (interleaved non-laser controls) | 'post_opto'
+                       (first non-laser trial after each opto run).
+        min_accuracy:  session-quality floor (None = no constraint).
+        exclude_abort: only affects the 'all'/None mask; the opto masks always drop aborts.
+        min_trials:    drop sessions below this many surviving trials.
+        stage / last_n / first_n / last_fraction:
+                       passed through to the session selection (None = no constraint).
+
+    Note: trial_type other than 'all'/None only isolates trials in opto sessions; on a
+    regular session 'opto' returns an empty selection rather than erroring.
     """
-    phase: str
-    trial_spec: str = 'all'
-    label: str = ''
-    color: Optional[str] = None
+    criteria = dict(distribution=_DIST[dist], session_type=session_type)
+    for key, val in (('min_accuracy', min_accuracy), ('stage', stage),
+                     ('last_n', last_n), ('first_n', first_n), ('last_fraction', last_fraction)):
+        if val is not None:
+            criteria[key] = val
+    sessions = select_sessions(animal, **criteria)
+    if not sessions:
+        return []
 
-    pooled: Optional[dict] = None        # pool_arrays / downsample output
-    psyc_fit: Optional[dict] = None      # fit_psychometric result
-    um_fit: Optional[tuple] = None       # (update_matrix, conditional_matrix, info)
-    stats: Optional[dict] = None         # {stat_name: array over sessions, 'n_trials': ...}
-
-
-def clean_sessions(animal: AnimalData, phase: str, trial_spec: Optional[str] = None,
-                   min_accuracy: float = 0.6, min_trials: int = 10,
-                   exclude_abort: bool = True):
-    """Select sessions for ``phase`` and filter their trials by ``trial_spec``."""
-    sessions = select_sessions(animal, phase, min_accuracy=min_accuracy)
-    return filter_trials(sessions, min_trials=min_trials,
-                         trial_type=trial_spec, exclude_abort=exclude_abort)
-
-
-def fit_um_psych(pooled: dict, n_bootstrap: int = 200):
-    """Psychometric fit + update matrix from a pooled-arrays dict."""
-    psyc_fit = fit_psychometric(pooled['stimuli'], pooled['choices'], n_bootstrap=n_bootstrap)
-    um_fit = fit_update_matrix(
-        pooled['stimuli'], pooled['choices'], pooled['categories'],
-        trial_filter='post_correct',
-        prev_stimuli=pooled['prev_stimuli'],
-        prev_choices=pooled['prev_choices'],
-        prev_categories=pooled['prev_categories'],
-        no_response=pooled['no_response'],
-        not_blockstart=pooled['prev_has_prev'],
-    )
-    return psyc_fit, um_fit
+    if trial_type in (None, 'all'):
+        return filter_trials(sessions, exclude_opto=False, exclude_abort=exclude_abort,
+                             min_trials=min_trials)
+    if trial_type not in _TRIAL_DELTA:
+        raise ValueError(f"trial_type must be None/'all'/'opto'/'opto_off'/'post_opto', "
+                         f"got {trial_type!r}")
+    delta = _TRIAL_DELTA[trial_type]
+    return filter_trials(sessions, mask_fn=lambda s: opto_mask(s.trials, delta=delta),
+                         min_trials=min_trials)
 
 
-def calculate_stats(sessions, stat_names=DEFAULT_STATS, mode: str = 'per_session') -> dict:
-    """Summary stats for ``sessions``.
+# ── Report panels: label -> filter_phase kwargs (faithful to the old presets) ────
+def _opto_panels(dist):
+    panels = []
+    if dist == 'uniform':
+        panels.append(('baseline', dict(dist='uniform', session_type='regular', trial_type=None,
+                                         stage='Full_Task_Cont', last_n=5)))
+    panels += [
+        ('masking',   dict(dist=dist, session_type='masking', trial_type=None)),
+        ('all_opto',  dict(dist=dist, session_type='opto', trial_type='all')),
+        ('opto_off',  dict(dist=dist, session_type='opto', trial_type='opto_off')),
+        ('opto_on',   dict(dist=dist, session_type='opto', trial_type='opto')),
+        ('post_opto', dict(dist=dist, session_type='opto', trial_type='post_opto')),
+    ]
+    return OrderedDict(panels)
 
-    ``per_session`` (default) returns ``{stat: array over sessions, 'n_trials': array}``;
-    ``pooled`` returns ``{stat: single pooled value, 'n_trials': int}``.
-    Returns ``{}`` if no sessions survived the filter.
+
+PANELS = {
+    'opto': {d: _opto_panels(d) for d in PHASE_ORDER},
+    'non-opto': {
+        'uniform': OrderedDict([('baseline', dict(dist='uniform', session_type='regular',
+                                                  trial_type=None, stage='Full_Task_Cont', last_n=5))]),
+        'hard_a': OrderedDict([('regular', dict(dist='hard_a', session_type='regular', trial_type=None))]),
+        'hard_b': OrderedDict([('regular', dict(dist='hard_b', session_type='regular', trial_type=None))]),
+    },
+}
+
+
+def is_opto_cohort(animal: AnimalData) -> bool:
+    """True if the animal has any opto or masking sessions."""
+    return animal.session_table['session_type'].isin(['opto', 'masking']).any()
+
+
+def compute_phase(animal: AnimalData, phase, cohort=None):
+    """Pooled psychometric + update matrix per condition for one phase (report assembler).
+
+    Returns three dicts keyed by condition label: clean (filtered sessions), psyc, um.
+    A condition with no surviving sessions is None in all three.
     """
-    stat_names = list(stat_names)
-    result = compute_summary_stats(sessions, stat_names=stat_names, mode=mode)
+    if cohort is None:
+        cohort = 'opto' if is_opto_cohort(animal) else 'non-opto'
+    panels = PANELS[cohort][phase]
 
-    if mode == 'pooled':
-        out = dict(result['stats'])
-        out['n_trials'] = result['n_trials']
-        return out
-
-    per = result['per_session']
-    if not per:
-        return {}
-    out = {key: np.array([s['stats'][key] for s in per]) for key in per[0]['stats']}
-    out['n_trials'] = np.array([s['n_trials'] for s in per])
-    return out
-
-
-def calculate_min_n_per_phase(animal: AnimalData, phases=None, trial_spec=None,
-                              phase_trial_comb=None, min_accuracy: float = 0.6,
-                              exclude_abort: bool = True, verbose: bool = True):
-    """Minimum pooled trial count across the requested phases (for matched downsampling).
-
-    Pass either ``phases`` (+ optional ``trial_spec``) or ``phase_trial_comb`` — a list of
-    ``(phase, trial_spec)`` pairs, which takes precedence.
-    """
-    if isinstance(phases, str):
-        phases = [phases]
-    if isinstance(trial_spec, str) or trial_spec is None:
-        trial_spec = [trial_spec]
-
-    if phase_trial_comb is None and phases is None:
-        raise ValueError("Either `phases` or `phase_trial_comb` must be provided.")
-
-    if phase_trial_comb is not None:
-        pairs = phase_trial_comb
-    else:
-        pairs = [(phase, spec) for phase in phases for spec in trial_spec]
-
-    total_n: dict = {}
-    min_n = np.inf
-    for pair in pairs:
-        phase, spec = pair[0], pair[1]
-        sessions = select_sessions(animal, phase, min_accuracy=min_accuracy)
-        clean = filter_trials(sessions, min_trials=10, trial_type=spec, exclude_abort=exclude_abort)
-        n = sum(sess.n_trials for sess in clean)
-        total_n.setdefault(phase, {})[spec] = n
-        if verbose:
-            print(f"{phase} - {spec}:\t {len(clean)} sessions, {n} trials")
-        min_n = min(min_n, n)
-
-    if verbose:
-        print(f"\nMinimum n across phases: {int(min_n)}")
-    return int(min_n), total_n
-
-
-def downsample(sessions, n_sample: int = 1000, seed: Optional[int] = None,
-               with_replacement: bool = False, n_bins: int = 8) -> dict:
-    """Pool ``sessions`` and subsample to ~``n_sample`` trials.
-
-    Stratified by stimulus bin (proportional allocation), so the stimulus marginal is
-    preserved. Note rows are grouped by bin, so only order-independent / lag-1 stats stay
-    valid on the result; ``session_boundaries`` is invalidated and set to ``None``.
-    """
-    pooled = pool_arrays(sessions)
-    rng = np.random.default_rng(seed)
-
-    edges = np.linspace(-1, 1, n_bins + 1)[1:-1]
-    bin_id = np.digitize(pooled['stimuli'], edges)            # 0 .. n_bins-1
-
-    keep = []
-    for b in range(n_bins):
-        in_bin = np.where(bin_id == b)[0]
-        k = min(round(n_sample * len(in_bin) / pooled['n_trials']), len(in_bin))
-        if k > 0:
-            keep.append(rng.choice(in_bin, k, replace=with_replacement))
-    idx = np.concatenate(keep) if keep else np.array([], dtype=int)
-
-    for key, value in list(pooled.items()):
-        if key == 'n_trials':
-            pooled[key] = len(idx)                # actual kept count, not the request
-        elif key == 'n_sessions':
+    clean, psyc, um = {}, {}, {}
+    for label, spec in panels.items():
+        sessions = filter_phase(animal, **spec)
+        if not sessions:
+            clean[label] = psyc[label] = um[label] = None
             continue
-        elif key == 'session_boundaries':
-            pooled[key] = None                    # invalid after bin-reordering
-        else:
-            pooled[key] = value[idx]
-    return pooled
+        clean[label] = sessions
+        try:
+            psyc[label] = compute_psychometric(sessions, mode='pooled', n_bins=8, n_bootstrap=N_BOOTSTRAP)
+        except Exception:
+            psyc[label] = None
+        try:
+            um[label] = compute_um(sessions)
+        except Exception:
+            um[label] = None
+    return clean, psyc, um
 
 
-def calculate_phase(animal: AnimalData, phases: List[Phase], min_accuracy: float = 0.6,
-                    min_trials: int = 10, exclude_abort: bool = True,
-                    stat_names=DEFAULT_STATS, down_sample: bool = False,
-                    n_sample_downsample: Optional[int] = None,
-                    seed_downsample: Optional[int] = None,
-                    downsample_with_replacement: bool = False) -> List[Phase]:
-    """Fill each :class:`Phase` in ``phases`` with pooled data, psychometric fit, update
-    matrix and per-session stats. Mutates and returns the same list.
+def downsample_phase(clean_dict, n_repeats=100, n_bins=8, seed=42, with_replacement=True):
+    """Matched-n psychometric + update matrix per condition (wraps compute_ds_x).
 
-    If ``down_sample`` and ``n_sample_downsample`` is ``None``, every phase is matched to
-    the smallest phase's trial count.
+    Matches every condition to the smallest condition's trial count (psychometric) and pair
+    count (UM), then runs compute_ds_x per condition and returns its aggregated result.
+    Returns two dicts (psyc, um) keyed by condition label, plot-compatible.
     """
-    for p in phases:
-        if p.phase not in PHASES:
-            raise ValueError(f"phase must be one of {PHASES}, got {p.phase!r}")
-        if p.trial_spec not in TRIAL_SPECS:
-            raise ValueError(f"trial_spec must be one of {TRIAL_SPECS}, got {p.trial_spec!r}")
+    phases = [s for s in clean_dict.values() if s]
+    n_trials = calculate_min_n(phases, unit='trials')
+    n_pairs = calculate_min_n(phases, unit='pairs')
 
-    n_min = None
-    if down_sample:
-        if n_sample_downsample is not None:
-            n_min = n_sample_downsample
-        else:
-            pairs = [(p.phase, p.trial_spec) for p in phases]
-            n_min, _ = calculate_min_n_per_phase(
-                animal, phase_trial_comb=pairs, min_accuracy=min_accuracy,
-                exclude_abort=exclude_abort, verbose=False)
-
-    for p in phases:
-        clean = clean_sessions(animal, p.phase, p.trial_spec, min_accuracy=min_accuracy,
-                               min_trials=min_trials, exclude_abort=exclude_abort)
-        p.stats = calculate_stats(clean, stat_names=stat_names, mode='per_session')
-        if not clean:                            # nothing survived; leave fits as None
+    psyc, um = {}, {}
+    for label, sessions in clean_dict.items():
+        if not sessions:
+            psyc[label] = um[label] = None
             continue
-        p.pooled = (downsample(clean, n_sample=n_min, seed=seed_downsample,
-                               with_replacement=downsample_with_replacement)
-                    if down_sample else pool_arrays(clean))
-        p.psyc_fit, p.um_fit = fit_um_psych(p.pooled, n_bootstrap=200)
+        psyc[label] = (compute_ds_x(sessions, 'psychometric', n_trials, n_repeats=n_repeats,
+                                    with_replacement=with_replacement, n_bins=n_bins,
+                                    seed=seed)['aggregated'] if n_trials > 0 else None)
+        um[label] = (compute_ds_x(sessions, 'um', n_pairs, n_repeats=n_repeats,
+                                  with_replacement=False, n_bins=n_bins,
+                                  seed=seed)['aggregated'] if n_pairs > 0 else None)
+    return psyc, um
 
-    return phases
+
+def build_strip_df(animal: AnimalData, phases=None,
+                   stats_of_interest=('accuracy', 'win_stay', 'lose_shift'), cohort=None):
+    """Per-session DataFrame for strip plots: one row per session per condition."""
+    if phases is None:
+        phases = PHASE_ORDER
+    rows = []
+    for phase in phases:
+        clean, _, _ = compute_phase(animal, phase, cohort)
+        for condition, sessions in clean.items():
+            if sessions is None:
+                continue
+            for sess in sessions:
+                n_trials = int(sess.trials.valid_mask.sum())
+                registered = [s for s in stats_of_interest if s != 'n_trials']
+                features = compute_session_features(sess, stat_names=registered) if registered else {}
+                row = {'phase': phase, 'condition': condition, 'n_trials': n_trials}
+                for stat in stats_of_interest:
+                    if stat != 'n_trials':
+                        row[stat] = features.get(stat, np.nan)
+                rows.append(row)
+    return pd.DataFrame(rows)
