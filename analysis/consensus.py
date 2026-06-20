@@ -29,6 +29,8 @@ from pathlib import Path
 from typing import Optional, List, TYPE_CHECKING
 from scipy.stats import wilcoxon
 
+from utils.cv_utils import compute_seed_errors
+
 if TYPE_CHECKING:
     from behav_utils.data.structures import ExperimentData
 
@@ -50,8 +52,8 @@ def _load_gs_assignment(
 ) -> dict:
     """Load GS assignment for one animal × one fit target."""
     ft_short = FT_LABEL[fit_target]
-    be_path = cv_dir / f'{distribution}_{fit_target}' / f'cv_{animal_id}_BE.pkl'
-    sc_path = cv_dir / f'{distribution}_{fit_target}' / f'cv_{animal_id}_SC.pkl'
+    be_path = cv_dir / f'{distribution}_{fit_target}' / f'{animal_id}_BE.pkl'
+    sc_path = cv_dir / f'{distribution}_{fit_target}' / f'{animal_id}_SC.pkl'
 
     if not be_path.exists() or not sc_path.exists():
         return {}
@@ -61,14 +63,8 @@ def _load_gs_assignment(
     with open(sc_path, 'rb') as f:
         sc_data = pickle.load(f)
 
-    be_errors = [
-        r['avg_test_error'] for r in be_data['results']
-        if not np.isnan(r.get('avg_test_error', np.nan))
-    ]
-    sc_errors = [
-        r['avg_test_error'] for r in sc_data['results']
-        if not np.isnan(r.get('avg_test_error', np.nan))
-    ]
+    be_errors, _ = compute_seed_errors(be_data)
+    sc_errors, _ = compute_seed_errors(sc_data)
 
     if not be_errors or not sc_errors:
         return {}

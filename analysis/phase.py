@@ -106,11 +106,14 @@ def is_opto_cohort(animal: AnimalData) -> bool:
     return animal.session_table['session_type'].isin(['opto', 'masking']).any()
 
 
-def compute_phase(animal: AnimalData, phase, cohort=None):
+def compute_phase(animal: AnimalData, phase, cohort=None, min_accuracy=None):
     """Pooled psychometric + update matrix per condition for one phase (report assembler).
 
     Returns three dicts keyed by condition label: clean (filtered sessions), psyc, um.
     A condition with no surviving sessions is None in all three.
+
+    min_accuracy is a session-quality floor applied to every panel, unless a panel's own
+    spec sets its own min_accuracy (in which case the panel's value wins). None = no floor.
     """
     if cohort is None:
         cohort = 'opto' if is_opto_cohort(animal) else 'non-opto'
@@ -118,7 +121,8 @@ def compute_phase(animal: AnimalData, phase, cohort=None):
 
     clean, psyc, um = {}, {}, {}
     for label, spec in panels.items():
-        sessions = filter_phase(animal, **spec)
+        call = {'min_accuracy': min_accuracy, **spec}   # spec wins if it sets its own
+        sessions = filter_phase(animal, **call)
         if not sessions:
             clean[label] = psyc[label] = um[label] = None
             continue

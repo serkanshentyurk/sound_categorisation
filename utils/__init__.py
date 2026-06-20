@@ -8,6 +8,7 @@ from utils.stimulus_distributions import (
     compute_normative_pse,
 )
 from utils.cv_utils import (
-    compute_gs_seed_errors, compute_cv_dataframes, params_to_str,
+    compute_seed_errors, compute_cv_dataframes, compare_models, params_to_str,
+    save_cv_result, load_cv_results, CVResults,
 )
 from utils.fold_utils import split_folds_by_block, merge_smallest_adjacent

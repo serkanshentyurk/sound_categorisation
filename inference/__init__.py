@@ -6,11 +6,11 @@ Flow:
     AmortisedSBI(...).train(n_sims) / .save / .load / .condition(sessions)
         -> posterior, point estimates              amortised.py   (train once,
                                                                     condition many)
-    compare_models(sessions, nets, ...)
-        -> {winner, per_model, p_value}            selection.py   (held-out UM/CP
-                                                                    CV, same protocol
-                                                                    as grid_search;
-                                                                    feeds consensus)
+    condition_sbi(sessions, net, model, ...)
+        -> per-rep held-out MSE results            selection.py   (held-out UM/CP
+                                                                    CV; the BE-vs-SC
+                                                                    call is
+                                                                    cv_utils.compare_models)
 
 The observation x is built by to_stat_vector (representation.py) for BOTH
 simulation (training) and conditioning, so train and test representations match.
@@ -22,7 +22,7 @@ Module structure:
     simulator.py      -- build_simulator, theta_to_params, get_param_names,
                           get_bounds_arrays, wrap_for_sbi
     amortised.py      -- AmortisedSBI (SNPE engine)
-    selection.py      -- compare_models (BE vs SC, held-out CV)
+    selection.py      -- condition_sbi (held-out CV; comparison in cv_utils)
 """
 
 from inference.types import (
@@ -35,7 +35,7 @@ from inference.simulator import (
     get_param_names, get_bounds_arrays, wrap_for_sbi,
 )
 from inference.amortised import AmortisedSBI
-from inference.selection import compare_models
+from inference.selection import condition_sbi
 
 __all__ = [
     'ModelType', 'ParamConfig', 'get_default_param_configs',
@@ -44,5 +44,5 @@ __all__ = [
     'build_simulator', 'theta_to_params',
     'get_param_names', 'get_bounds_arrays', 'wrap_for_sbi',
     'AmortisedSBI',
-    'compare_models',
+    'condition_sbi',
 ]

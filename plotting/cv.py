@@ -6,10 +6,10 @@ All computation (seed error extraction, dataframe building, statistical
 tests) has been moved to utils/cv_utils.py.
 
 Usage:
-    from utils.cv_utils import compute_gs_seed_errors, compute_cv_dataframes
+    from utils.cv_utils import compute_seed_errors, compute_cv_dataframes
     from plotting.cv import plot_cv_comparison, plot_winner_summary
 
-    errors, best = compute_gs_seed_errors(gs_pickle)
+    errors, best = compute_seed_errors(gs_pickle)
     long_df, comp_df = compute_cv_dataframes(animal_id, be_errors, sc_errors)
     fig = plot_cv_comparison(long_df, comp_df, animal_id)
 """
@@ -351,3 +351,75 @@ def plot_param_distributions(
     plt.tight_layout()
 
     return fig
+
+
+# =============================================================================
+# VALIDATION: MODEL-ID CONFUSION + PARAMETER RECOVERY
+# =============================================================================
+# Draw-only, single-panel, ax-driven — for synthetic cohorts where ground truth
+# is known. Shared by the GS and SBI validation notebooks; both operate on the
+# comparison / recovery frames returned by utils.cv_utils.load_cv_results.
+
+def plot_confusion(comparison_df, ax: Optional[plt.Axes] = None,
+                   labels: Tuple[str, str] = ('BE', 'SC')) -> plt.Axes:
+    """Confusion matrix of identified vs true model (rows true, cols identified)."""
+    if ax is None:
+        _, ax = plt.subplots(figsize=(4, 4))
+
+    mat = np.zeros((len(labels), len(labels)), dtype=int)
+    for _, r in comparison_df.iterrows():
+        if r.get('true_model') in labels and r.get('winner') in labels:
+            mat[labels.index(r['true_model']), labels.index(r['winner'])] += 1
+
+    total = mat.sum()
+    acc = np.trace(mat) / total if total else np.nan
+    ax.imshow(mat, cmap='Blues', vmin=0)
+    thresh = mat.max() / 2 if mat.max() else 0
+    for i in range(len(labels)):
+        for j in range(len(labels)):
+            ax.text(j, i, mat[i, j], ha='center', va='center',
+                    color='white' if mat[i, j] > thresh else 'black',
+                    fontweight='bold')
+
+    ax.set_xticks(range(len(labels)))
+    ax.set_xticklabels([f'{l} fit' for l in labels])
+    ax.set_yticks(range(len(labels)))
+    ax.set_yticklabels([f'true {l}' for l in labels])
+    ax.set_xlabel('Identified')
+    ax.set_ylabel('True')
+    ax.set_title(f'Model ID: {acc:.0%} ({int(np.trace(mat))}/{int(total)})')
+    return ax
+
+
+def plot_recovery(recovery_df, param: str, ax: Optional[plt.Axes] = None) -> plt.Axes:
+    """True vs recovered scatter for one parameter (true-model fit), identity line."""
+    if ax is None:
+        _, ax = plt.subplots(figsize=(4, 4))
+
+    sub = recovery_df[recovery_df['param'] == param]
+    if sub.empty:
+        ax.text(0.5, 0.5, f'{param}: no data', ha='center', va='center',
+                transform=ax.transAxes)
+        return ax
+
+    for model in ('BE', 'SC'):
+        m = sub['true_model'] == model
+        if m.any():
+            ax.scatter(sub.loc[m, 'true_value'], sub.loc[m, 'recovered_value'],
+                       c=COLOURS.get(model, 'grey'), s=30, alpha=0.8,
+                       edgecolors='none', label=f'true {model}')
+
+    t = sub['true_value'].to_numpy()
+    rec = sub['recovered_value'].to_numpy()
+    lo, hi = float(min(t.min(), rec.min())), float(max(t.max(), rec.max()))
+    pad = 0.05 * (hi - lo + 1e-9)
+    ax.plot([lo - pad, hi + pad], [lo - pad, hi + pad], '--',
+            color='grey', alpha=0.5, linewidth=1)
+
+    rr = np.corrcoef(t, rec)[0, 1] if len(t) > 1 else np.nan
+    ax.set_xlabel(f'true {param}', fontsize=9)
+    ax.set_ylabel(f'recovered {param}', fontsize=9)
+    ax.set_title(f'{param}  (r={rr:.2f})', fontsize=10)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    return ax

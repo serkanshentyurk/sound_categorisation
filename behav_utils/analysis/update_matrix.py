@@ -226,7 +226,6 @@ def compute_um(
             prev_stimuli=pooled['prev_stimuli'],
             prev_choices=pooled['prev_choices'],
             prev_categories=pooled['prev_categories'],
-            prev_has_prev=pooled['prev_has_prev'],
         )
         return {
             'mode': 'pooled', 'um': um, 'conditional_matrix': conditional,
@@ -248,7 +247,6 @@ def compute_um(
                 prev_stimuli=a['prev_stimuli'],
                 prev_choices=a['prev_choices'],
                 prev_categories=a['prev_categories'],
-                prev_has_prev=a['prev_has_prev'],
             )
             per_session.append({
                 'session_id': getattr(sess, 'session_id', None),

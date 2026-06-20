@@ -34,6 +34,38 @@ SYNTH_COHORTS_DIR = VALIDATION_DIR / 'synthetic_cohorts'
 LOGS_DIR = RESULTS_DIR / 'logs'
 
 
+# --- External data root (results live outside the repo) -----------------------
+# Mirrors scripts/snapshot.py: local = <repo>/../../data, cluster = ceph Processed.
+# The old RESULTS_DIR constants above are kept for back-compat with legacy
+# scripts; new validation/results paths should derive from data_root().
+_CLUSTER_DATA_ROOT = Path('/ceph/akrami/Serkan/Head_Fixed_Behavior/Data/Processed')
+
+
+def _on_cluster() -> bool:
+    return any(x in socket.gethostname() for x in ('hpc', 'gpu', 'enc', 'sgw'))
+
+
+def data_root(repo_root: Path = None) -> Path:
+    """Machine-aware results root. Local: <repo>/../../data. Cluster: ceph Processed."""
+    if _on_cluster():
+        return _CLUSTER_DATA_ROOT
+    return (repo_root or REPO_ROOT).parent.parent / 'data'
+
+
+def cohort_path(cohort: str) -> Path:
+    """Shared synthetic-cohort pickle (used by both GS and SBI validation)."""
+    return data_root() / 'synthetic_cohorts' / f'{cohort}.pkl'
+
+
+def results_dir(method: str, run: str, cohort: str, fit_target: str) -> Path:
+    """Per-(animal, model) results directory. method='grid_search'|'sbi', run='quick'|'full'."""
+    return data_root() / method / run / f'{cohort}_{fit_target}'
+
+
+def snpe_networks_dir() -> Path:
+    return data_root() / 'snpe_networks'
+
+
 # =============================================================================
 # FIT TARGETS (shared vocabulary)
 # =============================================================================
@@ -80,7 +112,22 @@ SBI_N_STOCHASTIC_REPS = 10
 # Synthetic validation cohorts
 SYNTH_N_PER_MODEL = 20
 SYNTH_N_SESSIONS = 15
-SYNTH_TRIALS_PER_SESSION = 350
+SYNTH_TRIALS_PER_SESSION = 600   # cohort/validation session length (~ real expert sessions)
+
+# SBI representations: 3 networks x 2 models = 6. N/mode flow into AmortisedSBI;
+# n_simulations is per-rep (moments is 52-dim, so it needs more than the 13-dim reps).
+SBI_TRAIN_T = 350   # pooled/moments training length; DECOUPLED from the cohort.
+# Per-rep training length T. pooled/moments train on 350-trial sessions: they pool
+# many sessions, so 350 each suffices, and conditioning on the longer (600-trial)
+# cohort is the benign direction (more data than trained -> point estimate holds).
+# The single net trains on 600-trial sessions to match the cohort's full-session
+# conditioning; condition_sbi splits each session at its midpoint, so the single
+# net's CV folds land at ~300 trials.
+SBI_REPRESENTATIONS = {
+    'pooled':  {'N': SYNTH_N_SESSIONS, 'T': SBI_TRAIN_T, 'mode': 'pooled',  'n_simulations':  50_000},
+    'moments': {'N': SYNTH_N_SESSIONS, 'T': SBI_TRAIN_T, 'mode': 'moments', 'n_simulations': 150_000},
+    'single':  {'N': 1,                'T': 600,         'mode': 'pooled',  'n_simulations':  50_000},
+}
 
 # Smoke test: used when --smoke-test is passed on the command line
 SMOKE_GS_N_SEEDS = 2

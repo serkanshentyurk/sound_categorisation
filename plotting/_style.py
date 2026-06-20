@@ -9,3 +9,10 @@ PARAM_COLOURS = {
     'gamma':        '#9467bd',   # purple (SC)
     'sigma_update': '#8c564b',   # brown  (SC)
 }
+
+# Per-condition colours for the opto / masking session breakdown.
+CONDITION_COLOURS = {
+    'baseline': '#1f77b4', 'regular': '#1f77b4', 'masking': '#ff7f0e',
+    'all_opto': '#2ca02c', 'opto_off': '#9467bd', 'opto_on': '#d62728',
+    'post_opto': '#8c564b',
+}
