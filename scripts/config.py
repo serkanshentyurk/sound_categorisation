@@ -22,22 +22,12 @@ from inference.constants import SBI_STATS
 
 # Relative to repo root. Scripts should Path(__file__).parent.parent to reach it.
 REPO_ROOT = Path(__file__).resolve().parent.parent
-RESULTS_DIR = REPO_ROOT / 'results'
-
-# Sub-directories — scripts create these lazily.
-SNPE_DIR = RESULTS_DIR / 'snpe'
-CV_DIR = RESULTS_DIR / 'cv'
-SBI_STATIC_DIR = RESULTS_DIR / 'sbi_static'
-SBI_DYNAMIC_DIR = RESULTS_DIR / 'sbi_dynamic'
-VALIDATION_DIR = RESULTS_DIR / 'validation'
-SYNTH_COHORTS_DIR = VALIDATION_DIR / 'synthetic_cohorts'
-LOGS_DIR = RESULTS_DIR / 'logs'
 
 
 # --- External data root (results live outside the repo) -----------------------
 # Mirrors scripts/snapshot.py: local = <repo>/../../data, cluster = ceph Processed.
-# The old RESULTS_DIR constants above are kept for back-compat with legacy
-# scripts; new validation/results paths should derive from data_root().
+# All results / validation / cohort paths derive from data_root() — see
+# results_dir(), cohort_path(), snpe_networks_dir() below.
 _CLUSTER_DATA_ROOT = Path('/ceph/akrami/Serkan/Head_Fixed_Behavior/Data/Processed')
 
 
@@ -229,13 +219,6 @@ def _get_git_sha() -> str:
     except Exception:
         pass
     return 'unknown'
-
-
-def ensure_dirs():
-    """Create all standard results subdirectories if they don't exist."""
-    for d in [RESULTS_DIR, SNPE_DIR, CV_DIR, SBI_STATIC_DIR,
-              SBI_DYNAMIC_DIR, VALIDATION_DIR, SYNTH_COHORTS_DIR, LOGS_DIR]:
-        d.mkdir(parents=True, exist_ok=True)
 
 
 def apply_smoke_test_overrides(config_dict: dict) -> dict:

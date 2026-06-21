@@ -16,34 +16,33 @@ sound_categorisation/
 │
 ├── models/             # BE and SC computational models
 │
-├── inference/          # SBI (amortised; per-state by conditioning per window)
+├── inference/          # SBI (amortised; retrained per window as needed)
 │   ├── amortised.py    #   - AmortisedSBI (pooled, manuscript path)
-│   ├── comparison.py   #   - held-out CV: SBI-UM / SBI-CP votes
-│   ├── simulator.py    #   - model→simulator wrappers (CV path)
+│   ├── simulator.py    #   - model→simulator wrappers + prior
+│   ├── representation.py  # - sessions → summary-stat vector
+│   ├── selection.py    #   - condition_sbi: held-out UM/CP per (animal, model)
 │   ├── types.py        #   - ModelType, ParamConfig
 │   └── constants.py    #   - SBI_STATS
 │
 ├── analysis/           # Real-data analyses
-│   ├── consensus.py    #   - 4-method model selection vote
+│   ├── consensus.py    #   - cross-method BE/SC consensus vote
 │   ├── grid_search.py  #   - GS-CV pipeline (manuscript protocol)
-│   ├── opto.py         #   - opto phase assignment
+│   ├── phase.py        #   - phase / opto-phase assignment
 │   └── adaptation.py   #   - distribution-shift detection
 │
-├── validation/         # Synthetic-data testing of the pipeline
-│   ├── cohorts.py      #   - synthetic cohort generators
-│   ├── model_id.py     #   - GS-CV model identification accuracy
-│   └── sbi.py          #   - SBC + parameter recovery diagnostics
+├── validation/         # Synthetic-data diagnostics
+│   └── feature_diagnostics.py  # - which stats separate BE vs SC
 │
 ├── utils/              # Math primitives + CV helpers
 │   ├── stimulus_distributions.py  #   - Hard-A/B density + normative observer
-│   ├── cv_utils.py                #   - empirical/simulated UM helpers
+│   ├── cv_utils.py                #   - neutral CV schema + BE-vs-SC comparator
 │   └── fold_utils.py              #   - block-aware CV fold construction
 │
 ├── plotting/           # Project-specific visualisations
 │   ├── assignment.py              #   - animal × method assignment strip
-│   ├── cv.py                      #   - CV result summaries
+│   ├── overview.py                #   - experiment timeline
+│   ├── cv.py                      #   - CV summaries + confusion/recovery
 │   ├── sbi_posterior.py           #   - posterior plots
-│   ├── sbi_trajectories.py        #   - time-varying parameter plots
 │   └── sbi_validation.py          #   - SBC + recovery diagnostics
 │
 ├── scripts/            # CLI entry points (being rebuilt; see notes below)
@@ -103,45 +102,47 @@ Each step is visible at the call site. No function does two pipeline steps in on
 
 ### `inference/`
 
-Amortised SBI only. The network trains once on a curriculum and conditions on
-many animals; for per-SLDS-state estimation it is conditioned on each state's
-pooled trials (retrained per window length as needed). There is no RandomWalk /
-GP / per-animal linking machinery — the "dynamic" trajectory is a step function
-of independent per-state static fits with flat priors.
+Amortised SBI. A network is trained on simulated data (per representation and
+model type) and conditioned on real or synthetic animals; networks are cheap to
+retrain for any window length. There is no RandomWalk / GP / per-animal linking
+machinery. Model identification is held-out UM/CP MSE: `condition_sbi` produces
+the per-(animal, model) errors, and `utils.cv_utils.compare_models` makes the
+BE-vs-SC call.
 
 | File | Public API |
 |---|---|
-| `amortised.py` | `AmortisedSBI` (manuscript-protocol pooled SBI, matches GS-CV), `build_curriculum_simulator`, `compute_pooled_stats`, `compute_observed_stats_from_sessions`, `simulate_choices_from_params` |
-| `comparison.py` | `compute_cv_comparison`, `compute_model_comparison` (held-out UM/CP — the SBI-UM / SBI-CP votes) |
-| `simulator.py` | `Simulator`, `SimulatorConfig`, `create_be_simulator`, `create_sc_simulator`, `get_sbi_prior`, `wrap_for_sbi` |
+| `amortised.py` | `AmortisedSBI` — `train` / `save` / `load` / `condition` (pooled SBI, matches GS-CV) |
+| `simulator.py` | `build_simulator`, `theta_to_params`, `get_param_names`, `get_bounds_arrays`, `wrap_for_sbi` |
+| `representation.py` | `to_stat_vector` (sessions → summary-stat vector; pooled or moments mode) |
+| `selection.py` | `condition_sbi` (held-out UM/CP per (animal, model); BE-vs-SC is `utils.cv_utils.compare_models`) |
 | `types.py` | `ModelType`, `ParamConfig`, `get_default_param_configs` |
 | `constants.py` | `SBI_STATS` (the ten heuristic summary stats) |
 
-`from inference import AmortisedSBI, compute_cv_comparison, ...` — see `inference/__init__.py` for the full export list.
+`from inference import AmortisedSBI, condition_sbi, ...` — see `inference/__init__.py` for the full export list.
 
 ### `analysis/`
 
 | File | Public API |
 |---|---|
-| `consensus.py` | `compute_consensus_summary`, `load_all_assignments` |
-| `grid_search.py` | `compute_grid_search_cv`, `compute_sessions_blocked`, `compute_static_vs_dynamic`, `simulate_model_matrices`, `ParameterGrid`, `DEFAULT_GRID`, `COARSE_GRID` |
-| `opto.py` | `assign_opto_phases` |
+| `consensus.py` | `load_all_assignments`, `compute_consensus_summary` (cross-method BE/SC consensus over the neutral CV schema) |
+| `grid_search.py` | `compute_grid_search_cv`, `simulate_model_matrices`, `sessions_to_arrays`, `ParameterGrid`, `DEFAULT_GRID`, `COARSE_GRID` |
+| `phase.py` | `compute_phase`, `filter_phase`, `is_opto_cohort`, `PANELS`, `PHASE_ORDER` |
 | `adaptation.py` | `detect_shifts` |
 
 ### `validation/`
 
 | File | Public API |
 |---|---|
-| `cohorts.py` | `make_synthetic_cohort`, `make_learning_cohort`, `generate_session_with_distribution` |
-| `model_id.py` | `run_gs_model_id` |
-| `sbi.py` | `compute_sbc_ranks`, `compute_parameter_recovery`, `compute_param_stat_correlations` |
+| `feature_diagnostics.py` | `compute_param_stat_correlations` (which summary stats separate BE vs SC) |
+
+Synthetic-cohort generation lives in `scripts/validation/generate_synthetic_cohort.py` (`generate_cohort`, plus a CLI).
 
 ### `utils/`
 
 | File | Public API |
 |---|---|
 | `stimulus_distributions.py` | `sample_distribution`, `compute_distribution_density`, `compute_normative_pse` |
-| `cv_utils.py` | `compute_empirical_um`, `simulate_model_um`, `compute_gs_seed_errors`, `compute_cv_dataframes`, `params_to_str` |
+| `cv_utils.py` | `compare_models`, `compute_seed_errors`, `save_cv_result`, `load_cv_results`, `params_to_str` (neutral CV schema + method-agnostic BE-vs-SC comparator) |
 | `fold_utils.py` | `split_folds_by_block`, `merge_smallest_adjacent` |
 
 ### `plotting/`
@@ -149,9 +150,9 @@ of independent per-state static fits with flat priors.
 | File | Public API |
 |---|---|
 | `assignment.py` | `plot_assignment_strip` |
-| `cv.py` | `plot_cv_comparison`, `plot_winner_summary`, `plot_update_matrix`, `plot_um_comparison`, `plot_param_distributions` |
+| `overview.py` | `plot_timeline` |
+| `cv.py` | `plot_cv_comparison`, `plot_winner_summary`, `plot_update_matrix`, `plot_um_comparison`, `plot_param_distributions`, `plot_confusion`, `plot_recovery` |
 | `sbi_posterior.py` | `plot_marginal_posteriors`, `plot_pairplot`, `plot_posterior_psychometric` |
-| `sbi_trajectories.py` | `plot_parameter_trajectories`, `plot_performance_trajectory`, `plot_learning_trajectory` |
 | `sbi_validation.py` | `plot_sbc_ranks`, `plot_sbc_ecdf`, `plot_recovery_scatter`, `plot_recovery_bias`, `plot_param_stat_correlations` |
 
 For pair-comparison plots (opto, pre/post shift, HET vs WT), use `behav_utils.plotting.comparison.plot_comparison`.
@@ -160,18 +161,15 @@ For pair-comparison plots (opto, pre/post shift, HET vs WT), use `behav_utils.pl
 
 ## Notebooks
 
-Organised by epistemic role, not topic: describe → validate → infer → characterise → manipulate.
+Organised by epistemic role, not topic: describe → validate → select → manipulate → characterise.
 
 | Decade | Role | Notebooks |
 |---|---|---|
-| `0x` | Foundations & inspection (real data, descriptive) | `01` data & task · `02` BE vs SC models · `05` opto visualiser (QC tool) |
-| `1x` | Methods & validation (synthetic ground truth) | `10` methods overview · `11` static validation · `12` SLDS + per-state validation |
-| `2x` | Static model selection (real data, single-state) | `20` four-method consensus → BE/SC labels |
-| `3x` | HMM/SLDS (real data) | `30` state assignment · `31` per-state selection + consistency |
-| `4x` | Per-state ("dynamic") SBI | `40` per-state trajectories (flat prior, credible bands) |
-| `5x` | Behavioural adaptation to shifts (Aim 1, model-free) | `50` shift detection, pre/post, recovery, cross-animal diversity |
-| `6x` | Optogenetics (Aim 2, causal) | `60` expert opto · `61` post-shift opto · `62` learning opto (future) |
-| `99` | Figure assembly (cross-cutting) | talks / manuscript figures pulled from 2x–6x |
+| `0x` | Foundations & inspection (real data, descriptive) | `00` behaviour QC · `01` animal overview · `02` BE vs SC comparison |
+| `1x` | Methods & validation (synthetic ground truth) | `10` feature extraction · `11` GS validation · `12` SBI validation · `13` HMM validation |
+| `2x` | Static model selection (real data, single-state) | `20` GS results · `21` SBI conditioning · `22` SBI results · `23` cross-method consensus → BE/SC labels |
+| `3x` | Optogenetics (Aim 2, causal) | `30` uniform · `31` hard · `32` session-by-session |
+| `4x` | State-space models (HMM / LDS / SLDS) | `40` HMM · `41` LDS · `42` SLDS · `43` rSLDS · `44` compare SSM results |
 
 `05` is the only notebook that is a standalone tool rather than a story step — it
 sits in `0x` because its job is inspecting real data. `12` validates the SLDS +
@@ -265,31 +263,13 @@ result = compute_group_comparison(df_on, df_off, label_a='opto_on', label_b='opt
 ### Static SBI on expert data (manuscript path)
 
 ```python
-from inference import AmortisedSBI
+from inference import AmortisedSBI, condition_sbi
 
-sbi = AmortisedSBI(model_type='be', curriculum=[('uniform', 3)])
-sbi.train(n_simulations=50_000)
-result = sbi.fit(expert_sessions)
-# result['cv_error'] = held-out CV error, comparable with GS-CV
-```
-
-### Per-state ("dynamic") SBI
-
-Parameter trajectories come from applying the *same* static `AmortisedSBI` to
-each SLDS state separately, with a flat prior per state — a step function, not a
-smooth RandomWalk. Each state is fit independently; read the trajectory with its
-credible bands (overlapping bands across adjacent states are not a parameter
-change).
-
-```python
-from inference import AmortisedSBI
-
-# states: list of (label, [SessionData ...]) from the SLDS assignment (NB 31)
-trajectory = {}
-for label, state_sessions in states:
-    sbi = AmortisedSBI(model_type='be', curriculum=[('uniform', 3)])
-    sbi.train(n_simulations=50_000)          # retrained per window length
-    trajectory[label] = sbi.fit(state_sessions)
+# Train once on simulated data (per representation + model), then condition.
+net = AmortisedSBI('be', N=15, T=350, mode='pooled')
+net.train(n_simulations=50_000)
+results = condition_sbi(expert_sessions, net, 'BE')   # held-out UM MSE per rep
+# BE-vs-SC: utils.cv_utils.compare_models, or load_cv_results over a results dir
 ```
 
 ---
