@@ -31,7 +31,13 @@ Real data::
 from __future__ import annotations
 
 import argparse
+import sys
 import time
+from pathlib import Path
+
+# Run as a plain script (python scripts/run_sbi.py) or a module
+# (python -m scripts.run_sbi): put the repo root on sys.path either way.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from inference.amortised import AmortisedSBI
 from inference.selection import condition_sbi

@@ -12,6 +12,7 @@ PANELS specs — it produces the same {clean, psyc, um} dicts the plot helpers c
 from __future__ import annotations
 
 from collections import OrderedDict
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -20,6 +21,7 @@ from behav_utils.data.ops.selection import select_sessions
 from behav_utils.data.ops.filtering import filter_trials, opto_mask
 from behav_utils.analysis.psychometry import compute_psychometric
 from behav_utils.analysis.update_matrix import compute_um
+from behav_utils.analysis.summary_stats import compute_summary_stats
 from behav_utils.analysis.downsample import calculate_min_n, compute_ds_x
 from behav_utils.analysis.session_features import compute_session_features
 from behav_utils.data.structures import AnimalData
@@ -183,4 +185,181 @@ def build_strip_df(animal: AnimalData, phases=None,
                     if stat != 'n_trials':
                         row[stat] = features.get(stat, np.nan)
                 rows.append(row)
+    return pd.DataFrame(rows)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Group-level aggregation (the group analog of compute_phase).
+#
+# Two averaging methods, presented as separate passes (not overlaid):
+#   'pooled'   : pool every animal's sessions for a panel into one megasession
+#                and compute once. Bands are TRIAL-LEVEL — descriptive only.
+#   'per_mouse': compute per animal, then average across animals. The
+#                psychometric band is BETWEEN-MOUSE SEM; the update matrix is the
+#                element-wise mean of the per-mouse matrices.
+# Both return {panel: result} in the same shape compute_phase produces, so the
+# same plotters (plot_psychometric, plot_um) draw either pass unchanged.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _average_psychometric(results):
+    """Grand-average psychometric from per-mouse compute_psychometric results.
+
+    The bins and x-grid are fixed across calls, so per-mouse curves and binned
+    points average directly. Returns a pooled-shape result whose curve_band is
+    the BETWEEN-MOUSE SEM (mean ± SEM), with n_fits = number of mice. params are
+    the mean of the per-mouse fit params (for annotation only — averaging sigmoid
+    params is approximate). None if no mouse fitted.
+    """
+    results = [r for r in results if r and r.get('success')]
+    if not results:
+        return None
+    x_fit = np.asarray(results[0]['x_fit'], float)
+    Y = np.vstack([np.asarray(r['y_fit'], float) for r in results])     # (n_mice, grid)
+    mean_y = np.nanmean(Y, axis=0)
+    sem_y = (np.nanstd(Y, axis=0, ddof=1) / np.sqrt(len(results))
+             if len(results) > 1 else np.zeros_like(mean_y))
+    B = np.vstack([np.asarray(r['bin_means'], float) for r in results])  # (n_mice, n_bins)
+    keys = ('mu', 'sigma', 'lapse_low', 'lapse_high')
+    params = {k: float(np.nanmean([r['params'][k] for r in results])) for k in keys}
+    return {
+        'mode': 'pooled',
+        'params': params,
+        'params_ci': {k: (np.nan, np.nan) for k in keys},
+        'curve_band': {'x': x_fit, 'median': mean_y,
+                       'lo': mean_y - sem_y, 'hi': mean_y + sem_y},
+        'bin_centres': np.asarray(results[0]['bin_centres'], float),
+        'bin_means': np.nanmean(B, axis=0),
+        'bin_counts': np.nansum(np.vstack([np.asarray(r['bin_counts'], float)
+                                           for r in results]), axis=0),
+        'x_fit': x_fit, 'y_fit': mean_y,
+        'n_trials': int(np.nansum([r['n_trials'] for r in results])),
+        'n_fits': len(results),
+        'success': True,
+    }
+
+
+def _average_um(results):
+    """Element-wise mean of per-mouse compute_um results (pooled shape)."""
+    results = [r for r in results if r is not None]
+    if not results:
+        return None
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore', category=RuntimeWarning)   # all-NaN cells
+        um = np.nanmean(np.stack([np.asarray(r['um'], float) for r in results]), axis=0)
+        cond = np.nanmean(np.stack([np.asarray(r['conditional_matrix'], float)
+                                    for r in results]), axis=0)
+    return {
+        'mode': 'pooled', 'um': um, 'conditional_matrix': cond,
+        'n_bins': results[0].get('n_bins', 8),
+        'n_sessions': int(np.nansum([r.get('n_sessions', 0) for r in results])),
+        'n_trials': int(np.nansum([r.get('n_trials', 0) for r in results])),
+        'info': {'n_mice': len(results)},
+    }
+
+
+def compute_group_phase(experiment, phase, animals, method='per_mouse',
+                        cohort='opto', min_accuracy=None, n_bootstrap=None):
+    """Group psychometric + update matrix per condition, for one genotype group.
+
+    Args:
+        experiment: ExperimentData.
+        phase: 'uniform' | 'hard_a' | 'hard_b'.
+        animals: animal ids in the group (e.g. the het ids). Pass a single
+            genotype — never mix het and wt.
+        method: 'per_mouse' (compute per mouse, average across mice — the
+            principled view, between-mouse SEM band) or 'pooled' (mega-pool all
+            mice's trials, compute once — descriptive, trial-level band).
+        cohort, min_accuracy: as compute_phase.
+        n_bootstrap: bootstrap reps for the 'pooled' band (default N_BOOTSTRAP).
+            Ignored by 'per_mouse', whose band is between-mouse SEM. The pooled
+            band is descriptive, so a modest value is fine and much faster.
+
+    Returns:
+        (psyc, um): dicts keyed by panel label, each value in compute_phase's
+        shape (or None if no data). Draw with plot_psychometric / plot_um.
+    """
+    if method not in ('per_mouse', 'pooled'):
+        raise ValueError(f"method must be 'per_mouse' or 'pooled', got {method!r}")
+    nboot = N_BOOTSTRAP if n_bootstrap is None else n_bootstrap
+    panels = PANELS[cohort][phase]
+    psyc, um = {}, {}
+    for label, spec in panels.items():
+        call = {'min_accuracy': min_accuracy, **spec}
+        if method == 'pooled':
+            sessions = []
+            for aid in animals:
+                sessions += filter_phase(experiment.animals[aid], **call)
+            if not sessions:
+                psyc[label] = um[label] = None
+                continue
+            try:
+                psyc[label] = compute_psychometric(sessions, mode='pooled',
+                                                   n_bins=8, n_bootstrap=nboot)
+            except Exception:
+                psyc[label] = None
+            try:
+                um[label] = compute_um(sessions)
+            except Exception:
+                um[label] = None
+        else:  # per_mouse
+            pm_psyc, pm_um = [], []
+            for aid in animals:
+                s = filter_phase(experiment.animals[aid], **call)
+                if not s:
+                    continue
+                try:
+                    pm_psyc.append(compute_psychometric(s, mode='pooled',
+                                                        n_bins=8, n_bootstrap=0))
+                except Exception:
+                    pass
+                try:
+                    pm_um.append(compute_um(s))
+                except Exception:
+                    pass
+            psyc[label] = _average_psychometric(pm_psyc)
+            um[label] = _average_um(pm_um)
+    return psyc, um
+
+
+def compute_group_stats(experiment, phase, animals, method='per_mouse',
+                        stats=('accuracy', 'win_stay', 'lose_shift', 'recency'),
+                        cohort='opto', min_accuracy=None):
+    """Group summary stats per condition (the data behind the group bar plots).
+
+    Same two methods as compute_group_phase. Returns a tidy DataFrame:
+        method='per_mouse' : one row per (animal, panel, stat) — box/strip these.
+        method='pooled'    : one row per (panel, stat) on the megasession — a
+                             single value per condition (no between-mouse spread).
+    Both carry n_trials. Pass a single genotype.
+    """
+    if method not in ('per_mouse', 'pooled'):
+        raise ValueError(f"method must be 'per_mouse' or 'pooled', got {method!r}")
+    panels = PANELS[cohort][phase]
+    stats = list(stats)
+    rows = []
+    for label, spec in panels.items():
+        call = {'min_accuracy': min_accuracy, **spec}
+        if method == 'pooled':
+            sessions = []
+            for aid in animals:
+                sessions += filter_phase(experiment.animals[aid], **call)
+            if not sessions:
+                continue
+            vals = compute_summary_stats(sessions, stat_names=stats,
+                                         mode='pooled').get('stats', {})
+            n_tr = sum(s.trials.n_trials for s in sessions)
+            for st in stats:
+                rows.append(dict(panel=label, stat=st, value=vals.get(st, np.nan),
+                                 n_trials=n_tr))
+        else:
+            for aid in animals:
+                s = filter_phase(experiment.animals[aid], **call)
+                if not s:
+                    continue
+                vals = compute_summary_stats(s, stat_names=stats,
+                                             mode='pooled').get('stats', {})
+                n_tr = sum(ss.trials.n_trials for ss in s)
+                for st in stats:
+                    rows.append(dict(animal=aid, panel=label, stat=st,
+                                     value=vals.get(st, np.nan), n_trials=n_tr))
     return pd.DataFrame(rows)

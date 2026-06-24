@@ -39,13 +39,8 @@ PATH_CONFIG = _PROJECT_ROOT / 'config.yaml'
 STAGE = 'Full_Task_Cont'
 MIN_SESSIONS = 5
 
-# ── Results paths (single source of truth for all notebooks) ───────────────
-RESULTS_DIR = _PROJECT_ROOT / 'results'
-SNPE_DIR = RESULTS_DIR / 'snpe'
-CV_DIR = RESULTS_DIR / 'cv'
-SBI_STATIC_DIR = RESULTS_DIR / 'sbi_static'
-SBI_DYNAMIC_DIR = RESULTS_DIR / 'sbi_dynamic'
-VALIDATION_DIR = RESULTS_DIR / 'validation'
+# ── Results paths: derive from data_root() (scripts/config.py) ─────────────
+from scripts.config import data_root, results_dir, cohort_path, snpe_networks_dir
 
 FIT_TARGETS = ['update_matrix', 'conditional_psych']
 FT_LABEL = {'update_matrix': 'UM', 'conditional_psych': 'CP'}
@@ -107,7 +102,7 @@ def load_snpe_networks(snpe_dir: Optional[Path] = None, distribution: str = 'uni
     """
     import pickle
 
-    snpe_dir = snpe_dir or SNPE_DIR
+    snpe_dir = snpe_dir or snpe_networks_dir()
     snpe = {}
     for model in ['be', 'sc']:
         p = snpe_dir / f'{distribution}_{model}.pkl'
