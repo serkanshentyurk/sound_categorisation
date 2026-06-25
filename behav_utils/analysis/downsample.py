@@ -22,6 +22,9 @@ from behav_utils.data.structures import SessionData
 from behav_utils.data.ops.filtering import pool_arrays, filter_trial_data
 from behav_utils.analysis.psychometry import compute_psychometric, _PARAMS
 from behav_utils.analysis.update_matrix import compute_um
+from behav_utils.analysis.summary_stats import (
+    fit_summary_stats, get_stat_names_expanded, is_exchangeable,
+)
 
 
 def _pair_base_mask(pooled) -> np.ndarray:
@@ -205,3 +208,88 @@ def compute_ds_x(clean, stat, n, n_repeats=100, with_replacement=True, n_bins=8,
                         n_bins=n_bins, rng=rng)
         repeats.append(spec['compute'](ds, n_bins))
     return {'repeats': repeats, 'aggregated': spec['aggregate'](repeats, n, n_bins)}
+
+
+# ── resample-and-recompute for scalar/param summary stats ───────────────────────
+def resample_stat_vectors(
+    clean,
+    stat_names,
+    *,
+    n=None,
+    n_repeats=1000,
+    with_replacement=True,
+    unit='trials',
+    seed=0,
+):
+    """Resample trials K times and recompute summary stats — one matrix of replicates.
+
+    The single resample-and-recompute engine for scalar / psychometric-parameter
+    stats. It is the scalar analogue of :func:`compute_ds_x` (which targets the
+    curve / update matrix), and serves BOTH uses via its arguments:
+
+      * trial bootstrap   — ``with_replacement=True``,  ``n=None`` (natural count)
+      * matched-n draw     — ``with_replacement=False``, ``n=target_n``
+
+    Drawing is delegated to :func:`downsample`, so the frozen lag-1 ``prev_*``
+    pairing is preserved on every resample (a repeated trial index carries its own
+    predecessor). Stats registered ``exchangeable=False`` are refused: trial
+    resampling is invalid for order-dependent stats and would return a
+    confidently-wrong interval.
+
+    Args:
+        clean:           list of [SessionData], abort/opto-cleared (a phase/condition).
+        stat_names:      registry stat names (psychometric expands downstream).
+        n:               trials/pairs to draw per repeat; None → the natural count
+                         of ``unit`` in ``clean`` (the right default for a bootstrap).
+        n_repeats:       number of resamples (rows of the returned matrix).
+        with_replacement: True for a bootstrap resample, False for a clean subsample.
+        unit:            'trials' (responded trials) or 'pairs' (post-correct pairs).
+        seed:            RNG seed.
+
+    Returns:
+        np.ndarray of shape ``(n_repeats, n_flat)`` where ``n_flat ==
+        len(get_stat_names_expanded(stat_names))`` and columns are in that order.
+        Rows where the draw was empty are NaN.
+
+    Raises:
+        ValueError: if any requested stat is not trial-exchangeable.
+    """
+    bad = [s for s in stat_names if not is_exchangeable(s)]
+    if bad:
+        raise ValueError(
+            f"trial resampling is invalid for order-dependent stat(s) {bad}; "
+            f"exclude them from the bootstrap / downsample (they depend on trial "
+            f"order beyond the frozen lag-1 view)."
+        )
+
+    rng = np.random.default_rng(seed)
+    names = get_stat_names_expanded(stat_names)
+    out = np.full((n_repeats, len(names)), np.nan)
+
+    if not clean:
+        return out
+
+    if n is None:
+        pooled0 = pool_arrays(clean)
+        if pooled0['n_trials'] == 0:
+            return out
+        n = len(_pool_index(pooled0, unit))
+    if n <= 0:
+        return out
+
+    for r in range(n_repeats):
+        drawn = downsample(clean, n, unit=unit,
+                           with_replacement=with_replacement, rng=rng)
+        if not drawn:
+            continue
+        pooled = pool_arrays(drawn)
+        vals = fit_summary_stats(
+            pooled['choices'], pooled['stimuli'], pooled['categories'],
+            prev_choices=pooled['prev_choices'],
+            prev_stimuli=pooled['prev_stimuli'],
+            prev_categories=pooled['prev_categories'],
+            stat_names=stat_names, return_dict=False,
+        )
+        out[r] = np.asarray(vals, dtype=float)
+
+    return out

@@ -39,6 +39,21 @@ from behav_utils.analysis.comparison import compute_comparison
 from behav_utils.analysis.session_raster import compute_session_raster
 from behav_utils.analysis.session_features import compute_session_features
 
+# Exchangeability flag (whether trial resampling is valid for a stat)
+from behav_utils.analysis.summary_stats import is_exchangeable
+
+# Resample-and-recompute engine + matched-n target
+from behav_utils.analysis.downsample import resample_stat_vectors, calculate_min_n
+
+# Tier A: sessions -> tidy stat table (the only layer touching SessionData)
+from behav_utils.analysis.stats_table import StatTable, extract_stats, extract_matched
+
+# Tier B: combination / resampling / testing on plain tables and arrays
+from behav_utils.analysis.group import (
+    combine, paired_diff, bootstrap_units, rank_test, average_arrays,
+)
+
+
 __all__ = [
     # Utils
     'cumulative_gaussian', 'generate_stimuli',
@@ -58,6 +73,17 @@ __all__ = [
     'compute_trajectory',
     'compute_comparison',
     'compute_session_raster',
-    'compute_session_features'
-]
+    'compute_session_features',
 
+    # Exchangeability of stats (trial-resampling validity)
+    'is_exchangeable',
+
+    # Resample-and-recompute engine (bootstrap + matched-n) for scalar stats
+    'resample_stat_vectors', 'calculate_min_n',
+
+    # Tier A: sessions -> tidy stat table
+    'StatTable', 'extract_stats', 'extract_matched',
+
+    # Tier B: tidy table / arrays -> numbers
+    'combine', 'paired_diff', 'bootstrap_units', 'rank_test', 'average_arrays',
+]

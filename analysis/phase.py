@@ -66,14 +66,37 @@ def filter_phase(animal: AnimalData, dist, session_type, trial_type=None,
         return []
 
     if trial_type in (None, 'all'):
-        return filter_trials(sessions, exclude_opto=False, exclude_abort=exclude_abort,
-                             min_trials=min_trials)
-    if trial_type not in _TRIAL_DELTA:
-        raise ValueError(f"trial_type must be None/'all'/'opto'/'opto_off'/'post_opto', "
-                         f"got {trial_type!r}")
-    delta = _TRIAL_DELTA[trial_type]
-    return filter_trials(sessions, mask_fn=lambda s: opto_mask(s.trials, delta=delta),
-                         min_trials=min_trials)
+        out = filter_trials(sessions, exclude_opto=False, exclude_abort=exclude_abort,
+                            min_trials=min_trials)
+    else:
+        if trial_type not in _TRIAL_DELTA:
+            raise ValueError(f"trial_type must be None/'all'/'opto'/'opto_off'/'post_opto', "
+                             f"got {trial_type!r}")
+        delta = _TRIAL_DELTA[trial_type]
+        out = filter_trials(sessions, mask_fn=lambda s: opto_mask(s.trials, delta=delta),
+                            min_trials=min_trials)
+    return _stamp_selection(out, dist, session_type, trial_type)
+
+
+def _stamp_selection(sessions, dist, session_type, trial_type):
+    """Record the scientific selection on each session's filter_info.
+
+    Writes the reserved ``filter_info['selection']`` dict that
+    ``behav_utils.analysis.extract_stats`` reads back as default meta, so the
+    distribution / session_type / trial_type travel with the filtered sessions
+    and the stat table self-describes without the caller restating them. Keys are
+    the user-facing labels ('hard_a', not 'Hard-A'), to match PHASE_ORDER.
+    """
+    sel = {
+        'distribution': dist,
+        'session_type': session_type,
+        'trial_type': trial_type or 'all',
+    }
+    for s in sessions:
+        if s.filter_info is None:          # filter_trials always sets it; defensive
+            s.filter_info = {}
+        s.filter_info['selection'] = dict(sel)
+    return sessions
 
 
 # ── Report panels: label -> filter_phase kwargs (faithful to the old presets) ────

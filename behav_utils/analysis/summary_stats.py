@@ -56,14 +56,32 @@ LOGISTIC_L2_PENALTY = 0.1  # L2 regularisation strength for logistic history reg
 
 SUMMARY_REGISTRY: Dict[str, Callable] = {}
 
+# Whether a registered stat is *trial-exchangeable*: i.e. whether resampling
+# trials (with replacement, carrying the frozen lag-1 prev_* arrays) is a valid
+# operation for it. True for memoryless and lag-1 conditional stats (accuracy,
+# psychometric, recency, win_stay, lose_shift, ...). False for order-dependent
+# stats whose value depends on the trial sequence beyond lag 1 (multi-lag
+# regressions, run-length perseveration, transition matrices). The trial-level
+# bootstrap / downsampler refuses to resample a non-exchangeable stat rather
+# than return a confidently-wrong interval.
+STAT_EXCHANGEABLE: Dict[str, bool] = {}
 
-def register_stat(name: str):
-    """Decorator to register a summary statistic function."""
+
+def register_stat(name: str, *, exchangeable: bool = True):
+    """Decorator to register a summary statistic function.
+
+    Args:
+        name: Registry key.
+        exchangeable: Whether trial resampling is valid for this stat (see
+            ``STAT_EXCHANGEABLE``). Defaults to True; set False for any stat
+            that depends on trial order beyond the frozen lag-1 view.
+    """
     def decorator(func: Callable):
         @wraps(func)
         def wrapper(*args, **kwargs):
             return func(*args, **kwargs)
         SUMMARY_REGISTRY[name] = wrapper
+        STAT_EXCHANGEABLE[name] = exchangeable
         return wrapper
     return decorator
 
@@ -71,6 +89,15 @@ def register_stat(name: str):
 def list_available_stats() -> List[str]:
     """List all registered summary statistics."""
     return list(SUMMARY_REGISTRY.keys())
+
+
+def is_exchangeable(name: str) -> bool:
+    """Whether trial resampling (bootstrap / downsample) is valid for ``name``.
+
+    Unknown names default to True (the registry default). Order-dependent stats
+    are registered with ``exchangeable=False``.
+    """
+    return STAT_EXCHANGEABLE.get(name, True)
 
 
 # =============================================================================
@@ -450,7 +477,7 @@ def compute_choice_entropy(choices: np.ndarray, stimuli: np.ndarray,
     return _compute_single(choices, stimuli, categories)
 
 
-@register_stat('perseveration')
+@register_stat('perseveration', exchangeable=False)
 def compute_perseveration(choices: np.ndarray, stimuli: np.ndarray,
                           categories: np.ndarray,
                           prev_choices: Optional[np.ndarray] = None,
@@ -510,7 +537,7 @@ def compute_perseveration(choices: np.ndarray, stimuli: np.ndarray,
     return observed_repeat - predicted_repeat
 
 
-@register_stat('logistic_history')
+@register_stat('logistic_history', exchangeable=False)
 def compute_logistic_history_weights(
     choices: np.ndarray, stimuli: np.ndarray,
     categories: np.ndarray, n_back: int = 3,
@@ -882,7 +909,7 @@ def compute_conditional_psychometric(
 
     return result
 
-@register_stat('update_matrix')
+@register_stat('update_matrix', exchangeable=False)
 def compute_update_matrix_stat(
     choices: np.ndarray, stimuli: np.ndarray,
     categories: np.ndarray,
@@ -1049,7 +1076,7 @@ def compute_recency_divergence(
     return _compute_single(choices, stimuli, categories)
 
 
-@register_stat('history_interaction_r2')
+@register_stat('history_interaction_r2', exchangeable=False)
 def compute_history_interaction_r2(
     choices: np.ndarray, stimuli: np.ndarray,
     categories: np.ndarray, n_back: int = 3,

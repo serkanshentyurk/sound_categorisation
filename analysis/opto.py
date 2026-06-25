@@ -24,11 +24,12 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional, Union, TYPE_CHECKING
+from typing import Dict, List, Optional, Sequence, Union, TYPE_CHECKING
 
-from analysis.phase import filter_phase, is_opto_cohort
+from analysis.phase import filter_phase, is_opto_cohort, MIN_TRIALS
 from behav_utils.analysis.summary_stats import compute_summary_stats
 from behav_utils.analysis.psychometry import compute_psychometric
+from behav_utils.analysis.stats_table import extract_stats
 
 if TYPE_CHECKING:
     from behav_utils.data.structures import ExperimentData
@@ -103,6 +104,89 @@ def _filter_phases(animal, phase, session_type, trial_type, min_trials):
         sessions += filter_phase(animal, p, session_type,
                                  trial_type=trial_type, min_trials=min_trials)
     return sessions
+
+
+def extract_opto_estimates(
+    experiment: 'ExperimentData',
+    *,
+    phases: Union[str, List[str]] = 'uniform',
+    stats: Sequence[str],
+    animals: Optional[List[str]] = None,
+    trial_types: Sequence[str] = ('opto', 'opto_off'),
+    session_type: str = 'opto',
+    n_boot: int = 0,
+    ci: float = 0.95,
+    exclude_abort: bool = True,
+    min_trials: int = MIN_TRIALS,
+    seed: int = 0,
+) -> pd.DataFrame:
+    """Per-animal stat estimates for the opto cohort, via filter_phase -> extract_stats.
+
+    The new-layer replacement for :func:`compute_opto_stats`. For each
+    animal x phase x trial_type: select the opto sessions and the laser condition
+    (:func:`filter_phase`), pool within the animal (:func:`extract_stats`), and
+    stack the per-animal estimate rows into one long frame — the
+    :attr:`StatTable.estimates` schema, ready for the Tier-B verbs.
+
+    No differencing or testing happens here: the caller runs ``paired_diff`` /
+    ``rank_test`` (:mod:`behav_utils.analysis.group`) on the result. ``distribution``,
+    ``session_type`` and ``trial_type`` ride along automatically from filter_phase's
+    provenance; ``genotype`` is attached from each animal (normalised to het/wt).
+
+    Phases are kept SEPARATE — each is a single-phase filter_phase call, distinguished
+    by the ``distribution`` column. This never pools Hard-A and Hard-B (which would
+    presuppose a mirror symmetry that has not been shown); pass them as separate
+    phases and contrast per phase downstream.
+
+    Args:
+        experiment:   ExperimentData (genotype read from each animal's metadata).
+        phases:       phase key or list ('uniform' | 'hard_a' | 'hard_b').
+        stats:        summary-stat names, passed straight to extract_stats.
+                      ``psychometric`` expands to mu/sigma/lapse_low/lapse_high;
+                      rename mu->pse, sigma->slope at the call site if wanted.
+        animals:      animal ids; None resolves to the whole opto cohort.
+        trial_types:  laser conditions to pull, each a filter_phase trial_type
+                      ('opto' | 'opto_off' | 'post_opto'). Note these are the
+                      filter_phase names, not the old 'nonopto'/'post' labels.
+        session_type: phase session_type to select (default 'opto').
+        n_boot:       within-animal bootstrap reps -> ci_lo_within / ci_hi_within.
+                      Only the curve-param QC consumes these, so pass 0 for the
+                      history stats and a positive value only for ['psychometric'].
+        ci:           CI level for the within-animal bootstrap.
+        exclude_abort, min_trials: passed to filter_phase.
+        seed:         bootstrap seed.
+
+    Returns:
+        A long DataFrame concatenated across animal x phase x trial_type, or an
+        empty DataFrame if nothing survived the selection.
+    """
+    if isinstance(phases, str):
+        phases = [phases]
+    if isinstance(trial_types, str):
+        trial_types = [trial_types]
+    animals = _opto_animals(experiment, animals)
+
+    frames = []
+    for aid in animals:
+        animal = experiment.animals[aid]
+        genotype = _norm_genotype(animal.genotype)
+        for phase in phases:
+            for trial_type in trial_types:
+                sessions = filter_phase(animal, phase, session_type,
+                                        trial_type=trial_type,
+                                        exclude_abort=exclude_abort,
+                                        min_trials=min_trials)
+                if not sessions:
+                    continue
+                stat_table = extract_stats(
+                    sessions, animal_id=aid, stats=stats, mode='pooled',
+                    n_boot=n_boot, ci=ci, seed=seed,
+                    meta={'genotype': genotype})
+                frames.append(stat_table.estimates)
+
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True)
 
 
 def compute_opto_stats(
