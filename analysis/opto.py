@@ -1,15 +1,19 @@
 """
 analysis/opto.py — opto-effect statistics.
 
-Two producers feed the opto analysis, both stat-agnostic (summary stats and
+Three producers feed the opto analysis, all stat-agnostic (summary stats and
 psychometric curve params flow through one frame):
 
-  compute_opto_stats      -> one value per (animal, condition, stat), pooled
-                             WITHIN animal. Feeds the per-animal tests and the
-                             Δ comparison. Unit of inference is the animal.
+  extract_opto_estimates  -> one value per (animal, condition, stat), pooled
+                             WITHIN animal, via the estimates-table layer
+                             (behav_utils.analysis.extract_stats). Feeds the
+                             per-animal tests and the Δ comparison (paired_diff /
+                             rank_test). Unit of inference is the animal.
   compute_opto_trajectory -> one value per (animal, condition, stat, session).
                              Feeds the trajectory plots ONLY. These per-session
                              rows must NOT be fed into a test (pseudoreplication).
+  compute_opto_comparisons -> per-animal pairwise psychometric comparison of two
+                             conditions (wraps behav_utils.compare_conditions).
 
 Conditions map to filter_phase trial-types:
     opto    -> 'opto'      (laser trials)
@@ -64,18 +68,6 @@ def _curve_point(params: dict, name: str) -> float:
     return params[_CURVE_KEY[name]]
 
 
-def _curve_value(psy: dict, name: str):
-    """(value, ci_lo, ci_hi) for one curve param from a pooled compute_psychometric result."""
-    params, ci = psy['params'], psy['params_ci']
-    v = _curve_point(params, name)
-    if name == 'lapse':
-        clo = min(ci['lapse_low'][0], ci['lapse_high'][0])
-        chi = max(ci['lapse_low'][1], ci['lapse_high'][1])
-    else:
-        clo, chi = ci[_CURVE_KEY[name]]
-    return v, clo, chi
-
-
 def _split_stats(stats):
     stats = list(stats or DEFAULT_STATS)
     curve = [s for s in stats if s in _CURVE_STATS]
@@ -122,9 +114,8 @@ def extract_opto_estimates(
 ) -> pd.DataFrame:
     """Per-animal stat estimates for the opto cohort, via filter_phase -> extract_stats.
 
-    The new-layer replacement for :func:`compute_opto_stats`. For each
-    animal x phase x trial_type: select the opto sessions and the laser condition
-    (:func:`filter_phase`), pool within the animal (:func:`extract_stats`), and
+    For each animal x phase x trial_type: select the opto sessions and the laser
+    condition (:func:`filter_phase`), pool within the animal (:func:`extract_stats`), and
     stack the per-animal estimate rows into one long frame — the
     :attr:`StatTable.estimates` schema, ready for the Tier-B verbs.
 
@@ -189,61 +180,6 @@ def extract_opto_estimates(
     return pd.concat(frames, ignore_index=True)
 
 
-def compute_opto_stats(
-    experiment: 'ExperimentData',
-    phase: Union[str, List[str]] = 'uniform',
-    stats: Optional[List[str]] = None,
-    conditions: Optional[Dict[str, str]] = None,
-    session_type: str = 'opto',
-    min_trials: int = 10,
-    n_bootstrap: int = 1000,
-    animals: Optional[List[str]] = None,
-) -> pd.DataFrame:
-    """Aggregate readouts S to the animal level (pooled within animal).
-
-    Returns a tidy DataFrame, one row per (animal, condition, stat): animal,
-    genotype, condition, stat, value, ci_lo, ci_hi, n_trials, n_sessions.
-    ci_lo/ci_hi are NaN for summary stats and the bootstrap CI for curve params
-    (the GoF / reliability gate).
-    """
-    conditions = conditions or DEFAULT_CONDITIONS
-    summary_stats, curve_stats = _split_stats(stats)
-    animals = _opto_animals(experiment, animals)
-
-    rows = []
-    for aid in animals:
-        animal = experiment.animals[aid]
-        geno = _norm_genotype(animal.genotype)
-        for cond_label, trial_type in conditions.items():
-            sessions = _filter_phases(animal, phase, session_type,
-                                      trial_type=trial_type, min_trials=min_trials)
-            n_sess = len(sessions)
-            n_tr = sum(s.trials.n_trials for s in sessions)
-
-            svals = {}
-            if summary_stats and sessions:
-                svals = compute_summary_stats(
-                    sessions, stat_names=summary_stats, mode='pooled').get('stats', {})
-            for s in summary_stats:
-                rows.append(dict(animal=aid, genotype=geno, condition=cond_label,
-                                 stat=s, value=svals.get(s, np.nan),
-                                 ci_lo=np.nan, ci_hi=np.nan,
-                                 n_trials=n_tr, n_sessions=n_sess))
-
-            psy = None
-            if curve_stats and sessions:
-                psy = compute_psychometric(sessions, mode='pooled',
-                                           n_bootstrap=n_bootstrap)
-            ok = bool(psy and psy.get('success'))
-            for s in curve_stats:
-                v, clo, chi = _curve_value(psy, s) if ok else (np.nan, np.nan, np.nan)
-                rows.append(dict(animal=aid, genotype=geno, condition=cond_label,
-                                 stat=s, value=v, ci_lo=clo, ci_hi=chi,
-                                 n_trials=n_tr, n_sessions=n_sess))
-
-    return pd.DataFrame(rows)
-
-
 def compute_opto_trajectory(
     experiment: 'ExperimentData',
     phase: Union[str, List[str]] = 'uniform',
@@ -264,7 +200,7 @@ def compute_opto_trajectory(
     (~tens of trials, sparse at informative levels), so many sessions fail or rail
     — the `success` column flags these. Curve-stat trajectories are a diagnostic
     only; the summary-stat trajectories (recency, win_stay, …) are the reliable
-    ones. The tested quantities remain the pooled values from compute_opto_stats.
+    ones. The tested quantities remain the pooled values from extract_opto_estimates.
     """
     conditions = conditions or DEFAULT_CONDITIONS
     summary_stats, curve_stats = _split_stats(stats)
@@ -309,24 +245,6 @@ def compute_opto_trajectory(
                             n_trials=entry.get('n_trials'), success=ok))
 
     return pd.DataFrame(rows)
-
-
-def compute_opto_delta(stats_df: pd.DataFrame,
-                       opto: str = 'opto', nonopto: str = 'nonopto') -> pd.DataFrame:
-    """Per-animal Δ = value[opto] − value[nonopto], one row per (animal, stat).
-
-    Returns: animal, genotype, stat, opto, nonopto, delta. This per-animal effect
-    is what the genotype comparison (HET-Δ vs WT-Δ) tests.
-    """
-    wide = (stats_df.pivot_table(index=['animal', 'genotype', 'stat'],
-                                 columns='condition', values='value')
-            .rename_axis(columns=None).reset_index())
-    for c in (opto, nonopto):
-        if c not in wide.columns:
-            have = [x for x in wide.columns if x not in ('animal', 'genotype', 'stat')]
-            raise ValueError(f"condition '{c}' not in stats_df (have {have})")
-    wide['delta'] = wide[opto] - wide[nonopto]
-    return wide[['animal', 'genotype', 'stat', opto, nonopto, 'delta']]
 
 
 def compute_opto_comparisons(

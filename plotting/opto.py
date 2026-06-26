@@ -5,8 +5,8 @@ Contract: every plot_x(data, …, ax=None) draws on a single Axes and does no
 analysis (no pooling, fitting, or statistical tests — those live in the
 notebooks). Inputs are the tidy frames from analysis/opto.py:
 
-    plot_delta_swarm     <- compute_opto_delta
-    plot_delta_paired    <- compute_opto_delta (per phase, concatenated)
+    plot_delta_swarm     <- paired_diff (the opto − nonopto Δ frame)
+    plot_delta_paired    <- paired_diff per phase, concatenated with a 'phase' column
     plot_stat_trajectory <- compute_opto_trajectory
 
 Genotype palette: het warm, wt cool.
@@ -32,7 +32,8 @@ def plot_delta_swarm(delta_df, stat: str, ax: Optional[plt.Axes] = None,
                      seed: int = 0) -> plt.Axes:
     """Per-animal Δ (opto − nonopto) for one stat, split by genotype.
 
-    delta_df: output of compute_opto_delta. Draws jittered per-animal points, a
+    delta_df: a per-animal Δ frame (e.g. paired_diff output, opto − nonopto). Draws
+    jittered per-animal points, a
     zero reference line, and a per-group median bar. `p_value`, if given, is
     annotated as text — it is NOT computed here (run the test in the notebook).
     """
@@ -114,7 +115,7 @@ def plot_delta_paired(delta_df, stat: str, ax: Optional[plt.Axes] = None,
                       genotype_order: Optional[Sequence[str]] = None) -> plt.Axes:
     """Per-animal Δ at phase_a vs phase_b, connected — the dispensability view.
 
-    delta_df: the per-phase compute_opto_delta outputs concatenated with a
+    delta_df: per-phase paired_diff Δ frames concatenated with a
     'phase' column. For one stat, each animal contributes a line from its
     phase_a Δ to its phase_b Δ (coloured by genotype), so a steepening of the
     opto effect from expert to post-shift shows up per animal. Only animals with
