@@ -294,24 +294,35 @@ Note: bootstrap band keys are `lo` and `hi`, not `lower`/`upper`.
 For across-animal comparisons (e.g. HET vs WT, or paired opto effects), use the
 group-level functions — never pool trials across animals.
 
+Tier A (`extract_stats`) turns each animal's sessions into one pooled row per
+stat; Tier B (`group`) tests the per-animal values. The *animal* is the unit.
+
 ```python
-from behav_utils.analysis.comparison import (
-    compute_per_animal_stats, compute_group_comparison
-)
+import pandas as pd
+from behav_utils.analysis import extract_stats, rank_test, paired_diff, bootstrap_units
+
+# One pooled row per animal; 'psychometric' expands to mu/sigma/lapse rows.
+def per_animal(animals, sessions_of, **meta_fn):
+    return pd.concat([
+        extract_stats(sessions_of(a), animal_id=a.animal_id,
+                      stats=['psychometric', 'accuracy'], mode='pooled',
+                      meta={k: f(a) for k, f in meta_fn.items()}).estimates
+        for a in animals
+    ], ignore_index=True)
 
 # Unpaired (cohort comparison: HET vs WT)
-df_het = compute_per_animal_stats(het_animals)
-df_wt  = compute_per_animal_stats(wt_animals)
-result = compute_group_comparison(df_het, df_wt,
-                                    label_a='HET', label_b='WT', paired=False)
-# result['p_values']['mu'] is the Mann-Whitney p
+points = per_animal(het_animals + wt_animals, lambda a: a.sessions,
+                    genotype=lambda a: a.genotype)
+mu = points[points.stat == 'mu']
+rank_test(mu[mu.genotype == 'het'].value.values,
+          mu[mu.genotype == 'wt'].value.values, paired=False)   # Mann-Whitney → {'p', ...}
 
-# Paired (condition comparison: opto-on vs opto-off within same animals)
-df_on  = compute_per_animal_stats(animals, sessions_per_animal=sessions_on)
-df_off = compute_per_animal_stats(animals, sessions_per_animal=sessions_off)
-result = compute_group_comparison(df_on, df_off,
-                                    label_a='opto_on', label_b='opto_off', paired=True)
-# result['p_values']['mu'] is the Wilcoxon p
+# Paired (opto-on vs opto-off within the same animals)
+on  = per_animal(animals, lambda a: sessions_on[a.animal_id],  condition=lambda a: 'opto_on')
+off = per_animal(animals, lambda a: sessions_off[a.animal_id], condition=lambda a: 'opto_off')
+points = pd.concat([on, off], ignore_index=True)
+delta = paired_diff(points, by='condition', a='opto_on', b='opto_off')  # per-animal Δ ('delta' col)
+bootstrap_units(delta[delta.stat == 'mu'].delta.values)                  # across-animal CI on the Δ
 ```
 
 ---

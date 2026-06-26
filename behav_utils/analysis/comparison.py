@@ -37,13 +37,10 @@ if TYPE_CHECKING:
     from behav_utils.data.structures import SessionData
 
 import numpy as np
-import pandas as pd
-from scipy.stats import fisher_exact, wilcoxon, mannwhitneyu
+from scipy.stats import fisher_exact
 
 from behav_utils.analysis.psychometry import fit_psychometric
 from behav_utils.analysis.update_matrix import fit_update_matrix
-
-from behav_utils import pool_arrays
 
 PARAM_NAMES = ('mu', 'sigma', 'lapse_low', 'lapse_high')
 
@@ -453,129 +450,3 @@ def compute_comparison(
 
     return result
 
-def compute_per_animal_stats(animals, 
-                             sessions_per_animal=None, 
-                             stat_keys=('mu', 'sigma', 'lapse_low', 'lapse_high', 'accuracy')):
-    """One row of summary stats per animal — the input to group-level comparison.
-
-    For each animal, trials are pooled across its sessions and a single
-    psychometric fit + accuracy are computed, giving one value per stat per
-    animal. This is the correct granularity for across-animal (group) claims:
-    the *animal* is the unit of analysis, not the trial.
-
-    Use this together with ``compute_group_comparison`` whenever the claim is
-    about a group of animals (e.g. HET vs WT). Do NOT use the trial-pooling
-    ``compute_comparison`` for group claims — pooling trials across animals
-    treats trials as independent, which inflates significance and ignores
-    between-animal variability.
-
-    Args:
-        animals: iterable of AnimalData.
-        sessions_per_animal: optional {animal_id: [SessionData]} to override
-            which sessions are used per animal (defaults to all of an animal's
-            sessions). Animals with no sessions are skipped.
-        stat_keys: which stats to keep as columns. Available: 'mu', 'sigma',
-            'lapse_low', 'lapse_high', 'accuracy'.
-
-    Returns:
-        DataFrame with one row per animal: 'animal_id', 'genotype',
-        'n_sessions', 'n_trials_total', plus the requested stat columns.
-    """
-    rows = []
-    for animal in animals:
-        sessions = (sessions_per_animal or {}).get(animal.animal_id, animal.sessions)
-        if not sessions:
-            continue
-        # Pool trials within animal
-        pooled = pool_arrays(sessions)
-        # Fit psychometric on pooled trials
-        psych = fit_psychometric(pooled['stimuli'], pooled['choices'])
-        # Accuracy
-        valid = ~np.isnan(pooled['choices'])
-        acc = float(np.mean(pooled['choices'][valid] == pooled['categories'][valid]))
-        row = {
-            'animal_id':      animal.animal_id,
-            'genotype':       getattr(animal, 'genotype', None),
-            'n_sessions':     len(sessions),
-            'n_trials_total': int(valid.sum()),
-            'mu':             psych.get('mu', np.nan),
-            'sigma':          psych.get('sigma', np.nan),
-            'lapse_low':      psych.get('lapse_low', np.nan),
-            'lapse_high':     psych.get('lapse_high', np.nan),
-            'accuracy':       acc,
-        }
-        rows.append({k: v for k, v in row.items() if k == 'animal_id' or k == 'genotype' or k in stat_keys or k.startswith('n_')})
-    return pd.DataFrame(rows)
-
-
-def compute_group_comparison(
-    df_a, df_b, 
-    label_a='A', label_b='B',
-    paired=False, 
-    stat_keys=('mu', 'sigma', 'lapse_low', 'lapse_high', 'accuracy')
-    ):
-    """Compare two groups of animals, one value per animal per stat.
-
-    Takes two per-animal DataFrames (from ``compute_per_animal_stats``) and
-    compares them stat by stat using a rank-based test on the per-animal
-    values — so each animal contributes one data point, not its trials. This
-    is the statistically correct path for group claims; see
-    ``compute_per_animal_stats`` for why trial-pooling is wrong here.
-
-    Args:
-        df_a, df_b: per-animal stat DataFrames for the two groups.
-        label_a, label_b: display labels.
-        paired: if True, use a Wilcoxon signed-rank test (requires equal n and
-            a meaningful pairing, e.g. same animals in two conditions). If
-            False (default), use a Mann-Whitney U test (independent groups,
-            e.g. HET vs WT). NaNs are dropped per stat before testing.
-        stat_keys: which stats to compare.
-
-    Returns:
-        Dict with 'medians_a'/'medians_b' (per-stat group medians),
-        'diffs' (a - b), 'p_values' (per stat; NaN if the test could not run),
-        'group_a'/'group_b' (raw per-animal arrays), 'n_a'/'n_b', 'paired',
-        and the labels.
-
-    Note:
-        With small groups (a handful of animals, or the n=2 case) these
-        rank-based p-values have very low power and wide effective uncertainty
-        — report effect sizes and per-animal values alongside, and treat a
-        non-significant result as inconclusive, not as evidence of no effect.
-    """
-    medians_a = {k: float(df_a[k].median()) for k in stat_keys if k in df_a.columns}
-    medians_b = {k: float(df_b[k].median()) for k in stat_keys if k in df_b.columns}
-    diffs    = {k: medians_a[k] - medians_b[k] for k in medians_a}
-
-    p_values = {}
-    for k in stat_keys:
-        if k not in df_a.columns or k not in df_b.columns:
-            p_values[k] = np.nan
-            continue
-        vals_a = df_a[k].dropna().values
-        vals_b = df_b[k].dropna().values
-        try:
-            if paired:
-                if len(vals_a) != len(vals_b):
-                    p_values[k] = np.nan
-                    continue
-                _, p = wilcoxon(vals_a, vals_b)
-            else:
-                _, p = mannwhitneyu(vals_a, vals_b, alternative='two-sided')
-            p_values[k] = float(p)
-        except ValueError:
-            p_values[k] = np.nan
-
-    return {
-        'group_a':   {k: df_a[k].values for k in stat_keys if k in df_a.columns},
-        'group_b':   {k: df_b[k].values for k in stat_keys if k in df_b.columns},
-        'medians_a': medians_a,
-        'medians_b': medians_b,
-        'diffs':     diffs,
-        'p_values':  p_values,
-        'n_a':       len(df_a),
-        'n_b':       len(df_b),
-        'paired':    paired,
-        'label_a':   label_a,
-        'label_b':   label_b,
-    }

@@ -7,8 +7,7 @@ from matplotlib.lines import Line2D
 from behav_utils.data.structures import AnimalData
 from behav_utils.analysis.summary_stats import list_available_stats
 
-DIST_COLOURS = {'Uniform': '#1f77b4', 'Hard-A': '#d62728', 'Hard-B': '#2ca02c'}
-TYPE_MARKERS = {'regular': 'o', 'masking': 's', 'opto': '^', 'washout': 'D'}
+from plotting._style import DIST_COLOURS, TYPE_MARKERS
 
 
 def plot_timeline(animal: AnimalData, stat: str = 'accuracy',

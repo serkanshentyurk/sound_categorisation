@@ -48,8 +48,7 @@ sound_categorisation/
 ├── scripts/            # CLI entry points (being rebuilt; see notes below)
 ├── notebooks/          # Interactive analyses
 ├── tests/              # pytest suite (~100 tests)
-├── config.yaml         # Column mapping, presets, masking sessions
-└── smoke_test.py       # 10-test functional smoke check
+└── config.yaml         # Column mapping, presets, masking sessions
 ```
 
 ## Two repos in one folder
@@ -87,7 +86,7 @@ Each step is visible at the call site. No function does two pipeline steps in on
 | Submodule | Contents |
 |---|---|
 | `data/` | Loading, filtering, data classes (`ExperimentData → AnimalData → SessionData → TrialData`) |
-| `analysis/` | psychometry, update matrix, summary stats (24-stat registry), comparison (incl. group-level), trajectory, session features |
+| `analysis/` | psychometry, update matrix, summary stats (26-stat registry), comparison (pair-level), group-level stats (stats_table + group), trajectory, session features |
 | `plotting/` | psychometric, update matrix, trajectory, comparison |
 | `config/` | YAML schema + loader |
 
@@ -186,7 +185,7 @@ the story notebooks.
 ```python
 from behav_utils.config import load_config
 from behav_utils.data.loading import load_experiment
-from behav_utils.data.selection import select_sessions
+from behav_utils.data.ops.selection import select_sessions
 from behav_utils.analysis.psychometry import compute_psychometric
 from behav_utils.plotting.psychometric import plot_psychometric
 
@@ -206,7 +205,7 @@ plot_psychometric(result)
 ### Opto: within-session opto-on vs opto-off (one animal)
 
 ```python
-from behav_utils.data.filtering import filter_session, opto_mask
+from behav_utils.data.ops.filtering import filter_session, opto_mask
 from behav_utils.analysis.comparison import compute_comparison
 from behav_utils.plotting.comparison import plot_comparison
 from analysis.opto import assign_opto_phases
@@ -241,23 +240,51 @@ for shift in shifts:
 
 ### Group-level: HET vs WT (unpaired)
 
+The unit of analysis is the *animal*. Build one pooled row per animal with
+`extract_stats` (Tier A), then test the per-animal values with the `group`
+primitives (Tier B) — never pool trials across animals for a group claim.
+
 ```python
-from behav_utils.analysis.comparison import compute_per_animal_stats, compute_group_comparison
+import pandas as pd
+from behav_utils import select_sessions
+from behav_utils.analysis import extract_stats, rank_test, bootstrap_units
 
-df_het = compute_per_animal_stats(het_animals)
-df_wt  = compute_per_animal_stats(wt_animals)
+points = pd.concat([
+    extract_stats(select_sessions(a, preset='expert_uniform'),
+                  animal_id=a.animal_id, stats=['psychometric', 'accuracy'],
+                  mode='pooled', meta={'genotype': a.genotype}).estimates
+    for a in het_animals + wt_animals
+], ignore_index=True)
 
-result = compute_group_comparison(df_het, df_wt, label_a='HET', label_b='WT', paired=False)
-# result['p_values']['mu'] = Mann-Whitney p for HET vs WT PSE
+mu = points[points.stat == 'mu']                  # 'psychometric' expands to mu/sigma/lapses
+het_mu = mu[mu.genotype == 'het'].value.values
+wt_mu  = mu[mu.genotype == 'wt'].value.values
+
+rank_test(het_mu, wt_mu, paired=False)   # Mann-Whitney on per-animal PSE → {'p', 'statistic', ...}
+bootstrap_units(het_mu)                   # across-animal CI on HET PSE → {'point', 'lo', 'hi', 'n'}
 ```
 
 ### Group-level: opto-on vs opto-off within HET (paired)
 
 ```python
-df_on  = compute_per_animal_stats(het_animals, sessions_per_animal=sessions_on)
-df_off = compute_per_animal_stats(het_animals, sessions_per_animal=sessions_off)
-result = compute_group_comparison(df_on, df_off, label_a='opto_on', label_b='opto_off', paired=True)
-# result['p_values']['mu'] = Wilcoxon p for within-animal opto effect
+from behav_utils.analysis import extract_stats, paired_diff, rank_test, bootstrap_units
+
+# Tag each animal's pooled estimate with its condition, then concatenate.
+points = pd.concat(
+    [extract_stats(sessions_on[a.animal_id],  animal_id=a.animal_id, stats=['psychometric'],
+                   mode='pooled', meta={'condition': 'opto_on'}).estimates  for a in het_animals]
+  + [extract_stats(sessions_off[a.animal_id], animal_id=a.animal_id, stats=['psychometric'],
+                   mode='pooled', meta={'condition': 'opto_off'}).estimates for a in het_animals],
+    ignore_index=True)
+
+# Within-animal Δ (one row per animal × stat; the difference is the 'delta' column).
+delta = paired_diff(points, by='condition', a='opto_on', b='opto_off')
+bootstrap_units(delta[delta.stat == 'mu'].delta.values)   # CI on the within-animal PSE shift
+
+# Significance: Wilcoxon signed-rank on the paired per-animal values.
+on  = points[(points.stat == 'mu') & (points.condition == 'opto_on')].sort_values('animal')
+off = points[(points.stat == 'mu') & (points.condition == 'opto_off')].sort_values('animal')
+rank_test(on.value.values, off.value.values, paired=True)
 ```
 
 ### Static SBI on expert data (manuscript path)
@@ -282,7 +309,7 @@ results = condition_sbi(expert_sessions, net, 'BE')   # held-out UM MSE per rep
 - Session-filter presets (`naive`, `expert_uniform`, etc.)
 - Masking sessions (per-animal list of dates)
 
-See `behav_utils/configs/config_full_reference.yaml` for the full schema.
+See `behav_utils/config_presets/config_full_reference.yaml` for the full schema.
 
 ---
 
@@ -304,18 +331,17 @@ Likelihood intractable for both → SBI (no MLE).
 - `fit_X(arrays, ...)` → low-level fit, returns param dict
 - Psychometric fit params use math names everywhere: `mu`, `sigma`, `lapse_low`, `lapse_high`, `accuracy`. Plot labels translate to literature terms (PSE, slope) at display time.
 
-For across-animal claims: use `compute_per_animal_stats` + `compute_group_comparison`, NOT pooled `compute_comparison`. Pooled trials assume trial-level independence — wrong for group-level claims.
+For across-animal claims: extract one pooled row per animal with `extract_stats`, then test the per-animal values with the `group` primitives (`rank_test` / `bootstrap_units` / `paired_diff`), NOT pooled `compute_comparison`. Pooled trials assume trial-level independence — wrong for group-level claims.
 
 ---
 
-## Tests and smoke check
+## Tests
 
 ```bash
 pytest tests/                     # full pytest suite (~100 tests)
-python3 smoke_test.py             # 10-test functional check
 ```
 
-The smoke test exercises a representative subset of the pipeline end-to-end in seconds, useful for sanity-checking after any change.
+Tip: individual test files run in a few seconds; the full suite is bootstrap/permutation-heavy and slower, so target the relevant file while iterating.
 
 ---
 

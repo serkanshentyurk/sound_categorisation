@@ -16,3 +16,9 @@ CONDITION_COLOURS = {
     'all_opto': '#2ca02c', 'opto_off': '#9467bd', 'opto_on': '#d62728',
     'post_opto': '#8c564b',
 }
+
+# Per-distribution colours and per-session-type markers for the experiment
+# overview / timeline plots. Hard-A / Hard-B are this project's distributions,
+# so these live project-side, not in the task-agnostic behav_utils.
+DIST_COLOURS = {'Uniform': '#1f77b4', 'Hard-A': '#d62728', 'Hard-B': '#2ca02c'}
+TYPE_MARKERS = {'regular': 'o', 'masking': 's', 'opto': '^', 'washout': 'D'}

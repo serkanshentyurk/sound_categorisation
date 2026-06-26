@@ -114,7 +114,7 @@ class ChoiceMapping:
     """
     type: str = 'identity'
     no_response_value: Any = 0
-    contingency_field: str = 'sound_contingency'
+    contingency_field: Optional[str] = None
     contingency_rules: Dict[str, Dict[Any, int]] = field(default_factory=dict)
 
 @dataclass

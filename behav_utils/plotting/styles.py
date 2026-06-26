@@ -69,13 +69,6 @@ COLOURS = {
     'default':    '#4682B4',
 }
 
-# ── Task distributions & session types (shared across 2-AFC projects) ─
-# Colour each session by its stimulus distribution; mark by its session type.
-# Distributions not listed here fall back to grey at the call site.
-DIST_COLOURS = {'Uniform': '#1f77b4', 'Hard-A': '#d62728', 'Hard-B': '#2ca02c'}
-TYPE_MARKERS = {'regular': 'o', 'masking': 's', 'opto': '^', 'washout': 'D'}
-
-
 # =============================================================================
 # COLOURMAPS
 # =============================================================================

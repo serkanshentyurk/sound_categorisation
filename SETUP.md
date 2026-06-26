@@ -22,11 +22,11 @@ cd .../repos
 git clone https://github.com/serkanshentyurk/sound_categorisation.git
 cd sound_categorisation
 
-conda create -n sound_cat python=3.11 -y
-conda activate sound_cat
+conda create -n sound_categorisation python=3.11 -y
+conda activate sound_categorisationegorisation
 
 pip install -e behav_utils/
-pip install numpy scipy pandas matplotlib seaborn scikit-learn joblib pyyaml ipywidgets
+pip install numpy scipy pandas matplotlib seaborn joblib pyyaml ipywidgets
 
 # SBI (required for inference notebooks)
 pip install torch sbi
@@ -156,7 +156,7 @@ cd ~/repos/sound_categorisation
 
 # Load environment
 module load miniconda
-conda activate sound_cat
+conda activate sound_categorisation
 
 # Submit jobs (see slurm/README.md for details)
 sbatch slurm/train_snpe.sh
@@ -177,5 +177,5 @@ python scripts/export_snapshot.py
 | `Failed to unpickle snapshot` | Code changed since export | Re-export from raw data |
 | `Config has changed since snapshot was exported` | Column mappings changed | Re-export |
 | Notebooks show synthetic data | No snapshot found | Check `.../data/behaviour/snapshots/` exists |
-| `ModuleNotFoundError` | Wrong conda env | `conda activate sound_cat` |
+| `ModuleNotFoundError` | Wrong conda env | `conda activate sound_categorisation` |
 | Capitalised + lowercase folders on cluster | macOS case insensitivity | `git config core.ignorecase false`, see README |

@@ -90,16 +90,17 @@ behav_utils/
 ├── data/
 │   ├── structures.py        # TrialData, SessionData, AnimalData, ExperimentData, FittingData
 │   ├── loading.py           # CSV → data classes
-│   ├── selection.py         # SessionFilter, presets, fitting_data_from_sessions
-│   ├── filtering.py         # Trial-level filtering (single source of truth)
-│   └── synthetic.py         # Synthetic data generation
+│   ├── synthetic.py         # Synthetic data generation
+│   └── ops/
+│       ├── selection.py     # SessionFilter, presets, fitting_data_from_sessions
+│       └── filtering.py     # Trial-level filtering (single source of truth)
 ├── analysis/
 │   ├── psychometry.py       # fit_psychometric (low), compute_psychometric (session)
 │   ├── update_matrix.py     # compute_update_matrix (low), compute_um (session)
 │   ├── trajectory.py        # compute_trajectory (session)
 │   ├── comparison.py        # compare_conditions (low), compute_comparison (session)
 │   ├── session_raster.py    # compute_session_raster (session)
-│   ├── summary_stats.py     # 24 registered stats, compute_summary_stats (low)
+│   ├── summary_stats.py     # 26 registered stats, compute_summary_stats (low)
 │   ├── session_features.py  # compute_session_features, build_feature_matrix
 │   └── utils.py             # cumulative_gaussian, generate_stimuli
 └── plotting/

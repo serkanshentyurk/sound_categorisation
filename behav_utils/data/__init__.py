@@ -42,9 +42,6 @@ from behav_utils.data.synthetic import (
     noisy_psychometric_simulator,
 )
 
-
-__version__ = '0.1.0'
-
 __all__ = [
     # Loading
     'load_experiment',
