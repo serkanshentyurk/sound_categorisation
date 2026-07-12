@@ -56,6 +56,16 @@ def snpe_networks_dir() -> Path:
     return data_root() / 'snpe_networks'
 
 
+def snpe_net_path(rep: str, model: str, distribution: str) -> Path:
+    """Explicit per-(rep, model, distribution) network file.
+
+    Filename: 'snpe_{rep}_{model}_{distribution}.pkl' (e.g. 'snpe_moments_SC_hard_a.pkl'). The
+    'snpe_' prefix marks these as SNPE/SBI networks. Single source of the naming — train_sbi
+    writes it, run_sbi reads it.
+    """
+    return snpe_networks_dir() / f'snpe_{rep}_{model}_{distribution}.pkl'
+
+
 # =============================================================================
 # FIT TARGETS (shared vocabulary)
 # =============================================================================

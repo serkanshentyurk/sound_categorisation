@@ -51,6 +51,7 @@ from behav_utils.analysis.stats_table import StatTable, extract_stats, extract_m
 # Tier B: combination / resampling / testing on plain tables and arrays
 from behav_utils.analysis.group import (
     combine, paired_diff, bootstrap_units, rank_test, average_arrays,
+    min_achievable_p,
 )
 
 
@@ -85,5 +86,5 @@ __all__ = [
     'StatTable', 'extract_stats', 'extract_matched',
 
     # Tier B: tidy table / arrays -> numbers
-    'combine', 'paired_diff', 'bootstrap_units', 'rank_test', 'average_arrays',
+    'combine', 'paired_diff', 'bootstrap_units', 'rank_test', 'min_achievable_p', 'average_arrays',
 ]

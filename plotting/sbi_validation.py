@@ -386,3 +386,130 @@ def plot_param_stat_correlations(
                  fontsize=11, pad=10)
     fig.tight_layout()
     return fig
+
+
+
+# =============================================================================
+# Summary-stat selection / attribution  (draw-only, single-panel, plot_x(result, ax=None))
+# Consume the dicts from validation.feature_diagnostics:
+#   plot_um_scalar_correlation ← um_scalar_correlation   (what scalars miss)
+#   plot_stat_correlation      ← stat_correlation        (redundancy)
+#   plot_individual_identity   ← stat_individual_power    (Q2: identity AUC per stat)
+#   plot_individual_recovery   ← stat_individual_power    (Q3: per-param R² per stat)
+#   plot_selection_curve       ← select_stats            (Q4: 0→all, identity + min-R²)
+#   plot_stat_contributions    ← stat_contributions      (parked: joint importance)
+#   plot_stat_sensitivity      ← stat_parameter_sensitivity (parked: isolation)
+# =============================================================================
+
+def _heatmap(ax, M, row_labels, col_labels, cmap, vmin, vmax, cbar_label,
+             annot=True, annot_thresh=None, rot=45):
+    im = ax.imshow(M, aspect='auto', cmap=cmap, vmin=vmin, vmax=vmax)
+    cb = ax.figure.colorbar(im, ax=ax, fraction=0.04, pad=0.02); cb.set_label(cbar_label)
+    ax.set_xticks(np.arange(M.shape[1]))
+    ax.set_xticklabels(col_labels, rotation=rot, ha='right' if rot else 'center', fontsize=7)
+    ax.set_yticks(np.arange(M.shape[0])); ax.set_yticklabels(row_labels, fontsize=7)
+    if annot:
+        thr = annot_thresh if annot_thresh is not None else (vmin + vmax) / 2 + (vmax - vmin) * 0.25
+        for i in range(M.shape[0]):
+            for j in range(M.shape[1]):
+                v = M[i, j]
+                if np.isfinite(v):
+                    ax.text(j, i, f'{v:.2f}', ha='center', va='center', fontsize=6,
+                            color='white' if abs(v) > thr else 'black')
+    return im
+
+
+def plot_um_scalar_correlation(result, ax: Optional[plt.Axes] = None) -> plt.Axes:
+    """|r| between each UM cell (rows) and each scalar stat (cols). Dark rows = UM structure no
+    scalar captures. result ← um_scalar_correlation."""
+    C = result['corr']
+    if ax is None:
+        _, ax = plt.subplots(figsize=(max(6, C.shape[1] * 0.5), max(5, C.shape[0] * 0.18)))
+    _heatmap(ax, C.values, list(C.index), list(C.columns), 'viridis', 0, 1, '|r|',
+             annot=False, rot=90)
+    ax.set_title(f"UM cell vs scalar · {result['model_type'].upper()} · {result['distribution']}",
+                 fontsize=10, pad=8)
+    return ax
+
+
+def plot_stat_correlation(result, ax: Optional[plt.Axes] = None, annot: bool = False) -> plt.Axes:
+    """|r| stat×stat (redundancy). High off-diagonal blocks = drop all but one. result ← stat_correlation."""
+    C = result['corr']; names = list(C.columns)
+    if ax is None:
+        n = len(names); _, ax = plt.subplots(figsize=(max(5, n * 0.4), max(4, n * 0.4)))
+    _heatmap(ax, C.values, names, names, 'viridis', 0, 1, '|r|', annot=annot,
+             annot_thresh=0.5, rot=90)
+    ax.set_title(f"Stat–stat correlation · {result['model_type'].upper()} · {result['distribution']}",
+                 fontsize=10, pad=8)
+    return ax
+
+
+def plot_individual_identity(result, ax: Optional[plt.Axes] = None) -> plt.Axes:
+    """Q2 — each stat alone: model-identity CV AUC. result ← stat_individual_power."""
+    s = result['identity'].sort_values(ascending=True)
+    if ax is None:
+        _, ax = plt.subplots(figsize=(5, max(2.5, 0.4 * len(s))))
+    ax.barh(range(len(s)), s.values, color='slateblue')
+    ax.axvline(0.5, ls='--', c='grey', lw=1)
+    ax.set_yticks(range(len(s))); ax.set_yticklabels(s.index, fontsize=8)
+    ax.set_xlim(0.4, 1.0); ax.set_xlabel('identity CV AUC (stat alone)')
+    ax.set_title(f"Individual identity power · {result['distribution']}", fontsize=10, pad=8)
+    return ax
+
+
+def plot_individual_recovery(result, model: str, ax: Optional[plt.Axes] = None) -> plt.Axes:
+    """Q3 — each stat alone: per-parameter recovery CV R² (clipped at 0 for display).
+    result ← stat_individual_power; model in {'be','sc'}."""
+    R = result['recovery'][model]
+    if ax is None:
+        _, ax = plt.subplots(figsize=(max(4, R.shape[1] * 0.9), max(3, R.shape[0] * 0.45)))
+    _heatmap(ax, np.clip(R.values.astype(float), 0, 1), list(R.index), list(R.columns),
+             'viridis', 0, 1, 'CV R² (≥0)', annot=True, annot_thresh=0.5, rot=45)
+    ax.set_title(f"Individual recovery · {model.upper()} · {result['distribution']}",
+                 fontsize=10, pad=8)
+    return ax
+
+
+def plot_selection_curve(result, ax: Optional[plt.Axes] = None) -> plt.Axes:
+    """Q4 — best min-across-params CV R² vs #stats, with identity AUC overlaid. Marks the
+    selected subset. result ← select_stats."""
+    curve = result['best_by_k']
+    if ax is None:
+        _, ax = plt.subplots(figsize=(5.5, 3.5))
+    ax.plot(curve['k'], curve['r2_min'], '-o', color='steelblue', ms=4, label='min-param R²')
+    sel_k = len(result['selected'])
+    ax.axvline(sel_k, color='red', ls='--', lw=1, alpha=0.7, label=f'selected (k={sel_k})')
+    ax.set_xlabel('number of stat groups'); ax.set_ylabel('min over params (CV R²)')
+    ax2 = ax.twinx()
+    ax2.plot(curve['k'], curve['identity_auc'], '-s', color='darkorange', ms=3,
+             alpha=0.7, label='identity AUC')
+    ax2.set_ylabel('identity AUC', color='darkorange'); ax2.set_ylim(0.4, 1.02)
+    ax2.tick_params(axis='y', labelcolor='darkorange')
+    ax.set_title(f"Selection · {result['distribution']} · {result['method']}", fontsize=10, pad=8)
+    ax.legend(fontsize=8, loc='lower right')
+    return ax
+
+
+def plot_stat_contributions(result, ax: Optional[plt.Axes] = None, annot: bool = True) -> plt.Axes:
+    """Parked — joint permutation importance (stat × target). result ← stat_contributions."""
+    df = result['contribution']; M = df.values.astype(float)
+    if ax is None:
+        _, ax = plt.subplots(figsize=(max(6, df.shape[1] * 0.7), max(3, df.shape[0] * 0.45)))
+    vmax = float(np.nanmax(np.abs(M))) or 1.0
+    _heatmap(ax, M, list(df.index), list(df.columns), 'RdBu_r', -vmax, vmax,
+             'Δ CV score (permutation)', annot=annot, annot_thresh=vmax * 0.5)
+    ax.set_title(f"Stat contributions · {result['distribution']} · scorer={result['scorer']}",
+                 fontsize=10, pad=8)
+    return ax
+
+
+def plot_stat_sensitivity(result, ax: Optional[plt.Axes] = None, annot: bool = True) -> plt.Axes:
+    """Parked — one-at-a-time |Spearman| of each stat to each parameter. result ← stat_parameter_sensitivity."""
+    S = result['sensitivity']
+    if ax is None:
+        _, ax = plt.subplots(figsize=(max(4, S.shape[1] * 0.9), max(3, S.shape[0] * 0.45)))
+    _heatmap(ax, S.values.astype(float), list(S.index), list(S.columns), 'viridis', 0, 1,
+             '|Spearman ρ|', annot=annot, annot_thresh=0.5)
+    ax.set_title(f"Stat→param sensitivity · {result['model_type'].upper()} · {result['distribution']}",
+                 fontsize=10, pad=8)
+    return ax

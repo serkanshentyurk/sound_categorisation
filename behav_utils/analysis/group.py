@@ -351,3 +351,39 @@ def average_arrays(arrays: Sequence[np.ndarray], *, ddof: int = 1) -> Dict[str, 
     else:
         sem = np.nanstd(stack, axis=0, ddof=ddof) / np.sqrt(n)
     return {'mean': mean, 'sem': sem, 'n': n}
+
+
+def min_achievable_p(test, *, n=None, n1=None, n2=None):
+    """Smallest two-sided p-value the given rank test can return at this sample size.
+
+    Rank tests are discrete: with few observations even a perfectly consistent effect cannot
+    drop below a floor set by the number of possible rank arrangements. Report this beside a
+    non-significant result to show whether the test *could* have rejected at all — a p that
+    merely equals this floor is the strongest evidence the sample can give, not a meaningful
+    null.
+
+    Args:
+        test: 'signed_rank' (Wilcoxon signed-rank / paired) — needs ``n``, the number of
+              non-zero pairs; floor = 2 / 2**n (all pairs the same sign).
+              'rank_sum'  (Mann-Whitney U / unpaired) — needs ``n1``, ``n2``;
+              floor = 2 / C(n1 + n2, n1) (the most extreme rank separation).
+        n:      non-zero pair count for 'signed_rank'.
+        n1, n2: group sizes for 'rank_sum'.
+
+    Returns:
+        Minimum two-sided p in (0, 1], or nan if sizes are missing / too small.
+
+    Assumes the exact (permutation) null and no ties; scipy uses the exact distribution at
+    these small n, so the floor matches what :func:`rank_test` can actually return.
+    """
+    from math import comb
+    t = str(test).lower()
+    if t in ('signed_rank', 'wilcoxon', 'paired'):
+        if not n or n < 1:
+            return float('nan')
+        return min(1.0, 2.0 / (2 ** n))
+    if t in ('rank_sum', 'mannwhitney', 'mannwhitneyu', 'mwu', 'unpaired'):
+        if not n1 or not n2 or n1 < 1 or n2 < 1:
+            return float('nan')
+        return min(1.0, 2.0 / comb(n1 + n2, n1))
+    raise ValueError(f"test must be 'signed_rank' or 'rank_sum', got {test!r}")

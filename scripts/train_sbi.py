@@ -47,43 +47,48 @@ from scripts.config import (
     SBI_BURN_IN,
     SMOKE_SBI_N_SIMULATIONS,
     MODEL_TYPES,
+    DISTRIBUTIONS,
     BASE_SEED,
-    snpe_networks_dir,
+    snpe_net_path,
 )
 
 # Task ordering for the SLURM array. rep-major, model-minor:
 #   0 pooled/BE   1 pooled/SC   2 moments/BE   3 moments/SC   4 single/BE  5 single/SC
 REPRESENTATIONS = tuple(SBI_REPRESENTATIONS)
-N_TASKS = len(REPRESENTATIONS) * len(MODEL_TYPES)
-
-
-def net_path(rep, model):
-    """Filesystem location of a trained (rep, model) network."""
-    return snpe_networks_dir() / f'{rep}_{model}.pkl'
+# SLURM array: 3 reps x 2 models x 3 distributions = 18 independent networks.
+# Ordering is rep-major, then model, then distribution (distribution fastest):
+#   0  pooled/BE/uniform   1  pooled/BE/hard_a   2  pooled/BE/hard_b
+#   3  pooled/SC/uniform   ...                  17  single/SC/hard_b
+N_TASKS = len(REPRESENTATIONS) * len(MODEL_TYPES) * len(DISTRIBUTIONS)
 
 
 def decode_task(task_id):
-    """Map a SLURM array index in [0, N_TASKS) to a (rep, model) pair."""
+    """Map a SLURM array index in [0, N_TASKS) to a (rep, model, distribution)."""
     if not 0 <= task_id < N_TASKS:
-        raise ValueError(
-            f'task_id must be in [0, {N_TASKS}); got {task_id}.')
-    rep = REPRESENTATIONS[task_id // len(MODEL_TYPES)]
-    model = MODEL_TYPES[task_id % len(MODEL_TYPES)]
-    return rep, model
+        raise ValueError(f'task_id must be in [0, {N_TASKS}); got {task_id}.')
+    n_m, n_d = len(MODEL_TYPES), len(DISTRIBUTIONS)
+    rep = REPRESENTATIONS[task_id // (n_m * n_d)]
+    rem = task_id % (n_m * n_d)
+    model = MODEL_TYPES[rem // n_d]
+    distribution = DISTRIBUTIONS[rem % n_d]
+    return rep, model, distribution
 
 
-def train_one(rep, model, n_simulations=None, seed=BASE_SEED, show_progress=True):
-    """Train and save one (rep, model) network. Returns the save path.
+def train_one(rep, model, distribution, n_simulations=None, seed=BASE_SEED,
+              show_progress=True):
+    """Train and save one (rep, model, distribution) network. Returns the save path.
 
-    ``n_simulations`` overrides the per-rep default in SBI_REPRESENTATIONS
-    (used by --smoke-test and --n-simulations).
+    ``dist_schedule=distribution`` makes the training curriculum match the phase the network
+    will be conditioned on. ``n_simulations`` overrides the per-rep default in
+    SBI_REPRESENTATIONS (used by --smoke-test and --n-simulations).
     """
     if rep not in SBI_REPRESENTATIONS:
-        raise ValueError(
-            f'Unknown rep {rep!r}; choose from {REPRESENTATIONS}.')
+        raise ValueError(f'Unknown rep {rep!r}; choose from {REPRESENTATIONS}.')
     if model not in MODEL_TYPES:
+        raise ValueError(f'Unknown model {model!r}; choose from {MODEL_TYPES}.')
+    if distribution not in DISTRIBUTIONS:
         raise ValueError(
-            f'Unknown model {model!r}; choose from {MODEL_TYPES}.')
+            f'Unknown distribution {distribution!r}; choose from {DISTRIBUTIONS}.')
 
     # Deferred so the module imports (and --count) work without torch.
     from inference.amortised import AmortisedSBI
@@ -91,12 +96,13 @@ def train_one(rep, model, n_simulations=None, seed=BASE_SEED, show_progress=True
     cfg = SBI_REPRESENTATIONS[rep]
     n_sims = cfg['n_simulations'] if n_simulations is None else n_simulations
 
-    print(f'[train] {rep}/{model}: N={cfg["N"]} mode={cfg["mode"]} '
+    print(f'[train] {rep}/{model}/{distribution}: N={cfg["N"]} mode={cfg["mode"]} '
           f'T={cfg["T"]} burn_in={SBI_BURN_IN} n_sims={n_sims} seed={seed}')
     t0 = time.time()
 
     net = AmortisedSBI(
         model,
+        dist_schedule=distribution,
         N=cfg['N'],
         T=cfg['T'],
         burn_in=SBI_BURN_IN,
@@ -104,23 +110,25 @@ def train_one(rep, model, n_simulations=None, seed=BASE_SEED, show_progress=True
     )
     net.train(n_simulations=n_sims, seed=seed, show_progress=show_progress)
 
-    out = net_path(rep, model)
+    out = snpe_net_path(rep, model, distribution)
     net.save(out)
-    print(f'[train] {rep}/{model}: saved -> {out} '
+    print(f'[train] {rep}/{model}/{distribution}: saved -> {out} '
           f'({(time.time() - t0) / 60:.1f} min)')
     return out
 
 
 def main():
     p = argparse.ArgumentParser(
-        description='Train the amortised SBI networks (3 reps x 2 models = 6).')
+        description='Train the amortised SBI networks (3 reps x 2 models x 3 distributions = 18).')
     p.add_argument('--rep', default='all', choices=(*REPRESENTATIONS, 'all'),
                    help="Representation to train, or 'all'.")
     p.add_argument('--model', default='all', choices=(*MODEL_TYPES, 'all'),
                    help="Model to train, or 'all'.")
+    p.add_argument('--distribution', default='all', choices=(*DISTRIBUTIONS, 'all'),
+                   help="Distribution/curriculum to train, or 'all'.")
     p.add_argument('--task-id', type=int, default=None,
                    help=f'SLURM array index 0-{N_TASKS - 1}; '
-                        'overrides --rep/--model.')
+                        'overrides --rep/--model/--distribution.')
     p.add_argument('--n-simulations', type=int, default=None,
                    help='Override the per-rep simulation budget.')
     p.add_argument('--seed', type=int, default=BASE_SEED,
@@ -147,12 +155,13 @@ def main():
     else:
         reps = REPRESENTATIONS if args.rep == 'all' else (args.rep,)
         models = MODEL_TYPES if args.model == 'all' else (args.model,)
-        jobs = [(r, m) for r in reps for m in models]
+        dists = DISTRIBUTIONS if args.distribution == 'all' else (args.distribution,)
+        jobs = [(r, m, d) for r in reps for m in models for d in dists]
 
     print(f'[train] {len(jobs)} network(s): {jobs}')
     t0 = time.time()
-    for rep, model in jobs:
-        train_one(rep, model, n_simulations=n_sims, seed=args.seed)
+    for rep, model, distribution in jobs:
+        train_one(rep, model, distribution, n_simulations=n_sims, seed=args.seed)
     print(f'[train] all done in {(time.time() - t0) / 60:.1f} min')
 
 

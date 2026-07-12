@@ -15,6 +15,7 @@ Genotype palette: het warm, wt cool.
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 from typing import Optional, Sequence
 
@@ -169,5 +170,64 @@ def plot_delta_paired(delta_df, stat: str, ax: Optional[plt.Axes] = None,
                           label=f"{g} (n={int((wide['genotype'] == g).sum())})")
                for g in order]
     ax.legend(handles=handles, frameon=False, fontsize=8)
+    ax.spines[['top', 'right']].set_visible(False)
+    return ax
+
+
+def plot_choice_by_stimulus(result, animal, ax: Optional[plt.Axes] = None,
+                            a: str = 'opto', b: str = 'opto_off') -> plt.Axes:
+    """Empirical P(choose B) vs stimulus for one animal, opto (red) vs opto_off (grey).
+    result <- compute_choice_by_stimulus. Model-free scatter (no fitted curve)."""
+    binned = result['binned']
+    sub = binned[binned['animal'] == animal]
+    if ax is None:
+        _, ax = plt.subplots(figsize=(4, 3.5))
+    for cond, col in ((b, '0.5'), (a, 'crimson')):
+        s = sub[sub['condition'] == cond].sort_values('stim_centre')
+        ax.plot(s['stim_centre'], s['p_choose_b'], '-o', color=col, ms=4, label=cond)
+    ax.axhline(0.5, ls=':', c='0.7', lw=0.8)
+    ax.axvline(0.0, ls=':', c='0.7', lw=0.8)
+    ax.set_xlabel('stimulus (distance from boundary)')
+    ax.set_ylabel('P(choose B)')
+    ax.set_ylim(-0.02, 1.02)
+    ax.set_title(f"{animal} — {result['phase']}", fontsize=10)
+    ax.legend(fontsize=8, loc='upper left')
+    ax.spines[['top', 'right']].set_visible(False)
+    return ax
+
+
+def plot_delta_by_stimulus(result, ax: Optional[plt.Axes] = None, genotype: Optional[str] = None,
+                           a: str = 'opto', b: str = 'opto_off', show_mean: bool = True) -> plt.Axes:
+    """THE discriminator panel. ΔP(choose B) = P(B|opto) - P(B|opto_off) vs stimulus, one thin
+    line per animal (optionally the mean). result <- compute_choice_by_stimulus.
+
+    Flat, non-zero across stimulus  => additive offset (light artifact).
+    Peaked near the boundary, ~0 in the tails => criterion/boundary shift (real).
+    """
+    binned = result['binned']
+    if genotype is not None:
+        binned = binned[binned['genotype'] == genotype]
+    if ax is None:
+        _, ax = plt.subplots(figsize=(5, 3.5))
+    curves = []
+    for aid in binned['animal'].unique():
+        ba = binned[(binned.animal == aid) & (binned.condition == a)].set_index('stim_centre')['p_choose_b']
+        bb = binned[(binned.animal == aid) & (binned.condition == b)].set_index('stim_centre')['p_choose_b']
+        common = ba.index.intersection(bb.index)
+        if not len(common):
+            continue
+        d = (ba.loc[common] - bb.loc[common]).sort_index()
+        ax.plot(d.index, d.to_numpy(), '-', alpha=0.45, lw=1, color='0.4')
+        curves.append(d)
+    if show_mean and curves:
+        allc = pd.concat(curves, axis=1)
+        m = allc.mean(axis=1).sort_index()
+        ax.plot(m.index, m.to_numpy(), '-o', color='crimson', ms=4, lw=2, label='mean')
+        ax.legend(fontsize=8)
+    ax.axhline(0.0, ls='--', c='k', lw=1)
+    ax.set_xlabel('stimulus (distance from boundary)')
+    ax.set_ylabel('Δ P(choose B)  (opto − opto_off)')
+    ttl = 'ΔP(B) vs stimulus' + (f' — {genotype}' if genotype else '')
+    ax.set_title(ttl + '\nflat = offset (artifact) · peaked = criterion shift', fontsize=9)
     ax.spines[['top', 'right']].set_visible(False)
     return ax

@@ -36,6 +36,9 @@ from scripts.snapshot import snapshot_dir
 PATH_SNAPSHOT = snapshot_dir(_PROJECT_ROOT) / 'sound_cat_snapshot.pkl'
 PATH_CONFIG = _PROJECT_ROOT / 'config.yaml'
 
+# Managed location for notebook-saved figures (created on first write, not on import).
+FIG_DIR = _PROJECT_ROOT / 'figures'
+
 STAGE = 'Full_Task_Cont'
 MIN_SESSIONS = 5
 
@@ -93,26 +96,59 @@ from behav_utils.plotting import (
 
 # ── Results loading helpers ─────────────────────────────────────────────────
 
-def load_snpe_networks(snpe_dir: Optional[Path] = None, distribution: str = 'uniform') -> dict:
+def load_snpe_networks(snpe_dir: Optional[Path] = None, rep: str = 'pooled') -> dict:
     """
     Load trained SNPE pickles for BE and SC.
 
-    Returns dict keyed by model type ('be', 'sc'), each containing
-    the trained posterior + metadata.
+    Files are written by scripts/train_sbi.py as '{rep}_{model}.pkl', where `rep` is the
+    representation (e.g. 'pooled') — not the stimulus distribution. Each pickle is the dict
+    produced by AmortisedSBI.save (carries 'param_names' plus the trained posterior).
+
+    Returns dict keyed by model type ('be', 'sc').
     """
     import pickle
 
     snpe_dir = snpe_dir or snpe_networks_dir()
     snpe = {}
     for model in ['be', 'sc']:
-        p = snpe_dir / f'{distribution}_{model}.pkl'
+        p = snpe_dir / f'{rep}_{model}.pkl'
         if p.exists():
             with open(p, 'rb') as f:
                 snpe[model] = pickle.load(f)
-            print(f'SNPE {model}: {snpe[model]["param_names"]}')
+            names = snpe[model].get('param_names') if isinstance(snpe[model], dict) else None
+            print(f'SNPE {model}: {names if names is not None else "loaded"}')
         else:
             print(f'SNPE {model}: not found at {p}')
     return snpe
+
+
+def gather_genotypes(experiment) -> tuple:
+    """Genotype lookup from loaded animals — the single source of truth.
+
+    Reads `.genotype` from each loaded animal (populated at load from the sidecar
+    animal_metadata.json), lower-cased. Returns (by_animal, groups):
+        by_animal : {animal_id: genotype}
+        groups    : {genotype: [animal_id, ...]}   e.g. groups['het'], groups['wt']
+    Warns on any animal whose genotype is missing ('unknown'), so a gap in the metadata is
+    visible rather than silently dropping animals from a group.
+
+    Replaces the per-notebook hardcoded GENOTYPE dicts. Expects 'het'/'wt' (case-insensitive)
+    in the metadata; any other label simply forms its own group.
+    """
+    by_animal = {aid: str(getattr(a, 'genotype', 'unknown') or 'unknown').lower()
+                 for aid, a in experiment.animals.items()}
+    unknown = sorted(aid for aid, g in by_animal.items() if g in ('unknown', 'none', ''))
+    if unknown:
+        warnings.warn(
+            f"{len(unknown)} animal(s) without genotype metadata: {', '.join(unknown)}. "
+            f"Add animal_metadata.json (genotype field) or they stay 'unknown'."
+        )
+    groups: dict = {}
+    for aid, g in by_animal.items():
+        groups.setdefault(g, []).append(aid)
+    for g in groups:
+        groups[g].sort()
+    return by_animal, groups
 
 
 # ── Data loading ────────────────────────────────────────────────────────────
