@@ -48,14 +48,21 @@ def _make_session(session_idx, base_date, trials, distribution='Uniform',
     """Helper: create SessionData with correct fields."""
     from behav_utils.data.structures import SessionData, SessionMetadata
 
+    if washout:
+        session_type = 'washout'
+    elif masking:
+        session_type = 'masking'
+    elif trials.opto_on is not None and bool(np.any(trials.opto_on)):
+        session_type = 'opto'
+    else:
+        session_type = 'regular'
     return SessionData(
         session_id=f'sess_{session_idx:03d}',
         session_idx=session_idx,
         date=base_date + timedelta(days=session_idx),
         metadata=SessionMetadata(fields={'stage': stage, 'distribution': distribution}),
         trials=trials,
-        masking=masking,
-        washout=washout,
+        session_type=session_type,
     )
 
 

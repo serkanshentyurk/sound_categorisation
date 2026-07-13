@@ -232,6 +232,14 @@ class ProjectConfig:
     # Washout session overrides: {animal_id: ['YYYYMMDD', ...]}
     washout_sessions: Dict[str, List[str]] = field(default_factory=dict)
 
+    # ALM light-only control overrides (control site, not PPC).
+    # These map to session_type 'alm_control_uni' / 'alm_control_bi'.
+    unilateral_alm_control_sessions: Dict[str, List[str]] = field(default_factory=dict)
+    bilateral_alm_control_sessions: Dict[str, List[str]] = field(default_factory=dict)
+
+    # Sessions dropped at load time — never built, never in a snapshot.
+    sessions_to_ignore: Dict[str, List[str]] = field(default_factory=dict)
+
     def __post_init__(self):
         self._validate()
 
@@ -348,6 +356,22 @@ def _parse_session_metadata(name: str, spec) -> SessionMetadataMapping:
     )
 
 
+def _normalise_session_dict(raw) -> Dict[str, List[str]]:
+    """Normalise a {animal_id: dates} mapping to {str: [str, ...]}.
+
+    Accepts a list, a scalar, or None as the value for each animal.
+    """
+    out: Dict[str, List[str]] = {}
+    for aid, dates in (raw or {}).items():
+        if isinstance(dates, list):
+            out[str(aid)] = [str(d) for d in dates]
+        elif dates is None:
+            out[str(aid)] = []
+        else:
+            out[str(aid)] = [str(dates)]
+    return out
+
+
 def load_config(path: Union[str, Path]) -> ProjectConfig:
     """
     Load and validate a project config from YAML.
@@ -437,28 +461,14 @@ def load_config(path: Union[str, Path]) -> ProjectConfig:
     for name, spec in raw.get('session_metadata', {}).items():
         session_metadata[name] = _parse_session_metadata(name, spec)
 
-    # Masking sessions: {animal_id: ['YYYYMMDD', ...]}
-    masking_raw = raw.get('masking_sessions', {})
-    # Normalise: ensure all values are lists of strings
-    masking_sessions = {}
-    for aid, dates in masking_raw.items():
-        if isinstance(dates, list):
-            masking_sessions[str(aid)] = [str(d) for d in dates]
-        elif dates is None:
-            masking_sessions[str(aid)] = []
-        else:
-            masking_sessions[str(aid)] = [str(dates)]
-            
-    # Washout sessions: {animal_id: ['YYYYMMDD', ...]}
-    washout_raw = raw.get('washout_sessions', {})
-    washout_sessions = {}
-    for aid, dates in washout_raw.items():
-        if isinstance(dates, list):
-            washout_sessions[str(aid)] = [str(d) for d in dates]
-        elif dates is None:
-            washout_sessions[str(aid)] = []
-        else:
-            washout_sessions[str(aid)] = [str(dates)]
+    # Session-list overrides, all {animal_id: ['YYYYMMDD', ...]}
+    masking_sessions = _normalise_session_dict(raw.get('masking_sessions', {}))
+    washout_sessions = _normalise_session_dict(raw.get('washout_sessions', {}))
+    unilateral_alm = _normalise_session_dict(
+        raw.get('unilateral_alm_control_sessions', {}))
+    bilateral_alm = _normalise_session_dict(
+        raw.get('bilateral_alm_control_sessions', {}))
+    sessions_to_ignore = _normalise_session_dict(raw.get('sessions_to_ignore', {}))
 
     return ProjectConfig(
         name=raw.get('project', {}).get('name', 'Unnamed Project'),
@@ -472,6 +482,9 @@ def load_config(path: Union[str, Path]) -> ProjectConfig:
         extra_columns=raw.get('extra_columns', []),
         masking_sessions=masking_sessions,
         washout_sessions=washout_sessions,
+        unilateral_alm_control_sessions=unilateral_alm,
+        bilateral_alm_control_sessions=bilateral_alm,
+        sessions_to_ignore=sessions_to_ignore,
     )
 
 

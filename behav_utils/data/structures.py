@@ -350,8 +350,9 @@ class SessionData:
         date:        Session date
         metadata:    SessionMetadata (stage, contingency, protocol, ...)
         trials:      TrialData (per-trial arrays)
-        masking:     Whether this is a masking (light-only control) session
-        washout:     Whether this is a post-opto washout session
+        session_type: Session classification — 'regular' | 'opto' | 'masking' |
+                     'washout' | 'alm_control_uni' | 'alm_control_bi'. The single
+                     source of truth; ``masking``/``washout`` are derived from it.
         csv_path:    Path to source CSV file
         filter_info: Metadata about filtering applied (None if unfiltered)
 
@@ -365,8 +366,11 @@ class SessionData:
     date: date
     metadata: SessionMetadata
     trials: TrialData
-    masking: bool = False
-    washout: bool = False
+    session_type: str = 'regular'
+
+    # True when session_type came from an explicit CSV column (so config-list
+    # overrides in load_experiment defer to it). Internal.
+    _session_type_explicit: bool = field(default=False, repr=False)
 
     csv_path: Optional[str] = None
 
@@ -402,6 +406,16 @@ class SessionData:
     def is_filtered(self) -> bool:
         """Whether this session has been through filter()."""
         return self.filter_info is not None
+
+    @property
+    def masking(self) -> bool:
+        """True iff this is a masking (light-only control) session."""
+        return self.session_type == 'masking'
+
+    @property
+    def washout(self) -> bool:
+        """True iff this is a post-opto washout session."""
+        return self.session_type == 'washout'
 
     # ── Array extraction ───────────────────────────────────────────────────
 
@@ -538,14 +552,13 @@ class AnimalData:
         rows = []
         for sess in self.sessions:
             summ = sess.summary()
-            if getattr(sess, 'washout', False):
-                stype = 'washout'
-            elif getattr(sess, 'masking', False):
-                stype = 'masking'
-            elif sess.trials.opto_on.size > 0 and bool(np.any(sess.trials.opto_on)):
-                stype = 'opto'
-            else:
-                stype = 'regular'
+            stype = getattr(sess, 'session_type', None)
+            if not stype:
+                # Legacy fallback (session predates stored session_type).
+                if sess.trials.opto_on.size > 0 and bool(np.any(sess.trials.opto_on)):
+                    stype = 'opto'
+                else:
+                    stype = 'regular'
             
             sess_stats = fit_summary_stats(sess.trials.choice, sess.trials.stimulus, sess.trials.category,
                                            stat_names = list_available_stats(),

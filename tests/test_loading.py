@@ -6,7 +6,7 @@ column extractor (_safe_column) are tested directly. The loaders (load_session_c
 _read_and_merge_csvs, load_animal, load_experiment) are driven by small synthetic CSVs
 written to tmp_path, covering the branch points: missing-required validation, category
 derivation (both rules), date-resolution fallback, drop_last_row, the min_trials merge
-gate, animal_metadata.json merging, and masking-session opto zeroing.
+gate, animal_metadata.json merging, and masking/washout session_type stamping.
 """
 import json
 from datetime import date
@@ -340,8 +340,10 @@ class TestLoadAnimalAndExperiment:
         assert animal.genotype == 'het'              # merged from animal_metadata.json
 
         by_date = {s.date: s for s in animal.sessions}
+        assert by_date[date(2024, 3, 15)].session_type == 'masking'
         assert by_date[date(2024, 3, 15)].masking is True
-        assert not by_date[date(2024, 3, 15)].trials.opto_on.any()   # zeroed by masking
+        # opto_on is preserved: on a masking session these are the fake-opto trials.
+        assert by_date[date(2024, 3, 15)].trials.opto_on.any()
         assert by_date[date(2024, 3, 16)].trials.opto_on.any()       # untouched
 
     def test_load_experiment_applies_washout(self, tmp_path):
@@ -351,8 +353,9 @@ class TestLoadAnimalAndExperiment:
         cfg.washout_sessions = {'Animal1': ['20240316']}
         exp = load_experiment(cfg)
         by_date = {s.date: s for s in exp.animals['Animal1'].sessions}
+        assert by_date[date(2024, 3, 16)].session_type == 'washout'
         assert by_date[date(2024, 3, 16)].washout is True
-        assert not by_date[date(2024, 3, 16)].trials.opto_on.any()    # zeroed
+        assert by_date[date(2024, 3, 16)].trials.opto_on.any()        # preserved
         assert by_date[date(2024, 3, 15)].trials.opto_on.any()        # untouched
 
     def test_load_animal_merges_multiple_csvs_per_session(self, tmp_path):

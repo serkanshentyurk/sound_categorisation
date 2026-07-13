@@ -90,6 +90,9 @@ class SessionFilter:
                          (ignored when session_type is set)
         exclude_washout: If True, exclude washout sessions
                          (ignored when session_type is set)
+        exclude_alm_control: If True, exclude ALM light-only control sessions
+                         (any session_type starting 'alm_control';
+                         ignored when session_type is set)
         custom_filter: Callable(SessionData) -> bool for arbitrary filtering
     """
     stage: Optional[Union[str, List[str]]] = None
@@ -107,19 +110,19 @@ class SessionFilter:
     exclude_opto: bool = False
     exclude_masking: bool = True
     exclude_washout: bool = True
+    exclude_alm_control: bool = True
     custom_filter: Optional[Callable] = field(default=None, hash=False)
 
     @staticmethod
     def _resolve_session_type(sess: 'SessionData') -> str:
-        """Compute session type from session attributes.
+        """Return the session's stored session_type.
 
-        Priority: washout > masking > opto > regular.
-        Mirrors the logic in AnimalData.session_table.
+        Falls back to deriving from opto content only for legacy sessions
+        that predate the stored field. Mirrors AnimalData.session_table.
         """
-        if getattr(sess, 'washout', False):
-            return 'washout'
-        if getattr(sess, 'masking', False):
-            return 'masking'
+        stype = getattr(sess, 'session_type', None)
+        if stype:
+            return stype
         if sess.trials.opto_on.size > 0 and bool(np.any(sess.trials.opto_on)):
             return 'opto'
         return 'regular'
@@ -219,6 +222,11 @@ class SessionFilter:
                     s for s in sessions
                     if not getattr(s, 'washout', False)
                 ]
+            if self.exclude_alm_control:
+                sessions = [
+                    s for s in sessions
+                    if not self._resolve_session_type(s).startswith('alm_control')
+                ]
 
         # ── 9. Custom ─────────────────────────────────────────────────────
         if self.custom_filter is not None:
@@ -267,6 +275,8 @@ class SessionFilter:
                 parts.append("no masking")
             if self.exclude_washout:
                 parts.append("no washout")
+            if self.exclude_alm_control:
+                parts.append("no ALM control")
         if self.custom_filter is not None:
             parts.append("+ custom filter")
         return ', '.join(parts) if parts else '(no constraints)'

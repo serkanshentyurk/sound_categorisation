@@ -415,6 +415,14 @@ session_presets:
     distribution: "Hard-B"
     session_type: "masking"
 
+  # ── ALM light-only controls (control site, not PPC) ─────────
+  # Add a distribution filter via select_sessions(..., distribution='Uniform')
+  # if you need to restrict these to one distribution.
+  alm_control_uni:
+    session_type: "alm_control_uni"
+  alm_control_bi:
+    session_type: "alm_control_bi"
+
 # =============================================================================
 # Analysis defaults
 # =============================================================================

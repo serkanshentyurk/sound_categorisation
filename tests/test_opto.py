@@ -32,10 +32,18 @@ def _trials(n, rng, noise=0.20, opto_frac=0.0):
 
 
 def _session(idx, base, trials, dist='Uniform', masking=False, washout=False):
+    if washout:
+        session_type = 'washout'
+    elif masking:
+        session_type = 'masking'
+    elif trials.opto_on is not None and bool(np.any(trials.opto_on)):
+        session_type = 'opto'
+    else:
+        session_type = 'regular'
     return SessionData(
         session_id=f'sess_{idx:03d}', session_idx=idx, date=base + timedelta(days=idx),
         metadata=SessionMetadata(fields={'stage': 'Full_Task_Cont', 'distribution': dist}),
-        trials=trials, masking=masking, washout=washout,
+        trials=trials, session_type=session_type,
     )
 
 

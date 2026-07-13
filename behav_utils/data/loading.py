@@ -481,12 +481,34 @@ def load_session_csv(
     animal_id = metadata.animal_id or csv_path.parent.parent.name
     session_id = csv_path.parent.name or f"{animal_id}_S{session_idx:03d}"
 
+    # ── Session type ────────────────────────────────────────────────────────
+    # A CSV session_type column (mapped in metadata or present directly) is
+    # authoritative. Otherwise derive 'opto'/'regular' from opto content;
+    # masking / washout / alm_control are stamped later from the config lists.
+    csv_stype = metadata.get('session_type', None)
+    if csv_stype is None or str(csv_stype).strip().lower() in ('', 'nan', 'none'):
+        csv_stype = None
+        for cand in ('session_type', 'Session_Type', 'SessionType'):
+            if cand in df.columns:
+                vals = df[cand].dropna()
+                if len(vals) > 0:
+                    csv_stype = str(vals.iloc[0]).strip()
+                    break
+    if csv_stype:
+        session_type = csv_stype
+        stype_explicit = True
+    else:
+        session_type = 'opto' if bool(np.any(opto_on)) else 'regular'
+        stype_explicit = False
+
     return SessionData(
         session_id=session_id,
         session_idx=session_idx,
         date=session_date,
         metadata=metadata,
         trials=trials,
+        session_type=session_type,
+        _session_type_explicit=stype_explicit,
         csv_path=str(csv_path),
     )
 
@@ -562,6 +584,8 @@ def load_animal(
         if d.is_dir() and not d.name.startswith('.')
     ])
 
+    ignore_dates = _dates_from_strs(config.sessions_to_ignore.get(animal_id, []))
+
     sessions = []
     for sess_dir in session_dirs:
         
@@ -576,6 +600,10 @@ def load_animal(
         sess_date = parse_date_from_path(
             sess_dir.name, config.file_structure.date_regex,
         )
+
+        # Sessions flagged to ignore never enter the dataset (or the snapshot).
+        if sess_date is not None and sess_date in ignore_dates:
+            continue
 
         try:
             if len(csv_files) == 1:
@@ -606,6 +634,42 @@ def load_animal(
 # =============================================================================
 # EXPERIMENT LOADING
 # =============================================================================
+
+def _dates_from_strs(date_strs) -> set:
+    """Parse ['YYYYMMDD', ...] into a set of datetime.date objects."""
+    dates = set()
+    for ds in (date_strs or []):
+        try:
+            dates.add(date(int(ds[:4]), int(ds[4:6]), int(ds[6:8])))
+        except (ValueError, IndexError, TypeError):
+            continue
+    return dates
+
+
+def _apply_session_type(experiment, mapping, stype) -> None:
+    """Set session_type=<stype> on sessions whose date is in the mapping.
+
+    Sessions whose session_type came from an explicit CSV column are left
+    untouched (a warning is issued if the config disagrees).
+    """
+    for animal_id, date_strs in (mapping or {}).items():
+        animal = experiment.animals.get(animal_id)
+        if animal is None:
+            continue
+        dates = _dates_from_strs(date_strs)
+        for sess in animal.sessions:
+            if sess.date not in dates:
+                continue
+            if getattr(sess, '_session_type_explicit', False):
+                if sess.session_type != stype:
+                    warnings.warn(
+                        f"{animal_id} {sess.date}: config lists it as '{stype}' "
+                        f"but the CSV session_type is '{sess.session_type}'; "
+                        f"keeping the CSV value."
+                    )
+                continue
+            sess.session_type = stype
+
 
 def load_experiment(
     config_or_path: Union[ProjectConfig, str, Path],
@@ -662,44 +726,16 @@ def load_experiment(
             if animal is not None:
                 animal.metadata.update(meta)
     
-    if config.masking_sessions:
-        from datetime import date as dt_date
-        for animal_id, date_strs in config.masking_sessions.items():
-            animal = experiment.animals.get(animal_id)
-            if animal is None:
-                continue
-            dates = set()
-            for ds in date_strs:
-                try:
-                    dates.add(dt_date(int(ds[:4]), int(ds[4:6]), int(ds[6:8])))
-                except (ValueError, IndexError):
-                    continue
-            for sess in animal.sessions:
-                if sess.date in dates:
-                    sess.masking = True
-                    if sess.trials.opto_on is not None:
-                        sess.trials.opto_on = np.zeros_like(
-                            sess.trials.opto_on, dtype=bool
-                        )    
-    if config.washout_sessions:
-        from datetime import date as dt_date
-        for animal_id, date_strs in config.washout_sessions.items():
-            animal = experiment.animals.get(animal_id)
-            if animal is None:
-                continue
-            dates = set()
-            for ds in date_strs:
-                try:
-                    dates.add(dt_date(int(ds[:4]), int(ds[4:6]), int(ds[6:8])))
-                except (ValueError, IndexError):
-                    continue
-            for sess in animal.sessions:
-                if sess.date in dates:
-                    sess.washout = True
-                    if sess.trials.opto_on is not None:
-                        sess.trials.opto_on = np.zeros_like(
-                            sess.trials.opto_on, dtype=bool
-                        )  
+    # Stamp session_type from the config lists. opto_on is left untouched:
+    # on a masking session its True trials are the (power-0) fake-opto trials,
+    # selectable via opto_on & session_type=='masking'.
+    _apply_session_type(experiment, config.masking_sessions, 'masking')
+    _apply_session_type(experiment, config.washout_sessions, 'washout')
+    _apply_session_type(
+        experiment, config.unilateral_alm_control_sessions, 'alm_control_uni')
+    _apply_session_type(
+        experiment, config.bilateral_alm_control_sessions, 'alm_control_bi')
+
     print(
         f"Loaded {experiment.n_animals} animals, "
         f"{sum(a.n_sessions for a in experiment.animals.values())} total sessions"
