@@ -180,6 +180,91 @@ def extract_opto_estimates(
     return pd.concat(frames, ignore_index=True)
 
 
+def extract_opto_rt(
+    experiment: 'ExperimentData',
+    phases: Union[str, List[str]] = 'uniform',
+    animals: Optional[Sequence[str]] = None,
+    trial_types: Sequence[str] = ('opto', 'opto_off'),
+    session_type: str = 'alm_control_bi',
+    exclude_abort: bool = True,
+    min_trials: int = MIN_TRIALS,
+) -> pd.DataFrame:
+    """Per-animal reaction-time estimates, in the extract_opto_estimates table
+    shape (columns match, so it feeds the same paired_diff / rank_test path).
+
+    RT is NOT a summary_stats registry stat (that path only sees choice /
+    stimulus / category), so it is computed here directly from
+    ``trials.reaction_time`` on the filter_phase selection.
+
+    Two stats per (animal x phase x trial_type), on pooled non-abort, responded
+    trials:
+
+      rt_early_frac : fraction with ``reaction_time == 0`` — the acquisition
+                      floors any lick before the reward epoch to 0, so these are
+                      early / anticipatory responses, a real bilateral-ALM
+                      readout in their own right (impulsive responding).
+      rt_median     : median ``reaction_time`` over trials with
+                      ``reaction_time > 0`` (properly-timed responses). NaN if
+                      none.
+
+    Split because the RT distribution is zero-inflated at the floor: a plain
+    median saturates at 0 when early licks dominate (>75% on some sessions), so
+    it is not a usable readout alone. Feed the result to ``paired_diff`` (Δ =
+    opto − opto_off) then ``rank_test`` exactly as for ``extract_opto_estimates``.
+
+    Args:
+        phases:       phase key or list ('uniform' | 'hard_a' | 'hard_b').
+        animals:      opto-cohort ids (default: all opto-cohort animals).
+        trial_types:  laser conditions, filter_phase names ('opto' | 'opto_off'
+                      | 'post_opto').
+        session_type: phase session_type (default 'alm_control_bi').
+        exclude_abort, min_trials: passed to filter_phase; min_trials also gates
+                      the pooled valid-RT count per (animal, condition).
+
+    Returns:
+        Long DataFrame concatenated across animal x phase x trial_type with
+        stat in {'rt_early_frac', 'rt_median'}, or empty if nothing selected.
+    """
+    if isinstance(phases, str):
+        phases = [phases]
+    if isinstance(trial_types, str):
+        trial_types = [trial_types]
+    animals = _opto_animals(experiment, animals)
+
+    rows: List[dict] = []
+    for aid in animals:
+        animal = experiment.animals[aid]
+        genotype = _norm_genotype(animal.genotype)
+        for phase in phases:
+            for tt in trial_types:
+                sessions = filter_phase(animal, phase, session_type,
+                                        trial_type=tt, exclude_abort=exclude_abort,
+                                        min_trials=min_trials)
+                if not sessions:
+                    continue
+                rt = np.concatenate([np.asarray(s.trials.reaction_time, float)
+                                     for s in sessions])
+                nr = np.concatenate([np.asarray(s.trials.no_response, bool)
+                                     for s in sessions])
+                ab = np.concatenate([np.asarray(s.trials.abort, bool)
+                                     for s in sessions])
+                valid = ~ab & ~nr & np.isfinite(rt)
+                rv = rt[valid]
+                if rv.size < min_trials:
+                    continue
+                pos = rv[rv > 0]
+                stats = {
+                    'rt_early_frac': float(np.mean(rv == 0)),
+                    'rt_median': float(np.median(pos)) if pos.size else np.nan,
+                }
+                for nm, v in stats.items():
+                    rows.append({'animal': aid, 'session': pd.NA, 'stat': nm,
+                                 'value': v, 'n_trials': int(rv.size),
+                                 'genotype': genotype, 'distribution': phase,
+                                 'session_type': session_type, 'trial_type': tt})
+    return pd.DataFrame(rows)
+
+
 def compute_opto_trajectory(
     experiment: 'ExperimentData',
     phase: Union[str, List[str]] = 'uniform',
@@ -375,6 +460,9 @@ def compute_side_bias(result, a='opto', b='opto_off',
     Returns [animal, genotype, net_bias, tail_delta, boundary_delta].
     """
     binned, rates = result['binned'], result['rates']
+    if binned.empty or 'animal' not in binned.columns:
+        return pd.DataFrame(columns=['animal', 'genotype', 'net_bias',
+                                     'tail_delta', 'boundary_delta'])
     rows = []
     genos = binned.groupby('animal')['genotype'].first()
     for aid, g in genos.items():
@@ -406,6 +494,8 @@ def compute_sdt(result, a='opto', b='opto_off'):
     """
     from scipy.stats import norm
     rates = result['rates']
+    if rates.empty or 'animal' not in rates.columns:
+        return pd.DataFrame(columns=['animal', 'genotype', 'd_dprime', 'd_c', 'saturated'])
 
     def _cd(hit, fa, n_s, n_n):
         h = (hit * n_s + 0.5) / (n_s + 1.0)     # Hautus 1995 log-linear
