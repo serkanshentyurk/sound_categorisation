@@ -325,3 +325,152 @@ def plot_stat_comparison(
         fig.suptitle(suptitle, fontsize=13)
     fig.tight_layout()
     return fig, list(flat[:len(stats)])
+
+
+def plot_interaction(
+    interaction: Dict,
+    stats: Optional[Sequence[str]] = None,
+    ncols: int = 4,
+    panel_size: tuple = (3.0, 3.0),
+    suptitle: Optional[str] = None,
+    show_p: bool = True,
+    show_components: bool = True,
+    colour_a: str = '#1f77b4',
+    colour_b: str = '#ff7f0e',
+    colour_interaction: str = '#7f2704',
+):
+    """Grid of difference-of-differences, one panel per stat.
+
+    The companion to :func:`plot_stat_comparison`: that one shows phases within
+    a session type, this one shows whether the *effect* differs between two
+    session types — masking vs opto, say.
+
+    Each panel puts three points on a common scale: the effect in the first
+    result, the effect in the second, and their difference. All three carry a
+    95% bootstrap interval, and the p above the interaction tests that
+    difference against zero.
+
+    Read the interaction, not the gap between the two components. Two
+    intervals can overlap while their difference is significant — for
+    independent estimates with equal standard error they only stop overlapping
+    at 3.9 SE, while the difference is significant from 2.8 SE — which is
+    exactly why the difference is drawn explicitly.
+
+    Every panel gets its own y-scale: PSE is in stimulus units, win_stay is a
+    proportion, and a shared axis would flatten most of them to slivers.
+
+    Args:
+        interaction: output of ``compute_interaction``.
+        stats:       which stats to draw, in order; default is all of them.
+        ncols:       panels per row; unused axes are removed.
+        panel_size:  (width, height) inches per panel.
+        suptitle:    figure title.
+        show_p:      annotate the interaction p-value.
+        show_components: draw the two component effects beside the interaction.
+                     False gives the interaction alone.
+        colour_a, colour_b, colour_interaction: marker colours.
+
+    Returns:
+        ``(fig, axes)`` with ``axes`` a flat list of the axes used.
+
+    Raises:
+        ValueError: if there is nothing to plot.
+    """
+    meta = interaction.get('meta', {})
+    label_a = meta.get('label_a', 'a')
+    label_b = meta.get('label_b', 'b')
+
+    if stats is None:
+        stats = [k for k in interaction if k != 'meta']
+    stats = [s for s in stats if s in interaction and s != 'meta']
+    if not stats:
+        raise ValueError("plot_interaction: no stats to plot")
+
+    if show_components:
+        positions = [f'Δ {label_a}', f'Δ {label_b}', 'interaction']
+        colours = [colour_a, colour_b, colour_interaction]
+    else:
+        positions = ['interaction']
+        colours = [colour_interaction]
+
+    ncols = max(1, min(ncols, len(stats)))
+    nrows = int(np.ceil(len(stats) / ncols))
+    fig, axarr = plt.subplots(nrows, ncols, squeeze=False,
+                              figsize=(panel_size[0] * ncols, panel_size[1] * nrows))
+    flat = axarr.ravel()
+
+    for ax, stat in zip(flat, stats):
+        entry = interaction[stat]
+        if show_components:
+            values = [entry.get('delta_a', np.nan),
+                      entry.get('delta_b', np.nan),
+                      entry.get('interaction', np.nan)]
+            intervals = [entry.get('ci_a', (np.nan, np.nan)),
+                         entry.get('ci_b', (np.nan, np.nan)),
+                         (entry.get('ci_lo', np.nan), entry.get('ci_hi', np.nan))]
+        else:
+            values = [entry.get('interaction', np.nan)]
+            intervals = [(entry.get('ci_lo', np.nan), entry.get('ci_hi', np.nan))]
+
+        ax.axhline(0.0, color='0.6', lw=1, ls='--', zorder=0)
+
+        for i, (value, (lo, hi), colour) in enumerate(zip(values, intervals, colours)):
+            if not np.isfinite(value):
+                continue
+            is_interaction = (i == len(values) - 1)
+
+            # The interval is drawn as a segment rather than via yerr. The point
+            # is the observed estimate and the interval is a percentile of the
+            # bootstrap draws, so nothing guarantees the point sits inside it —
+            # a boundary-pinned lapse or a skewed draw distribution can put it
+            # outside. yerr would raise on the resulting negative offset; a
+            # segment shows the discrepancy instead, which is the honest
+            # rendering and a signal the estimate is unstable.
+            if np.isfinite(lo) and np.isfinite(hi):
+                ax.plot([i, i], [lo, hi], color=colour,
+                        lw=1.8 if is_interaction else 1.3,
+                        solid_capstyle='butt', zorder=2)
+                for cap in (lo, hi):
+                    ax.plot([i - 0.07, i + 0.07], [cap, cap], color=colour,
+                            lw=1.8 if is_interaction else 1.3, zorder=2)
+                outside = value < lo or value > hi
+            else:
+                outside = False
+
+            # Hollow marker flags a point outside its own interval.
+            ax.plot(i, value, marker='o',
+                    markersize=8 if is_interaction else 6.5,
+                    markerfacecolor='white' if outside else colour,
+                    markeredgecolor=colour,
+                    markeredgewidth=1.6 if outside else 0.6,
+                    zorder=4 if is_interaction else 3)
+
+        if show_p:
+            p = entry.get('p_two_sided')
+            if p is not None and np.isfinite(p):
+                finite = [(v, iv) for v, iv in zip(values, intervals) if np.isfinite(v)]
+                if finite:
+                    top = max(max(v, iv[1]) if np.isfinite(iv[1]) else v
+                              for v, iv in finite)
+                    bottom = min(min(v, iv[0]) if np.isfinite(iv[0]) else v
+                                 for v, iv in finite)
+                    span = (top - bottom) or (abs(top) or 1.0)
+                    ax.annotate(f"p = {p:.3g}", xy=(len(values) - 1, top + 0.10 * span),
+                                ha='center', va='bottom', fontsize=8,
+                                color=colour_interaction)
+                    ax.margins(y=0.22)
+
+        ax.set_xticks(range(len(positions)))
+        ax.set_xticklabels(positions, fontsize=8, rotation=20 if show_components else 0,
+                           ha='right' if show_components else 'center')
+        ax.set_xlim(-0.6, len(positions) - 0.4)
+        ax.set_title(_LABEL_FOR_KEY.get(stat, stat), fontsize=10)
+        ax.spines[['top', 'right']].set_visible(False)
+
+    for ax in flat[len(stats):]:
+        fig.delaxes(ax)
+
+    if suptitle:
+        fig.suptitle(suptitle, fontsize=13)
+    fig.tight_layout()
+    return fig, list(flat[:len(stats)])

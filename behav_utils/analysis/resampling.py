@@ -322,10 +322,14 @@ def summarise_draw_distribution(
         p = float((1 + np.sum(np.abs(values - null_value) >= abs(observed - null_value)))
                   / (values.size + 1))
     else:
-        # Bootstrap: how much of the distribution sits across the null?
-        below = float(np.mean(values <= null_value))
-        above = float(np.mean(values >= null_value))
-        p = float(min(1.0, 2.0 * min(below, above)))
+        # Bootstrap: how much of the distribution sits across the null? The
+        # (1 + count) / (n + 1) form matches the permutation branch and keeps a
+        # finite set of draws from ever reporting p = 0 — the floor is
+        # 2 / (n_draws + 1), which is a property of how many draws were taken,
+        # not evidence. Raise n_draws to lower it.
+        below = 1 + int(np.sum(values <= null_value))
+        above = 1 + int(np.sum(values >= null_value))
+        p = float(min(1.0, 2.0 * min(below, above) / (values.size + 1)))
 
     return {'ci_lo': ci_lo, 'ci_hi': ci_hi, 'p_two_sided': p,
             'n_draws': int(values.size), 'median': float(np.median(values))}

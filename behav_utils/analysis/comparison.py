@@ -416,15 +416,24 @@ def compute_interaction(
             continue
         interaction_draws = delta_draws_a[:n] - delta_draws_b[:n]
         summary = summarise_draw_distribution(interaction_draws, ci=ci)
+        summary_a = summarise_draw_distribution(delta_draws_a, ci=ci)
+        summary_b = summarise_draw_distribution(delta_draws_b, ci=ci)
         out[stat] = {
+            # component effects, each with its own interval — context for the
+            # interaction, NOT to be compared by eye (overlapping intervals do
+            # not mean the difference is null).
             'delta_a': entry_a['diffs'].get(stat, np.nan),
+            'ci_a': (summary_a['ci_lo'], summary_a['ci_hi']),
             'delta_b': entry_b['diffs'].get(stat, np.nan),
+            'ci_b': (summary_b['ci_lo'], summary_b['ci_hi']),
+            # the inferential claim
             'interaction': (entry_a['diffs'].get(stat, np.nan)
                             - entry_b['diffs'].get(stat, np.nan)),
             'ci_lo': summary['ci_lo'],
             'ci_hi': summary['ci_hi'],
             'p_two_sided': summary['p_two_sided'],
             'n_draws': summary['n_draws'],
+            'draws': interaction_draws,
         }
 
     out['meta'] = {

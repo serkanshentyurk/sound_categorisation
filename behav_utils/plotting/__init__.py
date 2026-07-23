@@ -27,7 +27,9 @@ Usage:
 from behav_utils.plotting.psychometric import plot_psychometric
 from behav_utils.plotting.update_matrix import plot_um
 from behav_utils.plotting.trajectory import plot_trajectory
-from behav_utils.plotting.comparison import plot_comparison, plot_stat_comparison
+from behav_utils.plotting.comparison import (
+    plot_comparison, plot_stat_comparison, plot_interaction,
+)
 from behav_utils.plotting.session import plot_session_raster
 from behav_utils.plotting.styles import (
     PALETTE, COLOURS, UM_CMAP,
@@ -37,6 +39,7 @@ from behav_utils.plotting.styles import (
 __all__ = [
     'plot_psychometric',
     'plot_stat_comparison',
+    'plot_interaction',
     'plot_um',
     'plot_trajectory',
     'plot_comparison',
