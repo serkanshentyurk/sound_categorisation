@@ -188,10 +188,10 @@ class SessionFilter:
 
         # ── 5. Quality ────────────────────────────────────────────────────
         if self.min_accuracy is not None or self.max_accuracy is not None:
-            from behav_utils.analysis.session_features import compute_session_features  # Avoid circular import
+            from behav_utils.analysis.summary_stats import compute_summary_stats
             filtered = []
             for s in sessions:
-                acc = compute_session_features(s, stat_names=['accuracy'])['accuracy']
+                acc = compute_summary_stats([s], stat_names=['accuracy'])['stats']['accuracy']
                 if self.min_accuracy is not None and acc < self.min_accuracy:
                     continue
                 if self.max_accuracy is not None and acc > self.max_accuracy:
@@ -327,14 +327,6 @@ def list_presets() -> Dict[str, str]:
     return {name: filt.describe() for name, filt in sorted(_PRESETS.items())}
 
 
-def clear_presets() -> None:
-    """Remove all registered presets. Mainly for testing."""
-    _PRESETS.clear()
-
-
-# =============================================================================
-# MAIN ENTRY POINT
-# =============================================================================
 
 def select_sessions(
     animal: 'AnimalData',

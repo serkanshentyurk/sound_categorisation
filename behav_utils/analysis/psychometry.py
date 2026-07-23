@@ -470,35 +470,3 @@ def fit_psychometric_gof(stimuli: np.ndarray, choices: np.ndarray,
         'n_trials': n_total
     }
     
-def compute_psych_error(psych_true: Dict, psych_fitted: Dict) -> Dict:
-    """
-    Compute errors between two psychometric fits.
-    
-    Args:
-        psych_true: Psychometric fit from true model
-        psych_fitted: Psychometric fit from fitted model
-    
-    Returns:
-        Dict with errors for each psychometric parameter
-    """
-    errors = {}
-    for key in ['mu', 'sigma', 'lapse_low', 'lapse_high']:
-        if psych_true.get('success', False) and psych_fitted.get('success', False):
-            errors[key] = psych_fitted[key] - psych_true[key]
-            errors[f'{key}_true'] = psych_true[key]
-            errors[f'{key}_fitted'] = psych_fitted[key]
-        else:
-            errors[key] = np.nan
-            errors[f'{key}_true'] = np.nan
-            errors[f'{key}_fitted'] = np.nan
-    
-    # Curve error (if both have fitted curves)
-    if 'y_fit' in psych_true and 'y_fit' in psych_fitted:
-        if psych_true['y_fit'] is not None and psych_fitted['y_fit'] is not None:
-            errors['curve_mae'] = np.mean(np.abs(psych_fitted['y_fit'] - psych_true['y_fit']))
-            errors['curve_max_diff'] = np.max(np.abs(psych_fitted['y_fit'] - psych_true['y_fit']))
-        else:
-            errors['curve_mae'] = np.nan
-            errors['curve_max_diff'] = np.nan
-    
-    return errors

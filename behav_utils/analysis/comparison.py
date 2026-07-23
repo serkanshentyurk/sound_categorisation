@@ -1,452 +1,437 @@
 """
-Condition comparison for 2AFC tasks.
+Phase comparison for 2AFC tasks.
 
-General-purpose comparison of two independent trial sets:
-psychometric parameter differences with permutation tests,
-bootstrap CIs on differences, accuracy Fisher's exact test,
-and update matrix comparison.
+Compare N pre-filtered trial sets ("phases") against one reference, then compare
+those comparisons across session types.
 
-Works for any two-condition comparison:
-- Opto vs control trials (within session)
-- Pre-shift vs post-shift sessions
-- Hard-A vs Hard-B sessions
-- Masking vs real opto
-- Het vs WT animals (pooled trials)
+    load_experiment → select_sessions → filter_trials → phase
+                                                          ↓
+                              compare_phases   (within phase: opto vs non_opto)
+                                                          ↓
+                              compute_interaction  (between phases: Δ₁ vs Δ₂)
+
+A phase is whatever ``filter_trials`` returned, treated as one pooled trial set:
+opto vs non_opto vs post_opto within a session type, masking vs opto sessions,
+pre- vs post-shift. One session or forty makes no difference to the machinery.
+
+    phases = {tt: filter_trials(selected, trial_type=tt)
+              for tt in ['non_opto', 'opto', 'post_opto']}
+
+    result = compare_phases(phases, stats=['psychometric', 'win_stay', 'um'],
+                            reference='non_opto')
+
+    plot_psychometric(result['phases']['opto']['psychometric'])
+    plot_um(result['phases']['opto']['um'])
+    plot_comparison(result, 'opto_vs_non_opto')
+    result['contrasts']['opto_vs_non_opto']['diffs' | 'perm_p' | 'boot_ci']
+
+    # is the opto effect different in masking sessions than in opto sessions?
+    interaction = compute_interaction(result_masking, result_opto,
+                                      contrast='opto_vs_non_opto')
+
+All resampling is delegated to :mod:`behav_utils.analysis.resampling`; this
+module only orchestrates and assembles. Statistics come from pooled arrays via
+``fit_summary_stats``, so the observed value, the permutation null and the
+bootstrap all travel the same code path. Per-phase display objects are the
+untouched outputs of ``compute_psychometric`` / ``compute_um``, so they feed the
+plotters directly.
 
 Public API:
-    compare_conditions      — Full comparison of two trial sets
-    permutation_test_params — Permutation test on psychometric param diffs
-    bootstrap_param_diff    — Bootstrap CI on psychometric param diffs
-
-Usage:
-    from behav_utils.analysis.comparison import compare_conditions
-
-    result = compare_conditions(
-        stim_a, choices_a, cat_a,
-        stim_b, choices_b, cat_b,
-    )
-    # result['diffs']['mu']  → PSE difference (A - B)
-    # result['perm_p']['mu'] → permutation p-value
-    # result['boot_ci']['mu'] → (lower, upper) 95% CI on diff
-    # result['um_rmse']       → UM RMSE between conditions
+    compare_phases      — N phases vs a reference, within-phase contrasts
+    compute_interaction — difference of differences across two results
 """
 
-from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
+from typing import Dict, List, Optional, Sequence, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from behav_utils.data.structures import SessionData
 
 import numpy as np
-from scipy.stats import fisher_exact
 
-from behav_utils.analysis.psychometry import fit_psychometric
-from behav_utils.analysis.update_matrix import fit_update_matrix
+from behav_utils.analysis.resampling import (
+    bootstrap_phase_stats,
+    compute_stats_from_arrays,
+    permute_phase_difference,
+    pool_phase_arrays,
+    summarise_draw_distribution,
+)
 
-PARAM_NAMES = ('mu', 'sigma', 'lapse_low', 'lapse_high')
+__all__ = ['compare_phases', 'compute_interaction']
 
-
-def _fit_params(stimuli, choices):
-    """Fit psychometric and return param dict, or None if fit fails.
-
-    Keys: mu (PSE), sigma (slope), lapse_low, lapse_high — matching
-    fit_psychometric() and compute_psychometric() conventions.
-    """
-    pfit = fit_psychometric(stimuli, choices)
-    if not pfit.get('success', False) and np.isnan(pfit.get('mu', np.nan)):
-        return None
-    return {
-        'mu':         float(pfit['mu']),
-        'sigma':      float(pfit['sigma']),
-        'lapse_low':  float(pfit['lapse_low']),
-        'lapse_high': float(pfit['lapse_high']),
-    }
+_UPDATE_MATRIX_STAT = 'um'
 
 
-def _accuracy(choices, categories):
-    """Compute accuracy, handling NaN choices."""
-    valid = ~np.isnan(choices)
-    if valid.sum() == 0:
-        return np.nan
-    return float(np.mean(choices[valid] == categories[valid]))
+def _contrast_key(phase: str, reference: str) -> str:
+    return f'{phase}_vs_{reference}'
 
 
-def permutation_test_params(
-    stimuli_a: np.ndarray, choices_a: np.ndarray,
-    stimuli_b: np.ndarray, choices_b: np.ndarray,
+def compare_phases(
+    phases,
+    stats: Sequence[str] = ('psychometric',),
+    labels: Optional[List[str]] = None,
+    reference: Optional[str] = None,
+    downsample: bool = False,
     n_permutations: int = 1000,
-    seed: int = 42,
-) -> Dict[str, float]:
-    """
-    Permutation test for psychometric parameter differences.
-
-    Pools all trials, shuffles group labels, refits both groups,
-    computes param diffs. p-value = proportion of permuted diffs
-    at least as extreme as observed.
-
-    Two-sided test: compares |observed diff| against |permuted diffs|.
-
-    Args:
-        stimuli_a, choices_a: Condition A trials
-        stimuli_b, choices_b: Condition B trials
-        n_permutations: Number of permutations
-        seed: Random seed
-
-    Returns:
-        Dict mapping param name → p-value. NaN if fit fails.
-    """
-    rng = np.random.default_rng(seed)
-
-    # Observed diffs
-    params_a = _fit_params(stimuli_a, choices_a)
-    params_b = _fit_params(stimuli_b, choices_b)
-    if params_a is None or params_b is None:
-        return {p: np.nan for p in PARAM_NAMES}
-
-    observed = {p: params_a[p] - params_b[p] for p in params_a}
-
-    # Pool trials
-    all_stim = np.concatenate([stimuli_a, stimuli_b])
-    all_choice = np.concatenate([choices_a, choices_b])
-    n_a = len(stimuli_a)
-    n_total = len(all_stim)
-
-    # Permutation distribution
-    perm_diffs = {p: [] for p in observed}
-    for _ in range(n_permutations):
-        perm_idx = rng.permutation(n_total)
-        perm_stim_a = all_stim[perm_idx[:n_a]]
-        perm_choice_a = all_choice[perm_idx[:n_a]]
-        perm_stim_b = all_stim[perm_idx[n_a:]]
-        perm_choice_b = all_choice[perm_idx[n_a:]]
-
-        pa = _fit_params(perm_stim_a, perm_choice_a)
-        pb = _fit_params(perm_stim_b, perm_choice_b)
-        if pa is None or pb is None:
-            continue
-
-        for p in observed:
-            perm_diffs[p].append(pa[p] - pb[p])
-
-    # Compute p-values (two-sided)
-    p_values = {}
-    for p in observed:
-        perm = np.array(perm_diffs[p])
-        if len(perm) < 10:
-            p_values[p] = np.nan
-            continue
-        p_values[p] = float(np.mean(np.abs(perm) >= np.abs(observed[p])))
-
-    return p_values
-
-
-def bootstrap_param_diff(
-    stimuli_a: np.ndarray, choices_a: np.ndarray,
-    stimuli_b: np.ndarray, choices_b: np.ndarray,
     n_bootstrap: int = 1000,
-    ci_level: float = 0.95,
-    seed: int = 42,
-) -> Dict[str, Tuple[float, float]]:
-    """
-    Bootstrap CI on psychometric parameter differences (A - B).
-
-    Resamples each group independently with replacement, refits,
-    computes diff. Returns percentile CIs.
-
-    Args:
-        stimuli_a, choices_a: Condition A trials
-        stimuli_b, choices_b: Condition B trials
-        n_bootstrap: Number of bootstrap samples
-        ci_level: CI coverage (default 0.95 → 2.5/97.5 percentiles)
-        seed: Random seed
-
-    Returns:
-        Dict mapping param name → (lower, upper) CI.
-    """
-    rng = np.random.default_rng(seed)
-    alpha = (1 - ci_level) / 2
-    n_a = len(stimuli_a)
-    n_b = len(stimuli_b)
-
-    boot_diffs = {p: [] for p in PARAM_NAMES}
-
-    for _ in range(n_bootstrap):
-        idx_a = rng.choice(n_a, size=n_a, replace=True)
-        idx_b = rng.choice(n_b, size=n_b, replace=True)
-
-        pa = _fit_params(stimuli_a[idx_a], choices_a[idx_a])
-        pb = _fit_params(stimuli_b[idx_b], choices_b[idx_b])
-        if pa is None or pb is None:
-            continue
-
-        for p in boot_diffs:
-            boot_diffs[p].append(pa[p] - pb[p])
-
-    cis = {}
-    for p in boot_diffs:
-        vals = np.array(boot_diffs[p])
-        if len(vals) < 10:
-            cis[p] = (np.nan, np.nan)
-        else:
-            cis[p] = (
-                float(np.percentile(vals, 100 * alpha)),
-                float(np.percentile(vals, 100 * (1 - alpha))),
-            )
-    return cis
-
-def _bootstrap_curve_band(
-    stimuli: np.ndarray,
-    choices: np.ndarray,
-    x_eval: np.ndarray,
-    n_bootstrap: int = 1000,
-    alpha: float = 0.05,
-    seed: int = 42,
-) -> Dict[str, np.ndarray]:
-    """
-    Bootstrap percentile band around the fitted psychometric curve.
-
-    For each bootstrap iteration, resample trials with replacement,
-    refit the psychometric, evaluate the cumulative gaussian at x_eval.
-    Returns lower and upper percentiles per x.
-
-    Args:
-        stimuli, choices: Trial arrays for one condition.
-        x_eval: x values at which to evaluate the curve.
-        n_bootstrap: Number of bootstrap iterations.
-        alpha: Two-sided significance level (0.05 → 95% band).
-        seed: RNG seed.
-
-    Returns:
-        {'x': x_eval, 'lo': lower band, 'hi': upper band, 'median': median curve}
-    """
-    from behav_utils.analysis.utils import cumulative_gaussian
-
-    rng = np.random.default_rng(seed)
-    n = len(stimuli)
-    curves = np.full((n_bootstrap, len(x_eval)), np.nan)
-
-    for i in range(n_bootstrap):
-        idx = rng.integers(0, n, n)
-        p = fit_psychometric(stimuli[idx], choices[idx])
-        if p.get('success', False) and not np.isnan(p.get('mu', np.nan)):
-            curves[i] = cumulative_gaussian(
-                x_eval,
-                p['mu'], p['sigma'],
-                p.get('lapse_low', 0.0), p.get('lapse_high', 0.0),
-            )
-
-    return {
-        'x':      x_eval,
-        'lo':     np.nanpercentile(curves, 100 * alpha / 2,       axis=0),
-        'hi':     np.nanpercentile(curves, 100 * (1 - alpha / 2), axis=0),
-        'median': np.nanmedian(curves, axis=0),
-    }
-
-def compare_conditions(
-    stimuli_a: np.ndarray, choices_a: np.ndarray, categories_a: np.ndarray,
-    stimuli_b: np.ndarray, choices_b: np.ndarray, categories_b: np.ndarray,
     n_bins: int = 8,
-    n_permutations: int = 1000,
-    n_bootstrap: int = 1000,
+    trial_filter: str = 'post_correct',
+    n_repeats: int = 200,
     seed: int = 42,
-    label_a: str = 'A',
-    label_b: str = 'B',
 ) -> Dict:
-    """
-    Compare two independent trial sets across all behavioural metrics.
+    """Compare N phases against a reference, with permutation p and bootstrap CI.
 
-    Computes psychometric parameters, accuracy, and update matrices
-    for each condition, then tests for differences using permutation
-    tests, bootstrap CIs, and Fisher's exact test.
-
-    This is the general-purpose comparison function. Specific
-    use-cases (opto vs control, pre vs post shift) are thin
-    wrappers that select trials and call this.
+    Every non-reference phase is contrasted against the reference, so
+    ``['non_opto', 'opto', 'post_opto']`` with ``reference='non_opto'`` gives
+    opto−non_opto and post_opto−non_opto, and not the opto−post_opto contrast
+    nobody asked for.
 
     Args:
-        stimuli_a/b: Stimulus arrays for conditions A and B
-        choices_a/b: Choice arrays (binary, may contain NaN)
-        categories_a/b: Category arrays
-        n_bins: Number of bins for update matrix
-        n_permutations: Permutation test iterations (0 to skip)
-        n_bootstrap: Bootstrap iterations (0 to skip)
-        seed: Random seed
-        label_a, label_b: Labels for the two conditions
-
-    Returns dict with:
-        params_a, params_b: {accuracy, mu, sigma, lapse_low, lapse_high}
-            mu = PSE; sigma = psychometric slope.
-        diffs: same keys, A − B.
-        n_a, n_b: trial counts.
-
-        perm_p: {mu, sigma, lapse_low, lapse_high} → permutation p-values
-            (None if n_permutations == 0).
-        boot_ci: {mu, sigma, lapse_low, lapse_high} → (lo, hi) CIs on diffs
-            (None if n_bootstrap == 0).
-        boot_band_a, boot_band_b: per-condition fit-curve bands
-            {x, lo, hi, median} (None if n_bootstrap == 0).
-
-        fisher_p: Fisher's exact test p-value for accuracy difference.
-        fisher_odds: odds ratio.
-
-        um_a, um_b: (n_bins, n_bins) update matrices.
-        um_diff: um_a − um_b.
-        um_rmse: element-wise RMSE of difference.
-        um_corr: Pearson r between flattened UMs.
-
-        label_a, label_b: condition labels.
-    """
-    # Clean NaN choices
-    valid_a = ~np.isnan(choices_a.astype(float))
-    valid_b = ~np.isnan(choices_b.astype(float))
-    stim_a, ch_a, cat_a = stimuli_a[valid_a], choices_a[valid_a], categories_a[valid_a]
-    stim_b, ch_b, cat_b = stimuli_b[valid_b], choices_b[valid_b], categories_b[valid_b]
-
-    # ── Psychometric fits ────────────────────────────────────────────
-    params_a = _fit_params(stim_a, ch_a) or {}
-    params_b = _fit_params(stim_b, ch_b) or {}
-
-    acc_a = _accuracy(ch_a, cat_a)
-    acc_b = _accuracy(ch_b, cat_b)
-    params_a['accuracy'] = acc_a
-    params_b['accuracy'] = acc_b
-
-    diffs = {}
-    for key in ('accuracy',) + PARAM_NAMES:
-        diffs[key] = params_a.get(key, np.nan) - params_b.get(key, np.nan)
-
-    # ── Permutation test on psychometric params ──────────────────────
-    perm_p = None
-    if n_permutations > 0 and len(stim_a) >= 10 and len(stim_b) >= 10:
-        perm_p = permutation_test_params(
-            stim_a, ch_a, stim_b, ch_b,
-            n_permutations=n_permutations, seed=seed,
-        )
-
-    # ── Bootstrap CI on param diffs ──────────────────────────────────
-    boot_ci = None
-    if n_bootstrap > 0 and len(stim_a) >= 10 and len(stim_b) >= 10:
-        boot_ci = bootstrap_param_diff(
-            stim_a, ch_a, stim_b, ch_b,
-            n_bootstrap=n_bootstrap, seed=seed,
-        )
-        
-    # ── Bootstrap per-condition curve bands ─────────────────────────
-    boot_band_a, boot_band_b = None, None
-    if n_bootstrap > 0 and len(stim_a) >= 10 and len(stim_b) >= 10:
-        x_eval = np.linspace(-1, 1, 200)
-        boot_band_a = _bootstrap_curve_band(
-            stim_a, ch_a, x_eval,
-            n_bootstrap=n_bootstrap, seed=seed,
-        )
-        boot_band_b = _bootstrap_curve_band(
-            stim_b, ch_b, x_eval,
-            n_bootstrap=n_bootstrap, seed=seed + 1,
-        )
-        
-    # ── Fisher's exact test on accuracy ──────────────────────────────
-    fisher_p, fisher_odds = np.nan, np.nan
-    if len(ch_a) >= 5 and len(ch_b) >= 5:
-        correct_a = int(np.sum(ch_a == cat_a))
-        incorrect_a = int(np.sum(ch_a != cat_a))
-        correct_b = int(np.sum(ch_b == cat_b))
-        incorrect_b = int(np.sum(ch_b != cat_b))
-        try:
-            table = [[correct_a, incorrect_a], [correct_b, incorrect_b]]
-            fisher_odds, fisher_p = fisher_exact(table, alternative='two-sided')
-            fisher_p = float(fisher_p)
-            fisher_odds = float(fisher_odds)
-        except (ValueError, ZeroDivisionError):
-            pass
-
-    # ── Update matrices ──────────────────────────────────────────────
-    um_a, _, _ = fit_update_matrix(stim_a, ch_a, cat_a, n_bins=n_bins)
-    um_b, _, _ = fit_update_matrix(stim_b, ch_b, cat_b, n_bins=n_bins)
-
-    um_diff = um_a - um_b
-    valid_um = ~np.isnan(um_a) & ~np.isnan(um_b)
-
-    if valid_um.sum() >= 4:
-        um_rmse = float(np.sqrt(np.mean(um_diff[valid_um] ** 2)))
-        from scipy.stats import pearsonr
-        um_corr, _ = pearsonr(um_a[valid_um], um_b[valid_um])
-        um_corr = float(um_corr)
-    else:
-        um_rmse = np.nan
-        um_corr = np.nan
-
-    return {
-        'params_a': params_a,
-        'params_b': params_b,
-        'diffs': diffs,
-        'n_a': int(len(stim_a)),
-        'n_b': int(len(stim_b)),
-        'perm_p': perm_p,
-        'boot_ci': boot_ci,
-        'boot_band_a': boot_band_a,           
-        'boot_band_b': boot_band_b,           
-        'fisher_p': fisher_p,
-        'fisher_odds': fisher_odds,
-        'um_a': um_a,
-        'um_b': um_b,
-        'um_diff': um_diff,
-        'um_rmse': um_rmse,
-        'um_corr': um_corr,
-        'label_a': label_a,
-        'label_b': label_b,
-    }
-
-def compute_comparison(
-    sessions_a: List['SessionData'],
-    sessions_b: List['SessionData'],
-    n_bins: int = 8,
-    n_permutations: int = 1000,
-    n_bootstrap: int = 1000,
-    seed: int = 42,
-    label_a: str = 'A',
-    label_b: str = 'B',
-) -> Dict:
-    """
-    Compare two groups of pre-filtered sessions.
-
-    Session-level wrapper around compare_conditions(). Pools arrays
-    from each group, then runs the full comparison pipeline.
-
-    Args:
-        sessions_a: Pre-filtered sessions for condition A.
-        sessions_b: Pre-filtered sessions for condition B.
-        n_bins: Bins for update matrix.
-        n_permutations: Permutation test iterations (0 to skip).
-        n_bootstrap: Bootstrap iterations (0 to skip).
-        seed: Random seed.
-        label_a, label_b: Condition labels.
+        phases:     ``{label: phase}``, or a list of phases with ``labels``.
+                    Each phase is the output of ``filter_trials``.
+        stats:      family-level names. ``'psychometric'`` expands to mu, sigma,
+                    lapse_low, lapse_high; ``'um'`` adds the update matrix
+                    (descriptive only, see Notes); anything else in
+                    ``list_available_stats()`` is a scalar.
+        reference:  label the others are contrasted against (default: the first).
+                    Δ is ``phase − reference``.
+        downsample: match trial counts across phases before comparing. The
+                    matched n is derived internally per stat unit — trials for
+                    scalars and the psychometric, pairs for the update matrix —
+                    so the caller cannot mismatch the unit. Corrects bias from
+                    unequal precision at the cost of power.
+        n_permutations: label shuffles for the p-value (0 to skip). Smallest
+                    reportable p is ``1 / (n_permutations + 1)``.
+        n_bootstrap: resamples for the CI (0 to skip).
+        n_bins:     update-matrix bins.
+        trial_filter: 'post_correct' | 'all', for the update matrix.
+        n_repeats:  matched-n draws for the display objects when downsampling.
+        seed:       base RNG seed.
 
     Returns:
-        Dict from compare_conditions() plus:
-            'n_sessions_a', 'n_sessions_b': session counts
-        Pass to plot_comparison() for drawing.
+        ::
+
+            result['phases'][label]
+                ['stats']            {stat: observed value}
+                ['stats_ci']         {stat: (lo, hi)}   — display only
+                ['bootstrap_draws']  {stat: ndarray}    — the composable primitive
+                ['psychometric']     → plot_psychometric(...)
+                ['um']               → plot_um(...)
+                ['n_trials'], ['n_sessions']
+
+            result['contrasts'][f'{phase}_vs_{reference}']
+                ['diffs']             {stat: Δ}
+                ['perm_p']            {stat: p}
+                ['boot_ci']           {stat: (lo, hi)}
+                ['difference_draws']  {stat: ndarray} — feeds compute_interaction
+                ['um_diff'], ['um_rmse'], ['um_corr']
+                ['label_a'], ['label_b'], ['n_a'], ['n_b']
+
+            result['meta']  reference, stats, families, scalar_names,
+                            downsample, n_matched, seed
+
+    Notes:
+        The update matrix is descriptive only — no permutation test. One update
+        matrix is nine psychometric fits, so a 1000-shuffle null would be ~18k
+        fits per contrast per animal.
+
+        Both phases are fitted separately and subtracted. A joint fit with Δ as
+        a free parameter and the lapses shared would be more precise and would
+        stop a PSE shift leaking into an asymmetric lapse, but
+        ``fit_psychometric`` has no lapse-fixing argument. Read lapse deltas
+        with caution.
+
+    Raises:
+        ValueError: if fewer than two phases, if ``reference`` is not among
+            them, or if an order-dependent stat is requested with resampling on.
     """
-    from behav_utils.data.ops.filtering import pool_arrays
-    from behav_utils.analysis.comparison import compare_conditions
-
-    arr_a = pool_arrays(sessions_a)
-    arr_b = pool_arrays(sessions_b)
-
-    valid_a = ~arr_a['no_response']
-    valid_b = ~arr_b['no_response']
-
-    result = compare_conditions(
-        arr_a['stimuli'][valid_a], arr_a['choices'][valid_a], arr_a['categories'][valid_a],
-        arr_b['stimuli'][valid_b], arr_b['choices'][valid_b], arr_b['categories'][valid_b],
-        n_bins=n_bins,
-        n_permutations=n_permutations,
-        n_bootstrap=n_bootstrap,
-        seed=seed,
-        label_a=label_a,
-        label_b=label_b,
+    from behav_utils.analysis.psychometry import compute_psychometric
+    from behav_utils.analysis.summary_stats import (
+        get_stat_names_expanded, is_exchangeable,
     )
+    from behav_utils.analysis.update_matrix import compute_um
 
-    result['n_sessions_a'] = len(sessions_a)
-    result['n_sessions_b'] = len(sessions_b)
+    # ── phases → ordered {label: phase} ───────────────────────────────────
+    if isinstance(phases, dict):
+        items = list(phases.items())
+    else:
+        phases = list(phases)
+        if labels is None:
+            labels = [f'phase_{i}' for i in range(len(phases))]
+        if len(labels) != len(phases):
+            raise ValueError("compare_phases: len(labels) != len(phases)")
+        items = list(zip(labels, phases))
+    if len(items) < 2:
+        raise ValueError("compare_phases: need at least two phases")
 
-    return result
+    names = [name for name, _ in items]
+    if reference is None:
+        reference = names[0]
+    if reference not in names:
+        raise ValueError(
+            f"compare_phases: reference {reference!r} not among {names}")
 
+    # ── stats vocabulary ──────────────────────────────────────────────────
+    stats = list(stats)
+    want_update_matrix = _UPDATE_MATRIX_STAT in stats
+    families = [s for s in stats if s != _UPDATE_MATRIX_STAT]
+    want_psychometric = 'psychometric' in families
+    scalar_names = list(get_stat_names_expanded(families)) if families else []
+
+    # Trial resampling scrambles order, so stats that look beyond the frozen
+    # lag-1 view are invalid here — the same rule resample_stat_vectors
+    # enforces. They are doubly invalid on an interleaved subset, where trials
+    # t-2 and t-3 are not the real predecessors even before any shuffling.
+    if families and (n_permutations > 0 or n_bootstrap > 0):
+        bad = [s for s in families if not is_exchangeable(s)]
+        if bad:
+            raise ValueError(
+                f"compare_phases: order-dependent stat(s) {bad} cannot be "
+                f"permuted or bootstrapped (they depend on trial order beyond "
+                f"the frozen lag-1 view, which resampling destroys). Drop them, "
+                f"or set n_permutations=0 and n_bootstrap=0 to report observed "
+                f"values only — and note they are unreliable on an interleaved "
+                f"subset regardless."
+            )
+
+    # ── matched n, derived per unit ───────────────────────────────────────
+    n_matched: Dict[str, int] = {}
+    if downsample:
+        from behav_utils.analysis.downsample import calculate_min_n
+        groups = [phase for _, phase in items]
+        n_matched['trials'] = calculate_min_n(groups, unit='trials')
+        if want_update_matrix:
+            n_matched['pairs'] = calculate_min_n(groups, unit='pairs')
+    draw_n_trials = n_matched.get('trials') if downsample else None
+
+    # ── per phase: observed values, display objects, bootstrap draws ──────
+    pooled_arrays, out_phases = {}, {}
+    for i, (name, phase) in enumerate(items):
+        arrays = pool_phase_arrays(phase)
+        pooled_arrays[name] = arrays
+
+        entry = {
+            'n_trials': int(arrays['choices'].size),
+            'n_sessions': int(len(phase)),
+            'stats': compute_stats_from_arrays(arrays, families),
+        }
+
+        # Bootstrap each condition ONCE. Every contrast and interaction is then
+        # a subtraction of these arrays, so a shared reference cancels exactly
+        # instead of contributing its variance twice.
+        if n_bootstrap > 0 and families and entry['n_trials'] >= 10:
+            draws = bootstrap_phase_stats(
+                phase, families, n_draws=n_bootstrap,
+                n_trials=draw_n_trials, seed=seed + i,
+            )
+            entry['bootstrap_draws'] = draws
+            entry['stats_ci'] = {
+                stat: (summarise_draw_distribution(values)['ci_lo'],
+                       summarise_draw_distribution(values)['ci_hi'])
+                for stat, values in draws.items()
+            }
+            if downsample:
+                # The null below is built at the matched n, so the observed
+                # value compared against it must be too.
+                entry['stats_matched'] = {
+                    stat: float(np.nanmedian(values)) for stat, values in draws.items()
+                }
+
+        if want_psychometric:
+            if downsample:
+                from behav_utils.analysis.downsample import compute_ds_x
+                entry['psychometric'] = compute_ds_x(
+                    phase, 'psychometric', n_matched['trials'],
+                    n_repeats=n_repeats, seed=seed + i)['aggregated']
+            else:
+                entry['psychometric'] = compute_psychometric(phase, mode='pooled')
+
+        if want_update_matrix:
+            if downsample:
+                from behav_utils.analysis.downsample import compute_ds_x
+                entry['um'] = compute_ds_x(
+                    phase, 'um', n_matched['pairs'], n_repeats=n_repeats,
+                    seed=seed + i, n_bins=n_bins)['aggregated']
+            else:
+                entry['um'] = compute_um(phase, mode='pooled', n_bins=n_bins,
+                                         trial_filter=trial_filter)
+
+        out_phases[name] = entry
+
+    # ── contrasts: every non-reference phase vs the reference ─────────────
+    contrasts = {}
+    reference_entry = out_phases[reference]
+
+    for k, name in enumerate([n for n in names if n != reference]):
+        entry = out_phases[name]
+        observed_key = 'stats_matched' if downsample else 'stats'
+        observed_a = entry.get(observed_key, entry['stats'])
+        observed_b = reference_entry.get(observed_key, reference_entry['stats'])
+        diffs = {stat: observed_a.get(stat, np.nan) - observed_b.get(stat, np.nan)
+                 for stat in scalar_names}
+
+        contrast = {
+            'diffs': diffs,
+            'label_a': name,
+            'label_b': reference,
+            'n_a': entry['n_trials'],
+            'n_b': reference_entry['n_trials'],
+            'perm_p': None,
+            'boot_ci': None,
+            'difference_draws': None,
+        }
+
+        # Bootstrap CI: subtract the stored per-condition draws.
+        draws_a = entry.get('bootstrap_draws')
+        draws_b = reference_entry.get('bootstrap_draws')
+        if draws_a and draws_b:
+            difference_draws, boot_ci = {}, {}
+            for stat in scalar_names:
+                if stat not in draws_a or stat not in draws_b:
+                    continue
+                delta = draws_a[stat] - draws_b[stat]
+                difference_draws[stat] = delta
+                summary = summarise_draw_distribution(delta)
+                boot_ci[stat] = (summary['ci_lo'], summary['ci_hi'])
+            contrast['difference_draws'] = difference_draws
+            contrast['boot_ci'] = boot_ci
+
+        # Permutation p: shuffle the phase label, recompute Δ.
+        if n_permutations > 0 and families \
+                and entry['n_trials'] >= 10 and reference_entry['n_trials'] >= 10:
+            null_draws = permute_phase_difference(
+                items[names.index(name)][1], items[names.index(reference)][1],
+                families, n_draws=n_permutations,
+                n_trials=draw_n_trials, seed=seed + 1000 + k,
+            )
+            contrast['perm_p'] = {
+                stat: summarise_draw_distribution(
+                    null_draws.get(stat, np.array([])),
+                    observed=diffs.get(stat),
+                )['p_two_sided']
+                for stat in scalar_names
+            }
+
+        # Update matrix: descriptive only.
+        if want_update_matrix:
+            matrix_a = entry.get('um', {}).get('um')
+            matrix_b = reference_entry.get('um', {}).get('um')
+            if matrix_a is not None and matrix_b is not None:
+                difference = matrix_a - matrix_b
+                usable = np.isfinite(matrix_a) & np.isfinite(matrix_b)
+                contrast['um_diff'] = difference
+                if usable.sum() >= 4:
+                    from scipy.stats import pearsonr
+                    contrast['um_rmse'] = float(np.sqrt(np.mean(difference[usable] ** 2)))
+                    contrast['um_corr'] = float(pearsonr(matrix_a[usable], matrix_b[usable])[0])
+                else:
+                    contrast['um_rmse'] = np.nan
+                    contrast['um_corr'] = np.nan
+
+        contrasts[_contrast_key(name, reference)] = contrast
+
+    return {
+        'phases': out_phases,
+        'contrasts': contrasts,
+        'meta': {
+            'reference': reference, 'stats': stats, 'families': families,
+            'scalar_names': scalar_names, 'downsample': downsample,
+            'n_matched': n_matched or None, 'seed': seed,
+        },
+    }
+
+
+def compute_interaction(
+    result_a: Dict,
+    result_b: Dict,
+    contrast: str,
+    contrast_b: Optional[str] = None,
+    label_a: str = 'a',
+    label_b: str = 'b',
+    ci: float = 0.95,
+) -> Dict:
+    """Difference of differences between two ``compare_phases`` results.
+
+    Answers "is the opto effect different in *these* sessions than in *those*" —
+    for example whether the opto−non_opto shift on masking sessions differs from
+    the shift on real opto sessions, which is what separates a genuine
+    inactivation effect from the light-delivery artifact.
+
+    Comparing two p-values is not a substitute for this. "Significant here,
+    not significant there" is not evidence the two differ; the difference has
+    to be tested directly.
+
+    The interaction is estimated by bootstrap only. A permutation would require
+    shuffling the session-type label across trials, but session type was not
+    randomised per trial — those trials were recorded on different days — so no
+    shuffle reproduces the design.
+
+    Args:
+        result_a, result_b: outputs of ``compare_phases``. Pass the same object
+            twice to compare two contrasts within one result.
+        contrast:   contrast key in ``result_a``, e.g. 'opto_vs_non_opto'.
+        contrast_b: contrast key in ``result_b``; defaults to ``contrast``.
+        label_a, label_b: names for the two results in the output.
+        ci:         interval mass.
+
+    Returns:
+        ``{stat: {'delta_a', 'delta_b', 'interaction', 'ci_lo', 'ci_hi',
+        'p_two_sided', 'n_draws'}}`` plus a ``'meta'`` entry.
+
+    Raises:
+        KeyError:   if either contrast is absent.
+        ValueError: if either result lacks bootstrap draws (rerun
+            ``compare_phases`` with ``n_bootstrap > 0``).
+
+    Note:
+        When both results come from the same ``compare_phases`` call, the two
+        contrasts share their reference draws and those cancel exactly:
+        ``(A − C) − (B − C) = A − B``. That is only true because the draws are
+        the same arrays, which is why the per-condition draws are stored rather
+        than the differences alone.
+    """
+    contrast_b = contrast_b or contrast
+    for result, key, which in ((result_a, contrast, 'result_a'),
+                               (result_b, contrast_b, 'result_b')):
+        if key not in result.get('contrasts', {}):
+            raise KeyError(
+                f"compute_interaction: {which} has no contrast {key!r}; "
+                f"available: {sorted(result.get('contrasts', {}))}"
+            )
+
+    entry_a = result_a['contrasts'][contrast]
+    entry_b = result_b['contrasts'][contrast_b]
+    draws_a = entry_a.get('difference_draws')
+    draws_b = entry_b.get('difference_draws')
+    if not draws_a or not draws_b:
+        raise ValueError(
+            "compute_interaction: no bootstrap draws — rerun compare_phases "
+            "with n_bootstrap > 0."
+        )
+
+    out: Dict[str, Dict] = {}
+    for stat in sorted(set(draws_a) & set(draws_b)):
+        delta_draws_a, delta_draws_b = draws_a[stat], draws_b[stat]
+        n = min(delta_draws_a.size, delta_draws_b.size)
+        if n < 10:
+            continue
+        interaction_draws = delta_draws_a[:n] - delta_draws_b[:n]
+        summary = summarise_draw_distribution(interaction_draws, ci=ci)
+        out[stat] = {
+            'delta_a': entry_a['diffs'].get(stat, np.nan),
+            'delta_b': entry_b['diffs'].get(stat, np.nan),
+            'interaction': (entry_a['diffs'].get(stat, np.nan)
+                            - entry_b['diffs'].get(stat, np.nan)),
+            'ci_lo': summary['ci_lo'],
+            'ci_hi': summary['ci_hi'],
+            'p_two_sided': summary['p_two_sided'],
+            'n_draws': summary['n_draws'],
+        }
+
+    out['meta'] = {
+        'label_a': label_a, 'label_b': label_b,
+        'contrast_a': contrast, 'contrast_b': contrast_b,
+        'shared_result': result_a is result_b,
+        'method': 'bootstrap (no permutation: session type is not randomised '
+                  'per trial)',
+    }
+    return out

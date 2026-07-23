@@ -7,7 +7,7 @@ corresponding compute_ functions. No computation inside plotting.
     compute_psychometric(sessions) → plot_psychometric(result)
     compute_um(sessions)           → plot_um(result)
     compute_trajectory(sessions)   → plot_trajectory(result)
-    compute_comparison(a, b)       → plot_comparison(result)
+    compare_phases({...})          → plot_comparison(result, contrast)
     compute_session_raster(sess)   → plot_session_raster(result)
 
 User controls layout via plt.subplots(). Overlay = call the same
@@ -27,7 +27,7 @@ Usage:
 from behav_utils.plotting.psychometric import plot_psychometric
 from behav_utils.plotting.update_matrix import plot_um
 from behav_utils.plotting.trajectory import plot_trajectory
-from behav_utils.plotting.comparison import plot_comparison
+from behav_utils.plotting.comparison import plot_comparison, plot_stat_comparison
 from behav_utils.plotting.session import plot_session_raster
 from behav_utils.plotting.styles import (
     PALETTE, COLOURS, UM_CMAP,
@@ -36,6 +36,7 @@ from behav_utils.plotting.styles import (
 
 __all__ = [
     'plot_psychometric',
+    'plot_stat_comparison',
     'plot_um',
     'plot_trajectory',
     'plot_comparison',

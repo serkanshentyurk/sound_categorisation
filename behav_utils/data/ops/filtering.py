@@ -234,6 +234,7 @@ def filter_session(
     session: 'SessionData',
     mask: Optional[np.ndarray] = None,
     label: str = '',
+    trial_type: Optional[str] = None,
 ) -> 'SessionData':
     """
     Return new SessionData with only the selected trials.
@@ -275,6 +276,17 @@ def filter_session(
         'fraction_kept': float(mask.sum() / n_original) if n_original > 0 else 0.0,
         'parent_session_id': session.session_id,
     }
+    # The scientific selection, in the reserved key extract_stats reads to
+    # auto-fill its meta columns. Written here so the plain
+    # select_sessions -> filter_trials -> extract_stats path carries its own
+    # labels without the caller passing meta= by hand.
+    selection = {'session_type': session.session_type}
+    if trial_type is not None:
+        selection['trial_type'] = trial_type
+    distribution = getattr(session, 'distribution', None)
+    if distribution is not None:
+        selection['distribution'] = distribution
+    filter_info['selection'] = selection
 
     return SD(
         session_id=session.session_id,
@@ -384,7 +396,8 @@ def filter_trials(
         if mask.sum() < min_trials:
             continue
 
-        result.append(filter_session(s, mask, label=auto_label))
+        result.append(filter_session(s, mask, label=auto_label,
+                                     trial_type=trial_type))
 
     return result
 
