@@ -24,7 +24,10 @@ from behav_utils.analysis.utils import cumulative_gaussian, generate_stimuli
 # Low-level (arrays)
 from behav_utils.analysis.psychometry import fit_psychometric, fit_psychometric_gof
 from behav_utils.analysis.update_matrix import fit_update_matrix, matrix_error
-from behav_utils.analysis.comparison import compare_phases, compute_interaction
+from behav_utils.analysis.statistics import compute_stat
+from behav_utils.analysis.adaptation import compute_normative_pse, resolve_sigma, compute_adaptation, detect_shifts
+from behav_utils.analysis.across_animals import collect_rows, compare_groups, compare_genotypes
+from behav_utils.analysis.comparison import compute_delta_stat, compare_phases, compute_interaction
 from behav_utils.analysis.resampling import (
     bootstrap_phase_stats, permute_phase_difference,
     summarise_draw_distribution, pool_phase_arrays, compute_stats_from_arrays,
@@ -65,6 +68,7 @@ __all__ = [
     # Low-level
     'fit_psychometric', 'fit_psychometric_gof',
     'fit_update_matrix', 'matrix_error',
+    'compute_delta_stat',
     'compare_phases',
     'compute_interaction',
     'bootstrap_phase_stats',
@@ -72,6 +76,14 @@ __all__ = [
     'summarise_draw_distribution',
     'pool_phase_arrays',
     'compute_stats_from_arrays',
+    'compute_stat',
+    'compute_normative_pse',
+    'resolve_sigma',
+    'compute_adaptation',
+    'detect_shifts',
+    'collect_rows',
+    'compare_groups',
+    'compare_genotypes',
     'fit_summary_stats',
     'list_available_stats', 'register_stat',
     'SUMMARY_REGISTRY', 'FEATURE_MATRIX_STATS', 'flatten_stats', 'get_stat_names_expanded',

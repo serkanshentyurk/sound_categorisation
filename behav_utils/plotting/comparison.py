@@ -1,14 +1,14 @@
 """
-behav_utils/plotting/comparison.py — Visualise compare_phases output.
+behav_utils/plotting/comparison.py — Visualise compute_delta_stat output.
 
-Pairs with behav_utils.analysis.comparison.compare_phases. Overlays the two
+Pairs with behav_utils.analysis.comparison.compute_delta_stat. Overlays the two
 psychometric curves of one contrast, with bootstrap bands, the binned data and
 the Δ / p / CI annotation.
 
-    from behav_utils.analysis import compare_phases
+    from behav_utils.analysis import compute_delta_stat
     from behav_utils.plotting import plot_comparison
 
-    r = compare_phases({'non_opto': ctrl, 'opto': opto},
+    r = compute_delta_stat({'non_opto': ctrl, 'opto': opto},
                        stats=['psychometric'], reference='non_opto')
     plot_comparison(r, 'opto_vs_non_opto')
 
@@ -51,7 +51,7 @@ def plot_comparison(
     """Overlay the two psychometric curves of one contrast, with statistics.
 
     Args:
-        result:   dict from ``compare_phases``.
+        result:   dict from ``compute_delta_stat``.
         contrast: which contrast to draw, e.g. ``'opto_vs_non_opto'``.
                   Defaults to the only one when there is exactly one, otherwise
                   raises with the available keys listed.
@@ -97,7 +97,7 @@ def plot_comparison(
     if not psyc_a or not psyc_b:
         raise KeyError(
             "plot_comparison: no psychometric on one of the phases — call "
-            "compare_phases with 'psychometric' in stats."
+            "compute_delta_stat with 'psychometric' in stats."
         )
     params_a = psyc_a.get('params', {})
     params_b = psyc_b.get('params', {})
@@ -230,7 +230,7 @@ def plot_stat_comparison(
     phase's contrast against the reference.
 
     Args:
-        result:      dict from ``compare_phases`` (run with ``n_bootstrap > 0``
+        result:      dict from ``compute_delta_stat`` (run with ``n_bootstrap > 0``
                      for the intervals, ``n_permutations > 0`` for the p-values).
         stats:       which stats to draw; default is every scalar computed.
         ncols:       panels per row.
@@ -290,18 +290,34 @@ def plot_stat_comparison(
         for i, name in enumerate(order):
             if not np.isfinite(vals[i]):
                 continue
-            err = None
-            if np.isfinite(los[i]) and np.isfinite(his[i]):
-                err = [[los[i]], [his[i]]]
-            ax.errorbar(xs[i], vals[i], yerr=err, fmt='o', color=colours[i % len(colours)],
-                        markersize=7, capsize=4, elinewidth=1.4,
-                        markeredgecolor='white', markeredgewidth=0.6, zorder=3)
+            colour = colours[i % len(colours)]
+            ph = phases.get(name, {})
+            lo, hi = (ph.get('stats_ci') or {}).get(stat, (np.nan, np.nan))
+
+            # Drawn as a segment rather than via yerr: the point is the observed
+            # estimate and the interval is a bootstrap percentile, so nothing
+            # guarantees the point lies inside it (a boundary-pinned lapse or a
+            # skewed draw distribution can put it outside). yerr raises on the
+            # resulting negative offset; a segment renders it, and the hollow
+            # marker flags the estimate as unstable.
+            outside = False
+            if np.isfinite(lo) and np.isfinite(hi):
+                ax.plot([xs[i], xs[i]], [lo, hi], color=colour, lw=1.4,
+                        solid_capstyle='butt', zorder=2)
+                for cap in (lo, hi):
+                    ax.plot([xs[i] - 0.07, xs[i] + 0.07], [cap, cap],
+                            color=colour, lw=1.4, zorder=2)
+                outside = vals[i] < lo or vals[i] > hi
+            ax.plot(xs[i], vals[i], marker='o', markersize=7,
+                    markerfacecolor='white' if outside else colour,
+                    markeredgecolor=colour,
+                    markeredgewidth=1.6 if outside else 0.6, zorder=3)
 
         # p-values above the non-reference phases
         if show_p:
             finite = [v for v in vals if np.isfinite(v)]
             if finite:
-                top = max(v + (h if np.isfinite(h) else 0)
+                top = max(max(v, v + h) if np.isfinite(h) else v
                           for v, h in zip(vals, his) if np.isfinite(v))
                 span = (max(finite) - min(finite)) or (abs(max(finite)) or 1.0)
                 for i, name in enumerate(order):

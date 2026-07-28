@@ -187,6 +187,10 @@ def extract_stats(
         ValueError: bad ``mode``; or ``n_boot>0`` with ``mode!='pooled'``; or an
             order-dependent stat under ``n_boot`` (raised by the resampler).
     """
+    import warnings
+    warnings.warn(
+        "extract_stats() is superseded by compute_stat(sessions, stat_names, mode='per_session')['sessions']; this will be removed.",
+        DeprecationWarning, stacklevel=2)
     meta = _resolve_meta(sessions, meta)
     res = compute_summary_stats(sessions, stat_names=list(stats), mode=mode)
 

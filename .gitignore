@@ -11,3 +11,6 @@ logs/
 fitter_errors.log
 .ipynb_checkpoints/
 outputs/
+todo.txt
+figures/
+arpit/

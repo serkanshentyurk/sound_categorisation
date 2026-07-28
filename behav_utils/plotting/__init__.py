@@ -27,6 +27,8 @@ Usage:
 from behav_utils.plotting.psychometric import plot_psychometric
 from behav_utils.plotting.update_matrix import plot_um
 from behav_utils.plotting.trajectory import plot_trajectory
+from behav_utils.plotting.session_stats import plot_session_stats
+from behav_utils.plotting.adaptation import plot_adaptation
 from behav_utils.plotting.comparison import (
     plot_comparison, plot_stat_comparison, plot_interaction,
 )
@@ -42,6 +44,8 @@ __all__ = [
     'plot_interaction',
     'plot_um',
     'plot_trajectory',
+    'plot_session_stats',
+    'plot_adaptation',
     'plot_comparison',
     'plot_session_raster',
     'PALETTE', 'COLOURS', 'UM_CMAP',

@@ -1580,6 +1580,10 @@ def compute_summary_stats(
         stat_names: Stats to compute (default: DEFAULT_STATS).
         mode: 'pooled' | 'per_session'.
     """
+    import warnings
+    warnings.warn(
+        "compute_summary_stats() is superseded by compute_stat(sessions, stat_names, mode)['pooled']; this will be removed.",
+        DeprecationWarning, stacklevel=2)
     from behav_utils.data.ops.filtering import pool_arrays
 
     if mode == 'pooled':

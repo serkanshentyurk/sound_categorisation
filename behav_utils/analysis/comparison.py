@@ -56,7 +56,7 @@ from behav_utils.analysis.resampling import (
     summarise_draw_distribution,
 )
 
-__all__ = ['compare_phases', 'compute_interaction']
+__all__ = ['compute_delta_stat', 'compare_phases', 'compute_interaction']
 
 _UPDATE_MATRIX_STAT = 'um'
 
@@ -65,7 +65,7 @@ def _contrast_key(phase: str, reference: str) -> str:
     return f'{phase}_vs_{reference}'
 
 
-def compare_phases(
+def compute_delta_stat(
     phases,
     stats: Sequence[str] = ('psychometric',),
     labels: Optional[List[str]] = None,
@@ -444,3 +444,18 @@ def compute_interaction(
                   'per trial)',
     }
     return out
+
+
+def compare_phases(*args, **kwargs):
+    """Deprecated alias of :func:`compute_delta_stat`.
+
+    Renamed for symmetry with ``compute_stat``: the two public verbs are
+    ``compute_stat`` (values) and ``compute_delta_stat`` (differences between
+    conditions). ``compare_phases`` still works but will be removed.
+    """
+    import warnings
+    warnings.warn(
+        "compare_phases() is deprecated; use compute_delta_stat() "
+        "(same signature and return).",
+        DeprecationWarning, stacklevel=2)
+    return compute_delta_stat(*args, **kwargs)

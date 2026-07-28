@@ -1,25 +1,21 @@
-- Check pyrat and confirm the genotypeshttps://www.itv.com/watch?channel=itv
-    - Done
-https://www.itv.com/watch?channel=itv
-- Check csv file whether it contains masking info
-    - Yes
-
-- Check csv file whether the hard trials are masking or regular
-    - YES
 
 - Measure the sound
 
 
-- check masking light -- is true 
-
-- check the masking sessions opto vs nonopto
-
-
 behaviour experiments
 
-- hard a hard b
-- unilateral alm
 - perfusion
 - ihc
 
-- 
+
+===
+===
+
+-- 260723 --
+
+same thing with hard a and b
+
+pool a's and compare session by session no trial filtering
+learning speed / adaptation speed
+
+
