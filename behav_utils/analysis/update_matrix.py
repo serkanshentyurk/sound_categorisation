@@ -265,6 +265,86 @@ def compute_um(
 
     raise ValueError(f"mode must be 'pooled' or 'per_session', got {mode!r}")
 
+def average_um(results: List[Dict], *, min_sources: int = 1) -> Dict:
+    """Cell-wise mean update matrix across animals (equal weight per animal).
+
+    Each result contributes ONE matrix, so the animal is the unit — unlike
+    re-pooling trials, which would let high-trial animals dominate and drift
+    back toward pseudoreplication. Valid because ``fit_update_matrix`` bins on a
+    fixed grid (``linspace(-1, 1, n_bins+1)``), so cell (i, j) is the same
+    previous/current stimulus pair for every animal.
+
+    Descriptive only — the update matrix is order-dependent and never enters the
+    resampled fold. For a per-genotype contrast, subtract two averaged matrices
+    (``average_um(opto)['um'] - average_um(non_opto)['um']``) and hand the raw
+    array to ``plot_um``.
+
+    Args:
+        results: pooled ``compute_um()`` results (or raw (n_bins, n_bins)
+                 arrays), one per animal. All must share ``n_bins``.
+        min_sources: cells backed by fewer than this many non-nan animals are
+                     set to nan — guards a "mean" that rests on one animal (the
+                     UM is data-hungry, so sparse corner cells are common).
+
+    Returns:
+        a pooled-shaped dict, renderable directly by :func:`plot_um`::
+
+            {'mode': 'pooled', 'um': mean, 'conditional_matrix': mean_cond,
+             'n_animals': coverage, 'sem': sem, 'n_bins': n,
+             'n_sources': n_animals_in, 'info': {'aggregated': True}}
+
+        where ``coverage`` counts the non-nan animals contributing to each cell.
+
+    Raises:
+        ValueError: nothing to average, mismatched ``n_bins``, or a per_session
+            result was passed (aggregate its sessions first).
+    """
+    def _extract(r, field):
+        if isinstance(r, np.ndarray):
+            return r if field == 'um' else None
+        if isinstance(r, dict):
+            if r.get('mode') == 'per_session':
+                raise ValueError(
+                    "average_um: pass pooled per-animal UM results, not a "
+                    "per_session result (aggregate its sessions first).")
+            return r.get(field)
+        raise TypeError(f"average_um: expected dict or ndarray, got {type(r).__name__}")
+
+    mats = [np.asarray(m, float) for m in (_extract(r, 'um') for r in results)
+            if m is not None]
+    if not mats:
+        raise ValueError("average_um: no update matrices to average")
+    shapes = {m.shape for m in mats}
+    if len(shapes) != 1:
+        raise ValueError(f"average_um: mismatched n_bins across animals: {shapes}")
+
+    stack = np.stack(mats)                                  # (n_animals, nb, nb)
+    coverage = np.isfinite(stack).sum(axis=0)
+    with np.errstate(invalid='ignore', divide='ignore'):
+        mean = np.nanmean(stack, axis=0)
+        sem = np.nanstd(stack, axis=0, ddof=1) / np.sqrt(np.maximum(coverage, 1))
+    mean = np.where(coverage >= min_sources, mean, np.nan)
+    sem = np.where(coverage >= min_sources, sem, np.nan)
+
+    conds = [np.asarray(c, float) for c in (_extract(r, 'conditional_matrix') for r in results)
+             if c is not None]
+    cond_mean = None
+    if conds and {c.shape for c in conds} == shapes:
+        with np.errstate(invalid='ignore'):
+            cond_mean = np.nanmean(np.stack(conds), axis=0)
+
+    return {
+        'mode': 'pooled',
+        'um': mean,
+        'conditional_matrix': cond_mean,
+        'n_animals': coverage,
+        'sem': sem,
+        'n_bins': mean.shape[0],
+        'n_sources': len(mats),
+        'info': {'aggregated': True},
+    }
+
+
 # compute_update_matrix calls compute_um, which calls fit_update_matrix, so we only export the latter. 
 def compute_update_matrix(*args, **kwargs):
     """DEPRECATED: use compute_um() instead."""

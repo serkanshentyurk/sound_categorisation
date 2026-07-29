@@ -203,6 +203,116 @@ def _stats_text(con: Dict, stats_keys: Sequence[str]) -> str:
     return '\n'.join(lines)
 
 
+def plot_stat_comparison_single(
+    result: Dict,
+    stat: str,
+    ax: Optional[Axes] = None,
+    phase_order: Optional[Sequence[str]] = None,
+    palette: Optional[Sequence[str]] = None,
+    show_p: bool = True,
+) -> Axes:
+    """One stat's per-phase point-and-CI, drawn on a single Axes.
+
+    The single-panel core of :func:`plot_stat_comparison`; use it to place one
+    stat in a figure you lay out yourself. ``plot_stat_comparison`` calls this
+    once per stat to build its grid, so there is one drawing implementation.
+
+    Each phase contributes one pooled estimate drawn as a point with its
+    bootstrap CI — sampling uncertainty in the pooled estimate, not a spread
+    across sessions, which is why it is a point-and-CI rather than a box. The
+    point can sit outside its interval (a boundary-pinned lapse or a skewed draw
+    distribution); that is drawn as a segment with a hollow marker rather than
+    via ``yerr``, which would raise on the negative offset.
+
+    Args:
+        result:      dict from ``compute_delta_stat`` (``n_bootstrap > 0`` for
+                     the CI, ``n_permutations > 0`` for the p).
+        stat:        the scalar to draw.
+        ax:          Axes to draw on; a new one is made if None.
+        phase_order: x-axis order; default is the reference first, then the rest.
+        palette:     colours per phase; defaults to the house palette.
+        show_p:      annotate the contrast p above each non-reference phase.
+
+    Returns:
+        the Axes drawn on.
+    """
+    from behav_utils.plotting.styles import get_colour
+
+    phases = result.get('phases', {})
+    contrasts = result.get('contrasts', {})
+    reference = result.get('meta', {}).get('reference')
+    if not phases:
+        raise KeyError("plot_stat_comparison_single: no phases in result")
+
+    order = list(phase_order) if phase_order else (
+        ([reference] if reference in phases else [])
+        + [p for p in phases if p != reference]
+    )
+    colours = list(palette) if palette else [get_colour(i) for i in range(len(order))]
+
+    # p-value for each phase, from its contrast against the reference
+    p_for = {}
+    for con in contrasts.values():
+        p_for[con.get('label_a')] = con.get('perm_p') or {}
+
+    if ax is None:
+        _, ax = plt.subplots(figsize=(3.0, 3.0))
+
+    vals, his = [], []
+    for name in order:
+        ph = phases.get(name, {})
+        v = ph.get('stats', {}).get(stat, np.nan)
+        lo, hi = (ph.get('stats_ci') or {}).get(stat, (np.nan, np.nan))
+        vals.append(v)
+        his.append(hi - v if np.isfinite(hi) and np.isfinite(v) else np.nan)
+
+    xs = np.arange(len(order))
+    for i, name in enumerate(order):
+        if not np.isfinite(vals[i]):
+            continue
+        colour = colours[i % len(colours)]
+        ph = phases.get(name, {})
+        lo, hi = (ph.get('stats_ci') or {}).get(stat, (np.nan, np.nan))
+
+        # Segment rather than yerr: the point is the observed estimate and the
+        # interval is a bootstrap percentile, so the point need not lie inside
+        # it. yerr raises on the negative offset; a segment renders it, and the
+        # hollow marker flags the estimate as unstable.
+        outside = False
+        if np.isfinite(lo) and np.isfinite(hi):
+            ax.plot([xs[i], xs[i]], [lo, hi], color=colour, lw=1.4,
+                    solid_capstyle='butt', zorder=2)
+            for cap in (lo, hi):
+                ax.plot([xs[i] - 0.07, xs[i] + 0.07], [cap, cap],
+                        color=colour, lw=1.4, zorder=2)
+            outside = vals[i] < lo or vals[i] > hi
+        ax.plot(xs[i], vals[i], marker='o', markersize=7,
+                markerfacecolor='white' if outside else colour,
+                markeredgecolor=colour,
+                markeredgewidth=1.6 if outside else 0.6, zorder=3)
+
+    if show_p:
+        finite = [v for v in vals if np.isfinite(v)]
+        if finite:
+            top = max(max(v, v + h) if np.isfinite(h) else v
+                      for v, h in zip(vals, his) if np.isfinite(v))
+            span = (max(finite) - min(finite)) or (abs(max(finite)) or 1.0)
+            for i, name in enumerate(order):
+                p = (p_for.get(name) or {}).get(stat)
+                if p is None or not np.isfinite(p):
+                    continue
+                ax.annotate(f"p={p:.3g}", xy=(xs[i], top + 0.12 * span),
+                            ha='center', va='bottom', fontsize=7.5)
+            ax.margins(y=0.25)
+
+    ax.set_xticks(xs)
+    ax.set_xticklabels(order, fontsize=8)
+    ax.set_xlim(-0.6, len(order) - 0.4)
+    ax.set_title(_LABEL_FOR_KEY.get(stat, stat), fontsize=10)
+    ax.spines[['top', 'right']].set_visible(False)
+    return ax
+
+
 def plot_stat_comparison(
     result: Dict,
     stats: Optional[Sequence[str]] = None,
@@ -217,29 +327,24 @@ def plot_stat_comparison(
 
     The companion to :func:`plot_comparison` for the parameter *values* rather
     than the curves — PSE, slope, lapses, win_stay, accuracy and so on, side by
-    side across phases.
+    side across phases. Each panel is :func:`plot_stat_comparison_single`; call
+    that directly to place a single stat in a figure you lay out yourself.
 
-    Each phase contributes one pooled estimate, drawn as a point with its
-    bootstrap CI. That interval is sampling uncertainty in the pooled estimate;
-    it is **not** a spread across sessions, which is why this is a point-and-CI
-    plot rather than a box plot — a box would imply a distribution that a
-    pooled estimate does not have. For a session-level spread use
-    ``extract_stats(..., mode='per_session')`` with ``plot_stat_swarm``.
-
-    The p-value above each non-reference phase is the permutation p for that
-    phase's contrast against the reference.
+    Each phase contributes one pooled estimate with its bootstrap CI (sampling
+    uncertainty, not a session spread — hence point-and-CI, not a box). The p
+    above each non-reference phase is the permutation p for that phase's
+    contrast against the reference.
 
     Args:
-        result:      dict from ``compute_delta_stat`` (run with ``n_bootstrap > 0``
-                     for the intervals, ``n_permutations > 0`` for the p-values).
+        result:      dict from ``compute_delta_stat`` (``n_bootstrap > 0`` for
+                     the intervals, ``n_permutations > 0`` for the p-values).
         stats:       which stats to draw; default is every scalar computed.
         ncols:       panels per row.
-        phase_order: x-axis order; default is the order in ``result['phases']``
-                     with the reference first.
+        phase_order: x-axis order; default is the reference first, then the rest.
         palette:     colours per phase; defaults to the house palette.
         panel_size:  (width, height) inches per panel.
         suptitle:    figure title.
-        show_p:      annotate the contrast p-value above each non-reference phase.
+        show_p:      annotate the contrast p above each non-reference phase.
 
     Returns:
         ``(fig, axes)`` with ``axes`` a flat list of the axes used.
@@ -247,7 +352,6 @@ def plot_stat_comparison(
     from behav_utils.plotting.styles import get_colour
 
     phases = result.get('phases', {})
-    contrasts = result.get('contrasts', {})
     reference = result.get('meta', {}).get('reference')
     if not phases:
         raise KeyError("plot_stat_comparison: no phases in result")
@@ -258,17 +362,12 @@ def plot_stat_comparison(
     if not stats:
         raise ValueError("plot_stat_comparison: no scalar stats to plot")
 
+    # resolve order and colours once so every panel matches
     order = list(phase_order) if phase_order else (
         ([reference] if reference in phases else [])
         + [p for p in phases if p != reference]
     )
     colours = list(palette) if palette else [get_colour(i) for i in range(len(order))]
-
-    # p-value for each phase, from its contrast against the reference
-    p_for = {}
-    for con in contrasts.values():
-        pp = con.get('perm_p') or {}
-        p_for[con.get('label_a')] = pp
 
     ncols = max(1, min(ncols, len(stats)))
     nrows = int(np.ceil(len(stats) / ncols))
@@ -277,62 +376,8 @@ def plot_stat_comparison(
     flat = axarr.ravel()
 
     for ax, stat in zip(flat, stats):
-        vals, los, his = [], [], []
-        for name in order:
-            ph = phases.get(name, {})
-            v = ph.get('stats', {}).get(stat, np.nan)
-            lo, hi = (ph.get('stats_ci') or {}).get(stat, (np.nan, np.nan))
-            vals.append(v)
-            los.append(v - lo if np.isfinite(lo) and np.isfinite(v) else np.nan)
-            his.append(hi - v if np.isfinite(hi) and np.isfinite(v) else np.nan)
-
-        xs = np.arange(len(order))
-        for i, name in enumerate(order):
-            if not np.isfinite(vals[i]):
-                continue
-            colour = colours[i % len(colours)]
-            ph = phases.get(name, {})
-            lo, hi = (ph.get('stats_ci') or {}).get(stat, (np.nan, np.nan))
-
-            # Drawn as a segment rather than via yerr: the point is the observed
-            # estimate and the interval is a bootstrap percentile, so nothing
-            # guarantees the point lies inside it (a boundary-pinned lapse or a
-            # skewed draw distribution can put it outside). yerr raises on the
-            # resulting negative offset; a segment renders it, and the hollow
-            # marker flags the estimate as unstable.
-            outside = False
-            if np.isfinite(lo) and np.isfinite(hi):
-                ax.plot([xs[i], xs[i]], [lo, hi], color=colour, lw=1.4,
-                        solid_capstyle='butt', zorder=2)
-                for cap in (lo, hi):
-                    ax.plot([xs[i] - 0.07, xs[i] + 0.07], [cap, cap],
-                            color=colour, lw=1.4, zorder=2)
-                outside = vals[i] < lo or vals[i] > hi
-            ax.plot(xs[i], vals[i], marker='o', markersize=7,
-                    markerfacecolor='white' if outside else colour,
-                    markeredgecolor=colour,
-                    markeredgewidth=1.6 if outside else 0.6, zorder=3)
-
-        # p-values above the non-reference phases
-        if show_p:
-            finite = [v for v in vals if np.isfinite(v)]
-            if finite:
-                top = max(max(v, v + h) if np.isfinite(h) else v
-                          for v, h in zip(vals, his) if np.isfinite(v))
-                span = (max(finite) - min(finite)) or (abs(max(finite)) or 1.0)
-                for i, name in enumerate(order):
-                    p = (p_for.get(name) or {}).get(stat)
-                    if p is None or not np.isfinite(p):
-                        continue
-                    ax.annotate(f"p={p:.3g}", xy=(xs[i], top + 0.12 * span),
-                                ha='center', va='bottom', fontsize=7.5)
-                ax.margins(y=0.25)
-
-        ax.set_xticks(xs)
-        ax.set_xticklabels(order, fontsize=8)
-        ax.set_xlim(-0.6, len(order) - 0.4)
-        ax.set_title(_LABEL_FOR_KEY.get(stat, stat), fontsize=10)
-        ax.spines[['top', 'right']].set_visible(False)
+        plot_stat_comparison_single(result, stat, ax=ax, phase_order=order,
+                                    palette=colours, show_p=show_p)
 
     for ax in flat[len(stats):]:
         fig.delaxes(ax)
@@ -341,6 +386,121 @@ def plot_stat_comparison(
         fig.suptitle(suptitle, fontsize=13)
     fig.tight_layout()
     return fig, list(flat[:len(stats)])
+
+
+def plot_interaction_single(
+    interaction: Dict,
+    stat: str,
+    ax: Optional[Axes] = None,
+    show_p: bool = True,
+    show_components: bool = True,
+    colour_a: str = '#1f77b4',
+    colour_b: str = '#ff7f0e',
+    colour_interaction: str = '#7f2704',
+) -> Axes:
+    """One stat's difference-of-differences, drawn on a single Axes.
+
+    The single-panel core of :func:`plot_interaction`; use it to place one
+    interaction in a figure you lay out yourself. ``plot_interaction`` calls
+    this once per stat to build its grid.
+
+    Three points on a common scale: the effect in the first result, the effect
+    in the second, and their difference, each with a 95% bootstrap interval.
+    Read the interaction, not the gap between the two components — two intervals
+    can overlap while their difference is significant (independent equal-SE
+    estimates stop overlapping only at 3.9 SE, significant from 2.8 SE), which
+    is why the difference is drawn explicitly.
+
+    Args:
+        interaction: output of ``compute_interaction``.
+        stat:        the scalar to draw.
+        ax:          Axes to draw on; a new one is made if None.
+        show_p:      annotate the interaction p-value.
+        show_components: draw the two component effects beside the interaction;
+                     False gives the interaction alone.
+        colour_a, colour_b, colour_interaction: marker colours.
+
+    Returns:
+        the Axes drawn on.
+    """
+    meta = interaction.get('meta', {})
+    label_a = meta.get('label_a', 'a')
+    label_b = meta.get('label_b', 'b')
+    if stat == 'meta' or stat not in interaction:
+        raise KeyError(f"plot_interaction_single: stat {stat!r} not in interaction")
+
+    if show_components:
+        positions = [f'\u0394 {label_a}', f'\u0394 {label_b}', 'interaction']
+        colours = [colour_a, colour_b, colour_interaction]
+    else:
+        positions = ['interaction']
+        colours = [colour_interaction]
+
+    if ax is None:
+        _, ax = plt.subplots(figsize=(3.0, 3.0))
+
+    entry = interaction[stat]
+    if show_components:
+        values = [entry.get('delta_a', np.nan),
+                  entry.get('delta_b', np.nan),
+                  entry.get('interaction', np.nan)]
+        intervals = [entry.get('ci_a', (np.nan, np.nan)),
+                     entry.get('ci_b', (np.nan, np.nan)),
+                     (entry.get('ci_lo', np.nan), entry.get('ci_hi', np.nan))]
+    else:
+        values = [entry.get('interaction', np.nan)]
+        intervals = [(entry.get('ci_lo', np.nan), entry.get('ci_hi', np.nan))]
+
+    ax.axhline(0.0, color='0.6', lw=1, ls='--', zorder=0)
+
+    for i, (value, (lo, hi), colour) in enumerate(zip(values, intervals, colours)):
+        if not np.isfinite(value):
+            continue
+        is_interaction = (i == len(values) - 1)
+
+        # Segment rather than yerr, same reason as the phase plot: the point is
+        # the observed estimate and the interval a bootstrap percentile, so the
+        # point can fall outside it. A hollow marker then flags it as unstable.
+        if np.isfinite(lo) and np.isfinite(hi):
+            ax.plot([i, i], [lo, hi], color=colour,
+                    lw=1.8 if is_interaction else 1.3,
+                    solid_capstyle='butt', zorder=2)
+            for cap in (lo, hi):
+                ax.plot([i - 0.07, i + 0.07], [cap, cap], color=colour,
+                        lw=1.8 if is_interaction else 1.3, zorder=2)
+            outside = value < lo or value > hi
+        else:
+            outside = False
+
+        ax.plot(i, value, marker='o',
+                markersize=8 if is_interaction else 6.5,
+                markerfacecolor='white' if outside else colour,
+                markeredgecolor=colour,
+                markeredgewidth=1.6 if outside else 0.6,
+                zorder=4 if is_interaction else 3)
+
+    if show_p:
+        p = entry.get('p_two_sided')
+        if p is not None and np.isfinite(p):
+            finite = [(v, iv) for v, iv in zip(values, intervals) if np.isfinite(v)]
+            if finite:
+                top = max(max(v, iv[1]) if np.isfinite(iv[1]) else v
+                          for v, iv in finite)
+                bottom = min(min(v, iv[0]) if np.isfinite(iv[0]) else v
+                             for v, iv in finite)
+                span = (top - bottom) or (abs(top) or 1.0)
+                ax.annotate(f"p = {p:.3g}", xy=(len(values) - 1, top + 0.10 * span),
+                            ha='center', va='bottom', fontsize=8,
+                            color=colour_interaction)
+                ax.margins(y=0.22)
+
+    ax.set_xticks(range(len(positions)))
+    ax.set_xticklabels(positions, fontsize=8, rotation=20 if show_components else 0,
+                       ha='right' if show_components else 'center')
+    ax.set_xlim(-0.6, len(positions) - 0.4)
+    ax.set_title(_LABEL_FOR_KEY.get(stat, stat), fontsize=10)
+    ax.spines[['top', 'right']].set_visible(False)
+    return ax
 
 
 def plot_interaction(
@@ -357,23 +517,13 @@ def plot_interaction(
 ):
     """Grid of difference-of-differences, one panel per stat.
 
-    The companion to :func:`plot_stat_comparison`: that one shows phases within
-    a session type, this one shows whether the *effect* differs between two
-    session types — masking vs opto, say.
+    The companion to :func:`plot_stat_comparison`: that shows phases within a
+    session type, this shows whether the *effect* differs between two session
+    types — masking vs opto, say. Each panel is :func:`plot_interaction_single`;
+    call that directly to place a single interaction in your own layout.
 
-    Each panel puts three points on a common scale: the effect in the first
-    result, the effect in the second, and their difference. All three carry a
-    95% bootstrap interval, and the p above the interaction tests that
-    difference against zero.
-
-    Read the interaction, not the gap between the two components. Two
-    intervals can overlap while their difference is significant — for
-    independent estimates with equal standard error they only stop overlapping
-    at 3.9 SE, while the difference is significant from 2.8 SE — which is
-    exactly why the difference is drawn explicitly.
-
-    Every panel gets its own y-scale: PSE is in stimulus units, win_stay is a
-    proportion, and a shared axis would flatten most of them to slivers.
+    Every panel gets its own y-scale: PSE is in stimulus units, win_stay a
+    proportion, and a shared axis would flatten most to slivers.
 
     Args:
         interaction: output of ``compute_interaction``.
@@ -383,7 +533,6 @@ def plot_interaction(
         suptitle:    figure title.
         show_p:      annotate the interaction p-value.
         show_components: draw the two component effects beside the interaction.
-                     False gives the interaction alone.
         colour_a, colour_b, colour_interaction: marker colours.
 
     Returns:
@@ -392,22 +541,11 @@ def plot_interaction(
     Raises:
         ValueError: if there is nothing to plot.
     """
-    meta = interaction.get('meta', {})
-    label_a = meta.get('label_a', 'a')
-    label_b = meta.get('label_b', 'b')
-
     if stats is None:
         stats = [k for k in interaction if k != 'meta']
     stats = [s for s in stats if s in interaction and s != 'meta']
     if not stats:
         raise ValueError("plot_interaction: no stats to plot")
-
-    if show_components:
-        positions = [f'Δ {label_a}', f'Δ {label_b}', 'interaction']
-        colours = [colour_a, colour_b, colour_interaction]
-    else:
-        positions = ['interaction']
-        colours = [colour_interaction]
 
     ncols = max(1, min(ncols, len(stats)))
     nrows = int(np.ceil(len(stats) / ncols))
@@ -416,72 +554,10 @@ def plot_interaction(
     flat = axarr.ravel()
 
     for ax, stat in zip(flat, stats):
-        entry = interaction[stat]
-        if show_components:
-            values = [entry.get('delta_a', np.nan),
-                      entry.get('delta_b', np.nan),
-                      entry.get('interaction', np.nan)]
-            intervals = [entry.get('ci_a', (np.nan, np.nan)),
-                         entry.get('ci_b', (np.nan, np.nan)),
-                         (entry.get('ci_lo', np.nan), entry.get('ci_hi', np.nan))]
-        else:
-            values = [entry.get('interaction', np.nan)]
-            intervals = [(entry.get('ci_lo', np.nan), entry.get('ci_hi', np.nan))]
-
-        ax.axhline(0.0, color='0.6', lw=1, ls='--', zorder=0)
-
-        for i, (value, (lo, hi), colour) in enumerate(zip(values, intervals, colours)):
-            if not np.isfinite(value):
-                continue
-            is_interaction = (i == len(values) - 1)
-
-            # The interval is drawn as a segment rather than via yerr. The point
-            # is the observed estimate and the interval is a percentile of the
-            # bootstrap draws, so nothing guarantees the point sits inside it —
-            # a boundary-pinned lapse or a skewed draw distribution can put it
-            # outside. yerr would raise on the resulting negative offset; a
-            # segment shows the discrepancy instead, which is the honest
-            # rendering and a signal the estimate is unstable.
-            if np.isfinite(lo) and np.isfinite(hi):
-                ax.plot([i, i], [lo, hi], color=colour,
-                        lw=1.8 if is_interaction else 1.3,
-                        solid_capstyle='butt', zorder=2)
-                for cap in (lo, hi):
-                    ax.plot([i - 0.07, i + 0.07], [cap, cap], color=colour,
-                            lw=1.8 if is_interaction else 1.3, zorder=2)
-                outside = value < lo or value > hi
-            else:
-                outside = False
-
-            # Hollow marker flags a point outside its own interval.
-            ax.plot(i, value, marker='o',
-                    markersize=8 if is_interaction else 6.5,
-                    markerfacecolor='white' if outside else colour,
-                    markeredgecolor=colour,
-                    markeredgewidth=1.6 if outside else 0.6,
-                    zorder=4 if is_interaction else 3)
-
-        if show_p:
-            p = entry.get('p_two_sided')
-            if p is not None and np.isfinite(p):
-                finite = [(v, iv) for v, iv in zip(values, intervals) if np.isfinite(v)]
-                if finite:
-                    top = max(max(v, iv[1]) if np.isfinite(iv[1]) else v
-                              for v, iv in finite)
-                    bottom = min(min(v, iv[0]) if np.isfinite(iv[0]) else v
-                                 for v, iv in finite)
-                    span = (top - bottom) or (abs(top) or 1.0)
-                    ax.annotate(f"p = {p:.3g}", xy=(len(values) - 1, top + 0.10 * span),
-                                ha='center', va='bottom', fontsize=8,
-                                color=colour_interaction)
-                    ax.margins(y=0.22)
-
-        ax.set_xticks(range(len(positions)))
-        ax.set_xticklabels(positions, fontsize=8, rotation=20 if show_components else 0,
-                           ha='right' if show_components else 'center')
-        ax.set_xlim(-0.6, len(positions) - 0.4)
-        ax.set_title(_LABEL_FOR_KEY.get(stat, stat), fontsize=10)
-        ax.spines[['top', 'right']].set_visible(False)
+        plot_interaction_single(interaction, stat, ax=ax, show_p=show_p,
+                                show_components=show_components,
+                                colour_a=colour_a, colour_b=colour_b,
+                                colour_interaction=colour_interaction)
 
     for ax in flat[len(stats):]:
         fig.delaxes(ax)

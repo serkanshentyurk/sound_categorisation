@@ -552,3 +552,139 @@ def compute_adaptation(
             'n_windows': int(centres.size),
         },
     }
+
+
+def compute_adaptation_per_session(
+    animal: 'AnimalData',
+    to_distribution: str,
+    *,
+    sigma_percep: Optional[float] = None,
+    sigma_source: str = 'expert_uniform',
+    window: int = 50,
+    step: int = 10,
+    trials: str = 'all',
+) -> Dict:
+    """Per-session adaptation trajectories for one distribution, vs a fixed
+    expert-uniform baseline. Sessions are NOT pooled and no window crosses a
+    session boundary.
+
+    The right shape when a hard phase is a single session (opto cohort) or when
+    within-session re-adaptation across a multi-session run matters (first
+    cohort) — unlike :func:`compute_adaptation`, which concatenates the whole
+    block and reports a multi-session plateau (meaningless for one session).
+
+    Baseline is one fixed origin per animal: ``pse_expert`` = pooled μ of the
+    last 5 ``expert_uniform`` sessions. Every value is ``μ(t) − pse_expert`` (raw
+    stimulus units), so 0 is expert-uniform behaviour and you can see whether a
+    session starts back near uniform (overnight reset) or where the last left
+    off. The normative target is returned as ``pse_normative − pse_expert`` for
+    reference. Masking sessions are included; ``trials='all'`` keeps laser-on
+    trials (their cumulative effect on the session's learning is the signal —
+    the within-trial on/off split is 2X's job).
+
+    Args:
+        animal:          AnimalData.
+        to_distribution: the distribution whose sessions to trace, e.g. 'Hard-A'.
+        sigma_percep:    σ for the normative reference; if None, resolved via
+                         ``resolve_sigma(source=sigma_source, trials=trials)``.
+        sigma_source:    σ source when ``sigma_percep`` is None.
+        window, step:    rolling-window size / stride, within each session.
+        trials:          'all' (default) or 'non_opto'.
+
+    Returns:
+        ::
+
+            {'pse_expert':    float,   # NaN if no expert_uniform block
+             'pse_normative': float,   # NaN if σ unresolved
+             'sessions': [ {'session_id','session_idx','switch_index',
+                            'session_type','trials','values',
+                            'start_offset','end_offset','n_trials'}, ... ],
+             'rows':    [ {'session_id','switch_index','stat','value'}, ... ],
+             'meta':    {...} }
+
+        ``switch_index`` = which run of ``to_distribution`` a session belongs to
+        (0 = first appearance): a run of consecutive hard sessions shares one
+        index; the opto cohort's ABAB chain gives 0, 1, 2, … so early-vs-late
+        switches stay recoverable. ``rows`` is the tidy fold shape, per session.
+    """
+    from behav_utils.analysis.psychometry import fit_psychometric
+    from behav_utils.data.ops.selection import select_sessions
+    from behav_utils.data.ops.filtering import filter_trials, pool_arrays
+
+    def _mu(stim, ch):
+        if stim.size == 0:
+            return np.nan
+        fit = fit_psychometric(stim, ch)
+        return float(fit.get('mu', np.nan)) if isinstance(fit, dict) else np.nan
+
+    # ── baseline: last 5 expert_uniform sessions, pooled ──────────────────
+    expert = select_sessions(animal, 'expert_uniform')
+    expert = sorted(expert, key=lambda s: s.session_idx)[-5:]
+    if expert:
+        ea = pool_arrays(filter_trials(expert, trial_type='all'))
+        pse_expert = _mu(ea['stimuli'], ea['choices'])
+    else:
+        pse_expert = np.nan
+
+    # ── normative reference (σ-based; saturates above σ≈0.4) ──────────────
+    try:
+        sig = sigma_percep if sigma_percep is not None else resolve_sigma(
+            animal, source=sigma_source, trials=trials)
+        pse_normative = float(compute_normative_pse(to_distribution, sig))
+    except Exception:
+        sig, pse_normative = np.nan, np.nan
+
+    # ── switch_index: which run of to_distribution each session is in ─────
+    all_sessions = sorted(animal.get_sessions(), key=lambda s: s.session_idx)
+    run, prev, switch_of = -1, None, {}
+    for s in all_sessions:
+        if s.distribution == to_distribution and prev != to_distribution:
+            run += 1
+        if s.distribution == to_distribution:
+            switch_of[s.session_id] = run
+        prev = s.distribution
+
+    # ── per-session trajectories (boundary-safe: one session at a time) ───
+    sessions = sorted(select_sessions(animal, distribution=to_distribution, exclude_masking=False),
+                      key=lambda s: s.session_idx)
+    entries, rows = [], []
+    for s in sessions:
+        cond = filter_trials([s], trial_type=('non_opto' if trials == 'non_opto' else 'all'),
+                             min_trials=1)
+        if not cond:
+            continue
+        arr = pool_arrays(cond)
+        stim, ch = arr['stimuli'], arr['choices']
+        if stim.size >= window:
+            centres, pses = _windowed_pse(stim, ch, window, step)
+        elif stim.size >= 10:
+            centres = np.array([stim.size / 2.0]); pses = np.array([_mu(stim, ch)])
+        else:
+            continue
+        values = pses - pse_expert
+        finite = values[np.isfinite(values)]
+        start_off = float(values[0]) if values.size and np.isfinite(values[0]) else (
+            float(finite[0]) if finite.size else np.nan)
+        end_off = float(values[-1]) if values.size and np.isfinite(values[-1]) else (
+            float(finite[-1]) if finite.size else np.nan)
+        entries.append({
+            'session_id': s.session_id, 'session_idx': s.session_idx,
+            'switch_index': switch_of.get(s.session_id, np.nan),
+            'session_type': s.session_type,
+            'trials': centres, 'values': values,
+            'start_offset': start_off, 'end_offset': end_off,
+            'n_trials': int(stim.size),
+        })
+        rows += [{'session_id': s.session_id, 'switch_index': switch_of.get(s.session_id, np.nan),
+                  'stat': 'start_offset', 'value': start_off},
+                 {'session_id': s.session_id, 'switch_index': switch_of.get(s.session_id, np.nan),
+                  'stat': 'end_offset', 'value': end_off}]
+
+    return {
+        'pse_expert': pse_expert,
+        'pse_normative': pse_normative,
+        'sessions': entries,
+        'rows': rows,
+        'meta': {'to_distribution': to_distribution, 'window': window, 'step': step,
+                 'trials': trials, 'sigma_percep': sig, 'n_sessions': len(entries)},
+    }

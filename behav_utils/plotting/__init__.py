@@ -27,10 +27,11 @@ Usage:
 from behav_utils.plotting.psychometric import plot_psychometric
 from behav_utils.plotting.update_matrix import plot_um
 from behav_utils.plotting.trajectory import plot_trajectory
-from behav_utils.plotting.session_stats import plot_session_stats
-from behav_utils.plotting.adaptation import plot_adaptation
+from behav_utils.plotting.session_stats import plot_session_stats, plot_session_stats_single
+from behav_utils.plotting.adaptation import plot_adaptation, plot_adaptation_sessions
 from behav_utils.plotting.comparison import (
-    plot_comparison, plot_stat_comparison, plot_interaction,
+    plot_comparison, plot_stat_comparison, plot_stat_comparison_single,
+    plot_interaction, plot_interaction_single,
 )
 from behav_utils.plotting.session import plot_session_raster
 from behav_utils.plotting.styles import (
@@ -41,11 +42,14 @@ from behav_utils.plotting.styles import (
 __all__ = [
     'plot_psychometric',
     'plot_stat_comparison',
+    'plot_stat_comparison_single',
     'plot_interaction',
+    'plot_interaction_single',
     'plot_um',
     'plot_trajectory',
     'plot_session_stats',
-    'plot_adaptation',
+    'plot_session_stats_single',
+    'plot_adaptation', 'plot_adaptation_sessions',
     'plot_comparison',
     'plot_session_raster',
     'PALETTE', 'COLOURS', 'UM_CMAP',

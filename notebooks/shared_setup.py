@@ -42,6 +42,13 @@ FIG_DIR = _PROJECT_ROOT / 'figures'
 STAGE = 'Full_Task_Cont'
 MIN_SESSIONS = 5
 
+# ── Cohorts (hardcoded — the canonical split; IDs are zero-padded 'SS01'..'SS23').
+#    First cohort has laser-free regular Hard-A/Hard-B (the HMM/SLDS cohort);
+#    the opto cohort has only opto/masking for the hard distributions.
+#    Verify against the snapshot's animal_ids and prune here if the ranges have gaps.
+FIRST_COHORT = [f'SS{i:02d}' for i in range(1, 14)]    # SS01–SS13, non-opto
+OPTO_COHORT  = [f'SS{i:02d}' for i in range(14, 24)]   # SS14–SS23, opto + masking
+
 # ── Results paths: derive from data_root() (scripts/config.py) ─────────────
 from scripts.config import data_root, results_dir, cohort_path, snpe_networks_dir
 
@@ -91,6 +98,24 @@ from behav_utils.plotting import (
     plot_comparison, plot_session_raster,
     PALETTE, COLOURS, UM_CMAP,
     apply_style, get_colour,
+)
+
+# ── Canonical pipeline: the compute_stat door, the contrast/fold layer, and
+#    the resampling-backed group test. These supersede compute_summary_stats /
+#    extract_stats / compare_phases above (kept for older notebooks). ──────────
+from behav_utils.analysis import (
+    compute_stat, compute_delta_stat, compute_interaction,
+    average_um, resolve_sigma, compute_normative_pse, compute_adaptation, compute_adaptation_per_session,
+    collect_rows, compare_groups, rank_test, min_achievable_p,
+    paired_diff, combine,
+)
+
+# ── Single-panel (…_single, take ax) + grid plotters ─────────────────────────
+from behav_utils.plotting import (
+    plot_stat_comparison, plot_stat_comparison_single,
+    plot_interaction, plot_interaction_single,
+    plot_session_stats, plot_session_stats_single,
+    plot_adaptation, plot_adaptation_sessions,
 )
 
 # ── Results loading helpers ─────────────────────────────────────────────────

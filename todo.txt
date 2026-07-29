@@ -13,9 +13,7 @@ behaviour experiments
 
 -- 260723 --
 
-same thing with hard a and b
+same thing with hard a and b -- check result pdf
 
-pool a's and compare session by session no trial filtering
+pool hard a optos and compare pooled hard a masking sessions - no trial filtering
 learning speed / adaptation speed
-
-
