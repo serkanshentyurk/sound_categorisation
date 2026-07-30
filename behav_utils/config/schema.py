@@ -372,6 +372,43 @@ def _normalise_session_dict(raw) -> Dict[str, List[str]]:
     return out
 
 
+def load_cohorts(path: Union[str, Path]) -> Dict[str, List[str]]:
+    """Load the ``cohorts:`` block from the project YAML.
+
+    Cohort membership only (which animals belong to which cohort) — genotype is
+    sourced per-animal from ``animal_metadata.json`` and is deliberately not
+    duplicated here. Import-safe: reads the raw YAML and touches nothing else, so
+    behaviour-only report scripts can call it without pulling in the fitting
+    stack.
+
+    Args:
+        path: Path to the YAML config file.
+
+    Returns:
+        ``{cohort_key: [animal_id, ...]}`` (empty dict if no ``cohorts:`` block).
+
+    Raises:
+        FileNotFoundError: Config file doesn't exist.
+        ValueError: ``cohorts:`` is present but not a mapping of lists.
+    """
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"Config file not found: {path}")
+    with open(path, 'r') as f:
+        raw = yaml.safe_load(f)
+    cohorts = (raw or {}).get('cohorts', {}) or {}
+    if not isinstance(cohorts, dict):
+        raise ValueError(f"'cohorts' must be a mapping, got {type(cohorts)}")
+    out: Dict[str, List[str]] = {}
+    for key, members in cohorts.items():
+        if not isinstance(members, (list, tuple)):
+            raise ValueError(
+                f"cohort {key!r} must map to a list of animal ids, "
+                f"got {type(members)}")
+        out[str(key)] = [str(m) for m in members]
+    return out
+
+
 def load_config(path: Union[str, Path]) -> ProjectConfig:
     """
     Load and validate a project config from YAML.

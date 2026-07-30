@@ -210,6 +210,7 @@ def plot_stat_comparison_single(
     phase_order: Optional[Sequence[str]] = None,
     palette: Optional[Sequence[str]] = None,
     show_p: bool = True,
+    units: Optional[Sequence[str]] = None,
 ) -> Axes:
     """One stat's per-phase point-and-CI, drawn on a single Axes.
 
@@ -232,6 +233,16 @@ def plot_stat_comparison_single(
         phase_order: x-axis order; default is the reference first, then the rest.
         palette:     colours per phase; defaults to the house palette.
         show_p:      annotate the contrast p above each non-reference phase.
+        units:       which resample unit(s) to draw the per-phase CI for. None
+                     (default) draws the single legacy ``stats_ci`` in the phase
+                     colour — unchanged behaviour. A tuple such as
+                     ``('trials', 'sessions')`` draws one interval per unit from
+                     ``stats_ci_by_unit``, offset at the same x: the trial CI thin
+                     and grey (the diagnostic that ignores session scatter), the
+                     session CI thick and in the phase colour (the honest interval
+                     for a between-phase comparison). Units absent from
+                     ``stats_ci_by_unit`` are skipped; if none are present it
+                     falls back to the legacy single CI.
 
     Returns:
         the Axes drawn on.
@@ -250,10 +261,12 @@ def plot_stat_comparison_single(
     )
     colours = list(palette) if palette else [get_colour(i) for i in range(len(order))]
 
-    # p-value for each phase, from its contrast against the reference
-    p_for = {}
+    # p-value for each phase, from its contrast against the reference:
+    # permutation p (within-phase) and the per-unit bootstrap p (between-phase).
+    p_for, bootp_for = {}, {}
     for con in contrasts.values():
         p_for[con.get('label_a')] = con.get('perm_p') or {}
+        bootp_for[con.get('label_a')] = con.get('boot_p_by_unit') or {}
 
     if ax is None:
         _, ax = plt.subplots(figsize=(3.0, 3.0))
@@ -272,20 +285,47 @@ def plot_stat_comparison_single(
             continue
         colour = colours[i % len(colours)]
         ph = phases.get(name, {})
-        lo, hi = (ph.get('stats_ci') or {}).get(stat, (np.nan, np.nan))
 
-        # Segment rather than yerr: the point is the observed estimate and the
-        # interval is a bootstrap percentile, so the point need not lie inside
-        # it. yerr raises on the negative offset; a segment renders it, and the
-        # hollow marker flags the estimate as unstable.
+        # Which CIs to draw: one per requested unit if per-unit intervals exist,
+        # else the single legacy stats_ci. Two units are offset at the same x —
+        # trials thin/grey (ignores session scatter), sessions thick/coloured.
+        by_unit = ph.get('stats_ci_by_unit') or {}
+        draw = None
+        if units:
+            picked = [u for u in units if stat in (by_unit.get(u) or {})]
+            if picked:
+                draw = picked
         outside = False
-        if np.isfinite(lo) and np.isfinite(hi):
-            ax.plot([xs[i], xs[i]], [lo, hi], color=colour, lw=1.4,
-                    solid_capstyle='butt', zorder=2)
-            for cap in (lo, hi):
-                ax.plot([xs[i] - 0.07, xs[i] + 0.07], [cap, cap],
-                        color=colour, lw=1.4, zorder=2)
-            outside = vals[i] < lo or vals[i] > hi
+        if draw:
+            multi = len(draw) > 1
+            for j, u in enumerate(draw):
+                lo, hi = by_unit[u][stat]
+                if not (np.isfinite(lo) and np.isfinite(hi)):
+                    continue
+                dx = (j - (len(draw) - 1) / 2) * 0.16 if multi else 0.0
+                is_sess = (u == 'sessions')
+                c = colour if (is_sess or not multi) else '0.55'
+                lw = 2.4 if (is_sess and multi) else 1.4
+                ax.plot([xs[i] + dx, xs[i] + dx], [lo, hi], color=c, lw=lw,
+                        solid_capstyle='butt', zorder=2)
+                for cap in (lo, hi):
+                    ax.plot([xs[i] + dx - 0.06, xs[i] + dx + 0.06], [cap, cap],
+                            color=c, lw=lw, zorder=2)
+                if is_sess or not multi:  # instability judged on the honest CI
+                    outside = vals[i] < lo or vals[i] > hi
+        else:
+            # Segment rather than yerr: the point is the observed estimate and
+            # the interval is a bootstrap percentile, so the point need not lie
+            # inside it. yerr raises on the negative offset; a segment renders
+            # it, and the hollow marker flags the estimate as unstable.
+            lo, hi = (ph.get('stats_ci') or {}).get(stat, (np.nan, np.nan))
+            if np.isfinite(lo) and np.isfinite(hi):
+                ax.plot([xs[i], xs[i]], [lo, hi], color=colour, lw=1.4,
+                        solid_capstyle='butt', zorder=2)
+                for cap in (lo, hi):
+                    ax.plot([xs[i] - 0.07, xs[i] + 0.07], [cap, cap],
+                            color=colour, lw=1.4, zorder=2)
+                outside = vals[i] < lo or vals[i] > hi
         ax.plot(xs[i], vals[i], marker='o', markersize=7,
                 markerfacecolor='white' if outside else colour,
                 markeredgecolor=colour,
@@ -298,12 +338,29 @@ def plot_stat_comparison_single(
                       for v, h in zip(vals, his) if np.isfinite(v))
             span = (max(finite) - min(finite)) or (abs(max(finite)) or 1.0)
             for i, name in enumerate(order):
-                p = (p_for.get(name) or {}).get(stat)
-                if p is None or not np.isfinite(p):
-                    continue
-                ax.annotate(f"p={p:.3g}", xy=(xs[i], top + 0.12 * span),
-                            ha='center', va='bottom', fontsize=7.5)
-            ax.margins(y=0.25)
+                perm_p = (p_for.get(name) or {}).get(stat)
+                if perm_p is not None and np.isfinite(perm_p):
+                    # within-phase: the valid permutation p
+                    ax.annotate(f"p={perm_p:.3g}", xy=(xs[i], top + 0.12 * span),
+                                ha='center', va='bottom', fontsize=7.5)
+                elif units:
+                    # between-phase: pair each CI with its bootstrap p. The trial
+                    # p is the over-confident one — small exactly when the trial
+                    # CI is misleadingly narrow — so it is shown greyed next to
+                    # the honest session p, never alone.
+                    bp = bootp_for.get(name) or {}
+                    parts = []
+                    for u in units:
+                        pu = (bp.get(u) or {}).get(stat)
+                        if pu is not None and np.isfinite(pu):
+                            tag = 's' if u == 'sessions' else 't'
+                            parts.append((tag, pu))
+                    for k, (tag, pu) in enumerate(parts):
+                        ax.annotate(f"p{tag}={pu:.2g}",
+                                    xy=(xs[i], top + (0.12 + 0.13 * k) * span),
+                                    ha='center', va='bottom', fontsize=7,
+                                    color=('0.55' if tag == 't' else 'black'))
+            ax.margins(y=0.25 + 0.13 * (len(units) if units else 0))
 
     ax.set_xticks(xs)
     ax.set_xticklabels(order, fontsize=8)
@@ -397,6 +454,7 @@ def plot_interaction_single(
     colour_a: str = '#1f77b4',
     colour_b: str = '#ff7f0e',
     colour_interaction: str = '#7f2704',
+    units: Optional[Sequence[str]] = None,
 ) -> Axes:
     """One stat's difference-of-differences, drawn on a single Axes.
 
@@ -419,6 +477,15 @@ def plot_interaction_single(
         show_components: draw the two component effects beside the interaction;
                      False gives the interaction alone.
         colour_a, colour_b, colour_interaction: marker colours.
+        units:       which resample unit(s) to draw the interaction CI for. None
+                     (default) draws the single legacy interval — unchanged. A
+                     tuple such as ``('trials', 'sessions')`` draws one interval
+                     per unit from ``entry['by_unit']``, offset at the interaction
+                     x: trials thin/grey, sessions thick/coloured, with a '∗' over
+                     the session interval when it excludes 0. The component
+                     effects keep their single (trial-level) interval — the dual
+                     CI is only meaningful on the interaction, which is the
+                     between-session quantity.
 
     Returns:
         the Axes drawn on.
@@ -458,10 +525,44 @@ def plot_interaction_single(
             continue
         is_interaction = (i == len(values) - 1)
 
+        # Dual CI on the interaction bar only: one interval per requested unit
+        # from entry['by_unit'], offset at the interaction x (trials thin/grey,
+        # sessions thick/coloured, '∗' over the session interval if it excludes
+        # 0). Components and the no-units case keep the single interval below.
+        by_unit = entry.get('by_unit') or {}
+        draw = None
+        if is_interaction and units:
+            picked = [u for u in units if u in by_unit]
+            if picked:
+                draw = picked
+
         # Segment rather than yerr, same reason as the phase plot: the point is
         # the observed estimate and the interval a bootstrap percentile, so the
         # point can fall outside it. A hollow marker then flags it as unstable.
-        if np.isfinite(lo) and np.isfinite(hi):
+        outside = False
+        if draw:
+            multi = len(draw) > 1
+            for j, u in enumerate(draw):
+                ulo = by_unit[u].get('ci_lo', np.nan)
+                uhi = by_unit[u].get('ci_hi', np.nan)
+                if not (np.isfinite(ulo) and np.isfinite(uhi)):
+                    continue
+                dx = (j - (len(draw) - 1) / 2) * 0.18 if multi else 0.0
+                is_sess = (u == 'sessions')
+                c = colour if (is_sess or not multi) else '0.55'
+                lw = 2.6 if (is_sess and multi) else 1.8
+                ax.plot([i + dx, i + dx], [ulo, uhi], color=c, lw=lw,
+                        solid_capstyle='butt', zorder=2)
+                for cap in (ulo, uhi):
+                    ax.plot([i + dx - 0.06, i + dx + 0.06], [cap, cap],
+                            color=c, lw=lw, zorder=2)
+                if is_sess and (ulo > 0 or uhi < 0):  # session CI excludes 0
+                    ax.annotate('\u2217', (i + dx, uhi), textcoords='offset points',
+                                xytext=(0, 3), ha='center', va='bottom',
+                                fontsize=11, color=c, zorder=5)
+                if is_sess or not multi:
+                    outside = value < ulo or value > uhi
+        elif np.isfinite(lo) and np.isfinite(hi):
             ax.plot([i, i], [lo, hi], color=colour,
                     lw=1.8 if is_interaction else 1.3,
                     solid_capstyle='butt', zorder=2)
@@ -469,8 +570,6 @@ def plot_interaction_single(
                 ax.plot([i - 0.07, i + 0.07], [cap, cap], color=colour,
                         lw=1.8 if is_interaction else 1.3, zorder=2)
             outside = value < lo or value > hi
-        else:
-            outside = False
 
         ax.plot(i, value, marker='o',
                 markersize=8 if is_interaction else 6.5,
@@ -480,19 +579,31 @@ def plot_interaction_single(
                 zorder=4 if is_interaction else 3)
 
     if show_p:
-        p = entry.get('p_two_sided')
-        if p is not None and np.isfinite(p):
-            finite = [(v, iv) for v, iv in zip(values, intervals) if np.isfinite(v)]
-            if finite:
-                top = max(max(v, iv[1]) if np.isfinite(iv[1]) else v
-                          for v, iv in finite)
-                bottom = min(min(v, iv[0]) if np.isfinite(iv[0]) else v
-                             for v, iv in finite)
-                span = (top - bottom) or (abs(top) or 1.0)
-                ax.annotate(f"p = {p:.3g}", xy=(len(values) - 1, top + 0.10 * span),
+        finite = [(v, iv) for v, iv in zip(values, intervals) if np.isfinite(v)]
+        by_unit = entry.get('by_unit') or {}
+        # Paired p's when units are drawn (trial greyed, session black); else the
+        # single legacy p. The trial p is never shown alone — it is small exactly
+        # when the trial CI is misleadingly narrow.
+        pairs = []
+        if units and by_unit:
+            for u in units:
+                pu = (by_unit.get(u) or {}).get('p_two_sided')
+                if pu is not None and np.isfinite(pu):
+                    pairs.append(('s' if u == 'sessions' else 't', pu))
+        else:
+            p = entry.get('p_two_sided')
+            if p is not None and np.isfinite(p):
+                pairs = [('', p)]
+        if finite and pairs:
+            top = max(max(v, iv[1]) if np.isfinite(iv[1]) else v for v, iv in finite)
+            bottom = min(min(v, iv[0]) if np.isfinite(iv[0]) else v for v, iv in finite)
+            span = (top - bottom) or (abs(top) or 1.0)
+            for k, (tag, pu) in enumerate(pairs):
+                label = f"p = {pu:.3g}" if tag == '' else f"p{tag}={pu:.2g}"
+                ax.annotate(label, xy=(len(values) - 1, top + (0.10 + 0.13 * k) * span),
                             ha='center', va='bottom', fontsize=8,
-                            color=colour_interaction)
-                ax.margins(y=0.22)
+                            color=('0.55' if tag == 't' else colour_interaction))
+            ax.margins(y=0.22 + 0.13 * max(0, len(pairs) - 1))
 
     ax.set_xticks(range(len(positions)))
     ax.set_xticklabels(positions, fontsize=8, rotation=20 if show_components else 0,

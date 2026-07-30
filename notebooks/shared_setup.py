@@ -46,8 +46,19 @@ MIN_SESSIONS = 5
 #    First cohort has laser-free regular Hard-A/Hard-B (the HMM/SLDS cohort);
 #    the opto cohort has only opto/masking for the hard distributions.
 #    Verify against the snapshot's animal_ids and prune here if the ranges have gaps.
-FIRST_COHORT = [f'SS{i:02d}' for i in range(1, 14)]    # SS01–SS13, non-opto
-OPTO_COHORT  = [f'SS{i:02d}' for i in range(14, 24)]   # SS14–SS23, opto + masking
+# ── Cohorts: sourced from config.yaml's `cohorts:` block (single owner).
+#    Keys are 'behaviour1-cohort' / 'opto1-cohort'; the FIRST_COHORT / OPTO_COHORT
+#    aliases below keep the existing notebooks working. Genotype is NOT here — it
+#    comes per-animal from animal_metadata.json. Prune in config.yaml, not here.
+from behav_utils.config.schema import load_cohorts
+if PATH_CONFIG.exists():
+    COHORTS = load_cohorts(PATH_CONFIG)
+    FIRST_COHORT = COHORTS.get('behaviour1-cohort', [])   # SS01–SS13, non-opto
+    OPTO_COHORT  = COHORTS.get('opto1-cohort', [])         # SS14–SS23, opto + masking
+else:  # fallback when the config is absent (e.g. a bare synthetic run)
+    COHORTS = {}
+    FIRST_COHORT = [f'SS{i:02d}' for i in range(1, 14)]
+    OPTO_COHORT  = [f'SS{i:02d}' for i in range(14, 24)]
 
 # ── Results paths: derive from data_root() (scripts/config.py) ─────────────
 from scripts.config import data_root, results_dir, cohort_path, snpe_networks_dir

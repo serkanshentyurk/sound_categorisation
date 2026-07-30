@@ -210,6 +210,36 @@ def compute_ds_x(clean, stat, n, n_repeats=100, with_replacement=True, n_bins=8,
     return {'repeats': repeats, 'aggregated': spec['aggregate'](repeats, n, n_bins)}
 
 
+def _resample_whole_sessions(clean, k, with_replacement, rng):
+    """Draw ``k`` whole sessions from ``clean`` and return them as a list.
+
+    The session is the unit: sessions are selected intact (never sliced), so
+    within-session trial order and the frozen lag-1 ``prev_*`` arrays are carried
+    unchanged, and a session drawn twice contributes its trials twice (the
+    correct bootstrap behaviour — ``pool_arrays`` concatenates duplicates). This
+    is why session resampling is valid for order-dependent stats that trial
+    resampling must refuse.
+
+    Args:
+        clean:            list of SessionData (a phase/condition).
+        k:                number of sessions to draw.
+        with_replacement: True for a bootstrap resample; False for a subsample.
+        rng:              numpy Generator.
+
+    Returns:
+        list of SessionData (length ``min(k, len(clean))`` when without
+        replacement; ``k`` with replacement). Empty if ``clean`` is empty.
+    """
+    m = len(clean)
+    if m == 0 or k <= 0:
+        return []
+    if with_replacement:
+        idx = rng.integers(0, m, size=k)
+    else:
+        idx = rng.permutation(m)[:k]
+    return [clean[i] for i in idx]
+
+
 # ── resample-and-recompute for scalar/param summary stats ───────────────────────
 def resample_stat_vectors(
     clean,
@@ -243,7 +273,9 @@ def resample_stat_vectors(
                          of ``unit`` in ``clean`` (the right default for a bootstrap).
         n_repeats:       number of resamples (rows of the returned matrix).
         with_replacement: True for a bootstrap resample, False for a clean subsample.
-        unit:            'trials' (responded trials) or 'pairs' (post-correct pairs).
+        unit:            'trials' (responded trials), 'pairs' (post-correct
+                         pairs), or 'sessions' (whole sessions, drawn intact —
+                         valid for order-dependent stats; natural n = n_sessions).
         seed:            RNG seed.
 
     Returns:
@@ -254,41 +286,65 @@ def resample_stat_vectors(
     Raises:
         ValueError: if any requested stat is not trial-exchangeable.
     """
-    bad = [s for s in stat_names if not is_exchangeable(s)]
-    if bad:
-        raise ValueError(
-            f"trial resampling is invalid for order-dependent stat(s) {bad}; "
-            f"exclude them from the bootstrap / downsample (they depend on trial "
-            f"order beyond the frozen lag-1 view)."
-        )
+    # Order-dependence guard is unit-aware. Trial/pairs resampling reshuffles
+    # trials, so stats that depend on trial order beyond the frozen lag-1 view
+    # are refused. Session resampling keeps whole sessions intact — full trial
+    # order (and every lag) is preserved — so no stat is refused there.
+    if unit != 'sessions':
+        bad = [s for s in stat_names if not is_exchangeable(s)]
+        if bad:
+            raise ValueError(
+                f"trial resampling is invalid for order-dependent stat(s) {bad}; "
+                f"exclude them from the bootstrap / downsample (they depend on trial "
+                f"order beyond the frozen lag-1 view), or resample with unit='sessions'."
+            )
 
     rng = np.random.default_rng(seed)
+    # A separate stream for stochastic stats (e.g. reaction_time_jitter): passing
+    # it to fit_summary_stats means such a stat re-draws its noise every resample
+    # (folding that uncertainty into the interval) without perturbing the
+    # resampling draw sequence — so every deterministic stat's draws are
+    # unchanged whether or not a stochastic stat is present.
+    jitter_rng = np.random.default_rng(seed + 2654435761)
     names = get_stat_names_expanded(stat_names)
     out = np.full((n_repeats, len(names)), np.nan)
 
     if not clean:
         return out
 
-    if n is None:
-        pooled0 = pool_arrays(clean)
-        if pooled0['n_trials'] == 0:
+    # Natural draw size per unit. For sessions the unit is the whole session, so
+    # the natural count is len(clean); trials/pairs count pooled rows.
+    if unit == 'sessions':
+        k = len(clean) if n is None else int(n)
+        if k <= 0:
             return out
-        n = len(_pool_index(pooled0, unit))
-    if n <= 0:
-        return out
+    else:
+        if n is None:
+            pooled0 = pool_arrays(clean)
+            if pooled0['n_trials'] == 0:
+                return out
+            n = len(_pool_index(pooled0, unit))
+        if n <= 0:
+            return out
 
     for r in range(n_repeats):
-        drawn = downsample(clean, n, unit=unit,
-                           with_replacement=with_replacement, rng=rng)
+        if unit == 'sessions':
+            drawn = _resample_whole_sessions(clean, k, with_replacement, rng)
+        else:
+            drawn = downsample(clean, n, unit=unit,
+                               with_replacement=with_replacement, rng=rng)
         if not drawn:
             continue
         pooled = pool_arrays(drawn)
+        if pooled['n_trials'] == 0:
+            continue
         vals = fit_summary_stats(
             pooled['choices'], pooled['stimuli'], pooled['categories'],
             prev_choices=pooled['prev_choices'],
             prev_stimuli=pooled['prev_stimuli'],
             prev_categories=pooled['prev_categories'],
             stat_names=stat_names, return_dict=False,
+            reaction_time=pooled.get('reaction_times'), rng=jitter_rng,
         )
         out[r] = np.asarray(vals, dtype=float)
 

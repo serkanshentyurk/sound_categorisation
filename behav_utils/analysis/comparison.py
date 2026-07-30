@@ -76,6 +76,7 @@ def compute_delta_stat(
     n_bins: int = 8,
     trial_filter: str = 'post_correct',
     n_repeats: int = 200,
+    resample_units: Sequence[str] = ('trials',),
     seed: int = 42,
 ) -> Dict:
     """Compare N phases against a reference, with permutation p and bootstrap CI.
@@ -105,6 +106,18 @@ def compute_delta_stat(
         n_bins:     update-matrix bins.
         trial_filter: 'post_correct' | 'all', for the update matrix.
         n_repeats:  matched-n draws for the display objects when downsampling.
+        resample_units: which unit(s) to bootstrap the CI over. The first is the
+                    *primary* unit and populates the legacy CI fields
+                    (``stats_ci``, ``boot_ci``, ``difference_draws``) unchanged;
+                    any further units are added alongside under the ``*_by_unit``
+                    fields. ``('trials',)`` (default) reproduces the old output
+                    exactly. Pass ``('trials', 'sessions')`` to get both a
+                    per-trial CI and a per-session CI on every contrast — the
+                    per-session one is the honest interval for a between-phase
+                    difference (phases whose session type was not randomised per
+                    trial); the per-trial one is the diagnostic that ignores
+                    session scatter. ``'sessions'`` needs ≥2 sessions in the
+                    phase, else its CI is skipped for that condition.
         seed:       base RNG seed.
 
     Returns:
@@ -112,8 +125,10 @@ def compute_delta_stat(
 
             result['phases'][label]
                 ['stats']            {stat: observed value}
-                ['stats_ci']         {stat: (lo, hi)}   — display only
-                ['bootstrap_draws']  {stat: ndarray}    — the composable primitive
+                ['stats_ci']         {stat: (lo, hi)}   — display only (primary unit)
+                ['stats_ci_by_unit'] {unit: {stat: (lo, hi)}}
+                ['bootstrap_draws']  {stat: ndarray}    — primary unit (composable)
+                ['bootstrap_draws_by_unit'] {unit: {stat: ndarray}}
                 ['psychometric']     → plot_psychometric(...)
                 ['um']               → plot_um(...)
                 ['n_trials'], ['n_sessions']
@@ -121,8 +136,10 @@ def compute_delta_stat(
             result['contrasts'][f'{phase}_vs_{reference}']
                 ['diffs']             {stat: Δ}
                 ['perm_p']            {stat: p}
-                ['boot_ci']           {stat: (lo, hi)}
-                ['difference_draws']  {stat: ndarray} — feeds compute_interaction
+                ['boot_ci']           {stat: (lo, hi)}   — primary unit
+                ['boot_ci_by_unit']   {unit: {stat: (lo, hi)}}
+                ['difference_draws']  {stat: ndarray} — primary unit; feeds compute_interaction
+                ['difference_draws_by_unit'] {unit: {stat: ndarray}}
                 ['um_diff'], ['um_rmse'], ['um_corr']
                 ['label_a'], ['label_b'], ['n_a'], ['n_b']
 
@@ -177,20 +194,34 @@ def compute_delta_stat(
     want_psychometric = 'psychometric' in families
     scalar_names = list(get_stat_names_expanded(families)) if families else []
 
-    # Trial resampling scrambles order, so stats that look beyond the frozen
-    # lag-1 view are invalid here — the same rule resample_stat_vectors
-    # enforces. They are doubly invalid on an interleaved subset, where trials
-    # t-2 and t-3 are not the real predecessors even before any shuffling.
-    if families and (n_permutations > 0 or n_bootstrap > 0):
+    # Which units to bootstrap over. First is primary (drives the legacy fields).
+    resample_units = list(dict.fromkeys(resample_units))  # de-dup, keep order
+    bad_units = [u for u in resample_units if u not in ('trials', 'sessions')]
+    if bad_units:
+        raise ValueError(
+            f"compare_phases: resample_units must be 'trials'/'sessions', "
+            f"got {bad_units}")
+    primary_unit = resample_units[0] if resample_units else 'trials'
+
+    # Order-dependence guard, unit-aware. Permutation shuffles trial labels, and
+    # a trial bootstrap reshuffles trials, so a stat that looks beyond the frozen
+    # lag-1 view is invalid under either. A *session* bootstrap keeps whole
+    # sessions intact (order preserved), so it does not trigger the guard.
+    trial_order_resampling = (
+        n_permutations > 0
+        or (n_bootstrap > 0 and any(u in ('trials',) for u in resample_units))
+    )
+    if families and trial_order_resampling:
         bad = [s for s in families if not is_exchangeable(s)]
         if bad:
             raise ValueError(
                 f"compare_phases: order-dependent stat(s) {bad} cannot be "
-                f"permuted or bootstrapped (they depend on trial order beyond "
-                f"the frozen lag-1 view, which resampling destroys). Drop them, "
-                f"or set n_permutations=0 and n_bootstrap=0 to report observed "
-                f"values only — and note they are unreliable on an interleaved "
-                f"subset regardless."
+                f"permuted or trial-bootstrapped (they depend on trial order "
+                f"beyond the frozen lag-1 view, which trial resampling destroys). "
+                f"Drop them, use resample_units=('sessions',) with "
+                f"n_permutations=0, or set n_permutations=0 and n_bootstrap=0 to "
+                f"report observed values only — and note they are unreliable on "
+                f"an interleaved subset regardless."
             )
 
     # ── matched n, derived per unit ───────────────────────────────────────
@@ -212,28 +243,50 @@ def compute_delta_stat(
         entry = {
             'n_trials': int(arrays['choices'].size),
             'n_sessions': int(len(phase)),
-            'stats': compute_stats_from_arrays(arrays, families),
+            'stats': compute_stats_from_arrays(
+                arrays, families, rng=np.random.default_rng(seed + i)),
         }
 
-        # Bootstrap each condition ONCE. Every contrast and interaction is then
-        # a subtraction of these arrays, so a shared reference cancels exactly
-        # instead of contributing its variance twice.
-        if n_bootstrap > 0 and families and entry['n_trials'] >= 10:
-            draws = bootstrap_phase_stats(
-                phase, families, n_draws=n_bootstrap,
-                n_trials=draw_n_trials, seed=seed + i,
-            )
-            entry['bootstrap_draws'] = draws
-            entry['stats_ci'] = {
-                stat: (summarise_draw_distribution(values)['ci_lo'],
-                       summarise_draw_distribution(values)['ci_hi'])
-                for stat, values in draws.items()
-            }
-            if downsample:
+        # Bootstrap each condition ONCE per requested unit. Every contrast and
+        # interaction is then a subtraction of these stored arrays, so a shared
+        # reference cancels exactly instead of contributing its variance twice.
+        # The primary unit keeps the pre-change seed (seed + i), so
+        # resample_units=('trials',) reproduces the old draws byte-for-byte.
+        draws_by_unit: Dict[str, Dict] = {}
+        ci_by_unit: Dict[str, Dict] = {}
+        if n_bootstrap > 0 and families:
+            for u_idx, unit in enumerate(resample_units):
+                if unit == 'trials' and entry['n_trials'] < 10:
+                    continue
+                if unit == 'sessions' and entry['n_sessions'] < 2:
+                    continue  # <2 sessions carries no session-level information
+                u_seed = (seed + i) if u_idx == 0 \
+                    else (seed + i + u_idx * 1_000_003)
+                u_draws = bootstrap_phase_stats(
+                    phase, families, n_draws=n_bootstrap,
+                    n_trials=draw_n_trials, seed=u_seed, unit=unit,
+                )
+                draws_by_unit[unit] = u_draws
+                ci_by_unit[unit] = {
+                    stat: (summarise_draw_distribution(values)['ci_lo'],
+                           summarise_draw_distribution(values)['ci_hi'])
+                    for stat, values in u_draws.items()
+                }
+        if draws_by_unit:
+            entry['bootstrap_draws_by_unit'] = draws_by_unit
+            entry['stats_ci_by_unit'] = ci_by_unit
+            # Legacy single-unit fields = primary unit (fall back to whatever
+            # was computable, e.g. if the primary was skipped on a gate).
+            leg = primary_unit if primary_unit in draws_by_unit \
+                else next(iter(draws_by_unit))
+            entry['bootstrap_draws'] = draws_by_unit[leg]
+            entry['stats_ci'] = ci_by_unit[leg]
+            if downsample and 'trials' in draws_by_unit:
                 # The null below is built at the matched n, so the observed
                 # value compared against it must be too.
                 entry['stats_matched'] = {
-                    stat: float(np.nanmedian(values)) for stat, values in draws.items()
+                    stat: float(np.nanmedian(values))
+                    for stat, values in draws_by_unit['trials'].items()
                 }
 
         if want_psychometric:
@@ -275,25 +328,47 @@ def compute_delta_stat(
             'label_b': reference,
             'n_a': entry['n_trials'],
             'n_b': reference_entry['n_trials'],
+            'n_sessions_a': entry['n_sessions'],
+            'n_sessions_b': reference_entry['n_sessions'],
             'perm_p': None,
             'boot_ci': None,
             'difference_draws': None,
+            'boot_ci_by_unit': {},
+            'boot_p_by_unit': {},
+            'difference_draws_by_unit': {},
         }
 
-        # Bootstrap CI: subtract the stored per-condition draws.
-        draws_a = entry.get('bootstrap_draws')
-        draws_b = reference_entry.get('bootstrap_draws')
-        if draws_a and draws_b:
-            difference_draws, boot_ci = {}, {}
+        # Bootstrap CI (and a two-sided bootstrap p) per unit: subtract the stored
+        # per-condition draws for that unit. A shared reference cancels exactly
+        # because the SAME draw arrays are reused (that is why per-condition draws
+        # are stored, not the diffs).
+        draws_a_by_unit = entry.get('bootstrap_draws_by_unit', {})
+        draws_b_by_unit = reference_entry.get('bootstrap_draws_by_unit', {})
+        for unit in resample_units:
+            draws_a = draws_a_by_unit.get(unit)
+            draws_b = draws_b_by_unit.get(unit)
+            if not draws_a or not draws_b:
+                continue
+            difference_draws, boot_ci, boot_p = {}, {}, {}
             for stat in scalar_names:
                 if stat not in draws_a or stat not in draws_b:
                     continue
-                delta = draws_a[stat] - draws_b[stat]
+                n = min(draws_a[stat].size, draws_b[stat].size)
+                delta = draws_a[stat][:n] - draws_b[stat][:n]
                 difference_draws[stat] = delta
                 summary = summarise_draw_distribution(delta)
                 boot_ci[stat] = (summary['ci_lo'], summary['ci_hi'])
-            contrast['difference_draws'] = difference_draws
-            contrast['boot_ci'] = boot_ci
+                boot_p[stat] = summary['p_two_sided']
+            contrast['difference_draws_by_unit'][unit] = difference_draws
+            contrast['boot_ci_by_unit'][unit] = boot_ci
+            contrast['boot_p_by_unit'][unit] = boot_p
+        # Legacy single-unit fields = primary unit (fall back to any computed).
+        if contrast['difference_draws_by_unit']:
+            leg = primary_unit if primary_unit in contrast['difference_draws_by_unit'] \
+                else next(iter(contrast['difference_draws_by_unit']))
+            contrast['difference_draws'] = contrast['difference_draws_by_unit'][leg]
+            contrast['boot_ci'] = contrast['boot_ci_by_unit'][leg]
+            contrast['boot_p'] = contrast['boot_p_by_unit'].get(leg)
 
         # Permutation p: shuffle the phase label, recompute Δ.
         if n_permutations > 0 and families \
@@ -336,6 +411,7 @@ def compute_delta_stat(
             'reference': reference, 'stats': stats, 'families': families,
             'scalar_names': scalar_names, 'downsample': downsample,
             'n_matched': n_matched or None, 'seed': seed,
+            'resample_units': resample_units, 'primary_unit': primary_unit,
         },
     }
 
@@ -375,7 +451,10 @@ def compute_interaction(
 
     Returns:
         ``{stat: {'delta_a', 'delta_b', 'interaction', 'ci_lo', 'ci_hi',
-        'p_two_sided', 'n_draws'}}`` plus a ``'meta'`` entry.
+        'p_two_sided', 'n_draws', 'by_unit'}}`` plus a ``'meta'`` entry. The
+        top-level fields are the primary unit; ``'by_unit'`` maps each resample
+        unit (e.g. 'trials', 'sessions') to the same fields, so a between-phase
+        delta-of-deltas can show its trial CI and its session CI together.
 
     Raises:
         KeyError:   if either contrast is absent.
@@ -400,46 +479,82 @@ def compute_interaction(
 
     entry_a = result_a['contrasts'][contrast]
     entry_b = result_b['contrasts'][contrast_b]
-    draws_a = entry_a.get('difference_draws')
-    draws_b = entry_b.get('difference_draws')
-    if not draws_a or not draws_b:
+
+    # Difference draws per unit, with a fallback for results produced before the
+    # per-unit fields existed (their legacy difference_draws are the trial unit).
+    units_a = dict(entry_a.get('difference_draws_by_unit') or {})
+    units_b = dict(entry_b.get('difference_draws_by_unit') or {})
+    if not units_a and entry_a.get('difference_draws'):
+        units_a = {'trials': entry_a['difference_draws']}
+    if not units_b and entry_b.get('difference_draws'):
+        units_b = {'trials': entry_b['difference_draws']}
+    common_units = [u for u in units_a if u in units_b]
+    if not common_units:
         raise ValueError(
-            "compute_interaction: no bootstrap draws — rerun compare_phases "
-            "with n_bootstrap > 0."
+            "compute_interaction: no shared bootstrap draws — rerun "
+            "compare_phases with n_bootstrap > 0 (and matching resample_units)."
         )
 
+    # The unit that fills the legacy top-level fields (back-compat).
+    meta_primary = (result_a.get('meta', {}) or {}).get('primary_unit')
+    if meta_primary in common_units:
+        primary_unit = meta_primary
+    elif 'trials' in common_units:
+        primary_unit = 'trials'
+    else:
+        primary_unit = common_units[0]
+
+    def _interaction_for(draws_a, draws_b):
+        res = {}
+        for stat in sorted(set(draws_a) & set(draws_b)):
+            da, db = draws_a[stat], draws_b[stat]
+            n = min(da.size, db.size)
+            if n < 10:
+                continue
+            interaction_draws = da[:n] - db[:n]
+            summary = summarise_draw_distribution(interaction_draws, ci=ci)
+            summary_a = summarise_draw_distribution(da, ci=ci)
+            summary_b = summarise_draw_distribution(db, ci=ci)
+            res[stat] = {
+                # component effects, each with its own interval — context for
+                # the interaction, NOT to be compared by eye (overlapping
+                # intervals do not mean the difference is null).
+                'delta_a': entry_a['diffs'].get(stat, np.nan),
+                'ci_a': (summary_a['ci_lo'], summary_a['ci_hi']),
+                'delta_b': entry_b['diffs'].get(stat, np.nan),
+                'ci_b': (summary_b['ci_lo'], summary_b['ci_hi']),
+                # the inferential claim
+                'interaction': (entry_a['diffs'].get(stat, np.nan)
+                                - entry_b['diffs'].get(stat, np.nan)),
+                'ci_lo': summary['ci_lo'],
+                'ci_hi': summary['ci_hi'],
+                'p_two_sided': summary['p_two_sided'],
+                'n_draws': summary['n_draws'],
+                'draws': interaction_draws,
+            }
+        return res
+
+    per_unit = {u: _interaction_for(units_a[u], units_b[u]) for u in common_units}
+
     out: Dict[str, Dict] = {}
-    for stat in sorted(set(draws_a) & set(draws_b)):
-        delta_draws_a, delta_draws_b = draws_a[stat], draws_b[stat]
-        n = min(delta_draws_a.size, delta_draws_b.size)
-        if n < 10:
+    all_stats = sorted({stat for u in common_units for stat in per_unit[u]})
+    for stat in all_stats:
+        base = per_unit.get(primary_unit, {}).get(stat)
+        if base is None:  # primary didn't yield this stat; take any that did
+            base = next((per_unit[u][stat] for u in common_units
+                         if stat in per_unit[u]), None)
+        if base is None:
             continue
-        interaction_draws = delta_draws_a[:n] - delta_draws_b[:n]
-        summary = summarise_draw_distribution(interaction_draws, ci=ci)
-        summary_a = summarise_draw_distribution(delta_draws_a, ci=ci)
-        summary_b = summarise_draw_distribution(delta_draws_b, ci=ci)
-        out[stat] = {
-            # component effects, each with its own interval — context for the
-            # interaction, NOT to be compared by eye (overlapping intervals do
-            # not mean the difference is null).
-            'delta_a': entry_a['diffs'].get(stat, np.nan),
-            'ci_a': (summary_a['ci_lo'], summary_a['ci_hi']),
-            'delta_b': entry_b['diffs'].get(stat, np.nan),
-            'ci_b': (summary_b['ci_lo'], summary_b['ci_hi']),
-            # the inferential claim
-            'interaction': (entry_a['diffs'].get(stat, np.nan)
-                            - entry_b['diffs'].get(stat, np.nan)),
-            'ci_lo': summary['ci_lo'],
-            'ci_hi': summary['ci_hi'],
-            'p_two_sided': summary['p_two_sided'],
-            'n_draws': summary['n_draws'],
-            'draws': interaction_draws,
-        }
+        entry = dict(base)  # legacy top-level fields = primary (or fallback) unit
+        entry['by_unit'] = {u: per_unit[u][stat] for u in common_units
+                            if stat in per_unit[u]}
+        out[stat] = entry
 
     out['meta'] = {
         'label_a': label_a, 'label_b': label_b,
         'contrast_a': contrast, 'contrast_b': contrast_b,
         'shared_result': result_a is result_b,
+        'units': common_units, 'primary_unit': primary_unit,
         'method': 'bootstrap (no permutation: session type is not randomised '
                   'per trial)',
     }

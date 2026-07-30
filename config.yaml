@@ -20,6 +20,16 @@ project:
     differential licking. Category boundary is constant at 0.
 
 # =============================================================================
+# Cohorts (animal membership; the canonical split). Genotype is NOT stored here
+# — it is sourced per-animal from animal_metadata.json (single owner). Report
+# scripts take a cohort KEY and resolve it to its list; notebooks read the same
+# via load_cohorts(). Prune here if the ID ranges have gaps.
+# =============================================================================
+cohorts:
+  behaviour1-cohort: [SS01, SS02, SS03, SS04, SS05, SS06, SS07, SS08, SS09, SS10, SS11, SS12, SS13]
+  opto1-cohort:      [SS14, SS15, SS16, SS17, SS18, SS19, SS20, SS21, SS22, SS23]
+
+# =============================================================================
 # File structure
 # =============================================================================
 file_structure:

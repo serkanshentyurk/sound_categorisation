@@ -1377,6 +1377,60 @@ def compute_binned_choice_probability(choices: np.ndarray, stimuli: np.ndarray,
 # =============================================================================
 
 
+@register_stat('reaction_time', exchangeable=True)
+def _stat_reaction_time(choices, stimuli, categories, reaction_time=None,
+                        prev_choices=None, prev_stimuli=None,
+                        prev_categories=None):
+    """Median response latency (ms) over trials with a recorded RT.
+
+    A per-trial value, so trial-exchangeable: valid under trial and session
+    resampling alike. NaN when no RT is recorded (e.g. simulated data, or a
+    condition of pure aborts). Median rather than mean for robustness to the
+    usual right-skew of reaction times.
+    """
+    if reaction_time is None:
+        return np.nan
+    rt = np.asarray(reaction_time, dtype=float)
+    rt = rt[~np.isnan(rt)]
+    return float(np.median(rt)) if rt.size else np.nan
+
+
+# Recording-uncertainty jitter magnitude (ms): each trial's RT gets an
+# independent U[0, RT_JITTER_MS) added before the median is taken.
+RT_JITTER_MS = 150.0
+
+
+@register_stat('reaction_time_jitter', exchangeable=True)
+def _stat_reaction_time_jitter(choices, stimuli, categories, reaction_time=None,
+                               prev_choices=None, prev_stimuli=None,
+                               prev_categories=None, rng=None):
+    """Median RT (ms) after adding an independent U[0, 150) ms draw per trial.
+
+    Models a recording slop of up to 150 ms of unknown sign per trial. Drawn
+    fresh on every call, so under bootstrap the jitter is re-realised each
+    resample and its uncertainty folds into the interval (option B): a condition
+    *difference* barely moves (both sides shift alike) while its CI widens, so an
+    effect that survives the jitter is robust to the recording noise. Pass a
+    seeded ``rng`` for reproducibility; a fresh default is used otherwise.
+    """
+    if reaction_time is None:
+        return np.nan
+    rt = np.asarray(reaction_time, dtype=float)
+    valid = ~np.isnan(rt)
+    if not valid.any():
+        return np.nan
+    r = rng if rng is not None else np.random.default_rng()
+    rt = rt[valid] + r.uniform(0.0, RT_JITTER_MS, size=int(valid.sum()))
+    return float(np.median(rt))
+
+
+# Stats that additionally consume the reaction_time array (routed in the
+# fit_summary_stats dispatch). Every other stat keeps the RT-free signature.
+_RT_STATS = {'reaction_time', 'reaction_time_jitter'}
+# Stats that also take an rng (for their internal stochastic draw).
+_RNG_STATS = {'reaction_time_jitter'}
+
+
 def fit_summary_stats(
     choices: np.ndarray,
     stimuli: np.ndarray,
@@ -1386,6 +1440,8 @@ def fit_summary_stats(
     prev_categories: Optional[np.ndarray] = None,
     stat_names: Optional[List[str]] = None,
     return_dict: bool = False,
+    reaction_time: Optional[np.ndarray] = None,
+    rng: Optional[np.random.Generator] = None,
 ) -> Union[np.ndarray, Dict]:
     """
     Compute summary statistics from raw single-block arrays.
@@ -1428,13 +1484,26 @@ def fit_summary_stats(
             raise ValueError(f"Unknown stat: '{name}'. Available: {list_available_stats()}")
 
     results = {}
+    # reaction_time-consuming stats also receive the RT array (and rng, for the
+    # jitter stat's internal draw); every other stat keeps the original
+    # (choices, stimuli, categories, prev_*) signature.
     for name in stat_names:
         func = SUMMARY_REGISTRY[name]
-        results[name] = func(
-            choices, stimuli, categories,
-            prev_choices=prev_choices, prev_stimuli=prev_stimuli,
-            prev_categories=prev_categories,
-        )
+        if name in _RT_STATS:
+            extra = {'reaction_time': reaction_time}
+            if name in _RNG_STATS:
+                extra['rng'] = rng
+            results[name] = func(
+                choices, stimuli, categories,
+                prev_choices=prev_choices, prev_stimuli=prev_stimuli,
+                prev_categories=prev_categories, **extra,
+            )
+        else:
+            results[name] = func(
+                choices, stimuli, categories,
+                prev_choices=prev_choices, prev_stimuli=prev_stimuli,
+                prev_categories=prev_categories,
+            )
 
     if return_dict:
         return results

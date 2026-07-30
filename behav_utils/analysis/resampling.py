@@ -83,6 +83,9 @@ def pool_phase_arrays(phase) -> Dict[str, np.ndarray]:
         'choices': choices[keep],
         'categories': np.asarray(pooled['categories'], dtype=float)[keep],
     }
+    rt = pooled.get('reaction_times')
+    if rt is not None:
+        arrays['reaction_times'] = np.asarray(rt, dtype=float)[keep]
     for key in ('prev_choices', 'prev_stimuli', 'prev_categories'):
         value = pooled.get(key)
         arrays[key] = np.asarray(value, dtype=float)[keep] if value is not None else None
@@ -93,6 +96,7 @@ def compute_stats_from_arrays(
     arrays: Mapping[str, np.ndarray],
     stat_families: Sequence[str],
     strict: bool = True,
+    rng: Optional[np.random.Generator] = None,
 ) -> Dict[str, float]:
     """Compute statistics from pooled arrays, flattened to scalar names.
 
@@ -103,6 +107,10 @@ def compute_stats_from_arrays(
         strict:        True (observed values) lets a genuine error propagate.
                        False (resampling loops) returns ``{}`` on failure so the
                        iteration can be counted as discarded.
+        rng:           Generator forwarded to ``fit_summary_stats`` for stochastic
+                       stats (e.g. ``reaction_time_jitter``). Pass a seeded one
+                       for a reproducible observed value; ignored by every
+                       deterministic stat.
 
     Returns:
         ``{scalar_name: value}`` with multi-value families expanded, so keys
@@ -120,6 +128,7 @@ def compute_stats_from_arrays(
             prev_stimuli=arrays.get('prev_stimuli'),
             prev_categories=arrays.get('prev_categories'),
             stat_names=list(stat_families), return_dict=True,
+            reaction_time=arrays.get('reaction_times'), rng=rng,
         )
     except Exception:
         if strict:
@@ -152,34 +161,48 @@ def bootstrap_phase_stats(
     n_draws: int = 1000,
     n_trials: Optional[int] = None,
     seed: int = 0,
+    unit: str = 'trials',
 ) -> Dict[str, np.ndarray]:
-    """Resample one phase's trials and recompute its statistics.
+    """Resample one phase's trials (or sessions) and recompute its statistics.
 
     Delegates to :func:`behav_utils.analysis.downsample.resample_stat_vectors`,
     the library's single resample-and-recompute engine, so the frozen lag-1
     ``prev_*`` pairing survives every draw (a repeated trial carries its own
     predecessor).
 
-    Note the draw is **stratified by stimulus bin**, not a plain bootstrap: the
-    stimulus composition is held roughly fixed across draws. That is the right
-    choice here — the stimulus set is fixed by the experimental design, so the
-    interval is conditional on it — but it makes intervals slightly narrower
-    than an unconditional bootstrap would give.
+    ``unit='trials'`` (default) is a per-trial bootstrap, stratified by stimulus
+    bin, and answers "how precisely is this phase's stat pinned by its trials".
+    ``unit='sessions'`` resamples whole sessions with replacement instead: it
+    treats the session as the independent unit, so the interval reflects
+    session-to-session scatter (the right unit when the phase spans sessions that
+    were not randomised per trial — e.g. an opto phase vs a masking phase). A
+    matched ``n_trials`` only applies to the trial bootstrap; it is ignored for
+    sessions, whose natural count is the number of sessions.
+
+    Note the trial draw is **stratified by stimulus bin**, not a plain bootstrap:
+    the stimulus composition is held roughly fixed across draws. That is the
+    right choice — the stimulus set is fixed by the experimental design, so the
+    interval is conditional on it — but it makes intervals slightly narrower than
+    an unconditional bootstrap would give. The session draw is unstratified
+    (whole sessions are taken intact).
 
     Args:
         phase:         list of SessionData from ``filter_trials``.
-        stat_families: family-level stat names. Must be trial-exchangeable;
-                       order-dependent stats are refused by the engine.
+        stat_families: family-level stat names. For ``unit='trials'`` these must
+                       be trial-exchangeable; ``unit='sessions'`` preserves order
+                       and accepts any stat.
         n_draws:       number of resamples.
-        n_trials:      draw this many trials instead of the natural count —
-                       pass a matched n to compare phases at equal precision.
+        n_trials:      trial bootstrap only — draw this many trials instead of the
+                       natural count (a matched n for equal-precision contrasts).
         seed:          RNG seed.
+        unit:          'trials' (default) or 'sessions'.
 
     Returns:
         ``{scalar_name: ndarray of shape (n_draws,)}``. Failed draws are NaN.
 
     Raises:
-        ValueError: if any requested stat is not trial-exchangeable.
+        ValueError: if ``unit='trials'`` and any requested stat is not
+            trial-exchangeable.
     """
     from behav_utils.analysis.downsample import resample_stat_vectors
     from behav_utils.analysis.summary_stats import get_stat_names_expanded
@@ -187,9 +210,10 @@ def bootstrap_phase_stats(
     families = list(stat_families)
     if not families:
         return {}
+    draw_n = None if unit == 'sessions' else n_trials
     matrix = resample_stat_vectors(
-        phase, families, n=n_trials, n_repeats=n_draws,
-        with_replacement=True, unit='trials', seed=seed,
+        phase, families, n=draw_n, n_repeats=n_draws,
+        with_replacement=True, unit=unit, seed=seed,
     )
     names = get_stat_names_expanded(families)
     return {name: matrix[:, i] for i, name in enumerate(names)}
