@@ -1,12 +1,14 @@
 """
-plot_adaptation — the convergence time-course from compute_adaptation.
+Adaptation trajectory plots from compute_adaptation / compute_adaptation_per_session.
 
-Draws the windowed convergence curve over post-switch trials, with the
-bootstrap band when present, a dashed line at the plateau, and reference lines
-at 0 (pre-switch) and 1 (normative optimum, when normalised).
+Both draw the *standardised* trajectory: value(t) − expert-uniform baseline, so
+0 is expert-uniform behaviour (no ratio, no clip). For the 'pse' stat the
+normative optimum is drawn as a dashed reference line (already baseline-
+subtracted when the result is standardised). Pass ``stat=`` to choose which
+rolled stat to plot (default 'pse').
 """
 
-from typing import Dict, Optional, Sequence
+from typing import Dict, Optional
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -16,25 +18,31 @@ from behav_utils.plotting.styles import get_colour
 __all__ = ['plot_adaptation', 'plot_adaptation_sessions']
 
 
+def _ylabel(stat: str, standardised: bool) -> str:
+    return f'rolling {stat}' + (' − expert' if standardised else '')
+
+
 def plot_adaptation(
     result: Dict,
     ax: Optional[plt.Axes] = None,
+    stat: str = 'pse',
     color: Optional[str] = None,
     label: Optional[str] = None,
     show_band: bool = True,
     show_plateau: bool = True,
 ) -> plt.Axes:
-    """Plot one convergence curve from ``compute_adaptation``.
+    """Plot one pooled adaptation trajectory from ``compute_adaptation`` (mode='pooled').
 
     Call repeatedly on the same ``ax`` with different colours/labels to overlay
     animals or distributions.
 
     Args:
-        result:       output of ``compute_adaptation``.
+        result:       output of ``compute_adaptation`` with ``mode='pooled'``.
         ax:           axis to draw on (creates one if None).
+        stat:         which rolled stat to plot (default 'pse').
         color:        curve colour (house palette[0] if None).
         label:        legend label.
-        show_band:    shade the bootstrap CI band when present.
+        show_band:    shade the bootstrap CI band when present (absent for now).
         show_plateau: dashed horizontal line at the plateau value.
 
     Returns:
@@ -46,13 +54,13 @@ def plot_adaptation(
 
     curve = result['curve']
     trials = np.asarray(curve['trials'], dtype=float)
-    values = np.asarray(curve['values'], dtype=float)
-    normalise = result['meta'].get('normalise', True)
+    values = np.asarray(curve['values'].get(stat, []), dtype=float)
+    standardised = result.get('standardised', True)
 
-    # reference lines
-    ax.axhline(0.0, color='0.6', lw=1, ls='--', zorder=0)   # pre-switch
-    if normalise:
-        ax.axhline(1.0, color='0.6', lw=1, ls=':', zorder=0)   # normative optimum
+    ax.axhline(0.0, color='0.6', lw=1, ls='-', zorder=0)   # baseline (expert-uniform)
+    norm = result.get('normative', {}).get('pse', np.nan)
+    if stat == 'pse' and np.isfinite(norm):
+        ax.axhline(norm, color='crimson', lw=1, ls='--', zorder=0, label='normative')
 
     if show_band and curve.get('ci_lo') is not None:
         lo = np.asarray(curve['ci_lo'], dtype=float)
@@ -62,16 +70,16 @@ def plot_adaptation(
             ax.fill_between(trials[ok], lo[ok], hi[ok], color=colour, alpha=0.18, linewidth=0)
 
     ok = np.isfinite(values)
-    ax.plot(trials[ok], values[ok], color=colour, lw=2, label=label, zorder=3)
+    ax.plot(trials[ok], values[ok], color=colour, lw=2, marker='o', ms=3, label=label, zorder=3)
 
     if show_plateau:
-        scalars = {s['stat']: s['value'] for s in result['scalars']}
-        plateau = scalars.get('plateau')
+        rows = {r['stat']: r['value'] for r in result.get('rows', [])}
+        plateau = rows.get(f'{stat}_plateau')
         if plateau is not None and np.isfinite(plateau):
             ax.axhline(plateau, color=colour, lw=1, ls='--', alpha=0.5, zorder=1)
 
-    ax.set_xlabel('Post-switch trial')
-    ax.set_ylabel('Convergence' if normalise else 'PSE shift (stimulus units)')
+    ax.set_xlabel('trial in block')
+    ax.set_ylabel(_ylabel(stat, standardised))
     if label:
         ax.legend(fontsize=8)
     ax.spines[['top', 'right']].set_visible(False)
@@ -84,6 +92,7 @@ _TYPE_COLOUR = {'regular': '#30638e', 'opto': '#d1495b', 'masking': '#e9a13b', '
 def plot_adaptation_sessions(
     result: Dict,
     ax: Optional[plt.Axes] = None,
+    stat: str = 'pse',
     layout: str = 'concat',
     colour_by_type: bool = True,
     show_normative: bool = True,
@@ -91,40 +100,43 @@ def plot_adaptation_sessions(
 ) -> plt.Axes:
     """Per-session adaptation trajectories from ``compute_adaptation_per_session``.
 
-    Each session's within-session rolling PSE (as ``μ − pse_expert``) is drawn as
-    its own segment — no window crosses a boundary. y=0 is expert-uniform; the
-    dashed line is the normative target (``pse_normative − pse_expert``).
+    Each session's within-session rolling ``stat`` (as ``value − expert``) is
+    drawn as its own segment — no window crosses a boundary. y=0 is expert-
+    uniform; for 'pse' the dashed line is the normative target
+    (``result['normative']['pse']``, already baseline-subtracted).
 
     Args:
         result:         a ``compute_adaptation_per_session`` result.
         ax:             Axes to draw on; a new one is made if None.
+        stat:           which rolled stat to plot (default 'pse').
         layout:         'concat' lays sessions end-to-end along x with a boundary
                         line between them (the run as it happened, real trial
                         counts); 'rezero' re-zeros each session to x=0 and
                         overlays them (start/end offsets directly comparable).
         colour_by_type: colour each segment by session_type (opto/masking/…).
-        show_normative: draw the normative target line.
+        show_normative: draw the normative target line (pse only).
         label_sessions: annotate each segment with its switch_index.
 
     Returns:
         the Axes drawn on.
     """
     entries = result.get('sessions', [])
-    pse_norm = result.get('pse_normative', np.nan)
-    pse_exp = result.get('pse_expert', np.nan)
+    norm = result.get('normative', {}).get('pse', np.nan)
+    standardised = result.get('standardised', True)
 
     if ax is None:
         _, ax = plt.subplots(figsize=(8.0, 3.6))
 
     ax.axhline(0.0, color='0.55', lw=1, ls='-', zorder=1)          # expert-uniform
-    if show_normative and np.isfinite(pse_norm) and np.isfinite(pse_exp):
-        ax.axhline(pse_norm - pse_exp, color='crimson', lw=1, ls='--', zorder=1, label='normative')
+    show_norm = show_normative and stat == 'pse' and np.isfinite(norm)
+    if show_norm:
+        ax.axhline(norm, color='crimson', lw=1, ls='--', zorder=1, label='normative')
 
     cursor = 0.0
     boundaries = []
     for e in entries:
         x = np.asarray(e['trials'], dtype=float)
-        y = np.asarray(e['values'], dtype=float)
+        y = np.asarray(e['values'].get(stat, []), dtype=float)
         if layout == 'rezero':
             xs = x - (x[0] if x.size else 0.0)
         else:
@@ -148,7 +160,7 @@ def plot_adaptation_sessions(
     else:
         ax.set_xlabel('trials since session start')
 
-    ax.set_ylabel('PSE − expert (stimulus units)')
+    ax.set_ylabel(_ylabel(stat, standardised))
     ax.spines[['top', 'right']].set_visible(False)
     if colour_by_type:
         seen = {}
@@ -157,7 +169,7 @@ def plot_adaptation_sessions(
             if t not in seen:
                 seen[t] = _TYPE_COLOUR.get(t, get_colour(0))
         handles = [plt.Line2D([0], [0], color=c, lw=2, label=t) for t, c in seen.items()]
-        if show_normative and np.isfinite(pse_norm) and np.isfinite(pse_exp):
+        if show_norm:
             handles.append(plt.Line2D([0], [0], color='crimson', lw=1, ls='--', label='normative'))
         ax.legend(handles=handles, frameon=False, fontsize=8, ncol=len(handles))
     return ax

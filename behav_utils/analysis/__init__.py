@@ -25,7 +25,7 @@ from behav_utils.analysis.utils import cumulative_gaussian, generate_stimuli
 from behav_utils.analysis.psychometry import fit_psychometric, fit_psychometric_gof
 from behav_utils.analysis.update_matrix import fit_update_matrix, matrix_error
 from behav_utils.analysis.statistics import compute_stat
-from behav_utils.analysis.adaptation import compute_normative_pse, resolve_sigma, compute_adaptation, compute_adaptation_per_session, detect_shifts
+from behav_utils.analysis.adaptation import compute_normative_pse, resolve_sigma, resolve_sigma_sbi, compute_adaptation, compute_adaptation_per_session, detect_shifts
 from behav_utils.analysis.across_animals import collect_rows, compare_groups, compare_genotypes
 from behav_utils.analysis.comparison import compute_delta_stat, compare_phases, compute_interaction
 from behav_utils.analysis.resampling import (
@@ -42,6 +42,7 @@ from behav_utils.analysis.summary_stats import (
 from behav_utils.analysis.psychometry import compute_psychometric
 from behav_utils.analysis.update_matrix import compute_um, average_um
 from behav_utils.analysis.trajectory import compute_trajectory
+from behav_utils.analysis.rolling import compute_rolling_stats
 from behav_utils.analysis.session_raster import compute_session_raster
 from behav_utils.analysis.session_features import compute_session_features
 
@@ -77,6 +78,7 @@ __all__ = [
     'compute_stat',
     'compute_normative_pse',
     'resolve_sigma',
+    'resolve_sigma_sbi',
     'compute_adaptation', 'compute_adaptation_per_session',
     'detect_shifts',
     'collect_rows',
@@ -89,6 +91,7 @@ __all__ = [
     'compute_psychometric',
     'compute_um', 'average_um',
     'compute_trajectory',
+    'compute_rolling_stats',
     'compute_session_raster',
     'compute_session_features',
 

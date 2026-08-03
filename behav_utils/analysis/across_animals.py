@@ -14,8 +14,8 @@ works: cohort, sex, lesion, or an ad-hoc pair of animal-name lists.
 
     rows = []
     for animal in animals:
-        r = compute_adaptation(animal, 'Hard-A', sigma_percep=resolve_sigma(animal))
-        rows += collect_rows(r['scalars'], animal=animal.animal_id,
+        r = compute_adaptation(animal, 'Hard-A', stat_names=['pse'])
+        rows += collect_rows(r['rows'], animal=animal.animal_id,
                              group=animal.genotype)
 
     # group by the stamped column
@@ -23,7 +23,7 @@ works: cohort, sex, lesion, or an ad-hoc pair of animal-name lists.
     # or split by explicit animal-name lists, no group column needed
     result = compare_groups(rows, groups={'lesion': ['SS14', 'SS15'],
                                           'sham':   ['SS16', 'SS17']})
-    result['plateau']['p'], result['plateau']['min_p']
+    result['pse_plateau']['p'], result['pse_plateau']['min_p']
 
 The unit is the ANIMAL, never the session or trial — pooling those into the
 test is pseudoreplication, inflating n above the number of animals, which is the

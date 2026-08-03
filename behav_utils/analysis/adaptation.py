@@ -194,6 +194,33 @@ def resolve_sigma(
     return float(sigma)
 
 
+_SBI_SIGMA_PLACEHOLDER = 0.175  # midpoint of the plausible range [0.05, 0.30]
+
+
+def resolve_sigma_sbi(animal: Optional['AnimalData'] = None, *,
+                      model: str = 'consensus') -> float:
+    """Perceptual σ for the normative target — PLACEHOLDER pending SBI.
+
+    The normative PSE needs σ_percep = the encoding noise x ~ N(s, σ²): the
+    *same* additive Gaussian the BE/SC generative models call ``sigma_noise``.
+    Once the SBI networks are trained this must return the **per-animal**
+    posterior point estimate of ``sigma_noise`` (from the BE or SC network per
+    ``model``), fit on data that exclude the block being scored.
+
+    Until then it ignores ``animal`` and returns the constant
+    ``_SBI_SIGMA_PLACEHOLDER`` (0.175, the midpoint of [0.05, 0.30]). The
+    normative PSE is nearly flat across that range (Hard-A ≈ +0.05…+0.07), so
+    this is adequate for wiring and plots but is NOT a real per-animal estimate.
+    Replace before drawing any inference from the target.
+    """
+    import warnings
+    warnings.warn(
+        "resolve_sigma_sbi: PLACEHOLDER σ=%.3f (SBI not wired) — replace with "
+        "the per-animal SBI sigma_noise posterior." % _SBI_SIGMA_PLACEHOLDER,
+        RuntimeWarning, stacklevel=2)
+    return float(_SBI_SIGMA_PLACEHOLDER)
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # Convergence over trials — the adaptation time-course (manuscript Fig. 5)
 # ═════════════════════════════════════════════════════════════════════════════
@@ -251,33 +278,6 @@ def detect_shifts(animal: 'AnimalData') -> List[Dict]:
     return shifts
 
 
-def _post_switch_arrays(
-    animal: 'AnimalData',
-    to_distribution: str,
-    trials: str = 'non_opto',
-) -> Tuple[np.ndarray, np.ndarray]:
-    """Pool trials of the post-switch block into (stimuli, choices), in order.
-
-    Trials stay in acquisition order — the windowing depends on it. Aborts and
-    non-responses are dropped; the opto/masked trials are dropped when
-    ``trials='non_opto'`` so the adaptation curve is artifact-free.
-    """
-    from behav_utils.data.ops.selection import select_sessions
-    from behav_utils.data.ops.filtering import filter_trials
-    from behav_utils.analysis.resampling import pool_phase_arrays
-
-    key = to_distribution
-    sessions = select_sessions(animal, distribution=key)
-    sessions = [s for s in sessions if not s.masking]
-    sessions = sorted(sessions, key=lambda s: s.session_idx)
-    if not sessions:
-        return np.array([]), np.array([])
-
-    condition = filter_trials(sessions, trial_type=('non_opto' if trials == 'non_opto' else 'all'))
-    arrays = pool_phase_arrays(condition)
-    return arrays['stimuli'], arrays['choices']
-
-
 def _windowed_pse(
     stimuli: np.ndarray,
     choices: np.ndarray,
@@ -290,38 +290,20 @@ def _windowed_pse(
     fitted mu there. Windows that fail to fit come back NaN. Only full windows
     are used, so the curve stops one window short of the block end rather than
     ending on a partial, noisier window.
+
+    Retained as a utility; the standardised adaptation path below now rolls the
+    lapse-corrected 'pse' stat through compute_rolling_stats instead of raw mu.
     """
     from behav_utils.analysis.psychometry import fit_psychometric
-
-    n = stimuli.size
-    if n < window:
-        return np.array([]), np.array([])
+    from behav_utils.analysis.rolling import _iter_windows
 
     centres, pses = [], []
-    for start in range(0, n - window + 1, step):
-        s = stimuli[start:start + window]
-        c = choices[start:start + window]
-        fit = fit_psychometric(s, c)
+    for centre, sl in _iter_windows(int(stimuli.size), window, step):
+        fit = fit_psychometric(stimuli[sl], choices[sl])
         mu = fit.get('mu', np.nan) if isinstance(fit, dict) else np.nan
-        centres.append(start + window / 2.0)
+        centres.append(centre)
         pses.append(mu if mu is not None else np.nan)
     return np.asarray(centres, dtype=float), np.asarray(pses, dtype=float)
-
-
-def _convergence_from_pse(
-    pses: np.ndarray,
-    pse_pre_switch: float,
-    pse_normative: Optional[float],
-    normalise: bool,
-) -> np.ndarray:
-    """Map a PSE curve to convergence (or the raw numerator if not normalising)."""
-    numerator = pses - pse_pre_switch
-    if not normalise:
-        return numerator
-    denom = pse_normative - pse_pre_switch
-    if denom is None or not np.isfinite(denom) or abs(denom) < 1e-9:
-        return np.full_like(pses, np.nan)
-    return numerator / denom
 
 
 def _collapse_curve(
@@ -330,7 +312,7 @@ def _collapse_curve(
     plateau_frac: float = 0.5,
     plateau_target: float = 0.632,
 ) -> Dict[str, float]:
-    """Collapse a convergence curve to three scalars.
+    """Collapse a trajectory to three scalars.
 
     plateau:           mean of the last ``plateau_frac`` of finite points —
                        where behaviour settles. Averaged over the tail, so it is
@@ -363,328 +345,232 @@ def _collapse_curve(
     return {'plateau': plateau, 'trials_to_plateau': trials_to_plateau, 'auc': auc}
 
 
+def _switch_index_map(animal: 'AnimalData', distribution: str) -> Dict[str, int]:
+    """{session_id: switch_index} — which run of ``distribution`` each session
+    belongs to (0 = first appearance). A run of consecutive sessions in
+    ``distribution`` shares one index; an ABAB chain gives 0, 1, 2, … so early-
+    vs-late switches stay recoverable."""
+    all_sessions = sorted(animal.get_sessions(), key=lambda s: s.session_idx)
+    run, prev, switch_of = -1, None, {}
+    for s in all_sessions:
+        if s.distribution == distribution and prev != distribution:
+            run += 1
+        if s.distribution == distribution:
+            switch_of[s.session_id] = run
+        prev = s.distribution
+    return switch_of
 
 
-def _pre_switch_baseline(animal, to_distribution, window, trials):
-    """Fit PSE on the last window of the block PRECEDING the switch into
-    ``to_distribution``. Returns NaN if there is no such block."""
-    from behav_utils.analysis.psychometry import fit_psychometric
-    from behav_utils.analysis.resampling import pool_phase_arrays
-    from behav_utils.data.ops.selection import select_sessions
-    from behav_utils.data.ops.filtering import filter_trials
+def _collapse_rows(centres: np.ndarray, values: Dict[str, np.ndarray],
+                   stat_names: Sequence[str]) -> List[Dict]:
+    """Collapse each stat's trajectory to plateau / trials_to_plateau / auc,
+    as tidy rows ``{'stat': '<name>_<metric>', 'value': v}`` for the group fold."""
+    c = np.asarray(centres, dtype=float)
+    rows = []
+    for s in stat_names:
+        sc = _collapse_curve(c, np.asarray(values[s], dtype=float))
+        for metric in ('plateau', 'trials_to_plateau', 'auc'):
+            rows.append({'stat': f'{s}_{metric}', 'value': sc[metric]})
+    return rows
 
-    shifts = detect_shifts(animal)
-    match = [s for s in shifts if s['to_distribution'] == to_distribution]
-    if not match:
-        return float('nan')
-    from_dist = match[0]['from_distribution']
 
-    sessions = [s for s in select_sessions(animal, distribution=from_dist) if not s.masking]
-    if not sessions:
-        return float('nan')
-    sessions = sorted(sessions, key=lambda s: s.session_idx)
-    condition = filter_trials(sessions, trial_type=('non_opto' if trials == 'non_opto' else 'all'))
-    arrays = pool_phase_arrays(condition)
-    stim, ch = arrays['stimuli'], arrays['choices']
-    if stim.size < window:
-        return float('nan')
-    fit = fit_psychometric(stim[-window:], ch[-window:])
-    return float(fit.get('mu', float('nan'))) if isinstance(fit, dict) else float('nan')
+# ═════════════════════════════════════════════════════════════════════════════
+# Adaptation time-course — standardised displacement from expert-uniform
+# ═════════════════════════════════════════════════════════════════════════════
+#
+# After a distribution switch the animal re-adapts. We roll each requested stat
+# over the post-switch block (compute_rolling_stats) and express it as a
+# displacement from the animal's OWN expert-uniform behaviour:
+#
+#     value(t) - baseline[stat]          (baseline = pooled expert-uniform)
+#
+# 0 is expert-uniform; there is NO ratio and NO clip, so wrong-way moves and
+# overshoot past the normative target stay visible. For 'pse' the normative
+# optimum is returned as a reference offset (normative_pse - baseline_pse); the
+# perceptual sigma comes from ``sigma_source`` (currently the SBI placeholder).
 
 
 def compute_adaptation(
     animal: 'AnimalData',
-    to_distribution: str,
-    sigma_percep: Optional[float] = None,
-    normalise: bool = True,
+    distribution: str,
+    *,
+    stat_names: Sequence[str] = ('pse',),
+    standardised: bool = True,
+    mode: str = 'pooled',
     window: int = 50,
-    step: int = 10,
-    trials: str = 'non_opto',
-    baseline: str = 'first_window',
-    n_bootstrap: int = 0,
-    ci: float = 0.95,
-    seed: int = 0,
+    step: Optional[int] = None,
+    baseline_preset: str = 'expert_uniform',
+    baseline_last_n: int = 5,
+    baseline_trials: str = 'non_opto',
+    sigma_source: str = 'sbi',
+    trials: str = 'all',
 ) -> Dict:
-    """Convergence over post-switch trials, with three collapsed scalars.
+    """Standardised adaptation trajectories for one animal at ``distribution``.
+
+    Rolls ``stat_names`` over the post-switch block and (when ``standardised``)
+    subtracts the animal's own expert-uniform baseline, so 0 is expert-uniform
+    behaviour. No ratio, no clip. The trajectory rides on ``compute_rolling_stats``
+    (windows never cross a session boundary); the PSE stat is the lapse-corrected
+    'pse' (raw, so early shallow windows survive).
 
     Args:
         animal:          AnimalData.
-        to_distribution: the post-switch distribution, e.g. 'Hard-A'. The
-                         adaptation is measured over this block.
-        sigma_percep:    perceptual σ for the normative denominator. Required
-                         when ``normalise=True`` — obtain it via
-                         :func:`resolve_sigma`. Ignored when not normalising.
-        normalise:       True gives convergence in [0, 1] units (needs σ); False
-                         gives the raw PSE shift (PSE(t) − PSE_pre_switch), which
-                         needs no σ and is the always-valid fallback.
-        window:          rolling-window size in trials (manuscript: 50).
-        step:            step between window centres (manuscript figures dense;
-                         10 is a good default). Overlapping windows smooth the
-                         curve but do NOT add independent information — see the
-                         uncertainty note.
-        trials:          'non_opto' (artifact-free, default) or 'all'.
-        baseline:        how PSE_pre_switch (the convergence origin) is set —
-                         'first_window' uses the first window of the post-switch
-                         block (curve starts at 0 by construction; needs no
-                         cross-block bookkeeping, but "0" means start-of-block
-                         not uniform behaviour). 'pre_switch' fits the last
-                         window of the preceding block instead — closer to the
-                         manuscript's PSE_pre_switch, at the cost of assuming a
-                         clean preceding block. Default 'first_window'.
-        n_bootstrap:     if > 0, resample TRIALS this many times and recompute
-                         the whole curve per draw, to get a CI band and an
-                         honest interval on the scalars. The uncertainty comes
-                         from trial resampling, never from the overlapping
-                         window points (those are ~80% shared and would give a
-                         spuriously tight interval).
-        ci:              band mass.
-        seed:            RNG seed.
+        distribution:    the post-switch distribution, e.g. 'Hard-A'.
+        stat_names:      scalar stats to trace, e.g. ('pse',) or
+                         ('pse', 'accuracy', 'side_bias').
+        standardised:    subtract the expert-uniform baseline per stat (default);
+                         False returns the raw rolled values.
+        mode:            'pooled' (whole block → one trajectory) or 'per_session'
+                         (one trajectory per session, boundary-safe).
+        window, step:    rolling-window size / stride; ``step=None`` → ``window``
+                         (non-overlapping bins — independent points).
+        baseline_preset: select_sessions preset defining the expert-uniform
+                         baseline sessions (default 'expert_uniform').
+        baseline_last_n: use the last N such sessions.
+        baseline_trials: 'non_opto' (default, clean) or 'all' for the baseline.
+        sigma_source:    'sbi' → ``resolve_sigma_sbi`` (placeholder); otherwise a
+                         ``resolve_sigma`` source string. Only used for the 'pse'
+                         normative line.
+        trials:          'all' (default, keeps laser-on — the cumulative effect on
+                         learning is the signal) or 'non_opto' for the trajectory.
 
     Returns:
         ::
 
-            {
-              'curve':   {'trials', 'values', 'ci_lo', 'ci_hi',
-                          'pse_pre_switch', 'pse_normative'},
-              'scalars': [ {stat: 'plateau',           value, ci_lo, ci_hi},
-                           {stat: 'trials_to_plateau', value, ci_lo, ci_hi},
-                           {stat: 'auc',               value, ci_lo, ci_hi} ],
-              'meta':    {to_distribution, normalise, window, step, trials,
-                          sigma_percep, n_trials, n_windows},
-            }
+            {'stat_names', 'standardised', 'mode', 'window', 'step',
+             'baseline':  {stat: value},         # expert-uniform 0-line, per stat
+             'normative': {'pse': offset} | {},  # pse only, baseline-subtracted
+             # mode='pooled':
+             'curve':    {'trials', 'values': {stat: array}, 'n_trials'},
+             # mode='per_session':
+             'sessions': [{'session_id','session_idx','switch_index',
+                           'session_type','trials','values':{stat: array},
+                           'n_trials'}],
+             'rows':     [{'stat': '<name>_<metric>', 'value'}...],  # for the fold
+             'meta':     {...}}
 
-        ``scalars`` is the shared per-animal row shape (add animal/genotype at
-        the call site) — so the across-animal fold is a concat + rank_test, and
-        ``plateau`` arrives shaped exactly like any other stat.
+        ``values`` is always keyed by stat. ``rows`` holds plateau /
+        trials_to_plateau / auc per stat (per-session in 'per_session' mode, each
+        tagged with session_id / switch_index); stamp animal + group at the call
+        site via ``collect_rows``.
 
     Raises:
-        ValueError: if ``normalise=True`` without ``sigma_percep``, or the
-            post-switch block has fewer than ``window`` trials.
+        ValueError: empty ``stat_names``; bad ``mode``; or the animal has no
+            ``baseline_preset`` sessions (every animal must have an expert
+            baseline — an experimental-design error, not a normal empty case).
     """
-    if normalise and sigma_percep is None:
+    from behav_utils.data.ops.selection import select_sessions
+    from behav_utils.data.ops.filtering import filter_trials
+    from behav_utils.analysis.rolling import compute_rolling_stats
+    from behav_utils.analysis.statistics import compute_stat
+
+    stat_names = list(stat_names)
+    if not stat_names:
+        raise ValueError("compute_adaptation: stat_names is empty.")
+    if mode not in ('pooled', 'per_session'):
         raise ValueError(
-            "compute_adaptation: normalise=True needs sigma_percep — call "
-            "resolve_sigma(animal, ...). Or set normalise=False for the raw "
-            "PSE shift, which needs no σ.")
+            f"compute_adaptation: mode must be 'pooled' or 'per_session', "
+            f"got {mode!r}.")
+    step = window if step is None else step
+    aid = getattr(animal, 'animal_id', '?')
 
-    stimuli, choices = _post_switch_arrays(animal, to_distribution, trials=trials)
-    if stimuli.size < window:
+    # ── baseline: the animal's expert-uniform behaviour, one value per stat ──
+    expert = select_sessions(animal, baseline_preset)
+    expert = sorted(expert, key=lambda s: s.session_idx)[-baseline_last_n:]
+    if not expert:
         raise ValueError(
-            f"compute_adaptation: post-switch block for {to_distribution!r} has "
-            f"{stimuli.size} trials, need at least window={window}.")
+            f"compute_adaptation: {aid} has no {baseline_preset!r} sessions — "
+            f"every animal needs an expert baseline (check the data / preset). "
+            f"This is an experimental-design error, not a normal empty case.")
+    expert = filter_trials(expert, trial_type=baseline_trials)
+    baseline = dict(compute_stat(expert, stat_names, mode='pooled')['pooled'])
 
-    # Baseline PSE (the convergence origin). Two definitions, both fit on a
-    # single window so they are directly comparable to the rolling PSE:
-    #   'first_window' — first window of THIS block; curve starts at 0.
-    #   'pre_switch'   — last window of the PRECEDING block (manuscript-style).
-    from behav_utils.analysis.psychometry import fit_psychometric
+    def _standardise(values: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+        if not standardised:
+            return {s: np.asarray(v, dtype=float) for s, v in values.items()}
+        return {s: np.asarray(v, dtype=float) - baseline.get(s, np.nan)
+                for s, v in values.items()}
 
-    if baseline == 'pre_switch':
-        pse_pre_switch = _pre_switch_baseline(animal, to_distribution, window, trials)
-        if not np.isfinite(pse_pre_switch):
-            # no usable preceding block — fall back to first-window
-            fit = fit_psychometric(stimuli[:window], choices[:window])
-            pse_pre_switch = float(fit.get('mu', 0.0)) if isinstance(fit, dict) else 0.0
-    elif baseline == 'first_window':
-        fit = fit_psychometric(stimuli[:window], choices[:window])
-        pse_pre_switch = float(fit.get('mu', 0.0)) if isinstance(fit, dict) else 0.0
-    else:
-        raise ValueError(
-            f"compute_adaptation: baseline must be 'first_window' or 'pre_switch', got {baseline!r}")
+    # ── normative offset (pse only) ─────────────────────────────────────────
+    normative: Dict[str, float] = {}
+    if 'pse' in stat_names:
+        try:
+            if sigma_source == 'sbi':
+                sigma = resolve_sigma_sbi(animal)
+            else:
+                sigma = resolve_sigma(animal, source=sigma_source, trials=baseline_trials)
+            pse_norm = float(compute_normative_pse(distribution, sigma))
+        except Exception:
+            pse_norm = float('nan')
+        base_pse = baseline.get('pse', float('nan'))
+        normative['pse'] = (pse_norm - base_pse) if standardised else pse_norm
 
-    pse_normative = (compute_normative_pse(to_distribution, sigma_percep)
-                     if normalise else None)
+    # ── target block trajectory (pre-filtered → compute_rolling_stats) ──────
+    target = select_sessions(animal, distribution=distribution, exclude_masking=False)
+    target = sorted(target, key=lambda s: s.session_idx)
+    target = filter_trials(target, trial_type=trials)
+    rolled = compute_rolling_stats(target, stat_names=stat_names, mode=mode,
+                                   window=window, step=step)
 
-    centres, pses = _windowed_pse(stimuli, choices, window, step)
-    values = _convergence_from_pse(pses, pse_pre_switch, pse_normative, normalise)
-    scalars = _collapse_curve(centres, values)
+    meta = {'distribution': distribution, 'window': window, 'step': step,
+            'trials': trials, 'baseline_preset': baseline_preset,
+            'baseline_last_n': baseline_last_n, 'baseline_trials': baseline_trials,
+            'sigma_source': sigma_source, 'n_target_sessions': len(target)}
 
-    # ── uncertainty: resample TRIALS, recompute the whole curve ───────────
-    ci_lo = ci_hi = None
-    scalar_ci = {k: (np.nan, np.nan) for k in scalars}
-    if n_bootstrap > 0:
-        rng = np.random.default_rng(seed)
-        n = stimuli.size
-        curve_draws = np.full((n_bootstrap, centres.size), np.nan)
-        scalar_draws = {k: [] for k in scalars}
-        for b in range(n_bootstrap):
-            idx = np.sort(rng.integers(0, n, size=n))   # resample trials, keep order
-            bs, bc = stimuli[idx], choices[idx]
-            _, bp = _windowed_pse(bs, bc, window, step)
-            # baseline recomputed per draw for a coherent numerator
-            bf = fit_psychometric(bs[:window], bc[:window])
-            bpre = float(bf.get('mu', 0.0)) if isinstance(bf, dict) else 0.0
-            bv = _convergence_from_pse(bp, bpre, pse_normative, normalise)
-            if bv.size == curve_draws.shape[1]:
-                curve_draws[b] = bv
-            bsc = _collapse_curve(centres, bv)
-            for k in scalars:
-                scalar_draws[k].append(bsc[k])
-        tail = (1 - ci) / 2 * 100
-        ci_lo = np.nanpercentile(curve_draws, tail, axis=0)
-        ci_hi = np.nanpercentile(curve_draws, 100 - tail, axis=0)
-        for k in scalars:
-            arr = np.asarray(scalar_draws[k], dtype=float)
-            arr = arr[np.isfinite(arr)]
-            if arr.size >= 10:
-                scalar_ci[k] = (float(np.percentile(arr, tail)),
-                                float(np.percentile(arr, 100 - tail)))
-
-    return {
-        'curve': {
-            'trials': centres,
-            'values': values,
-            'ci_lo': ci_lo,
-            'ci_hi': ci_hi,
-            'pse_pre_switch': pse_pre_switch,
-            'pse_normative': pse_normative,
-        },
-        'scalars': [
-            {'stat': k, 'value': scalars[k],
-             'ci_lo': scalar_ci[k][0], 'ci_hi': scalar_ci[k][1]}
-            for k in ('plateau', 'trials_to_plateau', 'auc')
-        ],
-        'meta': {
-            'to_distribution': to_distribution, 'normalise': normalise,
-            'window': window, 'step': step, 'trials': trials,
-            'baseline': baseline,
-            'sigma_percep': sigma_percep, 'n_trials': int(stimuli.size),
-            'n_windows': int(centres.size),
-        },
+    result: Dict = {
+        'stat_names': stat_names, 'standardised': standardised, 'mode': mode,
+        'window': window, 'step': step,
+        'baseline': baseline, 'normative': normative, 'meta': meta,
     }
+
+    if mode == 'pooled':
+        curve = rolled['curve']
+        vals = _standardise(curve['values'])
+        result['curve'] = {'trials': np.asarray(curve['trials'], dtype=float),
+                           'values': vals, 'n_trials': curve['n_trials']}
+        result['rows'] = _collapse_rows(curve['trials'], vals, stat_names)
+        return result
+
+    # per_session
+    switch_of = _switch_index_map(animal, distribution)
+    entries, rows = [], []
+    for e in rolled['sessions']:
+        vals = _standardise(e['values'])
+        sid = e['session_id']
+        si = switch_of.get(sid, np.nan)
+        entries.append({
+            'session_id': sid, 'session_idx': e['session_idx'],
+            'switch_index': si, 'session_type': e['session_type'],
+            'trials': np.asarray(e['trials'], dtype=float), 'values': vals,
+            'n_trials': e['n_trials'],
+        })
+        for r in _collapse_rows(e['trials'], vals, stat_names):
+            rows.append({'session_id': sid, 'switch_index': si, **r})
+    result['sessions'] = entries
+    result['rows'] = rows
+    return result
 
 
 def compute_adaptation_per_session(
     animal: 'AnimalData',
-    to_distribution: str,
+    distribution: str,
     *,
-    sigma_percep: Optional[float] = None,
-    sigma_source: str = 'expert_uniform',
+    stat_names: Sequence[str] = ('pse',),
+    standardised: bool = True,
     window: int = 50,
-    step: int = 10,
+    step: Optional[int] = None,
+    baseline_preset: str = 'expert_uniform',
+    baseline_last_n: int = 5,
+    baseline_trials: str = 'non_opto',
+    sigma_source: str = 'sbi',
     trials: str = 'all',
 ) -> Dict:
-    """Per-session adaptation trajectories for one distribution, vs a fixed
-    expert-uniform baseline. Sessions are NOT pooled and no window crosses a
-    session boundary.
-
-    The right shape when a hard phase is a single session (opto cohort) or when
-    within-session re-adaptation across a multi-session run matters (first
-    cohort) — unlike :func:`compute_adaptation`, which concatenates the whole
-    block and reports a multi-session plateau (meaningless for one session).
-
-    Baseline is one fixed origin per animal: ``pse_expert`` = pooled μ of the
-    last 5 ``expert_uniform`` sessions. Every value is ``μ(t) − pse_expert`` (raw
-    stimulus units), so 0 is expert-uniform behaviour and you can see whether a
-    session starts back near uniform (overnight reset) or where the last left
-    off. The normative target is returned as ``pse_normative − pse_expert`` for
-    reference. Masking sessions are included; ``trials='all'`` keeps laser-on
-    trials (their cumulative effect on the session's learning is the signal —
-    the within-trial on/off split is 2X's job).
-
-    Args:
-        animal:          AnimalData.
-        to_distribution: the distribution whose sessions to trace, e.g. 'Hard-A'.
-        sigma_percep:    σ for the normative reference; if None, resolved via
-                         ``resolve_sigma(source=sigma_source, trials=trials)``.
-        sigma_source:    σ source when ``sigma_percep`` is None.
-        window, step:    rolling-window size / stride, within each session.
-        trials:          'all' (default) or 'non_opto'.
-
-    Returns:
-        ::
-
-            {'pse_expert':    float,   # NaN if no expert_uniform block
-             'pse_normative': float,   # NaN if σ unresolved
-             'sessions': [ {'session_id','session_idx','switch_index',
-                            'session_type','trials','values',
-                            'start_offset','end_offset','n_trials'}, ... ],
-             'rows':    [ {'session_id','switch_index','stat','value'}, ... ],
-             'meta':    {...} }
-
-        ``switch_index`` = which run of ``to_distribution`` a session belongs to
-        (0 = first appearance): a run of consecutive hard sessions shares one
-        index; the opto cohort's ABAB chain gives 0, 1, 2, … so early-vs-late
-        switches stay recoverable. ``rows`` is the tidy fold shape, per session.
-    """
-    from behav_utils.analysis.psychometry import fit_psychometric
-    from behav_utils.data.ops.selection import select_sessions
-    from behav_utils.data.ops.filtering import filter_trials, pool_arrays
-
-    def _mu(stim, ch):
-        if stim.size == 0:
-            return np.nan
-        fit = fit_psychometric(stim, ch)
-        return float(fit.get('mu', np.nan)) if isinstance(fit, dict) else np.nan
-
-    # ── baseline: last 5 expert_uniform sessions, pooled ──────────────────
-    expert = select_sessions(animal, 'expert_uniform')
-    expert = sorted(expert, key=lambda s: s.session_idx)[-5:]
-    if expert:
-        ea = pool_arrays(filter_trials(expert, trial_type='all'))
-        pse_expert = _mu(ea['stimuli'], ea['choices'])
-    else:
-        pse_expert = np.nan
-
-    # ── normative reference (σ-based; saturates above σ≈0.4) ──────────────
-    try:
-        sig = sigma_percep if sigma_percep is not None else resolve_sigma(
-            animal, source=sigma_source, trials=trials)
-        pse_normative = float(compute_normative_pse(to_distribution, sig))
-    except Exception:
-        sig, pse_normative = np.nan, np.nan
-
-    # ── switch_index: which run of to_distribution each session is in ─────
-    all_sessions = sorted(animal.get_sessions(), key=lambda s: s.session_idx)
-    run, prev, switch_of = -1, None, {}
-    for s in all_sessions:
-        if s.distribution == to_distribution and prev != to_distribution:
-            run += 1
-        if s.distribution == to_distribution:
-            switch_of[s.session_id] = run
-        prev = s.distribution
-
-    # ── per-session trajectories (boundary-safe: one session at a time) ───
-    sessions = sorted(select_sessions(animal, distribution=to_distribution, exclude_masking=False),
-                      key=lambda s: s.session_idx)
-    entries, rows = [], []
-    for s in sessions:
-        cond = filter_trials([s], trial_type=('non_opto' if trials == 'non_opto' else 'all'),
-                             min_trials=1)
-        if not cond:
-            continue
-        arr = pool_arrays(cond)
-        stim, ch = arr['stimuli'], arr['choices']
-        if stim.size >= window:
-            centres, pses = _windowed_pse(stim, ch, window, step)
-        elif stim.size >= 10:
-            centres = np.array([stim.size / 2.0]); pses = np.array([_mu(stim, ch)])
-        else:
-            continue
-        values = pses - pse_expert
-        finite = values[np.isfinite(values)]
-        start_off = float(values[0]) if values.size and np.isfinite(values[0]) else (
-            float(finite[0]) if finite.size else np.nan)
-        end_off = float(values[-1]) if values.size and np.isfinite(values[-1]) else (
-            float(finite[-1]) if finite.size else np.nan)
-        entries.append({
-            'session_id': s.session_id, 'session_idx': s.session_idx,
-            'switch_index': switch_of.get(s.session_id, np.nan),
-            'session_type': s.session_type,
-            'trials': centres, 'values': values,
-            'start_offset': start_off, 'end_offset': end_off,
-            'n_trials': int(stim.size),
-        })
-        rows += [{'session_id': s.session_id, 'switch_index': switch_of.get(s.session_id, np.nan),
-                  'stat': 'start_offset', 'value': start_off},
-                 {'session_id': s.session_id, 'switch_index': switch_of.get(s.session_id, np.nan),
-                  'stat': 'end_offset', 'value': end_off}]
-
-    return {
-        'pse_expert': pse_expert,
-        'pse_normative': pse_normative,
-        'sessions': entries,
-        'rows': rows,
-        'meta': {'to_distribution': to_distribution, 'window': window, 'step': step,
-                 'trials': trials, 'sigma_percep': sig, 'n_sessions': len(entries)},
-    }
+    """``compute_adaptation`` with ``mode='per_session'`` — one trajectory per
+    session at ``distribution``, no window crossing a session boundary. The right
+    shape when a hard phase is a single session (opto cohort) or when within-
+    session re-adaptation matters. See :func:`compute_adaptation`."""
+    return compute_adaptation(
+        animal, distribution, stat_names=stat_names, standardised=standardised,
+        mode='per_session', window=window, step=step,
+        baseline_preset=baseline_preset, baseline_last_n=baseline_last_n,
+        baseline_trials=baseline_trials, sigma_source=sigma_source, trials=trials)

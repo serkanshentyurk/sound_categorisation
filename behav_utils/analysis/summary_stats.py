@@ -240,6 +240,47 @@ def compute_psychometric_params(choices: np.ndarray, stimuli: np.ndarray,
     return _fit_single(_ensure_1d(choices), _ensure_1d(stimuli), _ensure_1d(categories))
 
 
+@register_stat('pse')
+def compute_pse(choices: np.ndarray, stimuli: np.ndarray, categories: np.ndarray,
+                prev_choices: Optional[np.ndarray] = None,
+                prev_stimuli: Optional[np.ndarray] = None,
+                prev_categories: Optional[np.ndarray] = None) -> float:
+    """Lapse-corrected point of subjective equality.
+
+    The stimulus at which the full psychometric
+        gamma + (1 - gamma - lambda) * Phi((x - mu) / sigma)
+    crosses 0.5 — i.e. PSE = Phi^{-1}((0.5 - gamma) / (1 - gamma - lambda); mu,
+    sigma), with gamma = lapse_low, lambda = lapse_high. This coincides with mu
+    only when the two lapses are equal; with asymmetric lapses it sits off mu.
+
+    Unlike 'psychometric' -> 'mu' (which the registry NaNs for flat fits), this
+    is the raw crossing with NO slope guard, so early, still-shallow windows
+    survive — matching the legacy adaptation PSE (legacy ``compute_pse``). NaN
+    when the fit fails, when 1 - gamma - lambda <= 0, when the inverse-Phi
+    argument leaves (0, 1), or when |PSE| > 1 (outside the stimulus range).
+    """
+    from scipy.stats import norm
+
+    psych = fit_psychometric(_ensure_1d(np.asarray(stimuli)),
+                             _ensure_1d(np.asarray(choices)))
+    if not psych.get('success', False):
+        return float('nan')
+    mu, sigma = psych['mu'], psych['sigma']
+    g, lam = psych['lapse_low'], psych['lapse_high']
+    if not (np.isfinite(mu) and np.isfinite(sigma) and sigma > 0):
+        return float('nan')
+    denom = 1.0 - g - lam
+    if not np.isfinite(denom) or denom <= 0:
+        return float('nan')
+    arg = (0.5 - g) / denom
+    if not (0.0 < arg < 1.0):
+        return float('nan')
+    pse = float(norm.ppf(arg, loc=mu, scale=sigma))
+    if not np.isfinite(pse) or abs(pse) > 1.0:
+        return float('nan')
+    return pse
+
+
 @register_stat('recency')
 def compute_recency_index(choices: np.ndarray, stimuli: np.ndarray,
                           categories: np.ndarray,
