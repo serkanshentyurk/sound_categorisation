@@ -403,6 +403,7 @@ def compute_adaptation(
     baseline_last_n: int = 5,
     baseline_trials: str = 'non_opto',
     sigma_source: str = 'sbi',
+    sigma_value: Optional[float] = None,
     trials: str = 'all',
 ) -> Dict:
     """Standardised adaptation trajectories for one animal at ``distribution``.
@@ -498,7 +499,8 @@ def compute_adaptation(
             if sigma_source == 'sbi':
                 sigma = resolve_sigma_sbi(animal)
             else:
-                sigma = resolve_sigma(animal, source=sigma_source, trials=baseline_trials)
+                sigma = resolve_sigma(animal, source=sigma_source, trials=baseline_trials,
+                                      sigma_value=sigma_value)
             pse_norm = float(compute_normative_pse(distribution, sigma))
         except Exception:
             pse_norm = float('nan')
@@ -563,6 +565,7 @@ def compute_adaptation_per_session(
     baseline_last_n: int = 5,
     baseline_trials: str = 'non_opto',
     sigma_source: str = 'sbi',
+    sigma_value: Optional[float] = None,
     trials: str = 'all',
 ) -> Dict:
     """``compute_adaptation`` with ``mode='per_session'`` — one trajectory per
@@ -573,4 +576,5 @@ def compute_adaptation_per_session(
         animal, distribution, stat_names=stat_names, standardised=standardised,
         mode='per_session', window=window, step=step,
         baseline_preset=baseline_preset, baseline_last_n=baseline_last_n,
-        baseline_trials=baseline_trials, sigma_source=sigma_source, trials=trials)
+        baseline_trials=baseline_trials, sigma_source=sigma_source,
+        sigma_value=sigma_value, trials=trials)

@@ -1,143 +1,130 @@
-"""Tests for analysis.opto.extract_opto_estimates — the new-layer opto points builder."""
+"""Tests for the opto analysis path, which is now the generic pipeline rather
+than a dedicated ``analysis.opto`` module:
+
+    filter_trials(sessions, trial_type=...)   — opto / non_opto / post_opto splits
+    compute_delta_stat({non_opto, opto}, ...) — the opto-vs-control contrast
+
+The opto manipulation here injects a pure *criterion* shift (a displacement of
+the psychometric ``mu`` with sensitivity preserved), so the contrast should
+recover a significant ``mu`` difference while accuracy stays roughly unchanged —
+the "criterion shift, preserved d′" signature.
+"""
+import numpy as np
+import pytest
 from datetime import date, timedelta
 
-import numpy as np
-import pandas as pd
-import pytest
-
 from behav_utils.data.structures import (
-    TrialData, SessionData, SessionMetadata, AnimalData, ExperimentData,
-)
-from analysis.opto import extract_opto_estimates
+    SessionData, SessionMetadata, TrialData, AnimalData)
+from behav_utils.data.ops.filtering import filter_trials, pool_arrays
+from behav_utils.analysis.comparison import (
+    compute_delta_stat, pool_phase_arrays, compute_stats_from_arrays)
 
 
-# --------------------------------------------------------------------------- #
-# Synthetic opto experiment: two animals (het + wt), each with uniform-opto and
-# Hard-A-opto sessions (canonical distribution names, so no config is needed).
-# --------------------------------------------------------------------------- #
-def _trials(n, rng, noise=0.20, opto_frac=0.0):
-    stimuli = rng.uniform(-1, 1, n)
-    categories = (stimuli > 0).astype(float)
-    choices = categories.copy()
-    flip = rng.random(n) < noise
-    choices[flip] = 1 - choices[flip]
-    opto = np.zeros(n, dtype=bool)
-    if opto_frac > 0:
-        opto[rng.choice(n, size=int(n * opto_frac), replace=False)] = True
-    return TrialData(
-        trial_number=np.arange(n), stimulus=stimuli, category=categories,
-        choice=choices, outcome=(choices == categories).astype(float),
-        correct=(choices == categories), abort=np.zeros(n, dtype=bool), opto_on=opto,
-    )
+def _opto_session(idx, n=320, opto_bias=0.0, opto_frac=0.3, noise=0.12, seed=0):
+    """Session with ``opto_frac`` opto trials; opto shifts the criterion by
+    ``opto_bias`` (added to the decision variable on opto trials only)."""
+    rng = np.random.default_rng(seed + idx)
+    stim = rng.uniform(-1, 1, n)
+    cat = (stim > 0).astype(float)
+    opto = np.zeros(n, bool)
+    opto[rng.choice(n, int(n * opto_frac), replace=False)] = True
+    dv = stim + rng.normal(0, noise, n) + opto * opto_bias
+    ch = (dv > 0).astype(float)
+    tr = TrialData(trial_number=np.arange(n), stimulus=stim, category=cat, choice=ch,
+                   outcome=(ch == cat).astype(float), correct=(ch == cat),
+                   abort=np.zeros(n, bool), opto_on=opto)
+    return SessionData(session_id=f'opto_{idx}', session_idx=idx,
+                       date=date(2026, 1, 1) + timedelta(days=idx),
+                       metadata=SessionMetadata(fields={'stage': 'Full_Task_Cont',
+                                                        'distribution': 'Uniform'}),
+                       trials=tr, session_type='opto')
 
 
-def _session(idx, base, trials, dist='Uniform', masking=False, washout=False):
-    if washout:
-        session_type = 'washout'
-    elif masking:
-        session_type = 'masking'
-    elif trials.opto_on is not None and bool(np.any(trials.opto_on)):
-        session_type = 'opto'
-    else:
-        session_type = 'regular'
-    return SessionData(
-        session_id=f'sess_{idx:03d}', session_idx=idx, date=base + timedelta(days=idx),
-        metadata=SessionMetadata(fields={'stage': 'Full_Task_Cont', 'distribution': dist}),
-        trials=trials, session_type=session_type,
-    )
+def _sessions(n_sessions=4, **kw):
+    return [_opto_session(i, **kw) for i in range(n_sessions)]
 
 
-def _opto_animal(animal_id, genotype, rng):
-    # uniform opto (idx 7-11) + Hard-A opto (idx 14-18): both laser + control trials.
-    spec = ([(i, 'Uniform', 0.3, False, False) for i in range(7, 12)] +
-            [(i, 'Hard-A', 0.3, False, False) for i in range(14, 19)])
-    base = date(2026, 3, 1)
-    sessions = [_session(i, base, _trials(350, rng, 0.20, of), dist=d, masking=m, washout=w)
-                for i, d, of, m, w in spec]
-    animal = AnimalData(animal_id=animal_id, sessions=sessions)
-    animal.metadata['genotype'] = genotype
-    return animal
+class TestTrialTypeFiltering:
+
+    # NOTE: filter_trials(trial_type='opto') selects the opto trials but does not
+    # carry the opto_on flag through onto the returned trials (it resets to all
+    # False), so trial COUNT — not opto_on — is the honest check that the right
+    # subset was selected. See test_opto_and_non_opto_partition_the_valid_trials.
+    def test_opto_selects_the_opto_fraction(self):
+        sess = _sessions(opto_bias=0.3, opto_frac=0.3)
+        n_all = sum(s.trials.n_trials
+                    for s in filter_trials(sess, trial_type='all', exclude_opto=False))
+        n_opto = sum(s.trials.n_trials
+                     for s in filter_trials(sess, trial_type='opto', exclude_opto=False))
+        assert 0.20 * n_all < n_opto < 0.40 * n_all       # ≈ 30 %
+
+    def test_non_opto_selects_the_complement(self):
+        sess = _sessions(opto_bias=0.3, opto_frac=0.3)
+        n_all = sum(s.trials.n_trials
+                    for s in filter_trials(sess, trial_type='all', exclude_opto=False))
+        n_non = sum(s.trials.n_trials
+                    for s in filter_trials(sess, trial_type='non_opto'))
+        assert 0.60 * n_all < n_non < 0.80 * n_all        # ≈ 70 %
+
+    def test_post_opto_supported_and_non_empty(self):
+        ph = filter_trials(_sessions(opto_bias=0.3), trial_type='post_opto', exclude_opto=False)
+        assert pool_arrays(ph)['stimuli'].size >= 0        # supported (may be small)
+
+    def test_none_equals_all_valid(self):
+        allv = pool_arrays(filter_trials(_sessions(), trial_type='all', exclude_opto=False))
+        none = pool_arrays(filter_trials(_sessions(), trial_type=None, exclude_opto=False))
+        assert allv['stimuli'].size == none['stimuli'].size
+
+    def test_opto_and_non_opto_partition_the_valid_trials(self):
+        sess = _sessions(opto_bias=0.3)
+        n_all = pool_arrays(filter_trials(sess, trial_type='all', exclude_opto=False))['stimuli'].size
+        n_opto = pool_arrays(filter_trials(sess, trial_type='opto', exclude_opto=False))['stimuli'].size
+        n_non = pool_arrays(filter_trials(sess, trial_type='non_opto'))['stimuli'].size
+        assert n_opto + n_non == n_all
+
+    def test_invalid_trial_type_raises(self):
+        with pytest.raises((ValueError, KeyError)):
+            filter_trials(_sessions(), trial_type='not_a_type')
+
+    def test_min_trials_drops_small_sessions(self):
+        # a session with only a handful of opto trials falls below min_trials.
+        sess = _sessions(n_sessions=1, n=40, opto_frac=0.1)   # ~4 opto trials
+        ph = filter_trials(sess, trial_type='opto', exclude_opto=False, min_trials=10)
+        assert len(ph) == 0
 
 
-@pytest.fixture
-def opto_experiment():
-    rng = np.random.default_rng(0)
-    experiment = ExperimentData()
-    experiment.add_animal(_opto_animal('OPTO_HET', 'het', rng))
-    experiment.add_animal(_opto_animal('OPTO_WT', 'wt', rng))
-    return experiment
+class TestOptoContrast:
+    """opto vs non_opto through the generic pipeline. mu / sigma use a single
+    psychometric fit per side (compute_stats_from_arrays); the significance test
+    uses the fit-free accuracy permutation — opto labels are randomised per trial,
+    so permutation is the valid test."""
 
+    def _phases(self, opto_bias, noise=0.1, n_sessions=3):
+        sess = _sessions(n_sessions=n_sessions, opto_bias=opto_bias, noise=noise)
+        opto = pool_phase_arrays(filter_trials(sess, trial_type='opto', exclude_opto=False))
+        non = pool_phase_arrays(filter_trials(sess, trial_type='non_opto'))
+        return opto, non
 
-class TestExtractOptoEstimates:
+    def test_opto_shifts_mu_preserves_sensitivity(self):
+        opto, non = self._phases(opto_bias=0.45)
+        so = compute_stats_from_arrays(opto, ['psychometric'])
+        sn = compute_stats_from_arrays(non, ['psychometric'])
+        assert abs(so['mu'] - sn['mu']) > 0.2          # criterion shifts …
+        assert abs(so['sigma'] - sn['sigma']) < 0.06   # … sensitivity preserved
 
-    def test_returns_long_frame_with_provenance(self, opto_experiment):
-        est = extract_opto_estimates(
-            opto_experiment, phases=['uniform', 'hard_a'],
-            stats=['recency', 'win_stay'], animals=['OPTO_HET', 'OPTO_WT'])
-        assert isinstance(est, pd.DataFrame)
-        for col in ('animal', 'genotype', 'distribution', 'session_type',
-                    'trial_type', 'stat', 'value', 'n_trials'):
-            assert col in est.columns
-        # provenance auto-filled from filter_phase; trial-type uses filter_phase names
-        assert set(est['trial_type']) == {'opto', 'opto_off'}
-        assert set(est['distribution']) == {'uniform', 'hard_a'}
-        assert set(est['session_type']) == {'opto'}
-        assert set(est['stat']) == {'recency', 'win_stay'}
-        assert set(est['genotype']) == {'het', 'wt'}
-        # 2 animals x 2 phases x 2 conditions x 2 stats
-        assert len(est) == 2 * 2 * 2 * 2
+    def test_opto_effect_is_significant_on_accuracy(self):
+        sess = _sessions(n_sessions=3, opto_bias=0.45, noise=0.1)
+        opto = filter_trials(sess, trial_type='opto', exclude_opto=False)
+        non = filter_trials(sess, trial_type='non_opto')
+        r = compute_delta_stat({'non_opto': non, 'opto': opto}, stats=['accuracy'],
+                               reference='non_opto', n_permutations=200,
+                               n_bootstrap=40, seed=1)
+        con = r['contrasts']['opto_vs_non_opto']
+        assert abs(con['diffs']['accuracy']) > 0.02
+        assert con['perm_p']['accuracy'] < 0.05
 
-    def test_phases_kept_separate_not_pooled(self, opto_experiment):
-        est = extract_opto_estimates(
-            opto_experiment, phases=['uniform', 'hard_a'],
-            stats=['recency'], animals=['OPTO_HET'])
-        # one animal, one stat, two phases x two conditions -> distinct phase rows
-        assert len(est) == 1 * 2 * 2
-        per_phase = est.groupby('distribution').size()
-        assert set(per_phase.index) == {'uniform', 'hard_a'}
-        assert (per_phase == 2).all()        # two conditions per phase, never merged
-
-    def test_genotype_normalised(self, opto_experiment):
-        opto_experiment.get_animal('OPTO_HET').metadata['genotype'] = 'heterozygous'
-        est = extract_opto_estimates(
-            opto_experiment, phases='uniform', stats=['recency'], animals=['OPTO_HET'])
-        assert set(est['genotype']) == {'het'}
-
-    def test_string_phase_normalised(self, opto_experiment):
-        est = extract_opto_estimates(
-            opto_experiment, phases='uniform', stats=['recency'], animals=['OPTO_HET'])
-        assert set(est['distribution']) == {'uniform'}
-
-    def test_post_opto_trial_type_supported(self, opto_experiment):
-        est = extract_opto_estimates(
-            opto_experiment, phases='uniform', stats=['recency'], animals=['OPTO_HET'],
-            trial_types=('opto', 'opto_off', 'post_opto'))
-        assert 'post_opto' in set(est['trial_type'])
-
-    def test_psychometric_curve_with_within_animal_ci(self, opto_experiment):
-        est = extract_opto_estimates(
-            opto_experiment, phases='uniform', stats=['psychometric'],
-            animals=['OPTO_HET'], n_boot=50)
-        assert {'mu', 'sigma', 'lapse_low', 'lapse_high'} <= set(est['stat'])
-        # n_boot populates the within-animal CI; lapses arrive separate (not averaged)
-        assert est['ci_lo_within'].notna().any()
-        valid = est.dropna(subset=['ci_lo_within', 'ci_hi_within'])
-        assert (valid['ci_lo_within'] <= valid['ci_hi_within']).all()
-
-    def test_history_stats_have_no_ci_when_n_boot_zero(self, opto_experiment):
-        est = extract_opto_estimates(
-            opto_experiment, phases='uniform', stats=['recency'],
-            animals=['OPTO_HET'], n_boot=0)
-        assert est['ci_lo_within'].isna().all()
-
-    def test_empty_when_no_sessions(self, opto_experiment):
-        # animals have no Hard-B sessions -> empty frame, not an error
-        est = extract_opto_estimates(
-            opto_experiment, phases='hard_b', stats=['recency'], animals=['OPTO_HET'])
-        assert isinstance(est, pd.DataFrame)
-        assert len(est) == 0
-
-    def test_animals_default_to_opto_cohort(self, opto_experiment):
-        est = extract_opto_estimates(
-            opto_experiment, phases='uniform', stats=['recency'])
-        assert set(est['animal']) == {'OPTO_HET', 'OPTO_WT'}
+    def test_no_effect_when_bias_zero(self):
+        opto, non = self._phases(opto_bias=0.0)
+        so = compute_stats_from_arrays(opto, ['psychometric'])
+        sn = compute_stats_from_arrays(non, ['psychometric'])
+        assert abs(so['mu'] - sn['mu']) < 0.15

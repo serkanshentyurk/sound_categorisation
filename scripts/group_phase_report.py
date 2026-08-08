@@ -44,17 +44,19 @@ def main():
     if a.limit:
         members = members[:a.limit]
 
-    sba = {}
+    sba, animals = {}, {}
     for aid in members:
-        sbt = R.collect_sessions_ppc(exp.get_animal(aid), a.distribution)
+        animal = exp.get_animal(aid)
+        sbt = R.collect_sessions_ppc(animal, a.distribution)
         if sbt['opto'] and sbt['masking']:
             sba[aid] = sbt
+            animals[aid] = animal
         else:
             print(f'{aid}: missing opto/masking on {a.distribution}, skipped')
     if not sba:
         raise SystemExit('no eligible animals')
     fn = out / f"{a.cohort}_group_{a.distribution}_ppc_{toi}_report.pdf"
-    R.build_ppc_group(sba, by_animal, a.distribution, toi, fn)
+    R.build_ppc_group(animals, sba, by_animal, a.distribution, toi, fn)
     print(f'wrote {fn.name}  (n={len(sba)} animals) in {out}')
 
 

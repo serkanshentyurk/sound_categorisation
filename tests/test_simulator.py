@@ -64,7 +64,7 @@ class TestBuildSimulator:
         assert np.allclose(sim(th, seed=1), sim(th, seed=1), equal_nan=True)
         assert not np.allclose(sim(th, seed=1), sim(th, seed=2), equal_nan=True)
 
-    def test_moments_dim_is_4D(self):
+    def test_moments_dim_is_2D(self):
         sim_m, _, _ = build_simulator(
             ModelType.BE, 'uniform', N=5, T=300, burn_in=200,
             mode='moments', stat_names=SBI_STATS)
@@ -72,7 +72,27 @@ class TestBuildSimulator:
             ModelType.BE, 'uniform', N=5, T=300, burn_in=200,
             mode='pooled', stat_names=SBI_STATS)
         D = len(sim_p(_mid(ModelType.BE), seed=1))
-        assert sim_m(_mid(ModelType.BE), seed=1).shape[0] == 4 * D
+        assert sim_m(_mid(ModelType.BE), seed=1).shape[0] == 2 * D
+
+    def test_variable_N_gives_stable_dim(self):
+        # N=(lo,hi) draws a different session count per sim, but the observation
+        # dimension must stay fixed (pooled -> D, moments -> 2D) for SBI.
+        for mode, mult in (('pooled', 1), ('moments', 2)):
+            sim, _, _ = build_simulator(
+                ModelType.BE, 'uniform', N=(4, 6), T=250, burn_in=200,
+                mode=mode, stat_names=SBI_STATS)
+            dims = {sim(_mid(ModelType.BE), seed=s).shape[0] for s in range(8)}
+            assert len(dims) == 1
+            sim_p, _, _ = build_simulator(
+                ModelType.BE, 'uniform', N=5, T=250, burn_in=200,
+                mode='pooled', stat_names=SBI_STATS)
+            D = len(sim_p(_mid(ModelType.BE), seed=1))
+            assert dims == {mult * D}
+
+    def test_variable_N_requires_single_distribution(self):
+        with pytest.raises(ValueError):
+            build_simulator(ModelType.BE, ['uniform', 'hard_a'], N=(4, 6),
+                            mode='pooled', stat_names=SBI_STATS)
 
     def test_distribution_schedule(self):
         sim, _, _ = build_simulator(
@@ -89,7 +109,7 @@ class TestBuildSimulator:
 
     def test_moments_too_few_sessions_raises(self):
         with pytest.raises(ValueError):
-            build_simulator(ModelType.BE, 'uniform', N=2, mode='moments')
+            build_simulator(ModelType.BE, 'uniform', N=1, mode='moments')
 
     def test_bad_schedule_length_raises(self):
         with pytest.raises(ValueError):

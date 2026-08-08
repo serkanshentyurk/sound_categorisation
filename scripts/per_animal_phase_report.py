@@ -49,11 +49,12 @@ def main():
 
     made = 0
     for aid in members:
-        sbt = R.collect_sessions_ppc(exp.get_animal(aid), a.distribution)
+        animal = exp.get_animal(aid)
+        sbt = R.collect_sessions_ppc(animal, a.distribution)
         if not sbt['opto'] or not sbt['masking']:
             print(f'{aid}: missing opto/masking on {a.distribution}, skipped'); continue
         fn = out / f"{a.cohort}_{aid}_{a.distribution}_ppc_{toi}_report.pdf"
-        R.build_ppc_per_animal(sbt, aid, by_animal.get(aid, 'unknown'), a.distribution, toi, fn)
+        R.build_ppc_per_animal(animal, sbt, aid, by_animal.get(aid, 'unknown'), a.distribution, toi, fn)
         print('wrote', fn.name); made += 1
         if a.limit and made >= a.limit:
             break

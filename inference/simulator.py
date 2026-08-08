@@ -106,7 +106,9 @@ def build_simulator(
         model: ModelType or 'be'/'sc'.
         dist_schedule: One distribution name applied to every session, or a list
             of exactly N names ('uniform' | 'hard_a' | 'hard_b', case-insensitive).
-        N: Sessions per simulated animal. mode='moments' requires N >= 4.
+        N: Sessions per simulated animal. An int (fixed) or a ``(lo, hi)`` tuple
+            (drawn uniformly over {lo..hi} per simulation, single-distribution
+            schedule only). mode='moments' requires min N >= 2.
         T: Trials per session (fixed; never a network input).
         burn_in: Model burn-in per session.
         mode: 'pooled' or 'moments' (forwarded to to_stat_vector).
@@ -119,9 +121,18 @@ def build_simulator(
     """
     model = _as_model(model)
     names = get_param_names(model)
-    sched = _expand_schedule(dist_schedule, N)
-    if mode == 'moments' and N < 4:
-        raise ValueError(f"mode='moments' needs N>=4 sessions; got N={N}")
+    variable_N = isinstance(N, (tuple, list))
+    if variable_N:
+        n_lo, n_hi = int(N[0]), int(N[1])
+        if not isinstance(dist_schedule, str):
+            raise ValueError(
+                "variable N=(lo,hi) requires a single-distribution schedule string")
+        n_min = n_lo
+    else:
+        sched = _expand_schedule(dist_schedule, N)
+        n_min = int(N)
+    if mode == 'moments' and n_min < 2:
+        raise ValueError(f"mode='moments' needs >= 2 sessions; got n_min={n_min}")
     if stat_names is not None:
         stat_names = list(stat_names)
 
@@ -132,8 +143,13 @@ def build_simulator(
         params = theta_to_params(theta, model)
         rng = np.random.default_rng(seed)
 
+        if variable_N:
+            n_sess = int(rng.integers(n_lo, n_hi + 1))    # uniform over {n_lo..n_hi}
+            this_sched = [dist_schedule] * n_sess
+        else:
+            this_sched = sched
         sessions = []
-        for i, dist in enumerate(sched):
+        for i, dist in enumerate(this_sched):
             stim, cat = sample_distribution(T, dist, rng=rng)
             sess_seed = int(rng.integers(0, 2**31 - 1))   # decorrelated per session
             ch = simulate_choices(

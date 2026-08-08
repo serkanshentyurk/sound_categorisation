@@ -9,25 +9,31 @@ Three entry points share the per-seed unit (_gs_seed):
                       PARTIAL. The full cluster run.
   - main() --gather:  concatenate partials into the FINAL neutral pickle.
 
-Output dir: grid_search/{run}/{label}_{fit_target}/   (label = cohort or experiment).
+Output dir: grid_search/{run}/{label}_{fit_target}/{distribution}/  (label = cohort
+or experiment). Same {run}/{label}_{fit_target}/{distribution}/ layout as run_sbi,
+so the two methods line up per phase for the consensus.
   finals:   {animal}_{model}.pkl
   partials: partials/{animal}_{model}_seed{seed}.pkl
 All finals are written via save_cv_result (neutral cross-method schema), so
-load_cv_results reads quick, full, synthetic and real identically.
+load_cv_results reads quick, full, synthetic and real identically. Each result's
+metadata stamps model, distribution and fit_target.
 
-Cluster usage (synthetic full run):
-    # array upper bound:
-    N=$(python scripts/run_gs.py --source synthetic --cohort static_uniform \
+--distribution is required: fit ONE phase per launch (its sessions + its output
+subdir). For real data the sessions default to expert_<distribution> unless
+--preset is given; for synthetic the --cohort name should encode the phase.
+
+Cluster usage (real, one phase; repeat for hard_a and hard_b):
+    # array upper bound (per phase):
+    N=$(python scripts/run_gs.py --source real --distribution uniform \
             --run full --fit-target update_matrix --count)
     # one task per (animal, model, seed):
-    sbatch --array=0-$((N-1)) run_gs.sh   # each task runs:
-    python scripts/run_gs.py --source synthetic --cohort static_uniform \
-        --run full --fit-target update_matrix --task-id $SLURM_ARRAY_TASK_ID
-    # then a single gather job:
-    python scripts/run_gs.py --source synthetic --cohort static_uniform \
+    sbatch --array=0-$((N-1)) slurm/run_gs.sh --source real --distribution uniform \
+        --run full --fit-target update_matrix
+    # then a single gather job for that phase:
+    python scripts/run_gs.py --source real --distribution uniform \
         --run full --fit-target update_matrix --gather
 
-Real data: same, with --source real --label <name> [--config <path>].
+Synthetic: same, with --source synthetic --cohort <name> (name should encode the phase).
 """
 
 import argparse
@@ -44,10 +50,10 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.config import (
     SYNTH_GS_N_SEEDS, SMOKE_GS_N_SEEDS, GS_BURN_IN, GS_N_BINS, GS_N_FOLDS,
-    BASE_SEED, FIT_TARGETS, results_dir, build_metadata,
+    BASE_SEED, FIT_TARGETS, DISTRIBUTIONS, results_dir, build_metadata,
 )
 from scripts.providers import load_animals
-from analysis.grid_search import compute_grid_search_cv, DEFAULT_GRID, COARSE_GRID
+from analysis.grid_search import compute_grid_search_cv, DEFAULT_GRID, COARSE_GRID, SMOKE_GRID
 from utils.cv_utils import save_cv_result
 
 MODELS = ('BE', 'SC')
@@ -72,30 +78,38 @@ def _gs_seed(record, model, seed, grid, fit_target,
                 'best_params': None, 'error_msg': str(e)}
 
 
-def _save(out_path, animal_id, model, results, fit_target, true_model, true_params):
+def _save(out_path, animal_id, model, results, fit_target, true_model,
+          true_params, distribution):
     save_cv_result(
         out_path, animal_id, model, results, fit_target,
         true_model=true_model, true_params=true_params,
         metadata=build_metadata(
             'run_gs.py',
-            {'model': model, 'n_results': len(results), 'fit_target': fit_target},
+            {'model': model, 'distribution': distribution,
+             'n_results': len(results), 'fit_target': fit_target},
         ),
     )
 
 
-def run_gs_partial(record, model, seed, out_dir, grid, fit_target, **kw):
+def run_gs_partial(record, model, seed, out_dir, grid, fit_target, distribution, **kw):
     """Cluster array task: one seed -> a partial pickle under partials/."""
     result = _gs_seed(record, model, seed, grid, fit_target, **kw)
     out_path = Path(out_dir) / 'partials' / f'{record.animal_id}_{model}_seed{seed}.pkl'
     _save(out_path, record.animal_id, model, [result], fit_target,
-          record.true_model, record.true_params)
+          record.true_model, record.true_params, distribution)
     return out_path
 
 
-def run_gs_cohort(records, out_dir, n_seeds, fit_target, coarse=True,
-                  models=MODELS, base_seed=BASE_SEED, **kw):
-    """Notebook QUICK run: all seeds in-process -> FINAL pickle per (animal, model)."""
-    grid_set = COARSE_GRID if coarse else DEFAULT_GRID
+def run_gs_cohort(records, out_dir, n_seeds, fit_target, distribution, coarse=True,
+                  grid=None, models=MODELS, base_seed=BASE_SEED, **kw):
+    """Notebook QUICK run: all seeds in-process -> FINAL pickle per (animal, model).
+
+    ``distribution`` (uniform / hard_a / hard_b) is stamped into each result's
+    metadata; it must match the phase the sessions were selected for. ``grid``
+    overrides the grid explicitly (e.g. SMOKE_GRID); otherwise COARSE/DEFAULT by
+    ``coarse``.
+    """
+    grid_set = grid or (COARSE_GRID if coarse else DEFAULT_GRID)
     out_paths = []
     for record in records:
         for model in models:
@@ -105,7 +119,7 @@ def run_gs_cohort(records, out_dir, n_seeds, fit_target, coarse=True,
             ]
             out_path = Path(out_dir) / f'{record.animal_id}_{model}.pkl'
             _save(out_path, record.animal_id, model, results, fit_target,
-                  record.true_model, record.true_params)
+                  record.true_model, record.true_params, distribution)
             errs = [r['test_error'] for r in results if not np.isnan(r['test_error'])]
             mean = np.mean(errs) if errs else np.nan
             print(f'  {record.animal_id} / {model}: mean_error={mean:.5f} '
@@ -114,7 +128,7 @@ def run_gs_cohort(records, out_dir, n_seeds, fit_target, coarse=True,
     return out_paths
 
 
-def gather_results(out_dir):
+def gather_results(out_dir, distribution):
     """Concatenate partials/ into FINAL {animal}_{model}.pkl per (animal, model)."""
     out_dir = Path(out_dir)
     pdir = out_dir / 'partials'
@@ -140,7 +154,7 @@ def gather_results(out_dir):
         g['results'].sort(key=lambda r: r['rep'])
         out_path = out_dir / f'{aid}_{model}.pkl'
         _save(out_path, aid, model, g['results'], g['fit_target'],
-              g['true_model'], g['true_params'])
+              g['true_model'], g['true_params'], distribution)
         out_paths.append(out_path)
 
     print(f'Gathered {n_partials} partials -> {len(out_paths)} finals in {out_dir}')
@@ -160,7 +174,14 @@ def main():
     p.add_argument('--source', required=True, choices=['synthetic', 'real'])
     p.add_argument('--cohort', default=None, help='synthetic: cohort name')
     p.add_argument('--label', default=None, help='real: dataset label for the output dir')
+    p.add_argument('--distribution', default=None, choices=list(DISTRIBUTIONS),
+                   help='Phase to fit (required). Selects the sessions (real: '
+                        'expert_<distribution> unless --preset) and the output '
+                        'subdir, matching run_sbi. Fit one phase per launch.')
     p.add_argument('--config', default=None, help='real: config.yaml path')
+    p.add_argument('--preset', default=None,
+                   help='real: session-selection preset '
+                        '(default expert_<distribution>).')
     p.add_argument('--run', choices=['quick', 'full'], default='full')
     p.add_argument('--fit-target', required=True, choices=list(FIT_TARGETS))
     p.add_argument('--task-id', type=int, default=None, help='SLURM array task id')
@@ -171,25 +192,40 @@ def main():
     p.add_argument('--smoke-test', action='store_true')
     args = p.parse_args()
 
+    if not args.distribution:
+        p.error('--distribution is required (uniform / hard_a / hard_b) — '
+                'fit one phase per launch.')
+    preset = args.preset or f'expert_{args.distribution}'
+
     label = args.cohort if args.source == 'synthetic' else (args.label or 'real')
-    out_dir = results_dir('grid_search', args.run, label, args.fit_target)
+    # distribution as a path level -> same layout as run_sbi; phases never collide.
+    out_dir = (results_dir('grid_search', args.run, label, args.fit_target)
+               / args.distribution)
     coarse = args.run == 'quick'
     n_seeds = args.n_seeds or (SMOKE_GS_N_SEEDS if args.smoke_test else SYNTH_GS_N_SEEDS)
 
     if args.gather:
-        gather_results(out_dir)
+        gather_results(out_dir, args.distribution)
         return
 
-    records = load_animals(args.source, cohort=args.cohort, config_path=args.config)
+    records = load_animals(args.source, cohort=args.cohort,
+                           config_path=args.config, preset=preset)
 
     if args.count:
         print(len(records) * len(MODELS) * n_seeds)
         return
 
-    grid_set = COARSE_GRID if coarse else DEFAULT_GRID
-    print(f'=== GS [{args.run}] {args.source}/{label} / {args.fit_target} ===')
+    grid_set = (SMOKE_GRID if args.smoke_test
+                else (COARSE_GRID if coarse else DEFAULT_GRID))
+    ng = (len(grid_set['BE'].sigma_percep_values) *
+          len(grid_set['BE'].A_repulsion_values) *
+          len(grid_set['BE'].model_param1_values) *
+          len(grid_set['BE'].model_param2_values))
+    print(f'=== GS [{args.run}{" SMOKE" if args.smoke_test else ""}] '
+          f'{args.source}/{label} phase={args.distribution} preset={preset} '
+          f'/ {args.fit_target} | grid={ng} pts x {n_seeds} seeds ===')
     print(f'  {len(records)} animals x {len(MODELS)} models x {n_seeds} seeds, '
-          f'grid={"coarse" if coarse else "full"}')
+          f'grid={"smoke" if args.smoke_test else ("coarse" if coarse else "full")}')
     print(f'  out={out_dir}')
 
     t0 = time.time()
@@ -201,10 +237,12 @@ def main():
         animal_idx, model, seed_idx = _decode_task(args.task_id, len(records), n_seeds)
         record = records[animal_idx]
         seed = BASE_SEED + seed_idx + 1
-        path = run_gs_partial(record, model, seed, out_dir, grid_set[model], args.fit_target)
+        path = run_gs_partial(record, model, seed, out_dir, grid_set[model],
+                              args.fit_target, args.distribution)
         print(f'  task {args.task_id} -> {record.animal_id}/{model}/seed{seed} -> {path.name}')
     else:
-        run_gs_cohort(records, out_dir, n_seeds, args.fit_target, coarse=coarse)
+        run_gs_cohort(records, out_dir, n_seeds, args.fit_target,
+                      args.distribution, coarse=coarse, grid=grid_set)
     print(f'  Done in {time.time() - t0:.1f}s')
 
 

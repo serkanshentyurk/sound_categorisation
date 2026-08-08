@@ -48,6 +48,7 @@ from scripts.config import (
     SMOKE_SBI_N_SIMULATIONS,
     MODEL_TYPES,
     DISTRIBUTIONS,
+    SBI_TRAIN_DISTRIBUTIONS,
     BASE_SEED,
     snpe_net_path,
 )
@@ -55,22 +56,23 @@ from scripts.config import (
 # Task ordering for the SLURM array. rep-major, model-minor:
 #   0 pooled/BE   1 pooled/SC   2 moments/BE   3 moments/SC   4 single/BE  5 single/SC
 REPRESENTATIONS = tuple(SBI_REPRESENTATIONS)
-# SLURM array: 3 reps x 2 models x 3 distributions = 18 independent networks.
-# Ordering is rep-major, then model, then distribution (distribution fastest):
-#   0  pooled/BE/uniform   1  pooled/BE/hard_a   2  pooled/BE/hard_b
-#   3  pooled/SC/uniform   ...                  17  single/SC/hard_b
-N_TASKS = len(REPRESENTATIONS) * len(MODEL_TYPES) * len(DISTRIBUTIONS)
+TRAIN_DISTRIBUTIONS = tuple(SBI_TRAIN_DISTRIBUTIONS)   # per-distribution specialists
+# SLURM array: 3 reps x 2 models x len(TRAIN_DISTRIBUTIONS) networks.
+# Ordering is rep-major, then model, then distribution (distribution fastest).
+# With all three phases that is 3 x 2 x 3 = 18:
+#   0 pooled/BE/uniform  1 pooled/BE/hard_a  2 pooled/BE/hard_b  3 pooled/SC/uniform ...
+N_TASKS = len(REPRESENTATIONS) * len(MODEL_TYPES) * len(TRAIN_DISTRIBUTIONS)
 
 
 def decode_task(task_id):
     """Map a SLURM array index in [0, N_TASKS) to a (rep, model, distribution)."""
     if not 0 <= task_id < N_TASKS:
         raise ValueError(f'task_id must be in [0, {N_TASKS}); got {task_id}.')
-    n_m, n_d = len(MODEL_TYPES), len(DISTRIBUTIONS)
+    n_m, n_d = len(MODEL_TYPES), len(TRAIN_DISTRIBUTIONS)
     rep = REPRESENTATIONS[task_id // (n_m * n_d)]
     rem = task_id % (n_m * n_d)
     model = MODEL_TYPES[rem // n_d]
-    distribution = DISTRIBUTIONS[rem % n_d]
+    distribution = TRAIN_DISTRIBUTIONS[rem % n_d]
     return rep, model, distribution
 
 

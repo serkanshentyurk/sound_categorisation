@@ -80,6 +80,7 @@ class AmortisedSBI:
 
         self._trained_posterior = None
         self._training_metadata = None
+        self._feature_medians = None
 
     # ── Training ─────────────────────────────────────────────────────────────
 
@@ -120,20 +121,28 @@ class AmortisedSBI:
             print(f'  Simulating {n_simulations:,} datasets...')
         x = sbi_sim(theta)
 
-        # Row-filter only: drop simulations with any non-finite stat. No column
-        # dropping and no imputation -- a column that is bad for most thetas
-        # surfaces here as a low valid count.
-        valid = torch.isfinite(x).all(dim=-1)
-        n_valid = int(valid.sum().item())
+        # Median-impute non-finite features instead of dropping simulations:
+        # learn per-column medians here and store them so condition() imputes
+        # identically. A column non-finite in EVERY sim is fatal
+        # (compute_feature_medians raises) -- that stat is unusable at this N/T
+        # and must leave the stat set.
+        from inference.representation import (
+            compute_feature_medians, impute_with_medians)
+        x_np = x.detach().cpu().numpy().astype(float)
+        try:
+            medians = compute_feature_medians(x_np)
+        except ValueError as e:
+            raise RuntimeError(f'{e} (N={self.N}, T={self.T})') from e
+        bad_cells = ~np.isfinite(x_np)
+        n_bad_rows = int(bad_cells.any(axis=1).sum())
+        n_valid = n_simulations - n_bad_rows           # fully-finite sims (for metadata)
+        x_np = impute_with_medians(x_np, medians)
+        self._feature_medians = medians
         if show_progress:
-            print(f'  {n_valid}/{n_simulations} valid sims '
-                  f'({100 * n_valid / max(n_simulations, 1):.0f}%)')
-        if n_valid == 0:
-            raise RuntimeError(
-                'All simulations produced non-finite stats. The chosen '
-                'stat_names are not finite at this N/T; revise the stat set '
-                "(or use mode='pooled').")
-        theta, x = theta[valid], x[valid]
+            frac = 100 * n_bad_rows / max(n_simulations, 1)
+            print(f'  median-imputed {int(bad_cells.sum())} non-finite cells '
+                  f'across {n_bad_rows} sims ({frac:.1f}%); kept all {n_simulations:,}')
+        x = torch.as_tensor(x_np, dtype=torch.float32)
 
         inference_obj = SNPE(prior=prior)
         inference_obj.append_simulations(theta, x)
@@ -175,7 +184,8 @@ class AmortisedSBI:
             'param_names': list(self.param_names),
             'trained_posterior': self._trained_posterior,
             'training_metadata': self._training_metadata,
-            '_version': 4,
+            'feature_medians': self._feature_medians,
+            '_version': 5,
         }
         with open(path, 'wb') as f:
             pickle.dump(save_data, f)
@@ -193,6 +203,7 @@ class AmortisedSBI:
         )
         obj._trained_posterior = data['trained_posterior']
         obj._training_metadata = data.get('training_metadata')
+        obj._feature_medians = data.get('feature_medians')
         return obj
 
     # ── Conditioning ─────────────────────────────────────────────────────────
@@ -211,9 +222,12 @@ class AmortisedSBI:
         x = to_stat_vector(sessions, mode=self.mode, stat_names=self.stat_names)
         x = np.asarray(x, dtype=float)
         if not np.all(np.isfinite(x)):
-            raise ValueError(
-                'Observation contains non-finite stats; cannot condition. '
-                'Revise stat_names for this data, or use a more robust mode.')
+            if self._feature_medians is None:
+                raise ValueError(
+                    'Observation contains non-finite stats and no stored medians '
+                    'to impute from (train()/load() a median-imputed net first).')
+            from inference.representation import impute_with_medians
+            x = impute_with_medians(x, self._feature_medians)
 
         obs = _torch.as_tensor(x, dtype=_torch.float32)
         samples = self._trained_posterior.sample(

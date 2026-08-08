@@ -107,3 +107,27 @@ def test_bad_mode_and_empty_stats_raise():
         compute_adaptation(an, 'Hard-A', stat_names=['pse'], mode='sideways')
     with pytest.raises(ValueError):
         compute_adaptation(an, 'Hard-A', stat_names=[])
+
+def test_fixed_sigma_passthrough():
+    """sigma_source='fixed' feeds sigma_value straight to compute_normative_pse
+    (the report's fixed-σ normative line), bypassing the SBI placeholder; a
+    different σ gives a different normative offset."""
+    from behav_utils.analysis.adaptation import compute_normative_pse
+    an = _animal()
+    r = compute_adaptation(an, 'Hard-A', stat_names=['pse'], mode='pooled',
+                           sigma_source='fixed', sigma_value=0.2)
+    base = r['baseline']['pse']
+    assert np.isclose(r['normative']['pse'],
+                      compute_normative_pse('Hard-A', 0.2) - base, atol=1e-9)
+    r2 = compute_adaptation(an, 'Hard-A', stat_names=['pse'], mode='pooled',
+                            sigma_source='fixed', sigma_value=0.35)
+    assert not np.isclose(r['normative']['pse'], r2['normative']['pse'])
+
+
+def test_fixed_sigma_missing_value_degrades_to_nan():
+    """sigma_source='fixed' without sigma_value can't resolve σ; the normative
+    offset degrades to NaN (no line drawn) rather than crashing the adaptation."""
+    an = _animal()
+    r = compute_adaptation(an, 'Hard-A', stat_names=['pse'], mode='pooled',
+                           sigma_source='fixed')          # no sigma_value
+    assert np.isnan(r['normative']['pse'])

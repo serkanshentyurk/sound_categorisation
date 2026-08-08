@@ -86,6 +86,11 @@ class TestTrainCondition:
         assert trained_net.posterior is not None
         assert trained_net._training_metadata['n_valid'] > 0
 
+    def test_feature_medians_stored(self, trained_net):
+        med = trained_net._feature_medians
+        assert med is not None
+        assert np.ndim(med) == 1 and np.all(np.isfinite(med))
+
     def test_condition_shapes(self, trained_net):
         out = trained_net.condition(_be_sessions(seed0=50), n_samples=200)
         n_params = len(trained_net.param_names)
@@ -107,6 +112,7 @@ class TestSaveLoad:
         assert loaded.mode == trained_net.mode
         assert loaded.stat_names == trained_net.stat_names
         assert loaded.N == trained_net.N and loaded.T == trained_net.T
+        assert np.allclose(loaded._feature_medians, trained_net._feature_medians)
 
         # the loaded posterior is usable
         out = loaded.condition(_be_sessions(seed0=99), n_samples=100)

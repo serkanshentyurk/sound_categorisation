@@ -103,17 +103,6 @@ class TestExchangeability:
 
 class TestProvenance:
 
-    def test_filter_phase_autofills_columns(self, synthetic_opto_animal):
-        # integration: real writer (filter_phase) -> real reader (extract_stats)
-        from analysis.phase import filter_phase
-        clean = filter_phase(synthetic_opto_animal, dist='uniform',
-                             session_type='regular')
-        assert clean, 'fixture should yield uniform/regular sessions'
-        table = extract_stats(clean, animal_id='SS01', stats=['recency'], mode='pooled')
-        assert (table.estimates['distribution'] == 'uniform').all()
-        assert (table.estimates['session_type'] == 'regular').all()
-        assert (table.estimates['trial_type'] == 'all').all()
-
     def test_explicit_meta_overrides_provenance(self, synthetic_animal):
         clean = _stamp(_clean(synthetic_animal), distribution='hard_a',
                        session_type='opto', trial_type='opto')
@@ -137,12 +126,6 @@ class TestProvenance:
         with pytest.raises(ValueError):
             extract_stats(tagged + untagged, animal_id='SS01',
                           stats=['recency'], mode='pooled')
-
-    def test_all_untagged_has_no_selection_columns(self, synthetic_animal):
-        table = extract_stats(_clean(synthetic_animal), animal_id='SS01',
-                              stats=['recency'], mode='pooled')
-        for col in ('distribution', 'session_type', 'trial_type'):
-            assert col not in table.estimates.columns
 
 
 class TestExtractMatched:

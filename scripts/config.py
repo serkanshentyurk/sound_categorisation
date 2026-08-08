@@ -115,19 +115,23 @@ SYNTH_N_SESSIONS = 15
 SYNTH_TRIALS_PER_SESSION = 600   # cohort/validation session length (~ real expert sessions)
 
 # SBI representations: 3 networks x 2 models = 6. N/mode flow into AmortisedSBI;
-# n_simulations is per-rep (moments is 52-dim, so it needs more than the 13-dim reps).
-SBI_TRAIN_T = 350   # pooled/moments training length; DECOUPLED from the cohort.
-# Per-rep training length T. pooled/moments train on 350-trial sessions: they pool
-# many sessions, so 350 each suffices, and conditioning on the longer (600-trial)
-# cohort is the benign direction (more data than trained -> point estimate holds).
-# The single net trains on 600-trial sessions to match the cohort's full-session
-# conditioning; condition_sbi splits each session at its midpoint, so the single
-# net's CV folds land at ~300 trials.
+# n_simulations is per-rep (moments is 2*D-dim, so it needs more than the D-dim reps).
+SBI_SESSIONS_RANGE = (4, 6)   # multi-session reps draw N ~ uniform{4,5,6} per simulation,
+                              # matching the 4-6 sessions a real animal typically has.
+SBI_TRAIN_T = 500   # trials per session for ALL reps -- matches one real session, so the
+                    # single net conditions in-distribution and its midpoint CV folds land
+                    # at ~250 trials (accepted: noisier held-out UM, honest to real data).
 SBI_REPRESENTATIONS = {
-    'pooled':  {'N': SYNTH_N_SESSIONS, 'T': SBI_TRAIN_T, 'mode': 'pooled',  'n_simulations':  50_000},
-    'moments': {'N': SYNTH_N_SESSIONS, 'T': SBI_TRAIN_T, 'mode': 'moments', 'n_simulations': 150_000},
-    'single':  {'N': 1,                'T': 600,         'mode': 'pooled',  'n_simulations':  50_000},
+    'pooled':  {'N': SBI_SESSIONS_RANGE, 'T': SBI_TRAIN_T, 'mode': 'pooled',  'n_simulations':  50_000},
+    'moments': {'N': SBI_SESSIONS_RANGE, 'T': SBI_TRAIN_T, 'mode': 'moments', 'n_simulations': 100_000},
+    'single':  {'N': 1,                  'T': SBI_TRAIN_T, 'mode': 'pooled',  'n_simulations':  50_000},
 }
+# Per-distribution SBI training: conditioning is always on a single, KNOWN phase
+# (uniform / hard_a / hard_b), so a specialist network matched to each phase beats
+# one network marginalising over phase (which you'd never need, since the phase is
+# always supplied). 3 reps x 2 models x 3 dists = 18 networks; conditioning routes
+# to the matching network automatically via snpe_net_path's filename.
+SBI_TRAIN_DISTRIBUTIONS = DISTRIBUTIONS
 
 # Smoke test: used when --smoke-test is passed on the command line
 SMOKE_GS_N_SEEDS = 2

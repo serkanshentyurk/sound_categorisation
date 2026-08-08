@@ -23,6 +23,7 @@ from __future__ import annotations
 import math
 import sys
 import warnings
+from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
@@ -45,6 +46,7 @@ from behav_utils.analysis import (
     compute_delta_stat, compute_interaction, collect_rows, compare_groups,
     compute_psychometric, compute_um, average_um,
 )
+from behav_utils.analysis.adaptation import compute_adaptation
 from behav_utils.plotting import plot_stat_comparison_single, plot_interaction_single
 from behav_utils.plotting.psychometric import plot_psychometric
 from behav_utils.plotting.update_matrix import plot_um
@@ -62,11 +64,20 @@ DISPLAY_RT = DISPLAY + ['reaction_time', 'reaction_time_jitter']
 DU = ('trials', 'sessions')      # dual CI on between-phase / delta-of-deltas
 N_PERM, N_BOOT = 100, 100
 PSYCH = True                     # draw the psychometric page (slow: curve bootstrap)
+ADAPT = True                     # draw the adaptation page for non-uniform phases
+                                 # (slow: a PSE fit per rolling window per session)
+ADAPT_FIXED_SIGMA = 0.175        # provisional fixed σ for the pse normative line —
+                                 # one σ for every animal, so a single normative line
+                                 # is comparable across the cohort. Set to the
+                                 # cohort-typical / SBI-mean value when known; P3
+                                 # replaces this with the per-animal SBI posterior.
 
 SITE_TYPE = {'uni': 'alm_control_uni', 'bi': 'alm_control_bi'}
 OFF = '#7f7f7f'
 ON = '#1f77b4'
 ALL = '#2ca02c'
+ADAPT_COL = {'opto': ON, 'masking': OFF}   # adaptation trajectory colours
+GENO_COL = {'het': '#d62728', 'wt': '#2ca02c'}  # genotype colours (group adaptation)
 
 
 # ── loading / genotype ───────────────────────────────────────────────────────
@@ -342,8 +353,140 @@ def _rows(diffs, aid, by_animal):
                         animal=aid, group=by_animal[aid])
 
 
+def _mean_curve(segs):
+    """Mean over a list of ``{'trials','values'}`` at each rolling-window centre
+    (centres align across sessions when window & step match)."""
+    acc = defaultdict(list)
+    for e in segs:
+        for x, y in zip(e['trials'], e['values']):
+            if np.isfinite(y):
+                acc[float(x)].append(y)
+    if not acc:
+        return None, None
+    xs = np.array(sorted(acc))
+    return xs, np.array([np.mean(acc[x]) for x in xs])
+
+
+def _adapt_curves(animal, distribution, window=50, step=10):
+    """Per-session rolling-PSE trajectories for one animal at ``distribution``,
+    standardised to the expert-uniform baseline. The pse normative offset uses a
+    FIXED provisional σ (``ADAPT_FIXED_SIGMA``) — one σ for every animal, so a
+    single normative line is comparable across the cohort; σ affects only that
+    line, not the trajectories. Never raises. Returns
+    ``{'sessions': [{'session_type','trials','values'}], 'normative': float}``.
+    """
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', RuntimeWarning)
+            r = compute_adaptation(animal, distribution, stat_names=['pse'],
+                                   mode='per_session', window=window, step=step,
+                                   sigma_source='fixed', sigma_value=ADAPT_FIXED_SIGMA,
+                                   trials='all')
+        segs = [{'session_type': e.get('session_type', ''),
+                 'trials': np.asarray(e['trials'], float),
+                 'values': np.asarray(e['values']['pse'], float)}
+                for e in r['sessions']]
+        return {'sessions': segs,
+                'normative': float(r.get('normative', {}).get('pse', np.nan))}
+    except Exception as exc:
+        warnings.warn(f"{getattr(animal, 'animal_id', '?')}: adaptation "
+                      f"({distribution}) failed: {exc}")
+        return {'sessions': [], 'normative': np.nan}
+
+
+def _animal_means(curves_by_animal, aids, phase):
+    """Each animal's mean curve for ``phase`` -> list of ``{'trials','values'}``
+    (the mean over these is the mean-of-animals — equal weight per animal, the
+    correct unit of replication, not session-pooled)."""
+    out = []
+    for a in aids:
+        segs = [e for e in curves_by_animal[a]['sessions'] if e['session_type'] == phase]
+        mx, my = _mean_curve(segs)
+        if mx is not None:
+            out.append({'trials': mx, 'values': my})
+    return out
+
+
+def _adapt_finish(ax, has_data, norm, empty_msg):
+    """Shared axes dressing: expert-uniform 0-line + provisional fixed-σ normative."""
+    ax.axhline(0.0, color='0.6', lw=1, zorder=1)               # expert-uniform baseline
+    if np.isfinite(norm):
+        ax.axhline(norm, color='crimson', ls='--', lw=1.2, zorder=1,
+                   label='normative (fixed σ)')
+    if not has_data and empty_msg:
+        ax.text(0.5, 0.5, empty_msg, transform=ax.transAxes,
+                ha='center', va='center', color='0.5')
+    ax.set_xlabel('trial in session')
+    ax.set_ylabel('rolling PSE (− expert baseline)')
+    if ax.get_legend_handles_labels()[0]:
+        ax.legend(frameon=False, fontsize=8)
+
+
+def _adaptation(animal, distribution, suptitle):
+    """Per-animal adaptation into ``distribution``: thin line per session + thick
+    per-type mean, opto vs masking, standardised to the expert-uniform 0-line.
+    Normative line uses a fixed provisional σ (``ADAPT_FIXED_SIGMA``); P3 swaps
+    it for the SBI posterior. Never raises."""
+    fig, ax = plt.subplots(figsize=(7.5, 5.0))
+    cur = _adapt_curves(animal, distribution)
+    drew = False
+    for phase, col in ADAPT_COL.items():
+        segs = [e for e in cur['sessions'] if e['session_type'] == phase]
+        for e in segs:                                         # thin: one per session
+            ax.plot(e['trials'], e['values'], color=col, lw=0.8, alpha=0.35, zorder=2)
+        mx, my = _mean_curve(segs)                             # thick: per-type mean
+        if mx is not None:
+            ax.plot(mx, my, color=col, lw=2.4, zorder=3,
+                    label=f'{phase} (mean of {len(segs)})')
+            drew = True
+    _adapt_finish(ax, drew, cur['normative'], 'no adaptation data at this phase')
+    fig.suptitle(suptitle, fontsize=11)
+    fig.tight_layout()
+    return fig
+
+
+def _group_adaptation(animals, by_animal, distribution, suptitle):
+    """Group (WT vs HET) adaptation, 1x4: HET opto-vs-masking | WT opto-vs-masking
+    | masking HET-vs-WT | opto HET-vs-WT. Thin line = each animal's mean curve;
+    thick line = mean across animals (equal weight per animal). Single fixed-σ
+    normative line, comparable across the cohort. Never raises per animal."""
+    cba = {aid: _adapt_curves(an, distribution) for aid, an in animals.items()}
+    aids = list(cba)
+    het = [a for a in aids if by_animal.get(a) == 'het']
+    wt = [a for a in aids if by_animal.get(a) == 'wt']
+    norm = next((cba[a]['normative'] for a in aids
+                 if np.isfinite(cba[a].get('normative', np.nan))), np.nan)
+
+    def panel(ax, series, empty_msg):
+        has = False
+        for label, gaids, phase, col in series:
+            ams = _animal_means(cba, gaids, phase)
+            for am in ams:                                     # thin: one per animal (its mean)
+                ax.plot(am['trials'], am['values'], color=col, lw=0.7, alpha=0.35, zorder=2)
+            gx, gy = _mean_curve(ams)                          # thick: mean of animals
+            if gx is not None:
+                ax.plot(gx, gy, color=col, lw=2.6, zorder=4, label=f'{label} (n={len(ams)})')
+                has = True
+        _adapt_finish(ax, has, norm, empty_msg)
+
+    fig, ax = plt.subplots(1, 4, figsize=(22, 5), sharey=True)
+    panel(ax[0], [(ph, het, ph, ADAPT_COL[ph]) for ph in ADAPT_COL], 'no HET sessions')
+    ax[0].set_title(f'HET (n={len(het)}) · opto vs masking', fontsize=10)
+    panel(ax[1], [(ph, wt, ph, ADAPT_COL[ph]) for ph in ADAPT_COL], 'no WT sessions')
+    ax[1].set_title(f'WT (n={len(wt)}) · opto vs masking', fontsize=10)
+    panel(ax[2], [('het', het, 'masking', GENO_COL['het']),
+                  ('wt', wt, 'masking', GENO_COL['wt'])], 'no masking sessions')
+    ax[2].set_title('masking · HET vs WT', fontsize=10)
+    panel(ax[3], [('het', het, 'opto', GENO_COL['het']),
+                  ('wt', wt, 'opto', GENO_COL['wt'])], 'no opto sessions')
+    ax[3].set_title('opto · HET vs WT', fontsize=10)
+    fig.suptitle(suptitle, fontsize=13)
+    fig.tight_layout()
+    return fig
+
+
 # ── per-animal PDFs ──────────────────────────────────────────────────────────
-def build_ppc_per_animal(sbt, aid, genotype, distribution, toi, out_path):
+def build_ppc_per_animal(animal, sbt, aid, genotype, distribution, toi, out_path):
     opto, masking = sbt.get('opto', []), sbt.get('masking', [])
     r, key = ppc_contrasts(opto, masking, toi, STATS)
     tag = f"{aid} \u00b7 {genotype} \u00b7 {distribution}"
@@ -364,6 +507,9 @@ def build_ppc_per_animal(sbt, aid, genotype, distribution, toi, out_path):
         if 'dod' in r:
             pdf.savefig(_grid(r['dod'], DISPLAY, 'int', DU,
                               f"{tag} \u00b7 delta-of-deltas (silencing beyond artifact)")); plt.close('all')
+        if ADAPT and animal is not None and distribution.lower() != 'uniform':
+            pdf.savefig(_adaptation(animal, distribution,
+                        f"{tag} \u00b7 adaptation \u00b7 rolling PSE (opto vs masking)")); plt.close('all')
     return out_path
 
 
@@ -395,7 +541,7 @@ def build_alm_per_animal(sbt, aid, genotype, distribution, site_label, toi, out_
 
 
 # ── group (WT vs HET) PDFs ───────────────────────────────────────────────────
-def build_ppc_group(sba, by_animal, distribution, toi, out_path):
+def build_ppc_group(animals, sba, by_animal, distribution, toi, out_path):
     rows = {'within': [], 'within_masking': [], 'between': [], 'dod': []}
     for aid, sbt in sba.items():
         r, key = ppc_contrasts(sbt.get('opto', []), sbt.get('masking', []), toi, STATS,
@@ -421,6 +567,10 @@ def build_ppc_group(sba, by_animal, distribution, toi, out_path):
                                  f'{distribution} \u00b7 opto \u00b7 genotype-mean UM'))
         prelude.append(_group_um(sba, by_animal, 'masking', toi,
                                  f'{distribution} \u00b7 masking \u00b7 genotype-mean UM'))
+    if ADAPT and distribution.lower() != 'uniform':
+        prelude.append(_group_adaptation(
+            animals, by_animal, distribution,
+            f'{distribution} \u00b7 group adaptation \u00b7 rolling PSE (WT vs HET)'))
     _write_group_pdf(rows, titles, DISPLAY, distribution, out_path, prelude=prelude)
     return out_path
 
@@ -477,13 +627,13 @@ def _write_group_pdf(rows, titles, display, prefix, out_path, prelude=()):
 def configure(fast=False):
     """--fast: scalar-only stats, few draws, no psychometric page — a seconds-long
     structure check rather than the full overnight report."""
-    global STATS, STATS_RT, DISPLAY, DISPLAY_RT, N_BOOT, N_PERM, PSYCH
+    global STATS, STATS_RT, DISPLAY, DISPLAY_RT, N_BOOT, N_PERM, PSYCH, ADAPT
     if fast:
         STATS = ['accuracy', 'side_bias']
         STATS_RT = ['accuracy', 'side_bias', 'reaction_time', 'reaction_time_jitter']
         DISPLAY = list(STATS)
         DISPLAY_RT = list(STATS_RT)
-        N_BOOT, N_PERM, PSYCH = 30, 30, False
+        N_BOOT, N_PERM, PSYCH, ADAPT = 30, 30, False, False
 
 
 def _synthetic_sessions(out_types, seed=0):
@@ -514,7 +664,7 @@ def run_selftest(out_dir):
     configure(fast=True)
     out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
     ppc = _synthetic_sessions({'opto': ('opto', 250, 0.35), 'masking': ('masking', 270, 0.05)})
-    p1 = build_ppc_per_animal(ppc, 'SELFTEST', 'het', 'Uniform', 'opto', out_dir / 'selftest_ppc.pdf')
+    p1 = build_ppc_per_animal(None, ppc, 'SELFTEST', 'het', 'Uniform', 'opto', out_dir / 'selftest_ppc.pdf')
     alm = _synthetic_sessions({'alm': ('alm_control_uni', 300, 0.25),
                                'masking': ('masking', 270, 0.05), 'opto': ('opto', 250, 0.35)})
     p2 = build_alm_per_animal(alm, 'SELFTEST', 'het', 'Uniform', 'uni', 'opto', out_dir / 'selftest_alm_uni.pdf')

@@ -108,6 +108,30 @@ COARSE_GRID = {
 }
 
 
+# SMOKE_GRID: a deliberately tiny sweep for "does it run" checks only. Two params
+# vary (sigma_percep x the first model param), the other two are pinned -> 3x1x3x1
+# = 9 points (vs COARSE 384, DEFAULT 8000), so a single unit finishes in seconds.
+# NOT for real fits -- the winner is meaningless at this resolution.
+SMOKE_GRID = {
+    'BE': ParameterGrid(
+        sigma_percep_values=np.linspace(0.10, 0.25, 3),
+        A_repulsion_values=np.array([0.2]),               # pinned
+        model_param1_values=np.linspace(0.3, 0.7, 3),     # eta_learning
+        model_param2_values=np.array([0.2]),              # pinned (eta_relax)
+        model_param1_name='eta_learning',
+        model_param2_name='eta_relax',
+    ),
+    'SC': ParameterGrid(
+        sigma_percep_values=np.linspace(0.10, 0.25, 3),
+        A_repulsion_values=np.array([0.2]),               # pinned
+        model_param1_values=np.linspace(0.3, 0.7, 3),     # gamma
+        model_param2_values=np.array([0.5]),              # pinned (sigma_update)
+        model_param1_name='gamma',
+        model_param2_name='sigma_update',
+    ),
+}
+
+
 # =============================================================================
 # CORE: SIMULATE → UPDATE MATRIX
 # =============================================================================
