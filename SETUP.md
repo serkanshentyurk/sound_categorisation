@@ -46,16 +46,19 @@ The project uses a single `config.yaml` with an environment variable for the dat
 Find where the lab drive is mounted on your machine, then add one line to your shell profile.
 
 **macOS** (`~/.zshrc`):
+
 ```bash
 export BEHAV_DATA_DIR="/Volumes/akrami/Serkan/Head_Fixed_Behavior/Data"
 ```
 
 **Linux / SWC cluster** (`~/.bashrc`):
+
 ```bash
 export BEHAV_DATA_DIR="/ceph/akrami/Serkan/Head_Fixed_Behavior/Data"
 ```
 
 **Windows** (System Settings → Environment Variables):
+
 ```
 BEHAV_DATA_DIR = Z:\akrami\Serkan\Head_Fixed_Behavior\Data
 ```
@@ -63,6 +66,7 @@ BEHAV_DATA_DIR = Z:\akrami\Serkan\Head_Fixed_Behavior\Data
 Then reload: `source ~/.zshrc` (macOS) or `source ~/.bashrc` (Linux).
 
 Verify:
+
 ```bash
 echo $BEHAV_DATA_DIR
 ls $BEHAV_DATA_DIR/Raw    # should show animal folders
@@ -71,6 +75,7 @@ ls $BEHAV_DATA_DIR/Raw    # should show animal folders
 ### Cluster: ensure SSH sessions load the variable
 
 SSH login shells sometimes skip `~/.bashrc`. Add to `~/.bash_profile`:
+
 ```bash
 source ~/.bashrc
 ```
@@ -82,6 +87,7 @@ Notebooks load data via **snapshots** — preprocessed pickles that are fast to 
 ### Export a snapshot
 
 On any machine with access to the raw data:
+
 ```bash
 cd .../repos/sound_categorisation
 python scripts/export_snapshot.py
@@ -92,6 +98,7 @@ This reads CSVs from `$BEHAV_DATA_DIR/Raw`, processes them, and saves the snapsh
 ### Copy a snapshot (if you can't access raw data)
 
 Ask a colleague for their `sound_cat_snapshot.pkl` and place it at:
+
 ```
 .../data/behaviour/snapshots/sound_cat_snapshot.pkl
 ```
@@ -118,6 +125,7 @@ This compares the snapshot's session counts against current raw data and reports
 After running cluster jobs or exporting a snapshot on the cluster:
 
 **If the lab drive is mounted locally** (macOS):
+
 ```bash
 # Copy snapshot
 cp /Volumes/akrami/.../Processed/behaviour/snapshots/sound_cat_snapshot.pkl \
@@ -129,6 +137,7 @@ scp -r user@ssh.swc.ucl.ac.uk:~/repos/sound_categorisation/results/ \
 ```
 
 **One-command sync** (optional): place `scripts/sync_snapshot.sh` and run:
+
 ```bash
 ./scripts/sync_snapshot.sh
 ```
@@ -143,6 +152,7 @@ jupyter notebook
 ```
 
 Each notebook has a `MODE` toggle:
+
 - `'load'` — reads pre-computed results from `results/` (default)
 - `'run'` — quick local execution with small settings
 
@@ -170,12 +180,12 @@ python scripts/export_snapshot.py
 
 ## Troubleshooting
 
-| Error | Cause | Fix |
-|---|---|---|
-| `Data directory not found: ${BEHAV_DATA_DIR}/Raw` | Env var not set | Add to shell profile, then `source` it |
-| `Snapshot is Xh old` | Stale data | Re-export: `python scripts/export_snapshot.py` |
-| `Failed to unpickle snapshot` | Code changed since export | Re-export from raw data |
-| `Config has changed since snapshot was exported` | Column mappings changed | Re-export |
-| Notebooks show synthetic data | No snapshot found | Check `.../data/behaviour/snapshots/` exists |
-| `ModuleNotFoundError` | Wrong conda env | `conda activate sound_categorisation` |
-| Capitalised + lowercase folders on cluster | macOS case insensitivity | `git config core.ignorecase false`, see README |
+| Error                                               | Cause                     | Fix                                              |
+| --------------------------------------------------- | ------------------------- | ------------------------------------------------ |
+| `Data directory not found: ${BEHAV_DATA_DIR}/Raw` | Env var not set           | Add to shell profile, then`source` it          |
+| `Snapshot is Xh old`                              | Stale data                | Re-export:`python scripts/export_snapshot.py`  |
+| `Failed to unpickle snapshot`                     | Code changed since export | Re-export from raw data                          |
+| `Config has changed since snapshot was exported`  | Column mappings changed   | Re-export                                        |
+| Notebooks show synthetic data                       | No snapshot found         | Check`.../data/behaviour/snapshots/` exists    |
+| `ModuleNotFoundError`                             | Wrong conda env           | `conda activate sound_categorisation`          |
+| Capitalised + lowercase folders on cluster          | macOS case insensitivity  | `git config core.ignorecase false`, see README |
