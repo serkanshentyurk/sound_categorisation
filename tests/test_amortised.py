@@ -12,14 +12,14 @@ import pytest
 torch = pytest.importorskip('torch')
 pytest.importorskip('sbi')
 
-from inference import AmortisedSBI
-from inference.types import ModelType, get_default_param_configs
-from models.simulate import simulate_choices
+from sound_categorisation.inference import AmortisedSBI
+from sound_categorisation.inference.types import ModelType, get_default_param_configs
+from sound_categorisation.models.simulate import simulate_choices
 from behav_utils.data.synthetic import session_from_arrays
-from utils.stimulus_distributions import sample_distribution
+from sound_categorisation.stimuli import sample_distribution
 
 # Small, fast configuration for the test run.
-STATS = ['accuracy', 'psychometric', 'side_bias', 'win_stay']
+STATS = ['accuracy', 'mu', 'sigma', 'lapse_low', 'lapse_high', 'side_bias', 'win_stay']
 N, T, BURN = 3, 150, 50
 BE_NAMES = ['sigma_percep', 'A_repulsion', 'eta_learning', 'eta_relax']
 

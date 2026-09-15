@@ -48,13 +48,13 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.config import (
+from sound_categorisation.paths import (
     SYNTH_GS_N_SEEDS, SMOKE_GS_N_SEEDS, GS_BURN_IN, GS_N_BINS, GS_N_FOLDS,
     BASE_SEED, FIT_TARGETS, DISTRIBUTIONS, results_dir, build_metadata,
 )
-from scripts.providers import load_animals
-from analysis.grid_search import compute_grid_search_cv, DEFAULT_GRID, COARSE_GRID, SMOKE_GRID
-from utils.cv_utils import save_cv_result
+from sound_categorisation.providers import load_animals
+from sound_categorisation.grid_search import compute_grid_search_cv, DEFAULT_GRID, COARSE_GRID, SMOKE_GRID
+from sound_categorisation.cv_utils import save_cv_result
 
 MODELS = ('BE', 'SC')
 

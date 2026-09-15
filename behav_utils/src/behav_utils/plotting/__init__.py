@@ -1,0 +1,42 @@
+"""
+behav_utils.plotting — draw-only plotters.
+
+Every plotter takes a typed result from the matching compute_ function and
+computes nothing:
+
+    compute_psychometric_curve(arrays)      → plot_psychometric_curve(curve)
+    compute_update_matrix(arrays)           → plot_update_matrix(um)
+    compute_stat(sessions, per_session=True)→ plot_trajectory(result, stat)
+    compute_delta_stat({...})               → plot_comparison / plot_stat_comparison
+    compute_interaction(r1, r2, key)        → plot_interaction
+    compute_session_raster(session)         → plot_session_raster(result)
+
+Layout is the caller's: pass ``ax``. Overlay by calling the same plotter twice
+on one axes with different colours.
+"""
+
+from behav_utils.plotting.readouts import (
+    plot_psychometric_curve, plot_update_matrix, plot_conditional_psychometric,
+    plot_binned_curve, plot_sd_profile,
+)
+from behav_utils.plotting.trajectory import plot_trajectory
+from behav_utils.plotting.session_stats import plot_session_stats, plot_session_stats_single
+from behav_utils.plotting.adaptation import plot_adaptation, plot_adaptation_sessions
+from behav_utils.plotting.comparison import (
+    plot_comparison, plot_stat_comparison, plot_stat_comparison_single,
+    plot_interaction, plot_interaction_single,
+)
+from behav_utils.plotting.session import plot_session_raster
+from behav_utils.plotting.styles import PALETTE, COLOURS, UM_CMAP, apply_style, get_colour
+
+__all__ = [
+    'plot_psychometric_curve', 'plot_update_matrix', 'plot_conditional_psychometric',
+    'plot_binned_curve', 'plot_sd_profile',
+    'plot_trajectory',
+    'plot_session_stats', 'plot_session_stats_single',
+    'plot_adaptation', 'plot_adaptation_sessions',
+    'plot_comparison', 'plot_stat_comparison', 'plot_stat_comparison_single',
+    'plot_interaction', 'plot_interaction_single',
+    'plot_session_raster',
+    'PALETTE', 'COLOURS', 'UM_CMAP', 'apply_style', 'get_colour',
+]

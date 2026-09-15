@@ -1,0 +1,16 @@
+numpy
+pandas
+scipy
+matplotlib
+pyyaml
+joblib
+
+[dev]
+pytest
+ruff
+
+[fit]
+torch
+sbi
+ssm
+hmmlearn

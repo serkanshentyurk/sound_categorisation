@@ -1,9 +1,14 @@
 """
-Shared Notebook Setup
+Notebook bootstrap: paths, cohorts, and ``load_data``.
 
-Usage:
-    from shared_setup import *
-    experiment, info = load_data()
+    from shared_setup import *          # only PATH_*, COHORTS, load_data, gather_genotypes
+    experiment, meta = load_data()
+
+Analysis imports belong in the notebook cell that uses them, so every step is
+visible at its call site:
+
+    from behav_utils import TrialArrays, compute_stats, PSYCHOMETRIC
+    from sound_categorisation.contrasts import ppc_contrasts
 """
 
 import os
@@ -32,7 +37,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 # Cluster (fixed):
 #   /ceph/akrami/Serkan/.../Processed/snapshots/sound_cat_snapshot.pkl
 #
-from scripts.snapshot import snapshot_dir
+from sound_categorisation.snapshot import snapshot_dir
 PATH_SNAPSHOT = snapshot_dir(_PROJECT_ROOT) / 'sound_cat_snapshot.pkl'
 PATH_CONFIG = _PROJECT_ROOT / 'config.yaml'
 
@@ -61,75 +66,15 @@ else:  # fallback when the config is absent (e.g. a bare synthetic run)
     OPTO_COHORT  = [f'SS{i:02d}' for i in range(14, 24)]
 
 # ── Results paths: derive from data_root() (scripts/config.py) ─────────────
-from scripts.config import data_root, results_dir, cohort_path, snpe_networks_dir
+from sound_categorisation.paths import data_root, results_dir, cohort_path, snpe_networks_dir
 
 FIT_TARGETS = ['update_matrix', 'conditional_psych']
 FT_LABEL = {'update_matrix': 'UM', 'conditional_psych': 'CP'}
 
 # ── Common imports ──────────────────────────────────────────────────────────
-from behav_utils.data.structures import (
-    ExperimentData, AnimalData, SessionData, 
-)
+from behav_utils.data.structures import ExperimentData, AnimalData, SessionData
 from behav_utils.data.loading import load_experiment
-from behav_utils.data.ops.selection import select_sessions, SessionFilter
-from behav_utils.data.ops.filtering import (
-    filter_trials, pool_arrays,
-    build_mask, opto_mask,
-    filter_session, get_arrays,
-)
-from behav_utils.data.synthetic import (
-    generate_synthetic_animal,
-    sample_stimuli,
-    noisy_psychometric_simulator,
-)
-from behav_utils.analysis.summary_stats import (
-    compute_summary_stats,
-    fit_summary_stats,
-    list_available_stats,
-    FEATURE_MATRIX_STATS,
-    DEFAULT_STATS,
-)
-from behav_utils.analysis.session_features import compute_session_features
-
-# Low-level analysis (arrays)
-from behav_utils.analysis.psychometry import fit_psychometric
-from behav_utils.analysis.update_matrix import fit_update_matrix, matrix_error
-from behav_utils.analysis.utils import cumulative_gaussian
-
-# Session-level analysis (sessions → result dicts)
-from behav_utils.analysis.psychometry import compute_psychometric
-from behav_utils.analysis.update_matrix import compute_um, compute_update_matrix
-from behav_utils.analysis.trajectory import compute_trajectory
-from behav_utils.analysis.comparison import compare_phases
-from behav_utils.analysis.session_raster import compute_session_raster
-
-# Plotting (result dicts → axes)
-from behav_utils.plotting import (
-    plot_psychometric, plot_um, plot_trajectory,
-    plot_comparison, plot_session_raster,
-    PALETTE, COLOURS, UM_CMAP,
-    apply_style, get_colour,
-)
-
-# ── Canonical pipeline: the compute_stat door, the contrast/fold layer, and
-#    the resampling-backed group test. These supersede compute_summary_stats /
-#    extract_stats / compare_phases above (kept for older notebooks). ──────────
-from behav_utils.analysis import (
-    compute_stat, compute_delta_stat, compute_interaction,
-    average_um, resolve_sigma, compute_normative_pse, compute_adaptation, compute_adaptation_per_session,
-    collect_rows, compare_groups, rank_test, min_achievable_p,
-    paired_diff, combine,
-)
-
-# ── Single-panel (…_single, take ax) + grid plotters ─────────────────────────
-from behav_utils.plotting import (
-    plot_stat_comparison, plot_stat_comparison_single,
-    plot_interaction, plot_interaction_single,
-    plot_session_stats, plot_session_stats_single,
-    plot_adaptation, plot_adaptation_sessions,
-)
-
-# ── Results loading helpers ─────────────────────────────────────────────────
+from sound_categorisation.cohort import gather_genotypes   # noqa: F401  (kept for notebook use)
 
 def load_snpe_networks(snpe_dir: Optional[Path] = None, rep: str = 'pooled') -> dict:
     """
@@ -156,37 +101,6 @@ def load_snpe_networks(snpe_dir: Optional[Path] = None, rep: str = 'pooled') -> 
             print(f'SNPE {model}: not found at {p}')
     return snpe
 
-
-def gather_genotypes(experiment) -> tuple:
-    """Genotype lookup from loaded animals — the single source of truth.
-
-    Reads `.genotype` from each loaded animal (populated at load from the sidecar
-    animal_metadata.json), lower-cased. Returns (by_animal, groups):
-        by_animal : {animal_id: genotype}
-        groups    : {genotype: [animal_id, ...]}   e.g. groups['het'], groups['wt']
-    Warns on any animal whose genotype is missing ('unknown'), so a gap in the metadata is
-    visible rather than silently dropping animals from a group.
-
-    Replaces the per-notebook hardcoded GENOTYPE dicts. Expects 'het'/'wt' (case-insensitive)
-    in the metadata; any other label simply forms its own group.
-    """
-    by_animal = {aid: str(getattr(a, 'genotype', 'unknown') or 'unknown').lower()
-                 for aid, a in experiment.animals.items()}
-    unknown = sorted(aid for aid, g in by_animal.items() if g in ('unknown', 'none', ''))
-    if unknown:
-        warnings.warn(
-            f"{len(unknown)} animal(s) without genotype metadata: {', '.join(unknown)}. "
-            f"Add animal_metadata.json (genotype field) or they stay 'unknown'."
-        )
-    groups: dict = {}
-    for aid, g in by_animal.items():
-        groups.setdefault(g, []).append(aid)
-    for g in groups:
-        groups[g].sort()
-    return by_animal, groups
-
-
-# ── Data loading ────────────────────────────────────────────────────────────
 
 def _generate_synthetic_cohort(
     n_animals: int = 5,
@@ -255,7 +169,7 @@ def load_data(
     # 1. Snapshot
     if mode in ('snapshot', 'auto') and snapshot_path.exists():
         try:
-            from scripts.snapshot import load_snapshot
+            from sound_categorisation.snapshot import load_snapshot
             experiment, meta = load_snapshot(
                 snapshot_path,
                 config_path=config_path if config_path.exists() else None,

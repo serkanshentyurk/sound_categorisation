@@ -32,13 +32,12 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from models.BE_core import BEParams
-from models.SC_core import SCParams
-from models.simulate import simulate_choices
-from utils.stimulus_distributions import sample_distribution
-from scripts.config import cohort_path, DISTRIBUTIONS
+from sound_categorisation.models.BE_core import BEParams
+from sound_categorisation.models.SC_core import SCParams
+from sound_categorisation.models.simulate import simulate_choices
+from sound_categorisation.stimuli import sample_distribution
+from sound_categorisation.paths import cohort_path, DISTRIBUTIONS
 
 _PARAMS = {'BE': BEParams, 'SC': SCParams}
 

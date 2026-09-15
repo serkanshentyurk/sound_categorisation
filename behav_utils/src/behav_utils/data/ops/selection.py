@@ -188,10 +188,9 @@ class SessionFilter:
 
         # ── 5. Quality ────────────────────────────────────────────────────
         if self.min_accuracy is not None or self.max_accuracy is not None:
-            from behav_utils.analysis.summary_stats import compute_summary_stats
             filtered = []
             for s in sessions:
-                acc = compute_summary_stats([s], stat_names=['accuracy'])['stats']['accuracy']
+                acc = s.summary()['perf']
                 if self.min_accuracy is not None and acc < self.min_accuracy:
                     continue
                 if self.max_accuracy is not None and acc > self.max_accuracy:

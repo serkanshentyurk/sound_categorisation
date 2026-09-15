@@ -1,6 +1,6 @@
 """Tests for behav_utils.analysis.rolling.
 
-Covers compute_rolling_stats (per-session / pooled shapes, multi-stat,
+Covers compute_rolling_stats (RollingStats tidy frame, multi-stat,
 validation, short-session fallback, cohort survival) plus a bit-identity lock
 proving the _windowed_pse refactor did not move any adaptation number.
 """
@@ -10,8 +10,7 @@ from datetime import date, timedelta
 import numpy as np
 import pytest
 
-from behav_utils.analysis.rolling import (
-    compute_rolling_stats, _iter_windows, _family_of)
+from behav_utils.analysis.rolling import compute_rolling_stats, _iter_windows
 
 
 # ── builders (real SessionData, so pool_arrays / prev_* behave as in prod) ──
@@ -66,117 +65,83 @@ def test_iter_windows_empty_when_short():
     assert _iter_windows(30, 50, 10) == []
 
 
-# ── _family_of (validator internals) ───────────────────────────────────────
-def test_family_of():
-    assert _family_of('mu') == 'psychometric'
-    assert _family_of('accuracy') == 'accuracy'
-    assert _family_of('nonsense') is None
-    assert _family_of('binned_accuracy') is None   # array family, not scalar
-
-
 # ── per-session shape / counts ─────────────────────────────────────────────
 def test_per_session_shape_and_counts():
     ns = [200, 130, 60]
     sessions = [_session(i, n) for i, n in enumerate(ns)]
-    res = compute_rolling_stats(sessions, stat_names='accuracy',
-                                mode='per_session', window=50, step=10)
-    assert res['mode'] == 'per_session'
-    assert len(res['sessions']) == len(ns)
-    for e, n in zip(res['sessions'], ns):
-        assert set(e['values']) == {'accuracy'}
-        assert e['n_trials'] == n
-        assert len(e['trials']) == _n_windows(n, 50, 10)
-        assert len(e['values']['accuracy']) == len(e['trials'])
-        assert e['session_type'] == 'regular'
-        assert e['distribution'] == 'Hard-A'
+    res = compute_rolling_stats(sessions, 'accuracy', per_session=True, window=50, step=10)
+    assert res.per_session and len(res.sessions) == len(ns)
+    for sid, n in zip(res.sessions, ns):
+        c = res.curve('accuracy', sid)
+        assert res.n_trials(sid) == n
+        assert len(c) == _n_windows(n, 50, 10)
+    info = res.session_info.set_index('session')
+    assert (info['session_type'] == 'regular').all() and (info['distribution'] == 'Hard-A').all()
 
 
 def test_multi_stat_same_length():
-    res = compute_rolling_stats([_session(0, 200)],
-                                stat_names=['accuracy', 'side_bias'],
-                                mode='per_session', window=50, step=10)
-    e = res['sessions'][0]
-    assert set(e['values']) == {'accuracy', 'side_bias'}
-    for v in e['values'].values():
-        assert len(v) == len(e['trials'])
+    res = compute_rolling_stats([_session(0, 200)], ['accuracy', 'side_bias'], window=50, step=10)
+    assert res.names == ('accuracy', 'side_bias')
+    assert len(res.curve('accuracy')) == len(res.curve('side_bias'))
+    assert set(res.curves['stat']) == {'accuracy', 'side_bias'}
 
 
 # ── validation (fail fast) ─────────────────────────────────────────────────
-@pytest.mark.parametrize('bad', ['nonsense', 'binned_accuracy', []])
+@pytest.mark.parametrize('bad', ['nonsense', []])
 def test_validation_rejects_bad_stats(bad):
-    with pytest.raises(ValueError):
-        compute_rolling_stats([_session(0, 100)], stat_names=bad)
-
-
-def test_validation_rejects_bad_mode():
-    with pytest.raises(ValueError):
-        compute_rolling_stats([_session(0, 100)], stat_names='accuracy',
-                              mode='sideways')
+    with pytest.raises((ValueError, KeyError)):
+        compute_rolling_stats([_session(0, 100)], bad)
 
 
 # ── short-session handling ─────────────────────────────────────────────────
 def test_short_session_single_point():
-    res = compute_rolling_stats([_session(0, 30)], stat_names='accuracy',
-                                mode='per_session', window=50, step=10,
-                                min_short=10)
-    e = res['sessions'][0]
-    assert len(e['trials']) == 1
-    assert e['trials'][0] == 15.0                 # centre = n/2
-    assert e['n_trials'] == 30
+    res = compute_rolling_stats([_session(0, 30)], 'accuracy', window=50, step=10, min_short=10)
+    c = res.curve('accuracy')
+    assert len(c) == 1 and c['trial'].iloc[0] == 15.0
+    assert res.n_trials(res.sessions[0]) == 30
 
 
 def test_too_short_session_empty_but_present():
-    res = compute_rolling_stats([_session(0, 5)], stat_names='accuracy',
-                                window=50, step=10, min_short=10)
-    e = res['sessions'][0]
-    assert e['trials'].size == 0
-    assert e['values']['accuracy'].size == 0
-    assert e['n_trials'] == 5                      # still reported
+    res = compute_rolling_stats([_session(0, 5)], 'accuracy', window=50, step=10, min_short=10)
+    assert len(res.curve('accuracy')) == 0
+    assert res.sessions == [res.session_info['session'].iloc[0]]
+    assert res.n_trials(res.sessions[0]) == 5
 
 
 # ── cohort survival ────────────────────────────────────────────────────────
 def test_never_raises_on_bad_session():
     sessions = [_session(0, 120), _BadSession()]
     with pytest.warns(RuntimeWarning):
-        res = compute_rolling_stats(sessions, stat_names='accuracy',
-                                    mode='per_session', window=50, step=10)
-    assert len(res['sessions']) == 2
-    good, bad = res['sessions']
-    assert good['n_trials'] == 120 and good['trials'].size > 0
-    assert bad['session_id'] == 'bad_001'
-    assert bad['trials'].size == 0
+        res = compute_rolling_stats(sessions, 'accuracy', window=50, step=10)
+    assert len(res.sessions) == 2
+    good, bad = res.sessions
+    assert res.n_trials(good) == 120 and len(res.curve('accuracy', good)) > 0
+    assert bad == 'bad_001' and len(res.curve('accuracy', bad)) == 0
 
 
 # ── pooled mode (windows cross session boundaries) ─────────────────────────
 def test_pooled_mode():
     ns = [80, 90]
     sessions = [_session(i, n) for i, n in enumerate(ns)]
-    res = compute_rolling_stats(sessions, stat_names='accuracy',
-                                mode='pooled', window=50, step=10)
-    assert res['mode'] == 'pooled'
-    assert 'curve' in res and 'sessions' not in res
+    res = compute_rolling_stats(sessions, 'accuracy', per_session=False, window=50, step=10)
+    assert not res.per_session and res.sessions == ['pooled']
     total = sum(ns)
-    assert res['curve']['n_trials'] == total
-    assert len(res['curve']['trials']) == _n_windows(total, 50, 10)
-    assert len(res['curve']['values']['accuracy']) == len(res['curve']['trials'])
+    assert res.n_trials('pooled') == total
+    assert len(res.curve('accuracy')) == _n_windows(total, 50, 10)
 
 
 def test_empty_sessions():
-    res = compute_rolling_stats([], stat_names='accuracy', mode='per_session')
-    assert res['sessions'] == []
-    res_p = compute_rolling_stats([], stat_names='accuracy', mode='pooled')
-    assert res_p['curve']['n_trials'] == 0
-    assert res_p['curve']['trials'].size == 0
+    res = compute_rolling_stats([], 'accuracy')
+    assert res.sessions == [] and len(res.curves) == 0
+    res_p = compute_rolling_stats([], 'accuracy', per_session=False)
+    assert res_p.n_trials('pooled') == 0 and len(res_p.curves) == 0
 
 
 # ── mu goes through the guarded registry ───────────────────────────────────
 def test_mu_runs_and_is_finite_on_clean_session():
-    # A clean, steep session should survive the reliability guard.
-    res = compute_rolling_stats([_session(0, 300, noise=0.05)],
-                                stat_names='mu', mode='per_session',
-                                window=50, step=10)
-    mu = res['sessions'][0]['values']['mu']
-    assert mu.shape == res['sessions'][0]['trials'].shape
+    res = compute_rolling_stats([_session(0, 300, noise=0.05)], 'mu', window=50, step=10)
+    mu = res.curve('mu')['value'].to_numpy()
+    assert mu.size == _n_windows(300, 50, 10)
     assert np.isfinite(mu).any()
 
 

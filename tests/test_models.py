@@ -9,7 +9,7 @@ class TestBEModel:
 
     def test_deterministic_with_seed(self):
         """Same seed → same output."""
-        from models.BE_core import BEParams, BEState, BEModel
+        from sound_categorisation.models.BE_core import BEParams, BEState, BEModel
 
         params = BEParams(
             sigma_percep=0.1, A_repulsion=0.3,
@@ -32,7 +32,7 @@ class TestBEModel:
 
     def test_choices_are_binary(self):
         """All choices should be 0 or 1."""
-        from models.BE_core import BEParams, BEState, BEModel
+        from sound_categorisation.models.BE_core import BEParams, BEState, BEModel
 
         params = BEParams(
             sigma_percep=0.1, A_repulsion=0.3,
@@ -49,7 +49,7 @@ class TestBEModel:
 
     def test_param_bounds(self):
         """get_bounds should return dict with all param names."""
-        from models.BE_core import BEParams
+        from sound_categorisation.models.BE_core import BEParams
         bounds = BEParams.get_bounds()
         names = BEParams.get_param_names()
         assert set(bounds.keys()) == set(names)
@@ -58,7 +58,7 @@ class TestBEModel:
 
     def test_sample_prior(self):
         """sample_prior should return valid BEParams."""
-        from models.BE_core import BEParams
+        from sound_categorisation.models.BE_core import BEParams
         rng = np.random.default_rng(42)
         params = BEParams.sample_prior(rng)
         bounds = BEParams.get_bounds()
@@ -73,7 +73,7 @@ class TestSCModel:
 
     def test_deterministic_with_seed(self):
         """Same seed → same output."""
-        from models.SC_core import SCParams, SCState, SCModel
+        from sound_categorisation.models.SC_core import SCParams, SCState, SCModel
 
         params = SCParams(
             sigma_percep=0.2, A_repulsion=0.2,
@@ -96,7 +96,7 @@ class TestSCModel:
 
     def test_choices_are_binary(self):
         """All choices should be 0 or 1."""
-        from models.SC_core import SCParams, SCState, SCModel
+        from sound_categorisation.models.SC_core import SCParams, SCState, SCModel
 
         params = SCParams(
             sigma_percep=0.2, A_repulsion=0.2,
@@ -113,14 +113,14 @@ class TestSCModel:
 
     def test_param_bounds(self):
         """get_bounds should return dict with all param names."""
-        from models.SC_core import SCParams
+        from sound_categorisation.models.SC_core import SCParams
         bounds = SCParams.get_bounds()
         names = SCParams.get_param_names()
         assert set(bounds.keys()) == set(names)
 
     def test_sample_prior(self):
         """sample_prior should return valid SCParams."""
-        from models.SC_core import SCParams
+        from sound_categorisation.models.SC_core import SCParams
         rng = np.random.default_rng(42)
         params = SCParams.sample_prior(rng)
         bounds = SCParams.get_bounds()

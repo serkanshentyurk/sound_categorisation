@@ -3,8 +3,8 @@
 import numpy as np
 import pytest
 
-from inference.types import ModelType, get_default_param_configs
-from models.simulate import simulate_choices
+from sound_categorisation.inference.types import ModelType, get_default_param_configs
+from sound_categorisation.models.simulate import simulate_choices
 
 
 def _mid(model):

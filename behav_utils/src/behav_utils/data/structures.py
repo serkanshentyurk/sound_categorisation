@@ -12,15 +12,16 @@ Hierarchical containers for behavioural data:
 
 Convention — three levels per domain:
     Low-level:     fit_psychometric(stim, ch)       — raw arrays
-    Session-level: compute_psychometric(sessions)   — pre-filtered sessions → result dict
-    Plotting:      plot_psychometric(result)         — result dict → axes
+    Session-level: compute_psychometric_curve(arrays) — TrialArrays → PsychometricCurve
+    Plotting:      plot_psychometric_curve(curve)      — dataclass → axes
 
 Plot methods on data classes are thin wrappers that call compute_ then plot_.
 
 Usage:
     from behav_utils import (
         load_experiment, select_sessions, filter_trials,
-        compute_psychometric, compute_um, plot_psychometric, plot_um, PALETTE,
+        TrialArrays, compute_psychometric_curve, compute_update_matrix,
+        plot_psychometric_curve, plot_update_matrix, PALETTE,
     )
 
     experiment = load_experiment('config.yaml')
@@ -28,9 +29,9 @@ Usage:
     sessions = select_sessions(animal, preset='expert_uniform')
     clean = filter_trials(sessions)
 
-    psych = compute_psychometric(clean, mode='pooled', n_bootstrap=200)
+    psych = compute_psychometric_curve(TrialArrays.from_sessions(clean), n_bootstrap=200)
     fig, ax = plt.subplots()
-    plot_psychometric(psych, ax=ax, color=PALETTE[0])
+    plot_psychometric_curve(psych, ax=ax, color=PALETTE[0])
 """
 
 import numpy as np
@@ -48,22 +49,6 @@ from datetime import date
 if TYPE_CHECKING:
     from behav_utils.config.schema import ProjectConfig
 
-
-def _flatten_stats_dict(stats_dict: Dict[str, Any]) -> Dict[str, Any]:
-    """Flatten nested stat dicts into a single-level dict.
-
-    {'psychometric': {'mu': 0.01, 'sigma': 0.3}} → {'mu': 0.01, 'sigma': 0.3}
-    {'accuracy': 0.85} → {'accuracy': 0.85}
-    Arrays are left as-is (e.g. update_matrix).
-    """
-    flat = {}
-    for key, value in stats_dict.items():
-        if isinstance(value, dict):
-            for k, v in value.items():
-                flat[k] = v
-        else:
-            flat[key] = value
-    return flat
 
 # =============================================================================
 # SESSION METADATA
@@ -546,9 +531,9 @@ class AnimalData:
             - 'accuracy' reuses ``SessionData.summary()['perf']`` so there is a
                 single definition of session accuracy across the library.
         """
-        from behav_utils.analysis.session_features import fit_summary_stats
-        from behav_utils.analysis.summary_stats import list_available_stats, _MULTI_STATS, _STAT_CHILDREN
-        
+        from behav_utils.data.arrays import TrialArrays
+        from behav_utils.stats import compute_stats, list_stats
+
         rows = []
         for sess in self.sessions:
             summ = sess.summary()
@@ -560,9 +545,7 @@ class AnimalData:
                 else:
                     stype = 'regular'
             
-            sess_stats = fit_summary_stats(sess.trials.choice, sess.trials.stimulus, sess.trials.category,
-                                           stat_names = list_available_stats(),
-                                           return_dict = True)
+            sess_stats = compute_stats(TrialArrays.from_pooled(sess.get_arrays()), list_stats())
             dict_to_append = {'session_idx':  summ['session_idx'],
                             'session_id':   summ['session_id'],
                             'date':         summ['date'],
@@ -571,13 +554,7 @@ class AnimalData:
                             'n_trials':     summ['n_trials'],
                             'n_valid':      summ['n_valid'],
                             'session_type': stype}
-            for stat in sess_stats:
-                if stat in _MULTI_STATS:
-                    for substat in _STAT_CHILDREN[stat]:
-                        dict_to_append[substat] = sess_stats[stat][substat]
-                else:
-                    dict_to_append[stat] = sess_stats[stat]
-            
+            dict_to_append.update(sess_stats.to_dict())
             rows.append(dict_to_append)
         return pd.DataFrame(rows)
 

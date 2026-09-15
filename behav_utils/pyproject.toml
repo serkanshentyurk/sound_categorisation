@@ -1,18 +1,15 @@
 [build-system]
-requires = ["setuptools>=64", "wheel"]
+requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "behav_utils"
-version = "0.2.0"
-description = "Behavioural analysis utilities for head-fixed decision-making tasks"
+version = "0.3.0"
+description = "Behavioural analysis utilities for 2-AFC decision-making tasks"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = {text = "MIT"}
-authors = [
-    {name = "Serkan Shentyurk"},
-]
-
+authors = [{name = "Serkan Shentyurk"}]
 dependencies = [
     "numpy>=1.24",
     "pandas>=1.5",
@@ -22,14 +19,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=7.0",
-    "pytest-cov",
-]
+dev = ["pytest>=7.0", "ruff"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
-include = ["behav_utils*"]
+where = ["src"]
+
+[tool.setuptools.package-data]
+behav_utils = ["config_presets/*.yaml", "py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-python_files = ["test_*.py"]

@@ -12,28 +12,28 @@ class TestSampleDistribution:
     """sample_distribution returns (stimuli, categories) tuples."""
 
     def test_uniform_returns_arrays(self, rng):
-        from utils.stimulus_distributions import sample_distribution
+        from sound_categorisation.stimuli import sample_distribution
         result = sample_distribution(100, 'uniform', rng=rng)
         stim = result[0] if isinstance(result, tuple) else result
         assert isinstance(stim, np.ndarray)
         assert len(stim) == 100
 
     def test_hard_a_in_range(self, rng):
-        from utils.stimulus_distributions import sample_distribution
+        from sound_categorisation.stimuli import sample_distribution
         result = sample_distribution(500, 'hard_a', rng=rng)
         stim = result[0] if isinstance(result, tuple) else result
         assert stim.min() >= -1.0001
         assert stim.max() <= 1.0001
 
     def test_hard_b_in_range(self, rng):
-        from utils.stimulus_distributions import sample_distribution
+        from sound_categorisation.stimuli import sample_distribution
         result = sample_distribution(500, 'hard_b', rng=rng)
         stim = result[0] if isinstance(result, tuple) else result
         assert stim.min() >= -1.0001
         assert stim.max() <= 1.0001
 
     def test_reproducible(self):
-        from utils.stimulus_distributions import sample_distribution
+        from sound_categorisation.stimuli import sample_distribution
         r1 = sample_distribution(100, 'hard_a', rng=np.random.default_rng(42))
         r2 = sample_distribution(100, 'hard_a', rng=np.random.default_rng(42))
         s1 = r1[0] if isinstance(r1, tuple) else r1
@@ -46,7 +46,7 @@ class TestComputeDistributionDensity:
 
     def test_returns_expected_keys(self):
         """Dict has s, density_a, density_b."""
-        from utils.stimulus_distributions import compute_distribution_density
+        from sound_categorisation.stimuli import compute_distribution_density
         s = np.linspace(-1, 1, 200)
         result = compute_distribution_density('hard_a', s)
         assert isinstance(result, dict)
@@ -56,7 +56,7 @@ class TestComputeDistributionDensity:
 
     def test_density_non_negative(self):
         """All densities >= 0."""
-        from utils.stimulus_distributions import compute_distribution_density
+        from sound_categorisation.stimuli import compute_distribution_density
         s = np.linspace(-1, 1, 200)
         for dist in ['uniform', 'hard_a', 'hard_b']:
             result = compute_distribution_density(dist, s)
@@ -65,7 +65,7 @@ class TestComputeDistributionDensity:
 
     def test_a_and_b_symmetry(self):
         """For symmetric distributions, density_a(s) = density_b(-s)."""
-        from utils.stimulus_distributions import compute_distribution_density
+        from sound_categorisation.stimuli import compute_distribution_density
         s = np.linspace(-0.99, 0.99, 200)
         # Uniform should be perfectly symmetric
         result = compute_distribution_density('uniform', s)
@@ -81,12 +81,12 @@ class TestComputeNormativePSE:
     """compute_normative_pse: ideal Bayesian observer PSE."""
 
     def test_uniform_pse_is_zero(self):
-        from utils.stimulus_distributions import compute_normative_pse
+        from sound_categorisation.stimuli import compute_normative_pse
         pse = compute_normative_pse(distribution='uniform', sigma_percep=0.1)
         assert abs(pse) < 0.05, f"uniform PSE should be ~0, got {pse}"
 
     def test_hard_a_and_hard_b_pse_opposite(self):
-        from utils.stimulus_distributions import compute_normative_pse
+        from sound_categorisation.stimuli import compute_normative_pse
         pse_a = compute_normative_pse(distribution='hard_a', sigma_percep=0.15)
         pse_b = compute_normative_pse(distribution='hard_b', sigma_percep=0.15)
         assert abs(pse_a) > 0.01
@@ -94,6 +94,6 @@ class TestComputeNormativePSE:
         assert pse_a * pse_b < 0, f"pse_a={pse_a}, pse_b={pse_b} same sign"
 
     def test_pse_is_scalar(self):
-        from utils.stimulus_distributions import compute_normative_pse
+        from sound_categorisation.stimuli import compute_normative_pse
         pse = compute_normative_pse(distribution='uniform', sigma_percep=0.15)
         assert isinstance(pse, float) or np.isscalar(pse)

@@ -5,8 +5,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from analysis.consensus import _compute_consensus, load_all_assignments, _method_dir
-from utils.cv_utils import save_cv_result
+from sound_categorisation.consensus import _compute_consensus, load_all_assignments, _method_dir
+from sound_categorisation.cv_utils import save_cv_result
 
 
 class TestComputeConsensus:
@@ -96,7 +96,7 @@ class TestLoadAllAssignments:
 
     def _patch(self, monkeypatch, root):
         monkeypatch.setattr(
-            'analysis.consensus.results_dir',
+            'sound_categorisation.consensus.results_dir',
             lambda source, run, cohort, ft: root / source / run / f'{cohort}_{ft}')
 
     def _write_method(self, source, rep, ft, animal, true_model, be_lo, sc_lo):

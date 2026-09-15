@@ -8,9 +8,9 @@ returns prior=None, so these tests assert only on sim_fn / param_names.
 import numpy as np
 import pytest
 
-from inference.types import ModelType
-from inference.constants import SBI_STATS
-from inference.simulator import (
+from sound_categorisation.inference.types import ModelType
+from sound_categorisation.inference.constants import SBI_STATS
+from sound_categorisation.inference.simulator import (
     build_simulator, theta_to_params, get_param_names, get_bounds_arrays,
 )
 

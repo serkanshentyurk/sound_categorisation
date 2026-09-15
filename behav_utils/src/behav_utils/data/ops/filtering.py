@@ -15,7 +15,7 @@ Architecture:
 Pipeline:
     sessions = select_sessions(animal, preset='expert_uniform')  # session-level
     clean    = filter_trials(sessions)                           # trial-level
-    plot_psychometric(clean, ax=ax)                              # no filtering
+    compute_psychometric_curve(TrialArrays.from_sessions(clean))  # no filtering
 
 Public API:
     Mask building:
@@ -370,7 +370,7 @@ def filter_trials(
     """
     if trial_type is not None:
         if trial_type == 'all':
-            mask_fn = lambda s: build_mask(s.trials, exclude_abort = False, exclude_opto = False)
+            mask_fn = lambda s: build_mask(s.trials, exclude_abort=exclude_abort, exclude_opto=False)
         elif trial_type == 'non_opto':
             mask_fn = lambda s: build_mask(s.trials, exclude_abort=exclude_abort, exclude_opto=True)
         elif trial_type == 'opto':

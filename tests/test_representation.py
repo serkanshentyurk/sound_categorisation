@@ -7,27 +7,22 @@ raises for that), so the moments path mirrors the pooled path.
 import numpy as np
 import pytest
 
-from inference.representation import (
+from sound_categorisation.inference.representation import (
     to_stat_vector, _nan_moments, compute_feature_medians, impute_with_medians)
-from inference.constants import SBI_STATS
+from sound_categorisation.inference.constants import SBI_STATS
 from behav_utils.data.ops.filtering import filter_trials, pool_arrays
-from behav_utils.analysis.summary_stats import fit_summary_stats
+from behav_utils.data.arrays import TrialArrays
+from behav_utils.stats import compute_stats
 
 
 class TestToStatVectorPooled:
 
     def test_pooled_matches_direct_pool_and_fit(self, synthetic_animal):
-        """Pooled to_stat_vector == direct pool_arrays + fit_summary_stats,
+        """Pooled to_stat_vector == direct TrialArrays + compute_stats,
         i.e. it reuses the real seam-aware path (no separate pooling)."""
         clean = filter_trials(synthetic_animal.sessions[:5])
         v = to_stat_vector(clean, mode='pooled', stat_names=SBI_STATS)
-        p = pool_arrays(clean)
-        direct = fit_summary_stats(
-            p['choices'], p['stimuli'], p['categories'],
-            prev_choices=p['prev_choices'], prev_stimuli=p['prev_stimuli'],
-            prev_categories=p['prev_categories'], stat_names=SBI_STATS,
-            return_dict=False,
-        )
+        direct = compute_stats(TrialArrays.from_sessions(clean), list(SBI_STATS)).to_numpy()
         assert np.allclose(v, direct, equal_nan=True)
 
     def test_pooled_finite(self, synthetic_animal):

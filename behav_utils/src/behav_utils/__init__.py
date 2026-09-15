@@ -58,35 +58,30 @@ from behav_utils.data.synthetic import (
 
 
 # ── Analysis: low-level (arrays) ─────────────────────────────────────────────
+from behav_utils.data.arrays import TrialArrays
+from behav_utils.stats import compute_stats, list_stats, is_exchangeable, PSYCHOMETRIC
+from behav_utils.readouts import (
+    compute_psychometric_curve, compute_update_matrix, compute_conditional_psychometric,
+    compute_binned_curve, compute_sd_profile,
+    PsychometricCurve, UpdateMatrix, ConditionalPsychometric, BinnedCurve, SerialDependenceProfile,
+)
 from behav_utils.analysis.psychometry import fit_psychometric, fit_psychometric_gof
 from behav_utils.analysis.update_matrix import fit_update_matrix, matrix_error
+from behav_utils.analysis.statistics import PhaseStats, compute_stat
 from behav_utils.analysis.comparison import (
-    compare_phases, compute_interaction,
+    DeltaStats, Interaction, compute_delta_stat, compute_interaction,
 )
-from behav_utils.analysis.summary_stats import (
-    compute_summary_stats, fit_summary_stats,
-    list_available_stats, register_stat,
-)
-from behav_utils.analysis.session_features import (
-    compute_session_features,
-)
+from behav_utils.analysis.rolling import RollingStats, compute_rolling_stats
+from behav_utils.analysis.session_features import compute_session_features
 from behav_utils.analysis.utils import cumulative_gaussian, generate_stimuli
-
-# ── Analysis: session-level (sessions → result dicts) ────────────────────────
-from behav_utils.analysis.psychometry import compute_psychometric
-from behav_utils.analysis.update_matrix import compute_um, average_um
-from behav_utils.analysis.trajectory import compute_trajectory
 from behav_utils.analysis.session_raster import compute_session_raster
-
-# ── Plotting (result dicts → axes) ───────────────────────────────────────────
 from behav_utils.plotting import (
-    plot_psychometric, plot_um, plot_trajectory,
-    plot_comparison, plot_session_raster,
-    PALETTE, COLOURS, UM_CMAP,
-    apply_style, get_colour,
+    plot_psychometric_curve, plot_update_matrix, plot_trajectory,
+    plot_comparison, plot_stat_comparison, plot_interaction, plot_session_raster,
+    PALETTE, COLOURS, UM_CMAP, apply_style, get_colour,
 )
 
-__version__ = '0.2.0'
+__version__ = '0.3.0'
 
 __all__ = [
     # Config
@@ -113,22 +108,21 @@ __all__ = [
     'sample_stimuli', 'noisy_psychometric_simulator',
 
 
-    # Analysis: low-level
-    'fit_psychometric', 'fit_psychometric_gof',
-    'fit_update_matrix', 'matrix_error',
-    'list_available_stats', 'register_stat',
-    'compute_session_features',
-    'cumulative_gaussian', 'generate_stimuli',
-
-    # Analysis: session-level
-    'compute_psychometric',
-    'compute_um', 'average_um',
-    'compute_trajectory',
+    # Arrays, stats, readouts
+    'TrialArrays', 'compute_stats', 'list_stats', 'is_exchangeable', 'PSYCHOMETRIC',
+    'compute_psychometric_curve', 'compute_update_matrix', 'compute_conditional_psychometric',
+    'compute_binned_curve', 'compute_sd_profile',
+    'PsychometricCurve', 'UpdateMatrix', 'ConditionalPsychometric', 'BinnedCurve',
+    'SerialDependenceProfile',
+    # Analysis
+    'fit_psychometric', 'fit_psychometric_gof', 'fit_update_matrix', 'matrix_error',
+    'PhaseStats', 'compute_stat',
+    'DeltaStats', 'Interaction', 'compute_delta_stat', 'compute_interaction',
+    'RollingStats', 'compute_rolling_stats',
+    'compute_session_features', 'cumulative_gaussian', 'generate_stimuli',
     'compute_session_raster',
-
     # Plotting
-    'plot_psychometric', 'plot_um', 'plot_trajectory',
-    'plot_comparison', 'plot_session_raster',
-    'PALETTE', 'COLOURS', 'UM_CMAP',
-    'apply_style', 'get_colour',
+    'plot_psychometric_curve', 'plot_update_matrix', 'plot_trajectory',
+    'plot_comparison', 'plot_stat_comparison', 'plot_interaction', 'plot_session_raster',
+    'PALETTE', 'COLOURS', 'UM_CMAP', 'apply_style', 'get_colour',
 ]

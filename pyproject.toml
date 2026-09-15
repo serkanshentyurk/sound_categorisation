@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sound-categorisation"
+version = "0.3.0"
+description = "PPC causal role in auditory categorisation — project code on top of behav_utils"
+requires-python = ">=3.10"
+dependencies = ["numpy", "pandas", "scipy", "matplotlib", "pyyaml", "joblib"]
+
+[project.optional-dependencies]
+fit = ["torch", "sbi", "ssm", "hmmlearn"]
+dev = ["pytest", "ruff"]
+
+[tool.setuptools.packages.find]
+include = ["sound_categorisation*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "behav_utils/src"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"

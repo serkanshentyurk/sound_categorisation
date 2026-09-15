@@ -39,9 +39,8 @@ from pathlib import Path
 
 # Run as a plain script (python scripts/train_sbi.py) or a module
 # (python -m scripts.train_sbi): put the repo root on sys.path either way.
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from scripts.config import (
+from sound_categorisation.paths import (
     SBI_REPRESENTATIONS,
     SBI_TRAIN_T,
     SBI_BURN_IN,
@@ -93,7 +92,7 @@ def train_one(rep, model, distribution, n_simulations=None, seed=BASE_SEED,
             f'Unknown distribution {distribution!r}; choose from {DISTRIBUTIONS}.')
 
     # Deferred so the module imports (and --count) work without torch.
-    from inference.amortised import AmortisedSBI
+    from sound_categorisation.inference.amortised import AmortisedSBI
 
     cfg = SBI_REPRESENTATIONS[rep]
     n_sims = cfg['n_simulations'] if n_simulations is None else n_simulations

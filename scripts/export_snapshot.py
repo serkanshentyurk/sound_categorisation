@@ -13,9 +13,7 @@ import argparse
 import sys
 from pathlib import Path
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR.parent
-sys.path.insert(0, str(REPO_ROOT))
+from sound_categorisation.paths import REPO_ROOT
 
 
 def _resolve_config_path(explicit_path=None) -> Path:
@@ -23,7 +21,7 @@ def _resolve_config_path(explicit_path=None) -> Path:
     if explicit_path:
         return Path(explicit_path)
 
-    from scripts.config import DEFAULT_CONFIG, CLUSTER_CONFIG
+    from sound_categorisation.paths import DEFAULT_CONFIG, CLUSTER_CONFIG
     import socket
     hostname = socket.gethostname()
     if CLUSTER_CONFIG.exists() and any(
@@ -43,7 +41,7 @@ def main():
                         help='Compare existing snapshot against current data')
     args = parser.parse_args()
 
-    from scripts.snapshot import export_snapshot, check_staleness, default_output_path
+    from sound_categorisation.snapshot import export_snapshot, check_staleness, default_output_path
 
     config_path = _resolve_config_path(args.config)
     output_path = Path(args.output) if args.output else default_output_path()

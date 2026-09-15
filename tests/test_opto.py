@@ -16,8 +16,9 @@ from datetime import date, timedelta
 from behav_utils.data.structures import (
     SessionData, SessionMetadata, TrialData, AnimalData)
 from behav_utils.data.ops.filtering import filter_trials, pool_arrays
-from behav_utils.analysis.comparison import (
-    compute_delta_stat, pool_phase_arrays, compute_stats_from_arrays)
+from behav_utils.analysis.comparison import compute_delta_stat
+from behav_utils.data.arrays import TrialArrays
+from behav_utils.stats import compute_stats, PSYCHOMETRIC
 
 
 def _opto_session(idx, n=320, opto_bias=0.0, opto_frac=0.3, noise=0.12, seed=0):
@@ -95,20 +96,20 @@ class TestTrialTypeFiltering:
 
 class TestOptoContrast:
     """opto vs non_opto through the generic pipeline. mu / sigma use a single
-    psychometric fit per side (compute_stats_from_arrays); the significance test
+    psychometric fit per side (compute_stats); the significance test
     uses the fit-free accuracy permutation — opto labels are randomised per trial,
     so permutation is the valid test."""
 
     def _phases(self, opto_bias, noise=0.1, n_sessions=3):
         sess = _sessions(n_sessions=n_sessions, opto_bias=opto_bias, noise=noise)
-        opto = pool_phase_arrays(filter_trials(sess, trial_type='opto', exclude_opto=False))
-        non = pool_phase_arrays(filter_trials(sess, trial_type='non_opto'))
+        opto = TrialArrays.from_sessions(filter_trials(sess, trial_type='opto', exclude_opto=False))
+        non = TrialArrays.from_sessions(filter_trials(sess, trial_type='non_opto'))
         return opto, non
 
     def test_opto_shifts_mu_preserves_sensitivity(self):
         opto, non = self._phases(opto_bias=0.45)
-        so = compute_stats_from_arrays(opto, ['psychometric'])
-        sn = compute_stats_from_arrays(non, ['psychometric'])
+        so = compute_stats(opto, PSYCHOMETRIC)
+        sn = compute_stats(non, PSYCHOMETRIC)
         assert abs(so['mu'] - sn['mu']) > 0.2          # criterion shifts …
         assert abs(so['sigma'] - sn['sigma']) < 0.06   # … sensitivity preserved
 
@@ -116,15 +117,15 @@ class TestOptoContrast:
         sess = _sessions(n_sessions=3, opto_bias=0.45, noise=0.1)
         opto = filter_trials(sess, trial_type='opto', exclude_opto=False)
         non = filter_trials(sess, trial_type='non_opto')
-        r = compute_delta_stat({'non_opto': non, 'opto': opto}, stats=['accuracy'],
-                               reference='non_opto', n_permutations=200,
+        r = compute_delta_stat({'non_opto': non, 'opto': opto}, ['accuracy'],
+                               reference='non_opto', curve=False, n_permutations=200,
                                n_bootstrap=40, seed=1)
-        con = r['contrasts']['opto_vs_non_opto']
-        assert abs(con['diffs']['accuracy']) > 0.02
-        assert con['perm_p']['accuracy'] < 0.05
+        con = r.contrast('opto')
+        assert abs(con.diff['accuracy']) > 0.02
+        assert con.perm_p['accuracy'] < 0.05
 
     def test_no_effect_when_bias_zero(self):
         opto, non = self._phases(opto_bias=0.0)
-        so = compute_stats_from_arrays(opto, ['psychometric'])
-        sn = compute_stats_from_arrays(non, ['psychometric'])
+        so = compute_stats(opto, PSYCHOMETRIC)
+        sn = compute_stats(non, PSYCHOMETRIC)
         assert abs(so['mu'] - sn['mu']) < 0.15

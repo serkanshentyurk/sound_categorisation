@@ -47,12 +47,11 @@ from pathlib import Path
 
 # Run as a plain script (python scripts/run_sbi.py) or a module
 # (python -m scripts.run_sbi): put the repo root on sys.path either way.
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from inference.amortised import AmortisedSBI
-from inference.selection import condition_sbi
-from scripts.providers import load_animals
-from scripts.config import (
+from sound_categorisation.inference.amortised import AmortisedSBI
+from sound_categorisation.inference.selection import condition_sbi
+from sound_categorisation.providers import load_animals
+from sound_categorisation.paths import (
     SBI_REPRESENTATIONS,
     SBI_N_CV_REPEATS,
     SBI_N_POSTERIOR_SAMPLES,
@@ -67,7 +66,7 @@ from scripts.config import (
     results_dir,
     build_metadata,
 )
-from utils.cv_utils import save_cv_result
+from sound_categorisation.cv_utils import save_cv_result
 
 # Same rep-major, model-minor task order as train_sbi (so a net trained by
 # task k is conditioned by task k).
