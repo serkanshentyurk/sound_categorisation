@@ -105,6 +105,7 @@ is no evidence either way.
 
 def write_readme(root: Path) -> Path:
     import behav_utils
+
     import sound_categorisation
     root = Path(root)
     root.mkdir(parents=True, exist_ok=True)

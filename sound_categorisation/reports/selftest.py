@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import numpy as np
-
 from behav_utils.data.structures import AnimalData, ExperimentData, SessionData, SessionMetadata, TrialData
 
 __all__ = ['synthetic_experiment', 'run_selftest']
@@ -33,11 +32,11 @@ def synthetic_experiment(n_animals=4, seed=0, n_trials=180) -> ExperimentData:
         geno = 'het' if k % 2 else 'wt'
         sessions, idx = [], 0
 
-        def add(stype, dist, bias, rt, n=3):
+        def add(stype, dist, bias, rt, n=3, sessions=sessions):
             nonlocal idx
             for _ in range(n):
                 sessions.append(SessionData(
-                    session_id=f'{stype}{idx}', session_idx=idx, date=date(2024, 1, 1) + __import__('datetime').timedelta(days=idx),
+                    session_id=f'{stype}{idx}', session_idx=idx, date=date(2024, 1, 1) + timedelta(days=idx),
                     metadata=SessionMetadata(fields={'stage': 'Full_Task_Cont', 'distribution': dist}),
                     trials=_trials(n_trials, rng, rng.normal(bias, 0.1), rt,
                                    p_opto=0.0 if stype == 'regular' else 0.3),
@@ -61,6 +60,7 @@ def synthetic_experiment(n_animals=4, seed=0, n_trials=180) -> ExperimentData:
 
 def run_selftest(out_dir: Path):
     from types import SimpleNamespace
+
     from sound_categorisation.reports.cli import run_animal, run_group
     from sound_categorisation.reports.compute import Settings
     exp = synthetic_experiment()

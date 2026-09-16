@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, Tuple
 
 import numpy as np
 import pandas as pd
@@ -114,6 +114,7 @@ def readout_arrays(r: AnimalResult) -> Dict[str, np.ndarray]:
 
 def _versions() -> dict:
     import behav_utils
+
     import sound_categorisation
     v = {'behav_utils': behav_utils.__version__, 'sound_categorisation': sound_categorisation.__version__}
     try:
@@ -125,8 +126,8 @@ def _versions() -> dict:
     return v
 
 
-def write_result(out_dir, tables: Dict[str, pd.DataFrame], readouts: Optional[Dict[str, np.ndarray]] = None,
-                 meta: Optional[dict] = None) -> Path:
+def write_result(out_dir, tables: Dict[str, pd.DataFrame], readouts: Dict[str, np.ndarray] | None = None,
+                 meta: dict | None = None) -> Path:
     """Write tables as CSV, readouts as npz, and a metadata sidecar. Overwrites."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

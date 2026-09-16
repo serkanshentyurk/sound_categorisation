@@ -13,10 +13,20 @@ Outputs land in ``results/reports/<cohort>/<distribution>/<design>[_<site>]_<toi
 """
 
 from sound_categorisation.reports.compute import (
-    AnimalResult, GroupResult, Settings, compute_animal, compute_group, DESIGNS,
+    DESIGNS,
+    AnimalResult,
+    GroupResult,
+    Settings,
+    compute_animal,
+    compute_group,
 )
 from sound_categorisation.reports.tables import (
-    to_tables, group_tables, readout_arrays, write_result, read_result, CONTRAST_COLUMNS,
+    CONTRAST_COLUMNS,
+    group_tables,
+    read_result,
+    readout_arrays,
+    to_tables,
+    write_result,
 )
 
 __all__ = ['AnimalResult', 'GroupResult', 'Settings', 'compute_animal', 'compute_group', 'DESIGNS',

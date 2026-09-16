@@ -15,21 +15,34 @@ seconds-long structural check used by ``--fast`` and the selftest.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
-
 from behav_utils.analysis import collect_rows, compare_groups
 from behav_utils.data.arrays import TrialArrays
 from behav_utils.data.ops.filtering import filter_trials
-from behav_utils.readouts import PsychometricCurve, UpdateMatrix, compute_psychometric_curve, compute_update_matrix
+from behav_utils.readouts import (
+    PsychometricCurve,
+    UpdateMatrix,
+    compute_psychometric_curve,
+    compute_update_matrix,
+)
 
 from sound_categorisation.adaptation import Trajectory, compute_trajectory
 from sound_categorisation.cohort import collect_sessions_alm, collect_sessions_ppc, gather_genotypes
 from sound_categorisation.contrasts import (
-    BIAS, DUAL_UNITS, N_BOOT, N_PERM, SENSITIVITY, STATS, STATS_RT, OptoContrasts, alm_contrasts,
-    dod_point, ppc_contrasts,
+    BIAS,
+    DUAL_UNITS,
+    N_BOOT,
+    N_PERM,
+    SENSITIVITY,
+    STATS,
+    STATS_RT,
+    OptoContrasts,
+    alm_contrasts,
+    dod_point,
+    ppc_contrasts,
 )
 
 __all__ = ['Settings', 'AnimalResult', 'GroupResult', 'compute_animal', 'compute_group', 'DESIGNS',
@@ -51,10 +64,10 @@ class Settings:
     readouts: bool = True          # psychometric curves + update matrices per condition
     trajectory: bool = True        # per-session trajectory + adaptation (pse_dynamics per session)
     curve_bootstrap: int = 200     # bootstrap draws for the psychometric-curve band
-    sigma: Optional[float] = None  # sigma for the normative PSE; None = the animal's own psychometric sigma
+    sigma: float | None = None  # sigma for the normative PSE; None = the animal's own psychometric sigma
 
     @classmethod
-    def fast(cls) -> 'Settings':
+    def fast(cls) -> Settings:
         return cls(stats=('accuracy', 'side_bias'),
                    stats_rt=('accuracy', 'side_bias', 'reaction_time', 'reaction_time_jitter'),
                    display=('accuracy', 'side_bias'), n_boot=30, n_perm=30,
@@ -75,8 +88,8 @@ class Settings:
 
 @dataclass(frozen=True)
 class ConditionReadouts:
-    curve: Optional[PsychometricCurve]
-    update_matrix: Optional[UpdateMatrix]
+    curve: PsychometricCurve | None
+    update_matrix: UpdateMatrix | None
 
 
 @dataclass(frozen=True)
@@ -86,11 +99,11 @@ class AnimalResult:
     genotype: str
     distribution: str
     design: str
-    site: Optional[str]
+    site: str | None
     toi: str
     contrasts: OptoContrasts
     readouts: Dict[Tuple[str, str], ConditionReadouts] = field(default_factory=dict)   # (phase, trial_type)
-    trajectory: Optional[Trajectory] = None                                            # per-session, in order
+    trajectory: Trajectory | None = None                                            # per-session, in order
     n_sessions: Dict[str, int] = field(default_factory=dict)
 
     @property
@@ -108,7 +121,7 @@ class GroupResult:
     cohort: str
     distribution: str
     design: str
-    site: Optional[str]
+    site: str | None
     toi: str
     rows: pd.DataFrame            # animal, group, kind, stat, value   (per-animal point differences)
     tests: pd.DataFrame           # kind, stat, p, statistic, n_wt, n_het, …  (WT vs HET rank tests)
@@ -128,18 +141,18 @@ def trajectory_distributions(distribution: str) -> Tuple[str, ...]:
     return ('Uniform',) if distribution.lower() == 'uniform' else ('Hard-A', 'Hard-B')
 
 
-def _trajectory(animal, distribution: str, s: 'Settings') -> Optional[Trajectory]:
+def _trajectory(animal, distribution: str, s: Settings) -> Trajectory | None:
     if not s.trajectory:
         return None
     try:
         return compute_trajectory(animal, trajectory_distributions(distribution), sigma=s.sigma)
     except Exception as exc:                          # never let one animal kill the batch
         import warnings
-        warnings.warn(f'{getattr(animal, "animal_id", "?")}: trajectory ({distribution}) failed: {exc}')
+        warnings.warn(f'{getattr(animal, "animal_id", "?")}: trajectory ({distribution}) failed: {exc}', stacklevel=2)
         return None
 
 
-def _sessions_for(experiment, aid: str, distribution: str, design: str, site: Optional[str]):
+def _sessions_for(experiment, aid: str, distribution: str, design: str, site: str | None):
     animal = experiment.animals[aid]
     if design == 'ppc':
         return animal, collect_sessions_ppc(animal, distribution)
@@ -161,8 +174,8 @@ def _readouts(sessions, toi: str, s: Settings) -> Dict[Tuple[str, str], Conditio
 
 
 def compute_animal(experiment, aid: str, distribution: str, toi: str, *, design: str = 'ppc',
-                   site: Optional[str] = None, cohort: str = '', settings: Settings = Settings(),
-                   genotype: Optional[str] = None) -> AnimalResult:
+                   site: str | None = None, cohort: str = '', settings: Settings = Settings(),
+                   genotype: str | None = None) -> AnimalResult:
     """Everything the per-animal report needs, for one animal × distribution × toi."""
     if design not in DESIGNS:
         raise ValueError(f'design must be in {DESIGNS}, got {design!r}')
@@ -206,7 +219,7 @@ def _point_rows(con: OptoContrasts, design: str, aid: str, group: str) -> List[d
 
 
 def compute_group(experiment, animals: Sequence[str], distribution: str, toi: str, *, design: str = 'ppc',
-                  site: Optional[str] = None, cohort: str = '', settings: Settings = Settings()) -> GroupResult:
+                  site: str | None = None, cohort: str = '', settings: Settings = Settings()) -> GroupResult:
     """WT-vs-HET fold: per-animal point differences per contrast kind, rank-tested across genotype.
 
     Two delta-of-deltas appear in ``rows``/``tests``: ``dod`` (opto − masking within

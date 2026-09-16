@@ -22,9 +22,7 @@ from __future__ import annotations
 
 import glob
 from pathlib import Path
-from typing import Optional
 
-import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -104,7 +102,7 @@ def _dots(ax, d: pd.DataFrame, *, x0: float = 0.0, label_animals: bool = True, y
     ax.spines[['top', 'right']].set_visible(False)
 
 
-def _group_p(gt: pd.DataFrame, **key) -> Optional[float]:
+def _group_p(gt: pd.DataFrame, **key) -> float | None:
     if gt is None or not len(gt):
         return None
     d = gt.copy()
@@ -161,7 +159,7 @@ def _trajectory_panel(ax, tr: pd.DataFrame, y: str, geno: str, title: str, logy=
         ax.text(0.5, 0.5, 'no data', transform=ax.transAxes, ha='center', color='0.5')
         ax.set_title(title, fontsize=9)
         return
-    for k, (aid, sess) in enumerate(d.groupby('animal')):
+    for k, (_aid, sess) in enumerate(d.groupby('animal')):
         sess = sess.sort_values('order')
         ax.plot(sess['order'], sess[y], '-', color=GENO_COL[geno], alpha=0.3, lw=1)
         for dist, c in DIST_COL.items():
@@ -203,7 +201,7 @@ def uniform_page(T: dict, cohort: str):
     ax = fig.add_subplot(gs[2, 2:])
     u = tr[(tr['phase'] == 'Uniform')] if len(tr) and 'phase' in tr else pd.DataFrame()
     if len(u):
-        for k, (aid, sess) in enumerate(u.sort_values(['genotype', 'animal']).groupby('animal', sort=False)):
+        for k, (_aid, sess) in enumerate(u.sort_values(['genotype', 'animal']).groupby('animal', sort=False)):
             sess = sess.sort_values('order')
             geno = sess['genotype'].iloc[0]
             laser = sess['session_type'].isin(LASER_TYPES)

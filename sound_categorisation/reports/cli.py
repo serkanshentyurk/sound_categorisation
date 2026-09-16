@@ -20,7 +20,7 @@ import argparse
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 import matplotlib
 
@@ -39,7 +39,7 @@ TOIS = ('opto', 'post_opto')
 DEFAULT_COHORT = 'opto1-cohort'
 
 
-def _run_dir(out: Path, cohort: str, distribution: str, design: str, site: Optional[str], toi: str) -> Path:
+def _run_dir(out: Path, cohort: str, distribution: str, design: str, site: str | None, toi: str) -> Path:
     d = f'{design}_{site}_{toi}' if site else f'{design}_{toi}'
     return out / cohort / distribution / d
 
@@ -157,18 +157,24 @@ def build_parser() -> argparse.ArgumentParser:
             sp.add_argument('--design', default='ppc', choices=('ppc', 'alm'))
             sp.add_argument('--site', default=None, choices=('uni', 'bi'))
 
-    sa = sub.add_parser('animal', help='per-animal tables + PDFs'); common(sa); sa.set_defaults(fn=cmd_animal)
-    sg = sub.add_parser('group', help='WT-vs-HET fold'); common(sg)
+    sa = sub.add_parser('animal', help='per-animal tables + PDFs')
+    common(sa)
+    sa.set_defaults(fn=cmd_animal)
+    sg = sub.add_parser('group', help='WT-vs-HET fold')
+    common(sg)
     sg.add_argument('--with-animals', action='store_true', help='also build the per-animal results (needed for '
                     'the group psychometric/UM pages)')
     sg.set_defaults(fn=cmd_group)
-    sl = sub.add_parser('all', help='the full battery'); common(sl, needs_target=False); sl.set_defaults(fn=cmd_all)
+    sl = sub.add_parser('all', help='the full battery')
+    common(sl, needs_target=False)
+    sl.set_defaults(fn=cmd_all)
     ss = sub.add_parser('summary', help='one-page summary figure from the written tables')
     ss.add_argument('--cohort', default=DEFAULT_COHORT)
     ss.add_argument('--out', type=Path, default=REPO_ROOT / 'results' / 'reports')
     ss.set_defaults(fn=cmd_summary)
     st = sub.add_parser('selftest', help='synthetic end-to-end check')
-    st.add_argument('--out', type=Path, default=REPO_ROOT / 'results' / 'reports'); st.set_defaults(fn=cmd_selftest)
+    st.add_argument('--out', type=Path, default=REPO_ROOT / 'results' / 'reports')
+    st.set_defaults(fn=cmd_selftest)
     return p
 
 

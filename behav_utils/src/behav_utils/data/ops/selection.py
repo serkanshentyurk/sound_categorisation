@@ -374,6 +374,8 @@ def register_presets_from_config(config_raw: Dict[str, Any]) -> int:
 
     count = 0
     for name, spec in presets_raw.items():
+        if name.startswith('_'):        # YAML anchors / shared lists, not presets
+            continue
         if not isinstance(spec, dict):
             warnings.warn(f"Skipping preset '{name}': expected dict, got {type(spec)}", stacklevel=2)
             continue

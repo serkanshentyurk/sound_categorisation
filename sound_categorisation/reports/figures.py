@@ -9,13 +9,14 @@ import math
 import warnings
 from typing import Dict, Sequence
 
-import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-
 from behav_utils.plotting import (
-    plot_interaction_single, plot_psychometric_curve, plot_stat_comparison_single, plot_update_matrix,
+    plot_interaction_single,
+    plot_psychometric_curve,
+    plot_stat_comparison_single,
+    plot_update_matrix,
 )
 from behav_utils.readouts import UpdateMatrix
 

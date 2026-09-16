@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict
 
-import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 
