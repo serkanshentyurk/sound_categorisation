@@ -5,7 +5,6 @@ Covers sample_distribution, compute_distribution_density, compute_normative_pse.
 """
 
 import numpy as np
-import pytest
 
 
 class TestSampleDistribution:

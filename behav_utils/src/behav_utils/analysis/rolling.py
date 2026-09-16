@@ -21,14 +21,14 @@ genotype, …) is the caller's job in the plot.
 windows the registry judges unreliable — the curve too flat (σ above threshold)
 or the PSE run to the stimulus edge (|μ| > 0.99) — come back NaN. If you want
 the *raw* PSE trajectory that keeps those early, still-shallow windows (the
-adaptation curve), use ``compute_adaptation`` / ``compute_adaptation_per_session``
+adaptation curve), see the project's per-session trajectory
 instead; those deliberately fit raw μ.
 
 Windowing is full-windows-only: a window is emitted only when ``window`` trials
 are available, so a curve stops one window short of the block end rather than
 ending on a shorter, noisier window. A session with fewer than ``window`` but at
 least ``min_short`` trials contributes a single whole-session point (matching
-``compute_adaptation_per_session``); a shorter session contributes an empty
+a per-session trajectory); a shorter session contributes an empty
 curve, so it still appears (annotate the empty panel) rather than vanishing.
 """
 

@@ -33,46 +33,30 @@ Smoke test (tiny n_simulations, just checks the pipeline runs end to end)::
 from __future__ import annotations
 
 import argparse
-import sys
 import time
-from pathlib import Path
 
 # Run as a plain script (python scripts/train_sbi.py) or a module
-# (python -m scripts.train_sbi): put the repo root on sys.path either way.
-
 from sound_categorisation.paths import (
-    SBI_REPRESENTATIONS,
-    SBI_TRAIN_T,
-    SBI_BURN_IN,
-    SMOKE_SBI_N_SIMULATIONS,
-    MODEL_TYPES,
-    DISTRIBUTIONS,
-    SBI_TRAIN_DISTRIBUTIONS,
     BASE_SEED,
+    DISTRIBUTIONS,
+    MODEL_TYPES,
+    SBI_BURN_IN,
+    SBI_REPRESENTATIONS,
+    SBI_TRAIN_DISTRIBUTIONS,
+    SMOKE_SBI_N_SIMULATIONS,
     snpe_net_path,
 )
+from sound_categorisation.tasks import TRAIN_GRID
 
-# Task ordering for the SLURM array. rep-major, model-minor:
-#   0 pooled/BE   1 pooled/SC   2 moments/BE   3 moments/SC   4 single/BE  5 single/SC
 REPRESENTATIONS = tuple(SBI_REPRESENTATIONS)
 TRAIN_DISTRIBUTIONS = tuple(SBI_TRAIN_DISTRIBUTIONS)   # per-distribution specialists
-# SLURM array: 3 reps x 2 models x len(TRAIN_DISTRIBUTIONS) networks.
-# Ordering is rep-major, then model, then distribution (distribution fastest).
-# With all three phases that is 3 x 2 x 3 = 18:
-#   0 pooled/BE/uniform  1 pooled/BE/hard_a  2 pooled/BE/hard_b  3 pooled/SC/uniform ...
-N_TASKS = len(REPRESENTATIONS) * len(MODEL_TYPES) * len(TRAIN_DISTRIBUTIONS)
+N_TASKS = TRAIN_GRID.n                                  # 3 reps × 2 models × 3 distributions = 18
 
 
 def decode_task(task_id):
-    """Map a SLURM array index in [0, N_TASKS) to a (rep, model, distribution)."""
-    if not 0 <= task_id < N_TASKS:
-        raise ValueError(f'task_id must be in [0, {N_TASKS}); got {task_id}.')
-    n_m, n_d = len(MODEL_TYPES), len(TRAIN_DISTRIBUTIONS)
-    rep = REPRESENTATIONS[task_id // (n_m * n_d)]
-    rem = task_id % (n_m * n_d)
-    model = MODEL_TYPES[rem // n_d]
-    distribution = TRAIN_DISTRIBUTIONS[rem % n_d]
-    return rep, model, distribution
+    """SLURM array index -> (rep, model, distribution); see sound_categorisation.tasks.TRAIN_GRID."""
+    d = TRAIN_GRID.decode(task_id)
+    return d['rep'], d['model'], d['distribution']
 
 
 def train_one(rep, model, distribution, n_simulations=None, seed=BASE_SEED,
@@ -137,9 +121,13 @@ def main():
     p.add_argument('--smoke-test', action='store_true',
                    help=f'Use {SMOKE_SBI_N_SIMULATIONS} sims to check the '
                         'pipeline runs.')
+    p.add_argument('--print-array', action='store_true', help='print the SLURM --array range and exit')
     p.add_argument('--count', action='store_true',
                    help='Print the number of array tasks and exit.')
     args = p.parse_args()
+    if args.print_array:
+        print(TRAIN_GRID.slurm_range())
+        return
 
     if args.count:
         print(N_TASKS)

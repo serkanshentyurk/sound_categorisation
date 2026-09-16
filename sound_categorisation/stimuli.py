@@ -33,13 +33,12 @@ Usage:
     stim_b, cat_b = _sample_hard_b(300, rng=rng)
 """
 
-import numpy as np
-from scipy.optimize import fsolve
-from scipy.integrate import quad
-from scipy.optimize import brentq
-from scipy.stats import norm
-from typing import Optional, Tuple, Dict
+from typing import Dict, Tuple
 
+import numpy as np
+from scipy.integrate import quad
+from scipy.optimize import brentq, fsolve
+from scipy.stats import norm
 
 # =============================================================================
 # λ CONSTANT
@@ -119,7 +118,7 @@ def _sample_hard_negative(
 # =============================================================================
 def _sample_hard_a(
     n_trials: int,
-    rng: Optional[np.random.Generator] = None,
+    rng: np.random.Generator | None = None,
     boundary: float = 0.0,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
@@ -150,7 +149,7 @@ def _sample_hard_a(
 
 def _sample_hard_b(
     n_trials: int,
-    rng: Optional[np.random.Generator] = None,
+    rng: np.random.Generator | None = None,
     boundary: float = 0.0,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
@@ -179,7 +178,7 @@ def _sample_hard_b(
 
 def _sample_uniform(
     n_trials: int,
-    rng: Optional[np.random.Generator] = None,
+    rng: np.random.Generator | None = None,
     boundary: float = 0.0,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
@@ -202,7 +201,7 @@ def _sample_uniform(
 def sample_distribution(
     n_trials: int,
     distribution: str,
-    rng: Optional[np.random.Generator] = None,
+    rng: np.random.Generator | None = None,
     boundary: float = 0.0,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
@@ -341,23 +340,17 @@ def compute_normative_pse(
     sigma = sigma_percep
 
     def p_x_given_a(x: float) -> float:
-        if key == 'hard_a':
-            integrand = lambda s: (
-                norm.pdf(x, s + boundary, sigma)
-                * (_LAMBDA * np.exp(_LAMBDA * s) + np.exp(-_LAMBDA))
-            )
-        else:
-            integrand = lambda s: norm.pdf(x, s + boundary, sigma)
+        def integrand(s):
+            if key == 'hard_a':
+                return norm.pdf(x, s + boundary, sigma) * (_LAMBDA * np.exp(_LAMBDA * s) + np.exp(-_LAMBDA))
+            return norm.pdf(x, s + boundary, sigma)
         return quad(integrand, -1, 0, limit=100)[0]
 
     def p_x_given_b(x: float) -> float:
-        if key == 'hard_b':
-            integrand = lambda s: (
-                norm.pdf(x, s + boundary, sigma)
-                * (_LAMBDA * np.exp(-_LAMBDA * s) + np.exp(-_LAMBDA))
-            )
-        else:
-            integrand = lambda s: norm.pdf(x, s + boundary, sigma)
+        def integrand(s):
+            if key == 'hard_b':
+                return norm.pdf(x, s + boundary, sigma) * (_LAMBDA * np.exp(-_LAMBDA * s) + np.exp(-_LAMBDA))
+            return norm.pdf(x, s + boundary, sigma)
         return quad(integrand, 0, 1, limit=100)[0]
 
     def difference(x: float) -> float:

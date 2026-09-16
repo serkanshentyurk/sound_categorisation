@@ -6,8 +6,7 @@ Cumulative-Gaussian psychometric fit engine on raw arrays.
 ``behav_utils.readouts.compute_psychometric_curve``.
 """
 
-import warnings
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional
 
 import numpy as np
 from scipy.optimize import minimize

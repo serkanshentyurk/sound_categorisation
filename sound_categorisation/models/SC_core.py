@@ -31,14 +31,14 @@ Usage:
     )
 """
 
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
+
 import numpy as np
-from dataclasses import dataclass, field
-from typing import Optional, Dict, Tuple, List, Union
 from scipy.integrate import trapezoid
 from scipy.stats import norm as sp_norm
 
 from sound_categorisation.models.perception import perceive_stimulus, stimulus_space_bounds
-
 
 # =============================================================================
 # PARAMETER CONTAINER
@@ -176,7 +176,7 @@ class SCState:
     """
     A_distribution: np.ndarray
     B_distribution: np.ndarray
-    s_hat_prev: Optional[float]
+    s_hat_prev: float | None
     x: np.ndarray
     x_min: float
     x_max: float
@@ -256,7 +256,7 @@ class SCState:
         B_dist: np.ndarray,
         x_min: float = -1.0,
         x_max: float = 1.0,
-        s_hat_prev: Optional[float] = None,
+        s_hat_prev: float | None = None,
     ) -> 'SCState':
         """Create state from existing distributions (normalises)."""
         x = np.linspace(x_min, x_max, len(A_dist))
@@ -330,7 +330,7 @@ class SCModel:
     @staticmethod
     def perceive_stimulus(
         s_t: float, params: SCParams,
-        s_hat_prev: Optional[float],
+        s_hat_prev: float | None,
         rng: np.random.Generator,
     ) -> float:
         """Apply perceptual noise and serial dependence."""
@@ -477,11 +477,11 @@ class SCModel:
         stimuli: np.ndarray,
         categories: np.ndarray,
         rng: np.random.Generator,
-        no_response: Optional[np.ndarray] = None,
-        not_blockstart: Optional[np.ndarray] = None,
+        no_response: np.ndarray | None = None,
+        not_blockstart: np.ndarray | None = None,
         return_history: bool = False,
-        update_mask: Optional[np.ndarray] = None,
-    ) -> Tuple[np.ndarray, np.ndarray, SCState, Optional['ModelTrace']]:
+        update_mask: np.ndarray | None = None,
+    ) -> Tuple[np.ndarray, np.ndarray, SCState, Optional['ModelTrace']]:  # noqa: F821
         """
         Simulate choices for a full session.
 
@@ -596,19 +596,19 @@ class SCModel:
             history = None
 
         return choices, p_B, final_state, history
-    
+
     @staticmethod
     def make_simulator(params: SCParams, burn_in: int = 1000, seed: int = 42):
         """Return a stateful simulator callable for generate_synthetic_animal."""
         state = SCModel.create_initial_state(params=params, burn_in=burn_in, seed=seed)
-        
+
         def simulator(stimuli, categories, rng, **kwargs):
             nonlocal state
             choices, _, state, _ = SCModel.simulate_session(
                 params, state, stimuli, categories, rng, return_history=False,
             )
             return choices
-        
+
         return simulator
 
     # =================================================================
@@ -643,7 +643,7 @@ class SCModel:
     @staticmethod
     def create_initial_state(
         burn_in: int = 0,
-        params: Optional[SCParams] = None,
+        params: SCParams | None = None,
         x_min: float = None,
         x_max: float = None,
         n_points: int = None,

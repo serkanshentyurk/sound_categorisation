@@ -331,7 +331,7 @@ class TestLoadAnimalAndExperiment:
         (data / 'animal_metadata.json').write_text(
             json.dumps({'Animal1': {'genotype': 'het'}}))
         cfg = _minimal_config(data_dir=data, drop_last_row=False, with_opto=True)
-        cfg.masking_sessions = {'Animal1': ['20240315']}
+        cfg.session_types = {'masking': {'Animal1': ['20240315']}}
 
         exp = load_experiment(cfg)
         assert exp.n_animals == 1
@@ -341,7 +341,7 @@ class TestLoadAnimalAndExperiment:
 
         by_date = {s.date: s for s in animal.sessions}
         assert by_date[date(2024, 3, 15)].session_type == 'masking'
-        assert by_date[date(2024, 3, 15)].masking is True
+        assert by_date[date(2024, 3, 15)].session_type == 'masking'
         # opto_on is preserved: on a masking session these are the fake-opto trials.
         assert by_date[date(2024, 3, 15)].trials.opto_on.any()
         assert by_date[date(2024, 3, 16)].trials.opto_on.any()       # untouched
@@ -350,11 +350,11 @@ class TestLoadAnimalAndExperiment:
         data = tmp_path / 'data'
         self._build_tree(data, with_opto=True)
         cfg = _minimal_config(data_dir=data, drop_last_row=False, with_opto=True)
-        cfg.washout_sessions = {'Animal1': ['20240316']}
+        cfg.session_types = {'washout': {'Animal1': ['20240316']}}
         exp = load_experiment(cfg)
         by_date = {s.date: s for s in exp.animals['Animal1'].sessions}
         assert by_date[date(2024, 3, 16)].session_type == 'washout'
-        assert by_date[date(2024, 3, 16)].washout is True
+        assert by_date[date(2024, 3, 16)].session_type == 'washout'
         assert by_date[date(2024, 3, 16)].trials.opto_on.any()        # preserved
         assert by_date[date(2024, 3, 15)].trials.opto_on.any()        # untouched
 

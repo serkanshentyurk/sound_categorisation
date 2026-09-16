@@ -14,8 +14,9 @@ Usage:
         test_stim = stimuli[test_mask]
 """
 
-import numpy as np
 from typing import List, Tuple
+
+import numpy as np
 
 
 def merge_smallest_adjacent(

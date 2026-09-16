@@ -13,13 +13,13 @@ Components:
 
 Usage:
     # Single session simulation
-    params = BEParams(sigma_percep=0.15, A_repulsion=0.1, 
+    params = BEParams(sigma_percep=0.15, A_repulsion=0.1,
                       eta_learning=0.35, eta_relax=0.12)
     state = BEState.initial_uniform()
     choices, p_B, final_state = BEModel.simulate_session(
         params, state, stimuli, categories, rng
     )
-    
+
     # Multi-session with state chaining
     state = BEState.initial_uniform()
     for session_idx, (stim, cat) in enumerate(sessions):
@@ -27,16 +27,17 @@ Usage:
         choices, _, state = BEModel.simulate_session(
             params, state, stim, cat, rng
         )
-    
+
     # Log-likelihood for inference
     ll, trial_lls, _ = BEModel.compute_log_likelihood(
         params, state, stimuli, categories, observed_choices, rng
     )
 """
 
-import numpy as np
 from dataclasses import dataclass
-from typing import Optional, Dict, Tuple, List, Union
+from typing import Dict, List, Optional, Tuple
+
+import numpy as np
 from scipy.integrate import trapezoid
 
 from sound_categorisation.models.perception import perceive_stimulus as _perceive_stimulus
@@ -51,13 +52,13 @@ from sound_categorisation.models.trace import ModelTrace
 class BEParams:
     """
     Immutable container for BE model parameters.
-    
+
     Parameters:
         sigma_percep: Perceptual noise standard deviation
         A_repulsion: Serial dependence strength (repulsion from previous trial)
         eta_learning: Learning rate for boundary belief updates
         eta_relax: Relaxation rate toward uniform distribution
-    
+
     The frozen=True makes this immutable, which is important for:
     - Thread safety in parallel simulations
     - Clarity about what's being sampled in inference
@@ -67,21 +68,21 @@ class BEParams:
     A_repulsion: float
     eta_learning: float
     eta_relax: float
-    
+
     @property
     def sigma_boundary(self) -> float:
         """Derived parameter: update precision in sigmoid."""
         return 1.0 / self.sigma_percep
-    
+
     def __post_init__(self):
         """Validate and clamp parameters on creation.
-        
+
         Posterior samples from SBI can slightly exceed bounds,
         so we clamp with a warning rather than raising.
         Uses object.__setattr__ because this is a frozen dataclass.
         """
         import warnings
-        
+
         # sigma_percep: must be > 0
         if self.sigma_percep <= 0:
             clamped = max(self.sigma_percep, 1e-6)
@@ -90,7 +91,7 @@ class BEParams:
                 stacklevel=2,
             )
             object.__setattr__(self, 'sigma_percep', clamped)
-        
+
         # A_repulsion: must be >= 0
         if self.A_repulsion < 0:
             clamped = max(self.A_repulsion, 0.0)
@@ -99,7 +100,7 @@ class BEParams:
                 stacklevel=2,
             )
             object.__setattr__(self, 'A_repulsion', clamped)
-        
+
         # eta_learning: must be in (0, 1]
         if self.eta_learning <= 0 or self.eta_learning > 1:
             clamped = float(np.clip(self.eta_learning, 1e-6, 1.0))
@@ -108,7 +109,7 @@ class BEParams:
                 stacklevel=2,
             )
             object.__setattr__(self, 'eta_learning', clamped)
-        
+
         # eta_relax: must be in [0, 1)
         if self.eta_relax < 0 or self.eta_relax >= 1:
             clamped = float(np.clip(self.eta_relax, 0.0, 1.0 - 1e-6))
@@ -117,7 +118,7 @@ class BEParams:
                 stacklevel=2,
             )
             object.__setattr__(self, 'eta_relax', clamped)
-    
+
     @classmethod
     def from_dict(cls, d: Dict[str, float]) -> 'BEParams':
         """Create BEParams from dictionary."""
@@ -127,12 +128,12 @@ class BEParams:
             eta_learning=d['eta_learning'],
             eta_relax=d['eta_relax']
         )
-    
+
     @classmethod
     def from_array(cls, arr: np.ndarray) -> 'BEParams':
         """
         Create BEParams from array.
-        
+
         Order: [sigma_percep, A_repulsion, eta_learning, eta_relax]
         """
         return cls(
@@ -141,7 +142,7 @@ class BEParams:
             eta_learning=arr[2],
             eta_relax=arr[3]
         )
-    
+
     def to_dict(self) -> Dict[str, float]:
         """Convert to dictionary."""
         return {
@@ -150,11 +151,11 @@ class BEParams:
             'eta_learning': self.eta_learning,
             'eta_relax': self.eta_relax
         }
-    
+
     def to_array(self) -> np.ndarray:
         """
         Convert to array.
-        
+
         Order: [sigma_percep, A_repulsion, eta_learning, eta_relax]
         """
         return np.array([
@@ -163,7 +164,7 @@ class BEParams:
             self.eta_learning,
             self.eta_relax
         ])
-    
+
     @classmethod
     def get_bounds(cls) -> Dict[str, Tuple[float, float]]:
         """Parameter bounds for fitting/sampling."""
@@ -173,12 +174,12 @@ class BEParams:
             'eta_learning': (0.05, 0.9),
             'eta_relax': (0.01, 0.4)
         }
-    
+
     @classmethod
     def get_param_names(cls) -> List[str]:
         """Parameter names in canonical order."""
         return ['sigma_percep', 'A_repulsion', 'eta_learning', 'eta_relax']
-    
+
     @classmethod
     def sample_prior(cls, rng: np.random.Generator) -> 'BEParams':
         """Sample from uniform prior over bounds."""
@@ -189,7 +190,7 @@ class BEParams:
             eta_learning=rng.uniform(*bounds['eta_learning']),
             eta_relax=rng.uniform(*bounds['eta_relax'])
         )
-    
+
     def stimulus_space_bounds(
         self,
         stim_half_range: float = 1.0,
@@ -209,20 +210,20 @@ class BEParams:
 class BEState:
     """
     BE model state - carried across trials and sessions.
-    
+
     Attributes:
         boundary_belief: Probability distribution over boundary location
         s_hat_prev: Previous perceived stimulus (for serial dependence)
         x: Discretisation grid points
         x_min: Minimum of stimulus space
         x_max: Maximum of stimulus space
-    
+
     Note: This is mutable (not frozen) because we create new instances
     rather than mutating in place. The copy() method ensures clean
     state separation when needed.
     """
     boundary_belief: np.ndarray
-    s_hat_prev: Optional[float]
+    s_hat_prev: float | None
     x: np.ndarray
     x_min: float
     x_max: float
@@ -260,14 +261,14 @@ class BEState:
             x_max=x_max,
             relax_target=1.0 / (2.0 * stim_half_range),
         )
-    
+
     @classmethod
     def from_belief(
         cls,
         belief: np.ndarray,
         x_min: float = -1.0,
         x_max: float = 1.0,
-        s_hat_prev: Optional[float] = None,
+        s_hat_prev: float | None = None,
         stim_half_range: float = 1.0,
     ) -> 'BEState':
         """Create state from existing belief distribution."""
@@ -292,24 +293,24 @@ class BEState:
             x_max=self.x_max,
             relax_target=self.relax_target,
         )
-    
+
     @property
     def n_points(self) -> int:
         """Number of discretisation points."""
         return len(self.x)
-    
+
     @property
     def belief_mean(self) -> float:
         """Mean of boundary belief distribution."""
         return trapezoid(self.x * self.boundary_belief, self.x)
-    
+
     @property
     def belief_std(self) -> float:
         """Standard deviation of boundary belief distribution."""
         mu = self.belief_mean
         var = trapezoid((self.x - mu)**2 * self.boundary_belief, self.x)
         return np.sqrt(var)
-    
+
     def get_belief_stats(self) -> Tuple[float, float]:
         """Return (mean, std) of boundary belief."""
         return self.belief_mean, self.belief_std
@@ -322,83 +323,83 @@ class BEState:
 class BEModel:
     """
     Stateless BE model operations.
-    
+
     All methods are static - they take params and state as arguments
     and return results without side effects. This design enables:
-    
+
     1. Clean separation of concerns (params vs state)
     2. Easy parallelisation (no shared mutable state)
     3. Explicit state flow for multi-session chaining
     4. Simple integration with inference frameworks (MCMC, SBI)
     """
-    
+
     # =========================================================================
     # CORE COMPUTATIONS
     # =========================================================================
-    
+
     @staticmethod
     def perceive_stimulus(s_t: float, params: BEParams,
-                          s_hat_prev: Optional[float],
+                          s_hat_prev: float | None,
                           rng: np.random.Generator) -> float:
         """Apply perceptual noise and serial dependence."""
         return _perceive_stimulus(
             s_t, params.sigma_percep, params.A_repulsion, s_hat_prev, rng,
         )
-    
+
     @staticmethod
     def get_choice_probability(s_hat: float, state: BEState) -> float:
         """
         Compute P(choose B) given perceived stimulus.
-        
+
         P(choose B) = P(boundary < s_hat) = CDF of boundary belief at s_hat
-        
+
         Args:
             s_hat: Perceived stimulus value
             state: Current model state
-        
+
         Returns:
             P(choose B)
         """
         j = np.abs(state.x - s_hat).argmin()
         p_B = trapezoid(state.boundary_belief[:j+1], state.x[:j+1])
         return np.clip(p_B, 1e-10, 1 - 1e-10)
-    
+
     @staticmethod
     def update_belief(s_hat: float, true_category: int,
                       params: BEParams, state: BEState) -> BEState:
         """
         Update boundary belief based on feedback.
-        
+
         Creates and returns a NEW state - does not mutate input.
-        
+
         Args:
             s_hat: Perceived stimulus value
             true_category: True category (0 = A, 1 = B)
             params: Model parameters
             state: Current model state
-        
+
         Returns:
             New BEState with updated belief
         """
         # C = +1 for category B, -1 for category A
         C = 1 if true_category == 1 else -1
-        
+
         # Learning update (sigmoid)
         delta_learning = 1 / (1 + np.exp(-params.sigma_boundary * C * (state.x - s_hat)))
         y_prime = state.boundary_belief - params.eta_learning * delta_learning
-        
+
         # Relaxation toward uniform density over NOMINAL stimulus range
         delta_relax = y_prime - state.relax_target
         y_double_prime = y_prime - params.eta_relax * delta_relax
-        
+
         # Ensure non-negative
         min_val = np.min(y_double_prime)
         if min_val < 0:
             y_double_prime = y_double_prime + np.abs(min_val)
-        
+
         # Normalise
         new_belief = y_double_prime / trapezoid(y_double_prime, state.x)
-        
+
         return BEState(
             boundary_belief=new_belief,
             s_hat_prev=s_hat,
@@ -407,7 +408,7 @@ class BEModel:
             x_max=state.x_max,
             relax_target=state.relax_target,
         )
-        
+
     @staticmethod
     def _update_belief_inplace(
         s_hat: float, true_category: int,
@@ -418,29 +419,29 @@ class BEModel:
     ) -> None:
         """
         Update boundary belief IN-PLACE. For tight simulation loops only.
-        
+
         The public update_belief() returns a new BEState and is used for
         external calls. This avoids allocation overhead in simulate_session
         and compute_log_likelihood.
         """
         C = 1 if true_category == 1 else -1
         sigma_boundary = 1.0 / params.sigma_percep
-        
+
         # Learning update
         delta_learning = 1.0 / (1.0 + np.exp(-sigma_boundary * C * (x - s_hat)))
         belief -= params.eta_learning * delta_learning
-        
+
         # Relaxation toward uniform density over NOMINAL stimulus range
         belief -= params.eta_relax * (belief - relax_target)
-        
+
         # Ensure non-negative
         min_val = belief.min()
         if min_val < 0:
             belief += np.abs(min_val)
-        
+
         # Normalise
         belief /= trapezoid(belief, x)
-    
+
     # =========================================================================
     # SESSION SIMULATION
     # =========================================================================
@@ -452,14 +453,14 @@ class BEModel:
         stimuli: np.ndarray,
         categories: np.ndarray,
         rng: np.random.Generator,
-        no_response: Optional[np.ndarray] = None,
-        not_blockstart: Optional[np.ndarray] = None,
+        no_response: np.ndarray | None = None,
+        not_blockstart: np.ndarray | None = None,
         return_history: bool = False,
-        update_mask: Optional[np.ndarray] = None,
+        update_mask: np.ndarray | None = None,
     ) -> Tuple[np.ndarray, np.ndarray, BEState, Optional['ModelTrace']]:
         """
         Simulate choices for a full session.
-        
+
         Args:
             params: Model parameters
             initial_state: Starting state (belief distribution)
@@ -474,7 +475,7 @@ class BEModel:
                          False = skip belief update for this trial).
                          Simulates opto inactivation during the update window.
                          If None, all trials update normally.
-        
+
         Returns:
             choices: Simulated choices (0 = A, 1 = B, NaN = no response)
             p_B: Choice probabilities at each trial
@@ -485,47 +486,47 @@ class BEModel:
         choices = np.full(n_trials, np.nan)
         p_B = np.full(n_trials, np.nan)
         s_hat_arr = np.full(n_trials, np.nan)
-        
+
         if no_response is None:
             no_response = np.zeros(n_trials, dtype=bool)
-        
+
         if not_blockstart is None:
             not_blockstart = np.ones(n_trials, dtype=bool)
             if n_trials > 0:
                 not_blockstart[0] = False
-        
+
         # Storage for full history if requested
         if return_history:
             beliefs = np.zeros((n_trials, initial_state.n_points))
-        
+
         state = initial_state.copy()
         belief = state.boundary_belief  # Work with the array directly
         x = state.x
         s_hat_prev = state.s_hat_prev
-        
+
         for t in range(n_trials):
             # Store belief BEFORE this trial (for update matrix computation)
             if return_history:
                 beliefs[t] = belief.copy()
-            
+
             if no_response[t]:
                 continue
-            
+
             # Perceive
             s_hat = BEModel.perceive_stimulus(
                 stimuli[t], params, s_hat_prev, rng
             )
             s_hat_arr[t] = s_hat
-            
+
             # Choice probability (inline to avoid method call overhead)
             j = np.abs(x - s_hat).argmin()
             p_B[t] = np.clip(
                 trapezoid(belief[:j + 1], x[:j + 1]), 1e-10, 1 - 1e-10
             )
-            
+
             # Make choice
             choices[t] = rng.binomial(1, p_B[t])
-            
+
             # Update belief in-place (skip if opto inactivation)
             if update_mask is None or update_mask[t]:
                 BEModel._update_belief_inplace(
@@ -534,7 +535,7 @@ class BEModel:
                     state.relax_target,
                 )
             s_hat_prev = s_hat
-        
+
         # Build final state (snapshot current belief)
         final_state = BEState(
             boundary_belief=belief.copy(),
@@ -544,7 +545,7 @@ class BEModel:
             x_max=state.x_max,
             relax_target=state.relax_target,
         )
-        
+
         # Build history if requested
         if return_history:
             history = ModelTrace(
@@ -560,29 +561,29 @@ class BEModel:
             )
         else:
             history = None
-        
+
         return choices, p_B, final_state, history
-    
-    
+
+
     @staticmethod
     def make_simulator(params: BEParams, burn_in: int = 1000, seed: int = 42):
         """Return a stateful simulator callable for generate_synthetic_animal."""
         state = BEModel.create_initial_state(params=params, burn_in=burn_in, seed=seed)
-        
+
         def simulator(stimuli, categories, rng, **kwargs):
             nonlocal state
             choices, _, state, _ = BEModel.simulate_session(
                 params, state, stimuli, categories, rng, return_history=False,
             )
             return choices
-        
+
         return simulator
-    
-    
+
+
     # =========================================================================
     # BURN-IN SIMULATION
     # =========================================================================
-    
+
     @staticmethod
     def run_burn_in(
         params: BEParams,
@@ -592,40 +593,40 @@ class BEModel:
     ) -> BEState:
         """
         Run burn-in simulation to establish experienced belief state.
-        
+
         Simulates trials with uniform stimulus distribution to mimic
         prior experience before the actual session.
-        
+
         Args:
             params: Model parameters
             initial_state: Starting state (typically uniform)
             n_trials: Number of burn-in trials
             seed: Random seed
-        
+
         Returns:
             State after burn-in (belief has converged toward boundary)
         """
         if n_trials == 0:
             return initial_state.copy()
-        
+
         rng = np.random.default_rng(seed)
-        
+
         # Generate burn-in stimuli (uniform)
         stimuli = rng.uniform(initial_state.x_min, initial_state.x_max, n_trials)
         categories = (stimuli > 0).astype(int)  # Boundary at 0
-        
+
         # Simulate (don't need choices, just state evolution)
         _, _, final_state, _ = BEModel.simulate_session(
             params, initial_state, stimuli, categories, rng,
             return_history=False
         )
-        
+
         return final_state
-    
+
     @staticmethod
     def create_initial_state(
         burn_in: int = 0,
-        params: Optional[BEParams] = None,
+        params: BEParams | None = None,
         x_min: float = None,
         x_max: float = None,
         n_points: int = None,
@@ -633,7 +634,7 @@ class BEModel:
     ) -> BEState:
         """
         Convenience function to create initial state with optional burn-in.
-        
+
         Args:
             burn_in: Number of burn-in trials (0 = naive/uniform)
             params: Model parameters (required if burn_in > 0, and used to
@@ -642,7 +643,7 @@ class BEModel:
                           via BEParams.stimulus_space_bounds().
             n_points: Discretisation resolution. If None, computed from params.
             seed: Random seed for burn-in
-        
+
         Returns:
             Initial state (uniform if burn_in=0, experienced otherwise)
         """
@@ -656,12 +657,12 @@ class BEModel:
             n_points = n_points if n_points is not None else _n_pts
 
         state = BEState.initial_uniform(x_min, x_max, n_points)
-        
+
         if burn_in > 0:
             if params is None:
                 raise ValueError("params required for burn_in > 0")
             state = BEModel.run_burn_in(params, state, burn_in, seed)
-        
+
         return state
 
 

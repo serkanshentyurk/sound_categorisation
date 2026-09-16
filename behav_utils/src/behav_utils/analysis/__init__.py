@@ -29,10 +29,6 @@ from behav_utils.analysis.downsample import (
     resample_psychometric_curve, resample_update_matrix,
 )
 from behav_utils.analysis.rolling import RollingStats, compute_rolling_stats
-from behav_utils.analysis.adaptation import (
-    compute_normative_pse, resolve_sigma, resolve_sigma_sbi,
-    compute_adaptation, compute_adaptation_per_session, detect_shifts,
-)
 from behav_utils.analysis.across_animals import collect_rows, compare_groups, compare_genotypes
 from behav_utils.analysis.group import (
     combine, paired_diff, bootstrap_units, rank_test, average_arrays, min_achievable_p,
@@ -51,8 +47,6 @@ __all__ = [
     'downsample', 'calculate_min_n', 'resample_stat_vectors',
     'resample_psychometric_curve', 'resample_update_matrix',
     'RollingStats', 'compute_rolling_stats',
-    'compute_normative_pse', 'resolve_sigma', 'resolve_sigma_sbi',
-    'compute_adaptation', 'compute_adaptation_per_session', 'detect_shifts',
     'collect_rows', 'compare_groups', 'compare_genotypes',
     'combine', 'paired_diff', 'bootstrap_units', 'rank_test', 'average_arrays', 'min_achievable_p',
     'compute_session_raster', 'compute_session_features',

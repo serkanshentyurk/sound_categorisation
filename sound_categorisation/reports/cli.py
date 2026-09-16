@@ -4,6 +4,7 @@ Report CLI.
     python -m sound_categorisation.reports animal   --distribution Hard-A --toi opto [--design alm --site uni] [--animals SS15 SS16]
     python -m sound_categorisation.reports group    --distribution Hard-A --toi opto [--design alm --site uni]
     python -m sound_categorisation.reports all      [--fast] [--limit N]
+    python -m sound_categorisation.reports summary  [--out DIR] [--cohort NAME]
     python -m sound_categorisation.reports selftest [--out DIR]
 
 Common options: --cohort (default opto1-cohort), --snapshot PATH, --config PATH, --out DIR
@@ -127,6 +128,11 @@ def cmd_all(a):
         sys.exit(1)
 
 
+def cmd_summary(a):
+    from sound_categorisation.reports.summary import write_summary
+    print('summary ->', write_summary(Path(a.out), a.cohort))
+
+
 def cmd_selftest(a):
     from sound_categorisation.reports.selftest import run_selftest
     run_selftest(Path(a.out) / 'selftest')
@@ -157,6 +163,10 @@ def build_parser() -> argparse.ArgumentParser:
                     'the group psychometric/UM pages)')
     sg.set_defaults(fn=cmd_group)
     sl = sub.add_parser('all', help='the full battery'); common(sl, needs_target=False); sl.set_defaults(fn=cmd_all)
+    ss = sub.add_parser('summary', help='one-page summary figure from the written tables')
+    ss.add_argument('--cohort', default=DEFAULT_COHORT)
+    ss.add_argument('--out', type=Path, default=REPO_ROOT / 'results' / 'reports')
+    ss.set_defaults(fn=cmd_summary)
     st = sub.add_parser('selftest', help='synthetic end-to-end check')
     st.add_argument('--out', type=Path, default=REPO_ROOT / 'results' / 'reports'); st.set_defaults(fn=cmd_selftest)
     return p

@@ -7,12 +7,14 @@ returns prior=None, so these tests assert only on sim_fn / param_names.
 
 import numpy as np
 import pytest
-
-from sound_categorisation.inference.types import ModelType
 from sound_categorisation.inference.constants import SBI_STATS
 from sound_categorisation.inference.simulator import (
-    build_simulator, theta_to_params, get_param_names, get_bounds_arrays,
+    build_simulator,
+    get_bounds_arrays,
+    get_param_names,
+    theta_to_params,
 )
+from sound_categorisation.inference.types import ModelType
 
 
 def _mid(model):

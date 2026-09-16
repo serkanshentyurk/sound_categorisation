@@ -10,11 +10,10 @@ Each plotter consumes a result dict from sound_categorisation.validation.sbi:
     plot_param_stat_correlations(res)  ← compute_param_stat_correlations
 """
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
-
 
 # =============================================================================
 # SBC
@@ -22,10 +21,10 @@ import numpy as np
 
 def plot_sbc_ranks(
     sbc_result: Dict[str, Any],
-    param_indices: Optional[List[int]] = None,
+    param_indices: List[int] | None = None,
     n_bins: int = 20,
-    figsize: Optional[Tuple[float, float]] = None,
-    title: Optional[str] = None,
+    figsize: Tuple[float, float] | None = None,
+    title: str | None = None,
 ) -> plt.Figure:
     """
     Histograms of SBC ranks, one panel per parameter.
@@ -89,9 +88,9 @@ def plot_sbc_ranks(
 
 def plot_sbc_ecdf(
     sbc_result: Dict[str, Any],
-    param_indices: Optional[List[int]] = None,
-    figsize: Optional[Tuple[float, float]] = None,
-    title: Optional[str] = None,
+    param_indices: List[int] | None = None,
+    figsize: Tuple[float, float] | None = None,
+    title: str | None = None,
 ) -> plt.Figure:
     """
     ECDF of normalised SBC ranks, one panel per parameter.
@@ -141,7 +140,8 @@ def plot_sbc_ecdf(
         ax.set_title(label, fontsize=9)
         ax.set_xlabel('Normalised rank')
         ax.set_ylabel('ECDF')
-        ax.set_xlim(0, 1); ax.set_ylim(0, 1)
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
         ax.set_aspect('equal')
 
     for j in range(n_plot, len(axes_flat)):
@@ -159,11 +159,11 @@ def plot_sbc_ecdf(
 
 def plot_recovery_scatter(
     recovery_result: Dict[str, Any],
-    param_indices: Optional[List[int]] = None,
-    prior_bounds: Optional[Dict[str, Tuple[float, float]]] = None,
-    param_links: Optional[Dict[str, Any]] = None,
-    figsize: Optional[Tuple[float, float]] = None,
-    title: Optional[str] = None,
+    param_indices: List[int] | None = None,
+    prior_bounds: Dict[str, Tuple[float, float]] | None = None,
+    param_links: Dict[str, Any] | None = None,
+    figsize: Tuple[float, float] | None = None,
+    title: str | None = None,
 ) -> plt.Figure:
     """
     True vs recovered scatter, one panel per parameter. Identity line shown.
@@ -226,7 +226,8 @@ def plot_recovery_scatter(
             padding = (hi_d - lo_d) * 0.1
             ax_lo, ax_hi = lo_d - padding, hi_d + padding
 
-        ax.set_xlim(ax_lo, ax_hi); ax.set_ylim(ax_lo, ax_hi)
+        ax.set_xlim(ax_lo, ax_hi)
+        ax.set_ylim(ax_lo, ax_hi)
         ax.plot([ax_lo, ax_hi], [ax_lo, ax_hi], 'k--', linewidth=1, alpha=0.5)
 
         r = corrs[p]
@@ -247,11 +248,11 @@ def plot_recovery_scatter(
 
 def plot_recovery_bias(
     recovery_result: Dict[str, Any],
-    param_indices: Optional[List[int]] = None,
-    prior_bounds: Optional[Dict[str, Tuple[float, float]]] = None,
-    param_links: Optional[Dict[str, Any]] = None,
-    figsize: Optional[Tuple[float, float]] = None,
-    title: Optional[str] = None,
+    param_indices: List[int] | None = None,
+    prior_bounds: Dict[str, Tuple[float, float]] | None = None,
+    param_links: Dict[str, Any] | None = None,
+    figsize: Tuple[float, float] | None = None,
+    title: str | None = None,
 ) -> plt.Figure:
     """
     Recovery error (recovered − true) vs true value, with a running mean
@@ -338,10 +339,10 @@ def plot_recovery_bias(
 
 def plot_param_stat_correlations(
     result: Dict[str, Any],
-    figsize: Optional[Tuple[float, float]] = None,
+    figsize: Tuple[float, float] | None = None,
     cmap: str = 'RdBu_r',
     annot: bool = True,
-    title: Optional[str] = None,
+    title: str | None = None,
 ) -> plt.Figure:
     """
     Heatmap of |Pearson r| between each parameter and each summary stat.
@@ -404,10 +405,12 @@ def plot_param_stat_correlations(
 def _heatmap(ax, M, row_labels, col_labels, cmap, vmin, vmax, cbar_label,
              annot=True, annot_thresh=None, rot=45):
     im = ax.imshow(M, aspect='auto', cmap=cmap, vmin=vmin, vmax=vmax)
-    cb = ax.figure.colorbar(im, ax=ax, fraction=0.04, pad=0.02); cb.set_label(cbar_label)
+    cb = ax.figure.colorbar(im, ax=ax, fraction=0.04, pad=0.02)
+    cb.set_label(cbar_label)
     ax.set_xticks(np.arange(M.shape[1]))
     ax.set_xticklabels(col_labels, rotation=rot, ha='right' if rot else 'center', fontsize=7)
-    ax.set_yticks(np.arange(M.shape[0])); ax.set_yticklabels(row_labels, fontsize=7)
+    ax.set_yticks(np.arange(M.shape[0]))
+    ax.set_yticklabels(row_labels, fontsize=7)
     if annot:
         thr = annot_thresh if annot_thresh is not None else (vmin + vmax) / 2 + (vmax - vmin) * 0.25
         for i in range(M.shape[0]):
@@ -419,7 +422,7 @@ def _heatmap(ax, M, row_labels, col_labels, cmap, vmin, vmax, cbar_label,
     return im
 
 
-def plot_um_scalar_correlation(result, ax: Optional[plt.Axes] = None) -> plt.Axes:
+def plot_um_scalar_correlation(result, ax: plt.Axes | None = None) -> plt.Axes:
     """|r| between each UM cell (rows) and each scalar stat (cols). Dark rows = UM structure no
     scalar captures. result ← um_scalar_correlation."""
     C = result['corr']
@@ -432,11 +435,13 @@ def plot_um_scalar_correlation(result, ax: Optional[plt.Axes] = None) -> plt.Axe
     return ax
 
 
-def plot_stat_correlation(result, ax: Optional[plt.Axes] = None, annot: bool = False) -> plt.Axes:
+def plot_stat_correlation(result, ax: plt.Axes | None = None, annot: bool = False) -> plt.Axes:
     """|r| stat×stat (redundancy). High off-diagonal blocks = drop all but one. result ← stat_correlation."""
-    C = result['corr']; names = list(C.columns)
+    C = result['corr']
+    names = list(C.columns)
     if ax is None:
-        n = len(names); _, ax = plt.subplots(figsize=(max(5, n * 0.4), max(4, n * 0.4)))
+        n = len(names)
+        _, ax = plt.subplots(figsize=(max(5, n * 0.4), max(4, n * 0.4)))
     _heatmap(ax, C.values, names, names, 'viridis', 0, 1, '|r|', annot=annot,
              annot_thresh=0.5, rot=90)
     ax.set_title(f"Stat–stat correlation · {result['model_type'].upper()} · {result['distribution']}",
@@ -444,20 +449,22 @@ def plot_stat_correlation(result, ax: Optional[plt.Axes] = None, annot: bool = F
     return ax
 
 
-def plot_individual_identity(result, ax: Optional[plt.Axes] = None) -> plt.Axes:
+def plot_individual_identity(result, ax: plt.Axes | None = None) -> plt.Axes:
     """Q2 — each stat alone: model-identity CV AUC. result ← stat_individual_power."""
     s = result['identity'].sort_values(ascending=True)
     if ax is None:
         _, ax = plt.subplots(figsize=(5, max(2.5, 0.4 * len(s))))
     ax.barh(range(len(s)), s.values, color='slateblue')
     ax.axvline(0.5, ls='--', c='grey', lw=1)
-    ax.set_yticks(range(len(s))); ax.set_yticklabels(s.index, fontsize=8)
-    ax.set_xlim(0.4, 1.0); ax.set_xlabel('identity CV AUC (stat alone)')
+    ax.set_yticks(range(len(s)))
+    ax.set_yticklabels(s.index, fontsize=8)
+    ax.set_xlim(0.4, 1.0)
+    ax.set_xlabel('identity CV AUC (stat alone)')
     ax.set_title(f"Individual identity power · {result['distribution']}", fontsize=10, pad=8)
     return ax
 
 
-def plot_individual_recovery(result, model: str, ax: Optional[plt.Axes] = None) -> plt.Axes:
+def plot_individual_recovery(result, model: str, ax: plt.Axes | None = None) -> plt.Axes:
     """Q3 — each stat alone: per-parameter recovery CV R² (clipped at 0 for display).
     result ← stat_individual_power; model in {'be','sc'}."""
     R = result['recovery'][model]
@@ -470,7 +477,7 @@ def plot_individual_recovery(result, model: str, ax: Optional[plt.Axes] = None) 
     return ax
 
 
-def plot_selection_curve(result, ax: Optional[plt.Axes] = None) -> plt.Axes:
+def plot_selection_curve(result, ax: plt.Axes | None = None) -> plt.Axes:
     """Q4 — best min-across-params CV R² vs #stats, with identity AUC overlaid. Marks the
     selected subset. result ← select_stats."""
     curve = result['best_by_k']
@@ -479,20 +486,23 @@ def plot_selection_curve(result, ax: Optional[plt.Axes] = None) -> plt.Axes:
     ax.plot(curve['k'], curve['r2_min'], '-o', color='steelblue', ms=4, label='min-param R²')
     sel_k = len(result['selected'])
     ax.axvline(sel_k, color='red', ls='--', lw=1, alpha=0.7, label=f'selected (k={sel_k})')
-    ax.set_xlabel('number of stat groups'); ax.set_ylabel('min over params (CV R²)')
+    ax.set_xlabel('number of stat groups')
+    ax.set_ylabel('min over params (CV R²)')
     ax2 = ax.twinx()
     ax2.plot(curve['k'], curve['identity_auc'], '-s', color='darkorange', ms=3,
              alpha=0.7, label='identity AUC')
-    ax2.set_ylabel('identity AUC', color='darkorange'); ax2.set_ylim(0.4, 1.02)
+    ax2.set_ylabel('identity AUC', color='darkorange')
+    ax2.set_ylim(0.4, 1.02)
     ax2.tick_params(axis='y', labelcolor='darkorange')
     ax.set_title(f"Selection · {result['distribution']} · {result['method']}", fontsize=10, pad=8)
     ax.legend(fontsize=8, loc='lower right')
     return ax
 
 
-def plot_stat_contributions(result, ax: Optional[plt.Axes] = None, annot: bool = True) -> plt.Axes:
+def plot_stat_contributions(result, ax: plt.Axes | None = None, annot: bool = True) -> plt.Axes:
     """Parked — joint permutation importance (stat × target). result ← stat_contributions."""
-    df = result['contribution']; M = df.values.astype(float)
+    df = result['contribution']
+    M = df.values.astype(float)
     if ax is None:
         _, ax = plt.subplots(figsize=(max(6, df.shape[1] * 0.7), max(3, df.shape[0] * 0.45)))
     vmax = float(np.nanmax(np.abs(M))) or 1.0
@@ -503,7 +513,7 @@ def plot_stat_contributions(result, ax: Optional[plt.Axes] = None, annot: bool =
     return ax
 
 
-def plot_stat_sensitivity(result, ax: Optional[plt.Axes] = None, annot: bool = True) -> plt.Axes:
+def plot_stat_sensitivity(result, ax: plt.Axes | None = None, annot: bool = True) -> plt.Axes:
     """Parked — one-at-a-time |Spearman| of each stat to each parameter. result ← stat_parameter_sensitivity."""
     S = result['sensitivity']
     if ax is None:

@@ -6,13 +6,16 @@ raises for that), so the moments path mirrors the pooled path.
 
 import numpy as np
 import pytest
-
-from sound_categorisation.inference.representation import (
-    to_stat_vector, _nan_moments, compute_feature_medians, impute_with_medians)
-from sound_categorisation.inference.constants import SBI_STATS
-from behav_utils.data.ops.filtering import filter_trials, pool_arrays
 from behav_utils.data.arrays import TrialArrays
+from behav_utils.data.ops.filtering import filter_trials
 from behav_utils.stats import compute_stats
+from sound_categorisation.inference.constants import SBI_STATS
+from sound_categorisation.inference.representation import (
+    _nan_moments,
+    compute_feature_medians,
+    impute_with_medians,
+    to_stat_vector,
+)
 
 
 class TestToStatVectorPooled:

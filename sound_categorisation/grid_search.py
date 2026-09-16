@@ -34,13 +34,14 @@ Usage:
     print(f"Best params: {results['best_params']}")
 """
 
-import numpy as np
 from dataclasses import dataclass
-from typing import Dict, List, Tuple, Optional, Any, TYPE_CHECKING
-from joblib import Parallel, delayed
+from typing import TYPE_CHECKING, Any, Dict, List, Tuple
 
+import numpy as np
 from behav_utils.analysis.update_matrix import fit_update_matrix, matrix_error
 from behav_utils.data.ops.filtering import pool_arrays
+from joblib import Parallel, delayed
+
 from sound_categorisation.fold_utils import split_folds_by_block
 
 if TYPE_CHECKING:
@@ -161,7 +162,7 @@ def simulate_model_matrices(
     rng = np.random.default_rng(seed)
 
     if model_type.upper() == 'BE':
-        from sound_categorisation.models.BE_core import BEParams, BEModel
+        from sound_categorisation.models.BE_core import BEModel, BEParams
 
         params = BEParams(
             sigma_percep=sigma_percep,
@@ -179,7 +180,7 @@ def simulate_model_matrices(
         )
 
     elif model_type.upper() == 'SC':
-        from sound_categorisation.models.SC_core import SCParams, SCModel
+        from sound_categorisation.models.SC_core import SCModel, SCParams
 
         params = SCParams(
             sigma_percep=sigma_percep,
@@ -299,8 +300,8 @@ def _grid_sweep(
     for i, sp in enumerate(sp_vals):
         for j, ar in enumerate(ar_vals):
             for k, p1 in enumerate(p1_vals):
-                for l, p2 in enumerate(p2_vals):
-                    jobs.append((i, j, k, l, sp, ar, p1, p2))
+                for m, p2 in enumerate(p2_vals):
+                    jobs.append((i, j, k, m, sp, ar, p1, p2))
 
     # Evaluate in parallel
     results = Parallel(n_jobs=n_jobs)(
@@ -318,8 +319,8 @@ def _grid_sweep(
         (len(sp_vals), len(ar_vals), len(p1_vals), len(p2_vals)),
         np.nan,
     )
-    for idx, (i, j, k, l, sp, ar, p1, p2) in enumerate(jobs):
-        errors[i, j, k, l] = results[idx]
+    for idx, (i, j, k, m, _sp, _ar, _p1, _p2) in enumerate(jobs):
+        errors[i, j, k, m] = results[idx]
 
     # Find best
     best_idx = np.unravel_index(np.nanargmin(errors), errors.shape)
@@ -380,7 +381,7 @@ def sessions_to_arrays(
 def compute_grid_search_cv(
     sessions: List['SessionData'],
     model_type: str,
-    grid: Optional[ParameterGrid] = None,
+    grid: ParameterGrid | None = None,
     n_folds: int = 2,
     seed: int = 1,
     burn_in: int = 1000,

@@ -14,9 +14,10 @@ Genotype palette: het warm, wt cool.
 
 from __future__ import annotations
 
-import numpy as np
+from typing import Sequence
+
 import matplotlib.pyplot as plt
-from typing import Optional, Sequence
+import numpy as np
 
 _GENO_COLOUR = {'het': '#d1495b', 'wt': '#30638e'}
 _GENO_ORDER = ['wt', 'het']
@@ -26,9 +27,9 @@ def _geno_colour(g) -> str:
     return _GENO_COLOUR.get(str(g).lower(), '#888888')
 
 
-def plot_delta_swarm(delta_df, stat: str, ax: Optional[plt.Axes] = None,
-                     p_value: Optional[float] = None,
-                     genotype_order: Optional[Sequence[str]] = None,
+def plot_delta_swarm(delta_df, stat: str, ax: plt.Axes | None = None,
+                     p_value: float | None = None,
+                     genotype_order: Sequence[str] | None = None,
                      group_col: str = 'genotype', value_col: str = 'delta',
                      seed: int = 0) -> plt.Axes:
     """Per-animal Δ (opto − nonopto) for one stat, split by genotype.
@@ -73,8 +74,8 @@ def plot_delta_swarm(delta_df, stat: str, ax: Optional[plt.Axes] = None,
     return ax
 
 
-def plot_stat_trajectory(result, stat: str, ax: Optional[plt.Axes] = None,
-                         color: Optional[str] = None, label: Optional[str] = None,
+def plot_stat_trajectory(result, stat: str, ax: plt.Axes | None = None,
+                         color: str | None = None, label: str | None = None,
                          marker: str = 'o', linestyle: str = '-') -> plt.Axes:
     """Per-session trajectory of one stat for one condition — a single line.
 
@@ -125,10 +126,10 @@ def plot_stat_trajectory(result, stat: str, ax: Optional[plt.Axes] = None,
     return ax
 
 
-def plot_delta_paired(delta_df, stat: str, ax: Optional[plt.Axes] = None,
+def plot_delta_paired(delta_df, stat: str, ax: plt.Axes | None = None,
                       phase_a: str = 'uniform', phase_b: str = 'hard',
-                      p_value: Optional[float] = None,
-                      genotype_order: Optional[Sequence[str]] = None,
+                      p_value: float | None = None,
+                      genotype_order: Sequence[str] | None = None,
                       group_col: str = 'genotype', value_col: str = 'delta') -> plt.Axes:
     """Per-animal Δ at phase_a vs phase_b, connected — the dispensability view.
 

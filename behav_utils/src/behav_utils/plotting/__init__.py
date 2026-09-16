@@ -21,7 +21,6 @@ from behav_utils.plotting.readouts import (
 )
 from behav_utils.plotting.trajectory import plot_trajectory
 from behav_utils.plotting.session_stats import plot_session_stats, plot_session_stats_single
-from behav_utils.plotting.adaptation import plot_adaptation, plot_adaptation_sessions
 from behav_utils.plotting.comparison import (
     plot_comparison, plot_stat_comparison, plot_stat_comparison_single,
     plot_interaction, plot_interaction_single,
@@ -34,7 +33,6 @@ __all__ = [
     'plot_binned_curve', 'plot_sd_profile',
     'plot_trajectory',
     'plot_session_stats', 'plot_session_stats_single',
-    'plot_adaptation', 'plot_adaptation_sessions',
     'plot_comparison', 'plot_stat_comparison', 'plot_stat_comparison_single',
     'plot_interaction', 'plot_interaction_single',
     'plot_session_raster',

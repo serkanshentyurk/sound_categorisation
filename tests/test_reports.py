@@ -10,10 +10,16 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-
 from sound_categorisation.reports import (
-    CONTRAST_COLUMNS, Settings, compute_animal, compute_group, group_tables, read_result, readout_arrays,
-    to_tables, write_result,
+    CONTRAST_COLUMNS,
+    Settings,
+    compute_animal,
+    compute_group,
+    group_tables,
+    read_result,
+    readout_arrays,
+    to_tables,
+    write_result,
 )
 from sound_categorisation.reports.selftest import synthetic_experiment
 
@@ -58,14 +64,19 @@ def test_write_read_roundtrip(fast_result, tmp_path):
     assert back['contrasts']['site'].isna().all()
 
 
-def test_readouts_and_adaptation_present_when_enabled(exp):
+def test_readouts_and_trajectory_present_when_enabled(exp):
     r = compute_animal(exp, 'ST00', 'Hard-A', 'opto', settings=Settings(n_boot=10, n_perm=0, curve_bootstrap=0))
     assert ('opto', 'non_opto') in r.readouts and r.readouts[('opto', 'all')].update_matrix is None
-    assert set(r.adaptation) == {'opto', 'masking'}
+    assert r.trajectory is not None and set(r.trajectory.distributions) == {'Hard-A', 'Hard-B'}
     arrays = readout_arrays(r)
     assert any(k.endswith('__um') for k in arrays)
-    dyn = to_tables(r)['adaptation_dynamics']
-    assert {'pse_tau', 'convergence_final', 'trials_to_criterion'} <= set(dyn['stat'])
+    t = to_tables(r)['trajectory']
+    assert {'order', 'distribution', 'phase', 'session_type', 'pse', 'pse_fixed', 'pse_tau', 'delta_from_prev', 'convergence_final'} <= set(t.columns)
+    assert set(t['distribution']) == {'Hard-A', 'Hard-B'} and (t['phase'] == 'Hard-A').all()
+    assert list(t['order']) == sorted(t['order'])                      # acquisition order
+    assert (t['session_type'].iloc[0] == 'opto') and (t['session_type'].iloc[-1] == 'masking')   # laser half first
+    curves = to_tables(r)['trajectory_curves']
+    assert len(curves) and curves['trial'].max() <= 200                # trial index within a session
 
 
 def test_group_fold(exp):
@@ -86,3 +97,22 @@ def test_reference_numbers(fast_result):
     for col in ('diff', 'ci_lo', 'ci_hi', 'boot_p', 'perm_p'):
         np.testing.assert_allclose(got[col].to_numpy(dtype=float), ref[col].to_numpy(dtype=float),
                                    rtol=1e-6, atol=1e-9, equal_nan=True, err_msg=col)
+
+
+def test_summary_pages_draw(exp, tmp_path):
+    """The four summary pages build from written tables (synthetic, fast + one full animal)."""
+    import matplotlib
+    matplotlib.use('Agg')
+    from types import SimpleNamespace
+
+    from sound_categorisation.reports.cli import run_animal, run_group
+    from sound_categorisation.reports.summary import write_summary
+    ids = list(exp.animals)
+    a = SimpleNamespace(out=tmp_path, cohort='selftest', snapshot=None, config=None, fast=True)
+    per = run_animal(exp, ids, 'Uniform', 'opto', 'ppc', None, a, Settings.fast())
+    run_group(exp, ids, 'Uniform', 'opto', 'ppc', None, a, Settings.fast(), per)
+    full = Settings(n_boot=10, n_perm=0, curve_bootstrap=0)
+    per = run_animal(exp, ids[:2], 'Hard-A', 'opto', 'ppc', None, a, full)
+    run_group(exp, ids[:2], 'Hard-A', 'opto', 'ppc', None, a, full, per)
+    path = write_summary(tmp_path, 'selftest')
+    assert path.exists() and (tmp_path / 'selftest' / 'summary_hard_a.png').exists()

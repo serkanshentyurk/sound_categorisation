@@ -7,7 +7,7 @@ path, which carries no lag-1 view). The session-level readout is
 """
 
 import numpy as np
-from typing import Optional, Dict, List, Tuple, Literal
+from typing import Optional, Dict, Tuple, Literal
 
 from behav_utils.analysis.psychometry import fit_psychometric
 

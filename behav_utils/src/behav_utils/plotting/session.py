@@ -16,7 +16,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import Optional, Tuple
 
-from behav_utils.plotting.styles import COLOURS
 
 
 def plot_session_raster(

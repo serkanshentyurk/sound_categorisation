@@ -10,13 +10,12 @@ Design:
 
 Filtering order (each step narrows the previous):
     1. Metadata:      stage, distribution
-    2. Session type:   session_type (if set, overrides exclude_opto/masking/washout)
+    2. Session type:   session_type (if set, overrides exclude_opto/exclude_types)
     3. Index range:    after_session_idx, before_session_idx, session_indices
     4. Positional:     last_fraction, first_n, last_n
     5. Quality:        min_accuracy, max_accuracy, min_trials
     6. Opto:           exclude_opto      (skipped when session_type is set)
-    7. Masking:        exclude_masking    (skipped when session_type is set)
-    8. Washout:        exclude_washout    (skipped when session_type is set)
+    7. Types:          exclude_types      (skipped when session_type is set)
     9. Custom:         custom_filter callable
 
 Usage:
@@ -70,9 +69,10 @@ class SessionFilter:
     Attributes:
         stage: Task stage (exact match, or list for OR-logic)
         distribution: Stimulus distribution (exact match, or list for OR-logic)
-        session_type: Session type — 'regular', 'masking', 'opto', or 'washout'.
+        session_type: Session type — 'regular', 'opto', or any project type stamped
+                      from config.session_types (e.g. 'masking').
                       Accepts a string or list.  When set, the exclude_opto /
-                      exclude_masking / exclude_washout flags are ignored (the
+                      exclude_opto / exclude_types are ignored (the
                       caller is explicitly choosing which types to include).
         min_accuracy: Minimum session accuracy (fraction correct)
         max_accuracy: Maximum session accuracy
@@ -86,13 +86,9 @@ class SessionFilter:
         min_trials: Minimum valid (non-abort, responded) trials
         exclude_opto: If True, exclude sessions with opto trials
                       (ignored when session_type is set)
-        exclude_masking: If True, exclude masking sessions
-                         (ignored when session_type is set)
-        exclude_washout: If True, exclude washout sessions
-                         (ignored when session_type is set)
-        exclude_alm_control: If True, exclude ALM light-only control sessions
-                         (any session_type starting 'alm_control';
-                         ignored when session_type is set)
+        exclude_types: Session types to drop when session_type is not set,
+                      e.g. ('masking', 'washout'). The names are the project's;
+                      the library derives only 'regular' and 'opto' from the data.
         custom_filter: Callable(SessionData) -> bool for arbitrary filtering
     """
     stage: Optional[Union[str, List[str]]] = None
@@ -108,9 +104,7 @@ class SessionFilter:
     session_indices: Optional[List[int]] = None
     min_trials: int = 10
     exclude_opto: bool = False
-    exclude_masking: bool = True
-    exclude_washout: bool = True
-    exclude_alm_control: bool = True
+    exclude_types: Tuple[str, ...] = ()      # session types to drop (skipped when session_type is set)
     custom_filter: Optional[Callable] = field(default=None, hash=False)
 
     @staticmethod
@@ -145,7 +139,7 @@ class SessionFilter:
 
         # ── 2. Session type ───────────────────────────────────────────────
         # When session_type is set, this is a positive selection — the
-        # exclude_opto / exclude_masking / exclude_washout flags are ignored.
+        # exclude_opto / exclude_types are ignored.
         if self.session_type is not None:
             if isinstance(self.session_type, str):
                 sessions = [
@@ -204,28 +198,13 @@ class SessionFilter:
                 if s.trials.valid_mask.sum() >= self.min_trials
             ]
 
-        # ── 6–8. Exclusion flags (skipped when session_type is set) ──────
+        # ── 6–7. Exclusions (skipped when session_type is set) ──────────
         if self.session_type is None:
             if self.exclude_opto:
-                sessions = [
-                    s for s in sessions
-                    if not np.any(s.trials.opto_on)
-                ]
-            if self.exclude_masking:
-                sessions = [
-                    s for s in sessions
-                    if not getattr(s, 'masking', False)
-                ]
-            if self.exclude_washout:
-                sessions = [
-                    s for s in sessions
-                    if not getattr(s, 'washout', False)
-                ]
-            if self.exclude_alm_control:
-                sessions = [
-                    s for s in sessions
-                    if not self._resolve_session_type(s).startswith('alm_control')
-                ]
+                sessions = [s for s in sessions if not np.any(s.trials.opto_on)]
+            if self.exclude_types:
+                drop = set(self.exclude_types)
+                sessions = [s for s in sessions if self._resolve_session_type(s) not in drop]
 
         # ── 9. Custom ─────────────────────────────────────────────────────
         if self.custom_filter is not None:
@@ -270,12 +249,8 @@ class SessionFilter:
         if self.session_type is None:
             if self.exclude_opto:
                 parts.append("no opto")
-            if self.exclude_masking:
-                parts.append("no masking")
-            if self.exclude_washout:
-                parts.append("no washout")
-            if self.exclude_alm_control:
-                parts.append("no ALM control")
+            if self.exclude_types:
+                parts.append('no ' + '/'.join(self.exclude_types))
         if self.custom_filter is not None:
             parts.append("+ custom filter")
         return ', '.join(parts) if parts else '(no constraints)'
@@ -400,6 +375,8 @@ def register_presets_from_config(config_raw: Dict[str, Any]) -> int:
         if 'session_indices' in spec and isinstance(spec['session_indices'], list):
             spec['session_indices'] = list(spec['session_indices'])
 
+        if isinstance(spec.get('exclude_types'), list):
+            spec['exclude_types'] = tuple(spec['exclude_types'])
         # Filter to only valid SessionFilter fields
         valid_fields = {f.name for f in SessionFilter.__dataclass_fields__.values()}
         filtered_spec = {k: v for k, v in spec.items() if k in valid_fields}
@@ -426,141 +403,4 @@ def register_presets_from_config(config_raw: Dict[str, Any]) -> int:
 # Registered on import. Projects can override via config or explicit calls.
 
 # ── Uniform distribution ─────────────────────────────────────────────────
-register_preset('expert_uniform', SessionFilter(
-    stage='Full_Task_Cont',
-    distribution='Uniform',
-    min_accuracy=0.70,
-    last_fraction=0.50,
-))
 
-register_preset('all_uniform', SessionFilter(
-    stage='Full_Task_Cont',
-    distribution='Uniform',
-))
-
-register_preset('naive_uniform', SessionFilter(
-    stage='Full_Task_Cont',
-    distribution='Uniform',
-    first_n=5,
-))
-
-# ── Hard distributions ───────────────────────────────────────────────────
-register_preset('all_hard_a', SessionFilter(
-    stage='Full_Task_Cont',
-    distribution='Hard-A',
-))
-
-register_preset('all_hard_b', SessionFilter(
-    stage='Full_Task_Cont',
-    distribution='Hard-B',
-))
-
-register_preset('early_hard_a', SessionFilter(
-    stage='Full_Task_Cont',
-    distribution='Hard-A',
-    first_n=5,
-))
-
-register_preset('early_hard_b', SessionFilter(
-    stage='Full_Task_Cont',
-    distribution='Hard-B',
-    first_n=5,
-))
-
-register_preset('expert_hard_a', SessionFilter(
-    stage='Full_Task_Cont',
-    distribution='Hard-A',
-    min_accuracy=0.60,
-    last_fraction=0.50,
-))
-
-register_preset('expert_hard_b', SessionFilter(
-    stage='Full_Task_Cont',
-    distribution='Hard-B',
-    min_accuracy=0.60,
-    last_fraction=0.50,
-))
-
-# ── Global ───────────────────────────────────────────────────────────────
-register_preset('all_stages', SessionFilter())
-
-register_preset('all_full_task', SessionFilter(
-    stage='Full_Task_Cont',
-))
-
-# ── Habituation ─────────────────────────────────────────────────────────
-register_preset('habituation', SessionFilter(
-    stage=['Habituation', 'Lick_To_Release', 'Three_And_Three'],
-    exclude_masking=False,
-    exclude_washout=False,
-))
-
-# ── Uniform + session type ──────────────────────────────────────────────
-register_preset('uniform_training', SessionFilter(
-    stage='Full_Task_Cont',
-    distribution='Uniform',
-    session_type='regular',
-))
-
-register_preset('uniform_training_last5', SessionFilter(
-    stage='Full_Task_Cont',
-    distribution='Uniform',
-    session_type='regular',
-    last_n=5,
-))
-
-register_preset('uniform_masking', SessionFilter(
-    distribution='Uniform',
-    session_type='masking',
-))
-
-register_preset('uniform_opto', SessionFilter(
-    distribution='Uniform',
-    session_type='opto',
-))
-
-register_preset('uniform_washout', SessionFilter(
-    distribution='Uniform',
-    session_type='washout',
-))
-
-# ── Hard + session type ─────────────────────────────────────────────────
-register_preset('hard_a_regular', SessionFilter(
-    distribution='Hard-A',
-    session_type='regular',
-))
-
-register_preset('hard_b_regular', SessionFilter(
-    distribution='Hard-B',
-    session_type='regular',
-))
-
-register_preset('hard_ab_opto', SessionFilter(
-    distribution=['Hard-A', 'Hard-B'],
-    session_type='opto',
-))
-
-register_preset('hard_ab_masking', SessionFilter(
-    distribution=['Hard-A', 'Hard-B'],
-    session_type='masking',
-))
-
-register_preset('hard_a_opto', SessionFilter(
-    distribution='Hard-A',
-    session_type='opto',
-))
-
-register_preset('hard_b_opto', SessionFilter(
-    distribution='Hard-B',
-    session_type='opto',
-))
-
-register_preset('hard_a_masking', SessionFilter(
-    distribution='Hard-A',
-    session_type='masking',
-))
-
-register_preset('hard_b_masking', SessionFilter(
-    distribution='Hard-B',
-    session_type='masking',
-))

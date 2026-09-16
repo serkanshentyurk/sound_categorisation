@@ -18,7 +18,7 @@ For a multi-session matrix, the workflow is inline in the notebook:
 
 import numpy as np
 import pandas as pd
-from typing import Callable, Dict, List, Union, Optional, TYPE_CHECKING
+from typing import Dict, List, Union, Optional, TYPE_CHECKING
 
 from behav_utils.data.arrays import TrialArrays
 from behav_utils.stats import compute_stats, list_stats

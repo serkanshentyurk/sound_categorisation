@@ -1,8 +1,7 @@
 from dataclasses import dataclass, field
+
 import numpy as np
 from scipy.integrate import trapezoid
-
-from typing import Optional, Dict, Tuple, List, Union
 
 # =============================================================================
 # TRIAL HISTORY CONTAINER
@@ -12,15 +11,15 @@ from typing import Optional, Dict, Tuple, List, Union
 class ModelTrace:
     """
     Record of model computation across trials (model output).
-    
+
     Stores everything the BE model computed for a session, including the
     input arrays it operated on. Used for post-hoc analysis: update matrices,
     belief visualisation, model diagnostics.
-    
+
     This is MODEL OUTPUT â€” created by BEModel.simulate_session or
     BEModel.compute_log_likelihood. For experimental INPUT data, see
     Data.structures.TrialData.
-    
+
     Attributes:
         # Input arrays (what the model received)
         stimuli: (n_trials,) actual stimulus values
@@ -28,13 +27,13 @@ class ModelTrace:
         choices: (n_trials,) simulated or observed choices (0=A, 1=B, NaN=no response)
         no_response: (n_trials,) boolean mask for no-response trials
         not_blockstart: (n_trials,) boolean mask (True = not start of block)
-        
+
         # Model outputs (what the model computed)
         p_B: (n_trials,) model's P(choose B) at actual stimulus
         s_hat: (n_trials,) perceived stimulus (includes noise + repulsion)
         beliefs: (n_trials, n_points) full belief distributions before each trial
         x: (n_points,) discretisation grid for beliefs
-    
+
     Usage:
         # After simulation
         choices, p_B, final_state, trace = BEModel.simulate_session(
@@ -50,63 +49,63 @@ class ModelTrace:
     choices: np.ndarray
     no_response: np.ndarray
     not_blockstart: np.ndarray = field(default_factory=lambda: np.array([]))
-    
+
     # Model outputs
     p_B: np.ndarray = field(default_factory=lambda: np.array([]))
     s_hat: np.ndarray = field(default_factory=lambda: np.array([]))
     beliefs: np.ndarray = field(default_factory=lambda: np.array([]))  # (n_trials, n_points)
     x: np.ndarray = field(default_factory=lambda: np.array([]))  # (n_points,)
-    
+
     # SC-specific (populated by SCModel, empty for BE)
     beliefs_A: np.ndarray = field(default_factory=lambda: np.array([]))
     beliefs_B: np.ndarray = field(default_factory=lambda: np.array([]))
-    
+
     def __post_init__(self):
         """Validate and set defaults."""
         n_trials = len(self.stimuli)
-        
+
         # Default not_blockstart: first trial is block start, rest are not
         if len(self.not_blockstart) == 0:
             self.not_blockstart = np.ones(n_trials, dtype=bool)
             if n_trials > 0:
                 self.not_blockstart[0] = False
-    
+
     # =========================================================================
     # PROPERTIES
     # =========================================================================
-    
+
     @property
     def n_trials(self) -> int:
         return len(self.stimuli)
-    
+
     @property
     def n_points(self) -> int:
         return len(self.x)
-    
+
     @property
     def has_beliefs(self) -> bool:
         """Whether full BE belief distributions are stored."""
         return self.beliefs.ndim == 2 and self.beliefs.shape[0] > 0
-    
+
     @property
     def has_sc_beliefs(self) -> bool:
         """Whether SC category distributions are stored."""
         return self.beliefs_A.ndim == 2 and self.beliefs_A.shape[0] > 0
-    
+
     @property
     def rewards(self) -> np.ndarray:
         """Compute rewards (1 if choice == category, 0 otherwise)."""
         rewards = (self.choices == self.categories).astype(float)
         rewards[np.isnan(self.choices)] = np.nan
         return rewards
-    
+
     @property
     def belief_means(self) -> np.ndarray:
         """Mean of boundary belief at each trial."""
         if not self.has_beliefs:
             return np.full(self.n_trials, np.nan)
         return trapezoid(self.beliefs * self.x[np.newaxis, :], self.x, axis=1)
-    
+
     @property
     def belief_stds(self) -> np.ndarray:
         """Std of boundary belief at each trial."""
@@ -116,45 +115,45 @@ class ModelTrace:
         deviations = (self.x[np.newaxis, :] - means[:, np.newaxis]) ** 2
         variances = trapezoid(self.beliefs * deviations, self.x, axis=1)
         return np.sqrt(variances)
-    
+
     # =========================================================================
     # BELIEF QUERIES
     # =========================================================================
-    
+
     def get_p_B_at_stimulus(self, s: float, trial_idx: int) -> float:
         """
         Compute P(choose B | stimulus=s) using belief at given trial.
-        
+
         This is the CDF of the belief distribution at point s.
         """
         belief = self.beliefs[trial_idx]
         j = np.abs(self.x - s).argmin()
         return trapezoid(belief[:j+1], self.x[:j+1])
-    
+
     def get_p_B_at_midpoints(self, midpoints: np.ndarray, trial_idx: int) -> np.ndarray:
         """
         Compute P(choose B) at multiple stimulus values for a given trial.
-        
+
         Uses cumulative trapezoid to compute the CDF once, then interpolates.
-        
+
         Args:
             midpoints: Array of stimulus values to evaluate
             trial_idx: Which trial's belief to use
-        
+
         Returns:
             Array of P(B) values at each midpoint
         """
         from scipy.integrate import cumulative_trapezoid
-        
+
         belief = self.beliefs[trial_idx]
         # Compute full CDF via cumulative integration
         cdf = np.zeros(len(self.x))
         cdf[1:] = cumulative_trapezoid(belief, self.x)
-        
+
         # Interpolate at requested points
         p_B_values = np.interp(midpoints, self.x, cdf)
         return np.clip(p_B_values, 1e-10, 1 - 1e-10)
-    
+
     def copy(self) -> 'ModelTrace':
         """Create independent copy."""
         return ModelTrace(

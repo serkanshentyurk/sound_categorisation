@@ -37,7 +37,6 @@ Usage:
 import numpy as np
 import pandas as pd
 import pickle
-import warnings
 import matplotlib.pyplot as plt
 from pathlib import Path
 from dataclasses import dataclass, field
@@ -335,9 +334,9 @@ class SessionData:
         date:        Session date
         metadata:    SessionMetadata (stage, contingency, protocol, ...)
         trials:      TrialData (per-trial arrays)
-        session_type: Session classification — 'regular' | 'opto' | 'masking' |
-                     'washout' | 'alm_control_uni' | 'alm_control_bi'. The single
-                     source of truth; ``masking``/``washout`` are derived from it.
+        session_type: Session classification. The library derives 'regular' and
+                     'opto' from the data; any other value is a project type stamped
+                     from ``config.session_types`` (e.g. 'masking'). Single source of truth.
         csv_path:    Path to source CSV file
         filter_info: Metadata about filtering applied (None if unfiltered)
 
@@ -391,18 +390,6 @@ class SessionData:
     def is_filtered(self) -> bool:
         """Whether this session has been through filter()."""
         return self.filter_info is not None
-
-    @property
-    def masking(self) -> bool:
-        """True iff this is a masking (light-only control) session."""
-        return self.session_type == 'masking'
-
-    @property
-    def washout(self) -> bool:
-        """True iff this is a post-opto washout session."""
-        return self.session_type == 'washout'
-
-    # ── Array extraction ───────────────────────────────────────────────────
 
     def get_arrays(self) -> Dict[str, np.ndarray]:
         """

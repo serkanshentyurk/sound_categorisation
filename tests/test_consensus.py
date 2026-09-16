@@ -3,9 +3,7 @@
 
 import numpy as np
 import pandas as pd
-import pytest
-
-from sound_categorisation.consensus import _compute_consensus, load_all_assignments, _method_dir
+from sound_categorisation.consensus import _compute_consensus, _method_dir, load_all_assignments
 from sound_categorisation.cv_utils import save_cv_result
 
 

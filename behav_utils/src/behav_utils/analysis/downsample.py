@@ -19,7 +19,7 @@ import warnings
 
 import numpy as np
 
-from typing import List, Sequence
+from typing import Sequence
 
 import pandas as pd
 
@@ -30,7 +30,6 @@ from behav_utils.readouts import (
     PsychometricCurve, UpdateMatrix, compute_psychometric_curve, compute_update_matrix,
 )
 from behav_utils.readouts._base import X_FIT, _ro
-from behav_utils.readouts.psychometric import PARAMS
 from behav_utils.stats import compute_stats, is_exchangeable, validate_names
 
 

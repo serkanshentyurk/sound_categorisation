@@ -15,9 +15,10 @@ This module is the engine only. Model selection lives in
 """
 
 import pickle
-import numpy as np
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Sequence, Union
+
+import numpy as np
 
 try:
     import torch
@@ -25,9 +26,9 @@ try:
 except ImportError:
     TORCH_AVAILABLE = False
 
-from sound_categorisation.inference.types import ModelType
-from sound_categorisation.inference.simulator import build_simulator, wrap_for_sbi
 from sound_categorisation.inference.representation import to_stat_vector
+from sound_categorisation.inference.simulator import build_simulator, wrap_for_sbi
+from sound_categorisation.inference.types import ModelType
 
 
 def _as_model(model) -> ModelType:
@@ -59,7 +60,7 @@ class AmortisedSBI:
         T: int = 350,
         burn_in: int = 1000,
         mode: str = 'pooled',
-        stat_names: Optional[Sequence[str]] = None,
+        stat_names: Sequence[str] | None = None,
     ):
         self.model = _as_model(model)
         self.dist_schedule = dist_schedule
@@ -94,9 +95,10 @@ class AmortisedSBI:
         if not TORCH_AVAILABLE:
             raise ImportError('torch required for SBI training')
 
+        import time as _time
+
         from sbi.inference import SNPE
         from sbi.utils import process_simulator
-        import time as _time
 
         if self._prior is None:
             raise RuntimeError(
@@ -126,8 +128,7 @@ class AmortisedSBI:
         # identically. A column non-finite in EVERY sim is fatal
         # (compute_feature_medians raises) -- that stat is unusable at this N/T
         # and must leave the stat set.
-        from sound_categorisation.inference.representation import (
-            compute_feature_medians, impute_with_medians)
+        from sound_categorisation.inference.representation import compute_feature_medians, impute_with_medians
         x_np = x.detach().cpu().numpy().astype(float)
         try:
             medians = compute_feature_medians(x_np)

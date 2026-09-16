@@ -48,8 +48,13 @@ def synthetic_experiment(n_animals=4, seed=0, n_trials=180) -> ExperimentData:
         add('opto', 'Uniform', 0.35 if geno == 'het' else 0.1, 250)
         add('alm_control_uni', 'Uniform', 0.2, 300)
         add('alm_control_bi', 'Uniform', 0.2, 300)
-        add('masking', 'Hard-A', 0.15, 270)
-        add('opto', 'Hard-A', 0.4 if geno == 'het' else 0.15, 250)
+        # Hard phase as in the real design: A/B alternating daily, laser sessions first, then masking
+        for _ in range(3):
+            add('opto', 'Hard-A', 0.4 if geno == 'het' else 0.15, 250, n=1)
+            add('opto', 'Hard-B', -0.3 if geno == 'het' else -0.1, 250, n=1)
+        for _ in range(3):
+            add('masking', 'Hard-A', 0.15, 270, n=1)
+            add('masking', 'Hard-B', -0.1, 270, n=1)
         exp.add_animal(AnimalData(animal_id=f'ST{k:02d}', sessions=sessions, metadata={'genotype': geno}))
     return exp
 

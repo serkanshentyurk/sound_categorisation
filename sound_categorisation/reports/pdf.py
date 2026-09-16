@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, Sequence
+from typing import Dict
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -35,7 +35,7 @@ def _save(pdf, fig):
 
 
 def animal_pdf(r: AnimalResult, out_path, settings: Settings) -> Path:
-    """Psychometric + UM pages, then within → within_masking → between → dod (→ vs_ppc), then adaptation."""
+    """Psychometric + UM pages, then within → within_masking → between → dod (→ vs_ppc), then the session trajectory."""
     display = settings.display_for(r.design)
     tag = r.tag
     with PdfPages(out_path) as pdf:
@@ -54,8 +54,8 @@ def animal_pdf(r: AnimalResult, out_path, settings: Settings) -> Path:
             _save(pdf, F.interaction_grid(c['dod'], display, settings.units, f'{tag} · {_title("dod", r)}'))
         if 'vs_ppc' in c:
             _save(pdf, F.contrast_grid(c['vs_ppc'], display, settings.units, f'{tag} · {_title("vs_ppc", r)}'))
-        if r.adaptation:
-            _save(pdf, F.adaptation_page(r, f'{tag} · adaptation · convergence (opto vs masking)'))
+        if r.trajectory is not None:
+            _save(pdf, F.trajectory_page(r, f'{tag} · session trajectory'))
     return Path(out_path)
 
 
@@ -69,8 +69,8 @@ def group_pdf(g: GroupResult, per_animal: Dict[str, AnimalResult], out_path, set
             for phase in PHASES[g.design]:
                 _save(pdf, F.group_update_matrix_page(per_animal, phase, g.toi,
                                                       f'{prefix} · {phase} · genotype-mean UM'))
-        if g.adaptation:
-            _save(pdf, F.group_adaptation_page(g, f'{prefix} · group adaptation · convergence (WT vs HET)'))
+        if g.trajectories:
+            _save(pdf, F.group_trajectory_page(g, f'{prefix} · session trajectories (WT vs HET)'))
         kinds = [k for k in ('within', 'within_masking', 'between', 'dod', 'vs_ppc') if k in set(g.rows['kind'])]
         for kind in kinds:
             n = g.rows.loc[g.rows['kind'] == kind, 'animal'].nunique()

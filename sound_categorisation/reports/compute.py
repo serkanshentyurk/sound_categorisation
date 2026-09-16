@@ -14,7 +14,7 @@ seconds-long structural check used by ``--fast`` and the selftest.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
@@ -25,14 +25,15 @@ from behav_utils.data.arrays import TrialArrays
 from behav_utils.data.ops.filtering import filter_trials
 from behav_utils.readouts import PsychometricCurve, UpdateMatrix, compute_psychometric_curve, compute_update_matrix
 
-from sound_categorisation.adaptation import SwitchAdaptation, compute_switch_adaptation
+from sound_categorisation.adaptation import Trajectory, compute_trajectory
 from sound_categorisation.cohort import collect_sessions_alm, collect_sessions_ppc, gather_genotypes
 from sound_categorisation.contrasts import (
     BIAS, DUAL_UNITS, N_BOOT, N_PERM, SENSITIVITY, STATS, STATS_RT, OptoContrasts, alm_contrasts,
     dod_point, ppc_contrasts,
 )
 
-__all__ = ['Settings', 'AnimalResult', 'GroupResult', 'compute_animal', 'compute_group', 'DESIGNS']
+__all__ = ['Settings', 'AnimalResult', 'GroupResult', 'compute_animal', 'compute_group', 'DESIGNS',
+           'trajectory_distributions']
 
 DESIGNS = ('ppc', 'alm')
 PHASES = {'ppc': ('opto', 'masking'), 'alm': ('alm', 'masking', 'opto')}
@@ -48,16 +49,16 @@ class Settings:
     n_perm: int = N_PERM
     units: Tuple[str, ...] = DUAL_UNITS
     readouts: bool = True          # psychometric curves + update matrices per condition
-    adaptation: bool = True        # adaptation on non-uniform phases
+    trajectory: bool = True        # per-session trajectory + adaptation (pse_dynamics per session)
     curve_bootstrap: int = 200     # bootstrap draws for the psychometric-curve band
-    sigma: float = 0.175           # provisional sigma for the normative PSE
+    sigma: Optional[float] = None  # sigma for the normative PSE; None = the animal's own psychometric sigma
 
     @classmethod
     def fast(cls) -> 'Settings':
         return cls(stats=('accuracy', 'side_bias'),
                    stats_rt=('accuracy', 'side_bias', 'reaction_time', 'reaction_time_jitter'),
                    display=('accuracy', 'side_bias'), n_boot=30, n_perm=30,
-                   readouts=False, adaptation=False, curve_bootstrap=0)
+                   readouts=False, trajectory=False, curve_bootstrap=0)
 
     def names(self, design: str) -> List[str]:
         return list(self.stats_rt if design == 'alm' else self.stats)
@@ -89,7 +90,7 @@ class AnimalResult:
     toi: str
     contrasts: OptoContrasts
     readouts: Dict[Tuple[str, str], ConditionReadouts] = field(default_factory=dict)   # (phase, trial_type)
-    adaptation: Dict[str, SwitchAdaptation] = field(default_factory=dict)              # session_type → result
+    trajectory: Optional[Trajectory] = None                                            # per-session, in order
     n_sessions: Dict[str, int] = field(default_factory=dict)
 
     @property
@@ -113,7 +114,7 @@ class GroupResult:
     tests: pd.DataFrame           # kind, stat, p, statistic, n_wt, n_het, …  (WT vs HET rank tests)
     animals: Tuple[str, ...]
     by_animal: Dict[str, str]
-    adaptation: Dict[Tuple[str, str], SwitchAdaptation] = field(default_factory=dict)  # (animal, session_type)
+    trajectories: Dict[str, Trajectory] = field(default_factory=dict)                  # animal → trajectory
 
     def __repr__(self) -> str:
         return (f'GroupResult({self.distribution!r}, {self.design}, toi={self.toi!r}, '
@@ -121,6 +122,22 @@ class GroupResult:
 
 
 # ── per animal ──────────────────────────────────────────────────────────────
+
+def trajectory_distributions(distribution: str) -> Tuple[str, ...]:
+    """Uniform is blocked and stands alone; the Hard phase alternates A/B, so both are one trajectory."""
+    return ('Uniform',) if distribution.lower() == 'uniform' else ('Hard-A', 'Hard-B')
+
+
+def _trajectory(animal, distribution: str, s: 'Settings') -> Optional[Trajectory]:
+    if not s.trajectory:
+        return None
+    try:
+        return compute_trajectory(animal, trajectory_distributions(distribution), sigma=s.sigma)
+    except Exception as exc:                          # never let one animal kill the batch
+        import warnings
+        warnings.warn(f'{getattr(animal, "animal_id", "?")}: trajectory ({distribution}) failed: {exc}')
+        return None
+
 
 def _sessions_for(experiment, aid: str, distribution: str, design: str, site: Optional[str]):
     animal = experiment.animals[aid]
@@ -162,16 +179,8 @@ def compute_animal(experiment, aid: str, distribution: str, toi: str, *, design:
         con = alm_contrasts(sessions['alm'], sessions['masking'], sessions['opto'], toi, names,
                             n_boot=settings.n_boot, n_perm=settings.n_perm, units=settings.units)
     readouts = _readouts(sessions, toi, settings) if settings.readouts else {}
-    adaptation = {}
-    if settings.adaptation and distribution.lower() != 'uniform' and design == 'ppc':
-        for stype in ('opto', 'masking'):
-            try:
-                adaptation[stype] = compute_switch_adaptation(animal, distribution, session_type=stype,
-                                                              sigma=settings.sigma)
-            except Exception as exc:                       # never let one animal kill the batch
-                import warnings
-                warnings.warn(f'{aid}: adaptation ({distribution}, {stype}) failed: {exc}')
-    return AnimalResult(cohort, aid, genotype, distribution, design, site, toi, con, readouts, adaptation,
+    trajectory = _trajectory(animal, distribution, settings) if design == 'ppc' else None
+    return AnimalResult(cohort, aid, genotype, distribution, design, site, toi, con, readouts, trajectory,
                         {k: len(v) for k, v in sessions.items()})
 
 
@@ -209,7 +218,7 @@ def compute_group(experiment, animals: Sequence[str], distribution: str, toi: st
     by_animal, _ = gather_genotypes(experiment)
     names = settings.names(design)
     rows: List[dict] = []
-    adaptation: Dict[Tuple[str, str], SwitchAdaptation] = {}
+    trajectories: Dict[str, Trajectory] = {}
     for aid in animals:
         animal, sessions = _sessions_for(experiment, aid, distribution, design, site)
         if design == 'ppc':
@@ -217,13 +226,10 @@ def compute_group(experiment, animals: Sequence[str], distribution: str, toi: st
         else:
             con = alm_contrasts(sessions['alm'], sessions['masking'], sessions['opto'], toi, names, n_boot=0, n_perm=0)
         rows += _point_rows(con, design, aid, by_animal.get(aid, 'unknown'))
-        if settings.adaptation and distribution.lower() != 'uniform' and design == 'ppc':
-            for stype in ('opto', 'masking'):
-                try:
-                    adaptation[(aid, stype)] = compute_switch_adaptation(
-                        animal, distribution, session_type=stype, sigma=settings.sigma)
-                except Exception:
-                    pass
+        if design == 'ppc':
+            tr = _trajectory(animal, distribution, settings)
+            if tr is not None:
+                trajectories[aid] = tr
     df = pd.DataFrame(rows, columns=['animal', 'group', 'kind', 'stat', 'value'])
     tests = []
     for kind, sub in df.groupby('kind', sort=False):
@@ -233,4 +239,4 @@ def compute_group(experiment, animals: Sequence[str], distribution: str, toi: st
         for stat, r in res.items():
             tests.append({'kind': kind, 'stat': stat, **{k: v for k, v in r.items() if np.isscalar(v)}})
     tests_df = pd.DataFrame(tests, columns=['kind', 'stat', 'p'] if not tests else None)
-    return GroupResult(cohort, distribution, design, site, toi, df, tests_df, tuple(animals), by_animal, adaptation)
+    return GroupResult(cohort, distribution, design, site, toi, df, tests_df, tuple(animals), by_animal, trajectories)

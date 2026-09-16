@@ -7,8 +7,6 @@ exercised directly here (torch-free).
 """
 
 import numpy as np
-import pytest
-
 
 # ── params_to_str ────────────────────────────────────────────────────────────
 
@@ -109,7 +107,7 @@ class TestSaveLoadRoundtrip:
         assert set(cv.recovery['param']) == {'sigma_percep', 'eta_learning'}
 
     def test_unpaired_animal_dropped(self, tmp_path):
-        from sound_categorisation.cv_utils import save_cv_result, load_cv_results
+        from sound_categorisation.cv_utils import load_cv_results, save_cv_result
         save_cv_result(tmp_path / 'X_BE.pkl', 'X', 'BE',
                        [{'rep': 0, 'test_error': 0.1, 'best_params': {'a': 1}}],
                        'update_matrix')                          # only BE, no SC
@@ -117,7 +115,7 @@ class TestSaveLoadRoundtrip:
         assert len(cv.comparison) == 0                          # needs both fits
 
     def test_partials_subdir_skipped(self, tmp_path):
-        from sound_categorisation.cv_utils import save_cv_result, load_cv_results
+        from sound_categorisation.cv_utils import load_cv_results, save_cv_result
         tp = {'sigma_percep': 0.2}
         self._write_pair(tmp_path, 'A', [0.1, 0.1], [0.3, 0.3], 'BE', tp)
         (tmp_path / 'partials').mkdir()

@@ -9,10 +9,10 @@ saved alongside results via the `build_metadata()` helper, so runs
 are reproducible and traceable.
 """
 
-from pathlib import Path
-from datetime import datetime
 import platform
 import socket
+from datetime import datetime
+from pathlib import Path
 
 from sound_categorisation.inference.constants import SBI_STATS
 

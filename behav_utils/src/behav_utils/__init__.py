@@ -81,7 +81,7 @@ from behav_utils.plotting import (
     PALETTE, COLOURS, UM_CMAP, apply_style, get_colour,
 )
 
-__version__ = '0.3.0'
+__version__ = '0.4.0'
 
 __all__ = [
     # Config

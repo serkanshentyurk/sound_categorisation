@@ -23,14 +23,14 @@ Reuses:
     inference.types.get_default_param_configs          theta order + bounds
 """
 
-import numpy as np
-from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Callable, Dict, List, Sequence, Tuple, Union
 
-from sound_categorisation.inference.types import ModelType, get_default_param_configs
-from sound_categorisation.inference.representation import to_stat_vector
-from sound_categorisation.models.simulate import simulate_choices
+import numpy as np
 from behav_utils.data.synthetic import session_from_arrays
 
+from sound_categorisation.inference.representation import to_stat_vector
+from sound_categorisation.inference.types import ModelType, get_default_param_configs
+from sound_categorisation.models.simulate import simulate_choices
 
 # =============================================================================
 # PARAMETER LAYOUT (theta <-> params), driven by get_default_param_configs
@@ -98,7 +98,7 @@ def build_simulator(
     T: int = 350,
     burn_in: int = 1000,
     mode: str = 'pooled',
-    stat_names: Optional[Sequence[str]] = None,
+    stat_names: Sequence[str] | None = None,
 ) -> Tuple[Callable, object, List[str]]:
     """Build a static SBI simulator.
 
@@ -136,7 +136,7 @@ def build_simulator(
     if stat_names is not None:
         stat_names = list(stat_names)
 
-    def sim_fn(theta, seed: Optional[int] = None) -> np.ndarray:
+    def sim_fn(theta, seed: int | None = None) -> np.ndarray:
         from sound_categorisation.stimuli import sample_distribution
         if seed is None:
             seed = int(np.random.randint(0, 2**31 - 1))
@@ -170,8 +170,8 @@ def build_simulator(
 def _build_prior(model):
     """BoxUniform over the model's parameter bounds. None if sbi/torch absent."""
     try:
-        from sbi.utils import BoxUniform
         import torch
+        from sbi.utils import BoxUniform
     except ImportError:
         return None
     lower, upper = get_bounds_arrays(model)

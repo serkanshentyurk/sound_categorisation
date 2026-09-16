@@ -15,14 +15,14 @@ Usage:
     plot_assignment_strip(strip_df, mode='synthetic', truth_col='true')
 """
 
+from typing import List, Tuple
+
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-from matplotlib.patches import Patch
-from matplotlib.lines import Line2D
-from typing import Optional, List, Tuple
-
 from behav_utils.plotting.styles import COLOURS
+from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
 
 BE_COL = COLOURS['BE']
 SC_COL = COLOURS['SC']
@@ -32,13 +32,13 @@ COLOUR_MAP = {'BE': BE_COL, 'SC': SC_COL}
 def plot_assignment_strip(
     df: pd.DataFrame,
     mode: str = 'real',
-    method_cols: Optional[List[str]] = None,
+    method_cols: List[str] | None = None,
     id_col: str = 'id',
-    truth_col: Optional[str] = None,
+    truth_col: str | None = None,
     alpha: float = 0.05,
-    figsize: Optional[Tuple[float, float]] = None,
-    title: Optional[str] = None,
-    ax: Optional[plt.Axes] = None,
+    figsize: Tuple[float, float] | None = None,
+    title: str | None = None,
+    ax: plt.Axes | None = None,
 ) -> plt.Figure:
     """
     Plot a coloured assignment strip for multiple animals × methods.

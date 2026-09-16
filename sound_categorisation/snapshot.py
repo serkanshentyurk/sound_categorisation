@@ -10,13 +10,12 @@ Usage (load — in notebooks):
 """
 
 import hashlib
-import os
 import pickle
 import platform
 import warnings
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, Tuple, Union
 
 SNAPSHOT_FORMAT_VERSION = 1
 SNAPSHOT_FILENAME = 'sound_cat_snapshot.pkl'
@@ -28,7 +27,7 @@ _CLUSTER_SNAPSHOT_DIR = Path(
     '/ceph/akrami/Serkan/Head_Fixed_Behavior/Data/Processed/behaviour/snapshots'
 )
 
-def snapshot_dir(repo_root: Optional[Path] = None) -> Path:
+def snapshot_dir(repo_root: Path | None = None) -> Path:
     """
     Return the snapshot directory for the current machine.
 
@@ -45,7 +44,7 @@ def snapshot_dir(repo_root: Optional[Path] = None) -> Path:
         return repo_root.parent.parent / 'data' / 'behaviour' / 'snapshots'
 
 
-def default_output_path(repo_root: Optional[Path] = None) -> Path:
+def default_output_path(repo_root: Path | None = None) -> Path:
     return snapshot_dir(repo_root) / SNAPSHOT_FILENAME
 
 
@@ -71,7 +70,7 @@ def _session_summary(experiment) -> Dict[str, int]:
 
 def export_snapshot(
     config_path: Union[str, Path],
-    output_path: Optional[Union[str, Path]] = None,
+    output_path: Union[str, Path] | None = None,
     verbose: bool = True,
 ) -> Path:
     """Load data from CSV via config, save as versioned snapshot."""
@@ -127,7 +126,7 @@ def export_snapshot(
 
     size_mb = output_path.stat().st_size / 1e6
     if verbose:
-        print(f'Exported snapshot:')
+        print('Exported snapshot:')
         print(f'  Animals:  {meta["n_animals"]}')
         print(f'  Sessions: {total_sessions}')
         print(f'  Trials:   {total_trials}')
@@ -140,7 +139,7 @@ def export_snapshot(
 
 def load_snapshot(
     path: Union[str, Path],
-    config_path: Optional[Union[str, Path]] = None,
+    config_path: Union[str, Path] | None = None,
     warn_age_hours: float = 72,
 ) -> Tuple:
     """Load a snapshot, with staleness and version checks."""
@@ -160,8 +159,8 @@ def load_snapshot(
 
     if not isinstance(snapshot, dict) or 'experiment' not in snapshot:
         raise ValueError(
-            f'Not a valid snapshot file. Re-export with '
-            f'scripts/export_snapshot.py.'
+            'Not a valid snapshot file. Re-export with '
+            'scripts/export_snapshot.py.'
         )
 
     meta = snapshot.get('metadata', {})
@@ -194,10 +193,20 @@ def load_snapshot(
             export_hash = meta.get('config_hash', '')
             if export_hash and current_hash != export_hash:
                 warnings.warn(
-                    f'Config has changed since snapshot was exported. '
-                    f'Re-export if column mappings changed.',
+                    'Config has changed since snapshot was exported. '
+                    'Re-export if column mappings changed.',
                     stacklevel=2,
                 )
+            # Presets and session types live in the config, not the pickle: re-apply both
+            # so a snapshot behaves exactly like a fresh load.
+            from behav_utils.config.schema import load_config
+            from behav_utils.data.loading import _apply_session_type
+            from behav_utils.data.ops.selection import register_presets_from_config
+            cfg = load_config(config_path)
+            for type_name, mapping in cfg.session_types.items():
+                _apply_session_type(experiment, mapping, type_name)
+            if cfg.session_presets:
+                register_presets_from_config({'session_presets': cfg.session_presets})
 
     print(
         f'Loaded snapshot: {meta.get("n_animals", "?")} animals, '
@@ -236,7 +245,7 @@ def check_staleness(
     n_new = sum(c['new_sessions'] for c in comparison.values() if c['new_sessions'] > 0)
     new_animals = [aid for aid in current_counts if aid not in snap_counts]
 
-    print(f'Staleness check:')
+    print('Staleness check:')
     print(f'  Snapshot: {sum(snap_counts.values())} sessions '
           f'across {len(snap_counts)} animals')
     print(f'  Current:  {sum(current_counts.values())} sessions '
@@ -250,6 +259,6 @@ def check_staleness(
     if new_animals:
         print(f'  → {len(new_animals)} new animals: {new_animals}')
     if n_new == 0 and not new_animals:
-        print(f'  → Snapshot is up to date.')
+        print('  → Snapshot is up to date.')
 
     return comparison

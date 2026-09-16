@@ -12,12 +12,12 @@ Usage:
     )
 """
 
-import numpy as np
+from typing import List, Tuple
+
 import matplotlib.pyplot as plt
-from typing import Dict, List, Tuple, Optional, Any
+import numpy as np
 
 from sound_categorisation.plotting._style import PARAM_COLOURS
-
 
 # =============================================================================
 # MARGINAL POSTERIORS
@@ -26,8 +26,8 @@ from sound_categorisation.plotting._style import PARAM_COLOURS
 def plot_marginal_posteriors(
     posterior_samples: np.ndarray,
     param_names: List[str],
-    true_theta: Optional[np.ndarray] = None,
-    figsize: Optional[Tuple[float, float]] = None,
+    true_theta: np.ndarray | None = None,
+    figsize: Tuple[float, float] | None = None,
     n_bins: int = 40,
 ) -> plt.Figure:
     """Marginal posterior histogram per parameter.
@@ -105,8 +105,8 @@ def plot_marginal_posteriors(
 def plot_pairplot(
     samples: np.ndarray,
     param_names: List[str],
-    ground_truth: Optional[np.ndarray] = None,
-    figsize: Optional[Tuple[float, float]] = None,
+    ground_truth: np.ndarray | None = None,
+    figsize: Tuple[float, float] | None = None,
     n_bins: int = 30,
     max_params: int = 8,
 ) -> plt.Figure:
@@ -178,11 +178,11 @@ def plot_pairplot(
 def plot_posterior_psychometric(
     stimuli_per_session: List[np.ndarray],
     choices_per_session: List[np.ndarray],
-    posterior_choices: Optional[List[List[np.ndarray]]] = None,
-    sessions_to_show: Optional[List[int]] = None,
+    posterior_choices: List[List[np.ndarray]] | None = None,
+    sessions_to_show: List[int] | None = None,
     n_bins: int = 8,
-    figsize: Optional[Tuple[float, float]] = None,
-    title: Optional[str] = None,
+    figsize: Tuple[float, float] | None = None,
+    title: str | None = None,
 ) -> plt.Figure:
     """
     Overlay observed psychometric curves with posterior predictive samples.

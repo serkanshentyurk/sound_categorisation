@@ -13,16 +13,15 @@ import argparse
 import sys
 from pathlib import Path
 
-from sound_categorisation.paths import REPO_ROOT
-
 
 def _resolve_config_path(explicit_path=None) -> Path:
     """Find the right config file."""
     if explicit_path:
         return Path(explicit_path)
 
-    from sound_categorisation.paths import DEFAULT_CONFIG, CLUSTER_CONFIG
     import socket
+
+    from sound_categorisation.paths import CLUSTER_CONFIG, DEFAULT_CONFIG
     hostname = socket.gethostname()
     if CLUSTER_CONFIG.exists() and any(
         x in hostname for x in ('hpc', 'gpu', 'enc', 'sgw')
@@ -41,7 +40,7 @@ def main():
                         help='Compare existing snapshot against current data')
     args = parser.parse_args()
 
-    from sound_categorisation.snapshot import export_snapshot, check_staleness, default_output_path
+    from sound_categorisation.snapshot import check_staleness, default_output_path, export_snapshot
 
     config_path = _resolve_config_path(args.config)
     output_path = Path(args.output) if args.output else default_output_path()

@@ -25,17 +25,22 @@ Module structure:
     selection.py      -- condition_sbi (held-out CV; comparison in cv_utils)
 """
 
-from sound_categorisation.inference.types import (
-    ModelType, ParamConfig, get_default_param_configs,
-)
+from sound_categorisation.inference.amortised import AmortisedSBI
 from sound_categorisation.inference.constants import SBI_STATS
 from sound_categorisation.inference.representation import to_stat_vector
-from sound_categorisation.inference.simulator import (
-    build_simulator, theta_to_params,
-    get_param_names, get_bounds_arrays, wrap_for_sbi,
-)
-from sound_categorisation.inference.amortised import AmortisedSBI
 from sound_categorisation.inference.selection import condition_sbi
+from sound_categorisation.inference.simulator import (
+    build_simulator,
+    get_bounds_arrays,
+    get_param_names,
+    theta_to_params,
+    wrap_for_sbi,
+)
+from sound_categorisation.inference.types import (
+    ModelType,
+    ParamConfig,
+    get_default_param_configs,
+)
 
 __all__ = [
     'ModelType', 'ParamConfig', 'get_default_param_configs',

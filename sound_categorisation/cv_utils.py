@@ -10,18 +10,18 @@ only handles the CV-specific operations.
 
 """
 
+import pickle
+from collections import namedtuple
+from pathlib import Path
+from typing import TYPE_CHECKING, Dict
+
 import numpy as np
 import pandas as pd
-import pickle
-from pathlib import Path
-from collections import namedtuple
-from typing import Optional, List, Dict, Tuple, Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from behav_utils.data.structures import AnimalData, SessionData
+    pass
 
 # Re-export for convenience — callers can import from here or from selection
-from behav_utils.data.ops.selection import select_sessions
 
 # Tidy bundle returned by load_cv_results. Cross-method: the same loader serves
 # grid-search and SBI validation, since both write the schema via save_cv_result.
@@ -149,9 +149,9 @@ def save_cv_result(
     model: str,
     results: list,
     fit_target: str,
-    true_model: Optional[str] = None,
-    true_params: Optional[dict] = None,
-    metadata: Optional[dict] = None,
+    true_model: str | None = None,
+    true_params: dict | None = None,
+    metadata: dict | None = None,
 ):
     """
     Write one (animal, model) CV result in the neutral cross-method schema.

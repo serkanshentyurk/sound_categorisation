@@ -17,9 +17,15 @@ dev = ["pytest", "ruff"]
 include = ["sound_categorisation*"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "behav_utils/tests"]
 pythonpath = [".", "behav_utils/src"]
 
 [tool.ruff]
 line-length = 110
 target-version = "py310"
+src = ["sound_categorisation", "scripts", "tests"]
+extend-exclude = ["behav_utils", "notebooks", "arpit"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E501", "B008", "B905", "UP006", "UP007", "UP035"]

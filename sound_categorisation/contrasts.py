@@ -21,12 +21,15 @@ session interval is the honest one because session type was assigned per session
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Sequence
+from typing import Dict, Sequence
 
 import pandas as pd
-
 from behav_utils.analysis.comparison import (
-    DeltaStats, Interaction, compute_delta_stat, compute_interaction, contrast_key,
+    DeltaStats,
+    Interaction,
+    compute_delta_stat,
+    compute_interaction,
+    contrast_key,
 )
 from behav_utils.data.ops.filtering import filter_trials
 from behav_utils.stats import PSYCHOMETRIC
@@ -50,11 +53,11 @@ class OptoContrasts:
 
     toi: str
     key: str                                     # f'{toi}_vs_non_opto'
-    within: Optional[DeltaStats] = None
-    within_masking: Optional[DeltaStats] = None
-    between: Optional[DeltaStats] = None
-    dod: Optional[Interaction] = None
-    vs_ppc: Optional[DeltaStats] = None
+    within: DeltaStats | None = None
+    within_masking: DeltaStats | None = None
+    between: DeltaStats | None = None
+    dod: Interaction | None = None
+    vs_ppc: DeltaStats | None = None
     labels: Dict[str, str] = field(default_factory=dict)   # {'between': 'opto_vs_masking', ...}
 
     def __getitem__(self, name: str):
@@ -66,7 +69,7 @@ class OptoContrasts:
     def __contains__(self, name: str) -> bool:
         return getattr(self, name, None) is not None
 
-    def table(self, unit: Optional[str] = None) -> pd.DataFrame:
+    def table(self, unit: str | None = None) -> pd.DataFrame:
         """All available contrasts stacked: adds a ``kind`` column (within, between, dod, …)."""
         frames = []
         for kind in ('within', 'within_masking', 'between', 'vs_ppc'):

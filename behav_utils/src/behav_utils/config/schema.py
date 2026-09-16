@@ -17,6 +17,7 @@ Usage:
 import yaml
 import os
 from pathlib import Path
+import warnings
 from dataclasses import dataclass, field
 from typing import (
     Optional, Dict, List, Tuple, Any, Union,
@@ -199,6 +200,14 @@ class PlottingConfig:
 # TOP-LEVEL CONFIG
 # =============================================================================
 
+_LEGACY_SESSION_TYPE_KEYS = {
+    'masking_sessions': 'masking',
+    'washout_sessions': 'washout',
+    'unilateral_alm_control_sessions': 'alm_control_uni',
+    'bilateral_alm_control_sessions': 'alm_control_bi',
+}
+
+
 @dataclass
 class ProjectConfig:
     """
@@ -226,16 +235,17 @@ class ProjectConfig:
     # Extra columns to load but not map to specific fields
     extra_columns: List[str] = field(default_factory=list)
     
-    # Masking session overrides: {animal_id: ['YYYYMMDD', ...]}
-    masking_sessions: Dict[str, List[str]] = field(default_factory=dict)
-    
-    # Washout session overrides: {animal_id: ['YYYYMMDD', ...]}
-    washout_sessions: Dict[str, List[str]] = field(default_factory=dict)
+    # Session-type overrides, stamped onto sessions at load time:
+    #   session_types: {type_name: {animal_id: ['YYYYMMDD', ...]}}
+    # Type names are the project's own vocabulary (e.g. 'masking', 'washout',
+    # 'alm_control_uni'); the library only knows 'regular' and 'opto', which it
+    # derives from the data. Legacy keys (masking_sessions, washout_sessions,
+    # unilateral/bilateral_alm_control_sessions) are folded in with a warning.
+    session_types: Dict[str, Dict[str, List[str]]] = field(default_factory=dict)
 
-    # ALM light-only control overrides (control site, not PPC).
-    # These map to session_type 'alm_control_uni' / 'alm_control_bi'.
-    unilateral_alm_control_sessions: Dict[str, List[str]] = field(default_factory=dict)
-    bilateral_alm_control_sessions: Dict[str, List[str]] = field(default_factory=dict)
+    # Named session presets (raw dicts from 'session_presets'), registered at load
+    # time via behav_utils.data.ops.selection.register_presets_from_config.
+    session_presets: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
     # Sessions dropped at load time — never built, never in a snapshot.
     sessions_to_ignore: Dict[str, List[str]] = field(default_factory=dict)
@@ -498,13 +508,16 @@ def load_config(path: Union[str, Path]) -> ProjectConfig:
     for name, spec in raw.get('session_metadata', {}).items():
         session_metadata[name] = _parse_session_metadata(name, spec)
 
-    # Session-list overrides, all {animal_id: ['YYYYMMDD', ...]}
-    masking_sessions = _normalise_session_dict(raw.get('masking_sessions', {}))
-    washout_sessions = _normalise_session_dict(raw.get('washout_sessions', {}))
-    unilateral_alm = _normalise_session_dict(
-        raw.get('unilateral_alm_control_sessions', {}))
-    bilateral_alm = _normalise_session_dict(
-        raw.get('bilateral_alm_control_sessions', {}))
+    # Session-type overrides: {type_name: {animal_id: ['YYYYMMDD', ...]}}
+    session_types = {name: _normalise_session_dict(m or {})
+                     for name, m in (raw.get('session_types') or {}).items()}
+    for legacy_key, type_name in _LEGACY_SESSION_TYPE_KEYS.items():
+        if legacy_key in raw:
+            warnings.warn(f"config key '{legacy_key}' is deprecated; use session_types: {{{type_name}: {{...}}}}",
+                          DeprecationWarning, stacklevel=2)
+            merged = dict(session_types.get(type_name, {}))
+            merged.update(_normalise_session_dict(raw[legacy_key] or {}))
+            session_types[type_name] = merged
     sessions_to_ignore = _normalise_session_dict(raw.get('sessions_to_ignore', {}))
 
     return ProjectConfig(
@@ -517,10 +530,8 @@ def load_config(path: Union[str, Path]) -> ProjectConfig:
         columns=columns,
         session_metadata=session_metadata,
         extra_columns=raw.get('extra_columns', []),
-        masking_sessions=masking_sessions,
-        washout_sessions=washout_sessions,
-        unilateral_alm_control_sessions=unilateral_alm,
-        bilateral_alm_control_sessions=bilateral_alm,
+        session_types=session_types,
+        session_presets=dict(raw.get('session_presets') or {}),
         sessions_to_ignore=sessions_to_ignore,
     )
 

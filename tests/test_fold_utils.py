@@ -5,7 +5,6 @@ Block-aware CV fold construction.
 """
 
 import numpy as np
-import pytest
 
 
 class TestSplitFoldsByBlock:

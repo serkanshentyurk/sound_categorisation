@@ -1,7 +1,6 @@
 """Tests for models.BE_core and models.SC_core determinism and API."""
 
 import numpy as np
-import pytest
 
 
 class TestBEModel:
@@ -9,7 +8,7 @@ class TestBEModel:
 
     def test_deterministic_with_seed(self):
         """Same seed → same output."""
-        from sound_categorisation.models.BE_core import BEParams, BEState, BEModel
+        from sound_categorisation.models.BE_core import BEModel, BEParams, BEState
 
         params = BEParams(
             sigma_percep=0.1, A_repulsion=0.3,
@@ -32,7 +31,7 @@ class TestBEModel:
 
     def test_choices_are_binary(self):
         """All choices should be 0 or 1."""
-        from sound_categorisation.models.BE_core import BEParams, BEState, BEModel
+        from sound_categorisation.models.BE_core import BEModel, BEParams, BEState
 
         params = BEParams(
             sigma_percep=0.1, A_repulsion=0.3,
@@ -53,7 +52,7 @@ class TestBEModel:
         bounds = BEParams.get_bounds()
         names = BEParams.get_param_names()
         assert set(bounds.keys()) == set(names)
-        for name, (lo, hi) in bounds.items():
+        for lo, hi in bounds.values():
             assert lo < hi
 
     def test_sample_prior(self):
@@ -73,7 +72,7 @@ class TestSCModel:
 
     def test_deterministic_with_seed(self):
         """Same seed → same output."""
-        from sound_categorisation.models.SC_core import SCParams, SCState, SCModel
+        from sound_categorisation.models.SC_core import SCModel, SCParams, SCState
 
         params = SCParams(
             sigma_percep=0.2, A_repulsion=0.2,
@@ -96,7 +95,7 @@ class TestSCModel:
 
     def test_choices_are_binary(self):
         """All choices should be 0 or 1."""
-        from sound_categorisation.models.SC_core import SCParams, SCState, SCModel
+        from sound_categorisation.models.SC_core import SCModel, SCParams, SCState
 
         params = SCParams(
             sigma_percep=0.2, A_repulsion=0.2,

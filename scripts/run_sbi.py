@@ -41,47 +41,40 @@ Real data (one phase)::
 from __future__ import annotations
 
 import argparse
-import sys
 import time
-from pathlib import Path
 
-# Run as a plain script (python scripts/run_sbi.py) or a module
-# (python -m scripts.run_sbi): put the repo root on sys.path either way.
-
-from sound_categorisation.inference.amortised import AmortisedSBI
-from sound_categorisation.inference.selection import condition_sbi
-from sound_categorisation.providers import load_animals
-from sound_categorisation.paths import (
-    SBI_REPRESENTATIONS,
-    SBI_N_CV_REPEATS,
-    SBI_N_POSTERIOR_SAMPLES,
-    GS_N_BINS,
-    GS_N_FOLDS,
-    FIT_TARGETS,
-    MODEL_TYPES,
-    DISTRIBUTIONS,
-    BASE_SEED,
-    snpe_networks_dir,
-    snpe_net_path,
-    results_dir,
-    build_metadata,
-)
+from sound_categorisation.cohort import load_animals
 from sound_categorisation.cv_utils import save_cv_result
 
-# Same rep-major, model-minor task order as train_sbi (so a net trained by
-# task k is conditioned by task k).
+# Run as a plain script (python scripts/run_sbi.py) or a module
+from sound_categorisation.inference.amortised import AmortisedSBI
+from sound_categorisation.inference.selection import condition_sbi
+from sound_categorisation.paths import (
+    BASE_SEED,
+    DISTRIBUTIONS,
+    FIT_TARGETS,
+    GS_N_BINS,
+    GS_N_FOLDS,
+    MODEL_TYPES,
+    SBI_N_CV_REPEATS,
+    SBI_N_POSTERIOR_SAMPLES,
+    SBI_REPRESENTATIONS,
+    build_metadata,
+    results_dir,
+    snpe_net_path,
+)
+from sound_categorisation.tasks import CONDITION_GRID
+
+# A net trained by TRAIN_GRID task (rep, model, *) is conditioned by CONDITION_GRID task (rep, model).
 REPRESENTATIONS = tuple(SBI_REPRESENTATIONS)
-N_TASKS = len(REPRESENTATIONS) * len(MODEL_TYPES)
+N_TASKS = CONDITION_GRID.n
 SMOKE_N_REPEATS = 2
 
 
 def decode_task(task_id):
-    """Map a SLURM array index in [0, N_TASKS) to a (rep, model) pair."""
-    if not 0 <= task_id < N_TASKS:
-        raise ValueError(f'task_id must be in [0, {N_TASKS}); got {task_id}.')
-    rep = REPRESENTATIONS[task_id // len(MODEL_TYPES)]
-    model = MODEL_TYPES[task_id % len(MODEL_TYPES)]
-    return rep, model
+    """SLURM array index -> (rep, model); see sound_categorisation.tasks.CONDITION_GRID."""
+    d = CONDITION_GRID.decode(task_id)
+    return d['rep'], d['model']
 
 
 def condition_cohort(records, rep, model, distribution, out_dir, fit_target,
@@ -151,6 +144,7 @@ def main():
                         '(snpe_{rep}_{model}_{distribution}.pkl) and, for real '
                         'data unless --preset is given, the matching sessions '
                         "(expert_<distribution>). Condition one phase per launch.")
+    p.add_argument('--print-array', action='store_true', help='print the SLURM --array range and exit')
     p.add_argument('--task-id', type=int, default=None,
                    help=f'SLURM array index 0-{N_TASKS - 1}; '
                         'overrides --rep/--model.')
@@ -166,6 +160,9 @@ def main():
     p.add_argument('--count', action='store_true',
                    help='Print the number of array tasks and exit.')
     args = p.parse_args()
+    if args.print_array:
+        print(CONDITION_GRID.slurm_range())
+        return
 
     if args.count:
         print(N_TASKS)

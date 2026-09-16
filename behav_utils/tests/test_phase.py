@@ -3,7 +3,7 @@ session-selection primitive that replaced the old ``analysis.phase`` layer.
 
 ``select_sessions(animal, preset=None, **overrides)`` resolves a registered
 preset and/or ad-hoc ``SessionFilter`` criteria and returns a list of matching
-``SessionData``. Ad-hoc defaults exclude masking / washout / ALM-control sessions
+``SessionData``. Ad-hoc defaults exclude nothing; presets carry exclude_types
 and keep opto (``exclude_opto=False``).
 """
 import numpy as np
@@ -85,21 +85,20 @@ class TestAdHocSelection:
         out = select_sessions(_animal(), session_type='opto')
         assert out and all(s.session_type == 'opto' for s in out)
 
-    def test_masking_requires_explicit_include(self):
-        # default excludes masking …
+    def test_masking_excluded_only_by_exclude_types(self):
+        # ad hoc: nothing excluded
+        assert any(s.session_type == 'masking' for s in select_sessions(_animal(), distribution='Uniform'))
+        # exclude_types drops them; session_type selects them
         assert not any(s.session_type == 'masking'
-                       for s in select_sessions(_animal(), distribution='Uniform'))
-        # … but is selectable when asked for
-        out = select_sessions(_animal(), session_type='masking', exclude_masking=False)
-        assert out and all(s.session_type == 'masking' for s in out)
-
+                       for s in select_sessions(_animal(), distribution='Uniform', exclude_types=('masking',)))
+        assert all(s.session_type == 'masking' for s in select_sessions(_animal(), session_type='masking'))
     def test_min_accuracy_filters_low(self):
         out = select_sessions(_animal(), distribution='Uniform', min_accuracy=0.7)
         assert out and all(_acc(s) >= 0.7 for s in out)
 
     def test_last_n_keeps_most_recent(self):
         out = select_sessions(_animal(), distribution='Uniform', min_accuracy=0.0,
-                              exclude_masking=False, last_n=2)
+                              last_n=2)
         assert len(out) == 2
         idxs = [s.session_idx for s in out]
         assert idxs == sorted(idxs)                       # chronological
@@ -124,4 +123,4 @@ class TestPresetErrors:
         assert f.distribution == 'Uniform'
         assert f.stage == 'Full_Task_Cont'
         assert f.min_accuracy == pytest.approx(0.7)
-        assert f.exclude_masking is True
+        assert 'masking' in f.exclude_types

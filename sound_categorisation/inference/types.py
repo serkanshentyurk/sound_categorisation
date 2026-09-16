@@ -14,11 +14,11 @@ Consumers:
     inference/amortised.py   ModelType, ParamConfig, get_default_param_configs
 """
 
-import numpy as np
 from dataclasses import dataclass
 from enum import Enum
-from typing import Dict, Optional, Tuple
+from typing import Dict, Tuple
 
+import numpy as np
 
 # =============================================================================
 # MODEL TYPE
@@ -44,7 +44,7 @@ class ParamConfig:
     """
     name: str
     bounds: Tuple[float, float]
-    default: Optional[float] = None
+    default: float | None = None
 
     def sample_uniform(self, rng: np.random.Generator) -> float:
         """Sample from uniform prior within bounds."""

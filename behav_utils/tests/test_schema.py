@@ -216,10 +216,10 @@ class TestLoadConfig:
         p = tmp_path / 'config.yaml'
         p.write_text(_YAML)
         cfg = load_config(p)
-        assert cfg.masking_sessions['Animal1'] == ['20240315', '20240316']  # list kept
-        assert cfg.masking_sessions['Animal2'] == ['20240301']              # scalar wrapped
-        assert cfg.masking_sessions['Animal3'] == []                        # null → empty
-        assert cfg.washout_sessions['Animal1'] == ['20240320']
+        assert cfg.session_types['masking']['Animal1'] == ['20240315', '20240316']  # list kept
+        assert cfg.session_types['masking']['Animal2'] == ['20240301']              # scalar wrapped
+        assert cfg.session_types['masking']['Animal3'] == []                        # null → empty
+        assert cfg.session_types['washout']['Animal1'] == ['20240320']
 
 
 # ── validate_csv_against_config ──────────────────────────────────────────────

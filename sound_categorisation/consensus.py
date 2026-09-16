@@ -27,11 +27,12 @@ Consensus rule (configurable):
     4. Tie / no majority -> 'Split'.
 """
 
-import numpy as np
-import pandas as pd
 from collections import Counter
 from pathlib import Path
-from typing import Optional, List, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING, List, Optional, Tuple
+
+import numpy as np
+import pandas as pd
 
 from sound_categorisation.cv_utils import load_cv_results
 from sound_categorisation.paths import results_dir
@@ -43,7 +44,7 @@ if TYPE_CHECKING:
 FT_LABEL = {'update_matrix': 'UM', 'conditional_psych': 'CP'}
 
 # A method is (source, rep, fit_target). rep is None for grid search.
-Method = Tuple[str, Optional[str], str]
+Method = Tuple[str, str | None, str]
 
 DEFAULT_METHODS: List[Method] = [
     ('grid_search', None, 'update_matrix'),
@@ -55,7 +56,7 @@ DEFAULT_METHODS: List[Method] = [
 
 # ── method -> label / directory ──────────────────────────────────────────────
 
-def _method_label(source: str, rep: Optional[str], fit_target: str) -> str:
+def _method_label(source: str, rep: str | None, fit_target: str) -> str:
     ft = FT_LABEL[fit_target]
     if source == 'grid_search':
         return f'GS-{ft}'
@@ -64,7 +65,7 @@ def _method_label(source: str, rep: Optional[str], fit_target: str) -> str:
     return f'{source}-{rep}-{ft}'
 
 
-def _method_dir(source: str, rep: Optional[str], fit_target: str,
+def _method_dir(source: str, rep: str | None, fit_target: str,
                 run: str, cohort: str) -> Path:
     d = results_dir(source, run, cohort, fit_target)
     return d / rep if (source == 'sbi' and rep) else d
@@ -100,7 +101,7 @@ def _compute_consensus(row: dict, alpha: float = 0.05,
 def load_all_assignments(
     run: str,
     cohort: str,
-    methods: Optional[List[Method]] = None,
+    methods: List[Method] | None = None,
     experiment: Optional['ExperimentData'] = None,
     alpha: float = 0.05,
     min_significant_votes: int = 1,

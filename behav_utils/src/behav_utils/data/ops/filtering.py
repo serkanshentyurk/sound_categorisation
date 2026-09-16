@@ -32,7 +32,7 @@ Public API:
 """
 
 import numpy as np
-from typing import Optional, List, Dict, Callable, Tuple, Union, Any, TYPE_CHECKING, Literal
+from typing import Optional, List, Dict, Callable, Union, Any, TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from behav_utils.data.structures import TrialData, SessionData

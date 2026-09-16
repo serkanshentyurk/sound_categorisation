@@ -2,7 +2,6 @@
 
 import numpy as np
 import pytest
-
 from sound_categorisation.inference.types import ModelType, get_default_param_configs
 from sound_categorisation.models.simulate import simulate_choices
 

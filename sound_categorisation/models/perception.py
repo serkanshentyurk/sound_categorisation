@@ -18,9 +18,9 @@ Usage:
     x_min, x_max, n_points = stimulus_space_bounds(sigma_percep, A_repulsion)
 """
 
-import numpy as np
-from typing import Optional, Tuple
+from typing import Tuple
 
+import numpy as np
 
 # =============================================================================
 # STIMULUS PERCEPTION
@@ -30,7 +30,7 @@ def perceive_stimulus(
     s_t: float,
     sigma_percep: float,
     A_repulsion: float,
-    s_hat_prev: Optional[float],
+    s_hat_prev: float | None,
     rng: np.random.Generator,
 ) -> float:
     """

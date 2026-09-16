@@ -1,7 +1,7 @@
 """
 Tidy tables from report results, and their persistence.
 
-    tables = to_tables(animal_result)             # {'contrasts': df, 'adaptation_dynamics': df, 'adaptation_curves': df}
+    tables = to_tables(animal_result)             # {'contrasts': df, 'trajectory': df, 'trajectory_curves': df}
     write_result(out_dir, tables, readouts, meta)  # tables/*.csv, readouts.npz, meta.json
     tables, readouts, meta = read_result(out_dir)
 
@@ -65,29 +65,29 @@ def to_tables(r: AnimalResult) -> Dict[str, pd.DataFrame]:
     contrasts = (pd.concat(frames, ignore_index=True)[CONTRAST_COLUMNS] if frames
                  else pd.DataFrame(columns=CONTRAST_COLUMNS))
 
-    dyn, curves = [], []
-    for stype, ad in r.adaptation.items():
-        dyn.append(ad.to_rows().assign(baseline_pse=ad.baseline_pse, normative_pse=ad.normative_pse,
-                                       n_sessions=ad.n_sessions, n_trials=ad.n_trials, **lab))
-        curves.append(ad.curve.assign(session_type=stype, **lab))
+    tr = r.trajectory
+    # trajectory rows keep their own per-session `distribution`; the page's distribution is `phase`
+    tlab = {k: v for k, v in lab.items() if k != 'distribution'} | {'phase': r.distribution}
     return {
         'contrasts': contrasts,
-        'adaptation_dynamics': pd.concat(dyn, ignore_index=True) if dyn else pd.DataFrame(),
-        'adaptation_curves': pd.concat(curves, ignore_index=True) if curves else pd.DataFrame(),
+        'trajectory': (tr.sessions.assign(expert_pse=tr.baseline_pse, sigma=tr.sigma, **tlab)
+                       if tr is not None else pd.DataFrame()),
+        'trajectory_curves': tr.curves.assign(**tlab) if tr is not None else pd.DataFrame(),
     }
 
 
 def group_tables(g: GroupResult) -> Dict[str, pd.DataFrame]:
     lab = {'cohort': g.cohort, 'distribution': g.distribution, 'design': g.design, 'site': g.site or '', 'toi': g.toi}
-    dyn = [ad.to_rows().assign(session_type=st, group=g.by_animal.get(aid, 'unknown'), **lab)
-           for (aid, st), ad in g.adaptation.items()]
-    curves = [ad.curve.assign(animal=aid, session_type=st, group=g.by_animal.get(aid, 'unknown'), **lab)
-              for (aid, st), ad in g.adaptation.items()]
+    tlab = {k: v for k, v in lab.items() if k != 'distribution'} | {'phase': g.distribution}
+    sess = [tr.sessions.assign(animal=aid, genotype=g.by_animal.get(aid, 'unknown'), expert_pse=tr.baseline_pse,
+                               sigma=tr.sigma, **tlab) for aid, tr in g.trajectories.items()]
+    curves = [tr.curves.assign(animal=aid, genotype=g.by_animal.get(aid, 'unknown'), **tlab)
+              for aid, tr in g.trajectories.items()]
     return {
         'group_rows': g.rows.assign(**lab),
         'group_tests': g.tests.assign(**lab),
-        'adaptation_dynamics': pd.concat(dyn, ignore_index=True) if dyn else pd.DataFrame(),
-        'adaptation_curves': pd.concat(curves, ignore_index=True) if curves else pd.DataFrame(),
+        'trajectory': pd.concat(sess, ignore_index=True) if sess else pd.DataFrame(),
+        'trajectory_curves': pd.concat(curves, ignore_index=True) if curves else pd.DataFrame(),
     }
 
 

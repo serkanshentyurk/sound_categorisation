@@ -72,3 +72,5 @@ __all__ = [
     'sample_stimuli',
     'noisy_psychometric_simulator',
 ]
+
+from behav_utils.data.ops.switches import find_switches  # noqa: E402

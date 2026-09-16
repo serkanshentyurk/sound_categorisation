@@ -8,3 +8,4 @@ snap_args=""; [ -n "${SNAP:-}" ] && snap_args="--snapshot $SNAP"
 python -m sound_categorisation.reports selftest || exit 1
 python -m sound_categorisation.reports all --fast --limit 1 $snap_args || exit 1     # structure check on real data
 python -m sound_categorisation.reports all $snap_args
+python -m sound_categorisation.reports summary

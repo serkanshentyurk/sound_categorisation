@@ -1,20 +1,25 @@
 """
-sound_categorisation test fixtures (the library's own tests live in behav_utils/tests).
+behav_utils test fixtures.
 
 Provides synthetic animals, sessions, and trial data for testing
 without requiring real data or cluster access.
 """
 
-from datetime import date, timedelta
-from pathlib import Path
-
 import numpy as np
 import pytest
-import yaml
+
 from behav_utils.data.ops.selection import register_presets_from_config
 
-# Presets are defined by the project config, not the library: register them once for the suite.
-register_presets_from_config(yaml.safe_load((Path(__file__).parent.parent / 'config.yaml').read_text()))
+# The library ships no presets; these mirror the shape a project config would register.
+register_presets_from_config({'session_presets': {
+    'expert_uniform': {'stage': 'Full_Task_Cont', 'distribution': 'Uniform', 'min_accuracy': 0.70,
+                       'last_fraction': 0.50, 'exclude_types': ['masking', 'washout']},
+    'all_uniform': {'stage': 'Full_Task_Cont', 'distribution': 'Uniform', 'exclude_types': ['masking', 'washout']},
+    'naive_uniform': {'stage': 'Full_Task_Cont', 'distribution': 'Uniform', 'first_n': 5,
+                      'exclude_types': ['masking', 'washout']},
+    'all_stages': {'exclude_types': ['masking', 'washout']},
+}})
+from datetime import date, timedelta
 
 
 @pytest.fixture

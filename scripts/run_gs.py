@@ -43,18 +43,21 @@ import time
 from pathlib import Path
 
 import numpy as np
-
-SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR.parent
-sys.path.insert(0, str(REPO_ROOT))
-
-from sound_categorisation.paths import (
-    SYNTH_GS_N_SEEDS, SMOKE_GS_N_SEEDS, GS_BURN_IN, GS_N_BINS, GS_N_FOLDS,
-    BASE_SEED, FIT_TARGETS, DISTRIBUTIONS, results_dir, build_metadata,
-)
-from sound_categorisation.providers import load_animals
-from sound_categorisation.grid_search import compute_grid_search_cv, DEFAULT_GRID, COARSE_GRID, SMOKE_GRID
+from sound_categorisation.cohort import load_animals
 from sound_categorisation.cv_utils import save_cv_result
+from sound_categorisation.grid_search import COARSE_GRID, DEFAULT_GRID, SMOKE_GRID, compute_grid_search_cv
+from sound_categorisation.paths import (
+    BASE_SEED,
+    DISTRIBUTIONS,
+    FIT_TARGETS,
+    GS_BURN_IN,
+    GS_N_BINS,
+    GS_N_FOLDS,
+    SMOKE_GS_N_SEEDS,
+    SYNTH_GS_N_SEEDS,
+    build_metadata,
+    results_dir,
+)
 
 MODELS = ('BE', 'SC')
 
@@ -162,11 +165,10 @@ def gather_results(out_dir, distribution):
 
 
 def _decode_task(task_id, n_animals, n_seeds):
-    """Flat SLURM array index -> (animal_idx, model, seed_idx)."""
-    seed_idx = task_id % n_seeds
-    model_idx = (task_id // n_seeds) % len(MODELS)
-    animal_idx = task_id // (n_seeds * len(MODELS))
-    return animal_idx, MODELS[model_idx], seed_idx
+    """Flat SLURM array index -> (animal_idx, model, seed_idx); see sound_categorisation.tasks.gs_grid."""
+    from sound_categorisation.tasks import gs_grid
+    d = gs_grid(list(range(n_animals)), n_seeds, MODELS).decode(task_id)
+    return d['animal'], d['model'], d['seed']
 
 
 def main():
@@ -185,6 +187,7 @@ def main():
     p.add_argument('--run', choices=['quick', 'full'], default='full')
     p.add_argument('--fit-target', required=True, choices=list(FIT_TARGETS))
     p.add_argument('--task-id', type=int, default=None, help='SLURM array task id')
+    p.add_argument('--print-array', action='store_true', help='print the SLURM --array range and exit')
     p.add_argument('--gather', action='store_true', help='combine partials into finals')
     p.add_argument('--count', action='store_true',
                    help='print the array size (n_animals*n_models*n_seeds) and exit')
@@ -213,6 +216,10 @@ def main():
 
     if args.count:
         print(len(records) * len(MODELS) * n_seeds)
+        return
+    if args.print_array:
+        from sound_categorisation.tasks import gs_grid
+        print(gs_grid([r.animal_id for r in records], n_seeds, MODELS).slurm_range())
         return
 
     grid_set = (SMOKE_GRID if args.smoke_test

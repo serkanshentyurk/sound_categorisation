@@ -30,7 +30,7 @@ import re
 import glob
 from pathlib import Path
 from datetime import date
-from typing import Optional, List, Dict, Tuple, Union
+from typing import Optional, List, Union
 
 from behav_utils.config.schema import (
     ProjectConfig, ColumnMapping, SessionMetadataMapping,
@@ -484,7 +484,7 @@ def load_session_csv(
     # ── Session type ────────────────────────────────────────────────────────
     # A CSV session_type column (mapped in metadata or present directly) is
     # authoritative. Otherwise derive 'opto'/'regular' from opto content;
-    # masking / washout / alm_control are stamped later from the config lists.
+    # project session types (masking, washout, …) are stamped later from config.session_types.
     csv_stype = metadata.get('session_type', None)
     if csv_stype is None or str(csv_stype).strip().lower() in ('', 'nan', 'none'):
         csv_stype = None
@@ -729,12 +729,11 @@ def load_experiment(
     # Stamp session_type from the config lists. opto_on is left untouched:
     # on a masking session its True trials are the (power-0) fake-opto trials,
     # selectable via opto_on & session_type=='masking'.
-    _apply_session_type(experiment, config.masking_sessions, 'masking')
-    _apply_session_type(experiment, config.washout_sessions, 'washout')
-    _apply_session_type(
-        experiment, config.unilateral_alm_control_sessions, 'alm_control_uni')
-    _apply_session_type(
-        experiment, config.bilateral_alm_control_sessions, 'alm_control_bi')
+    for type_name, mapping in config.session_types.items():
+        _apply_session_type(experiment, mapping, type_name)
+    if config.session_presets:
+        from behav_utils.data.ops.selection import register_presets_from_config
+        register_presets_from_config({'session_presets': config.session_presets})
 
     print(
         f"Loaded {experiment.n_animals} animals, "

@@ -16,10 +16,9 @@ Composes existing primitives only (``TrialArrays``, ``compute_stats``); no
 stat or pooling logic is reimplemented here.
 """
 
-from typing import List, Optional, Sequence
+from typing import List, Sequence
 
 import numpy as np
-
 from behav_utils.data.arrays import TrialArrays
 from behav_utils.stats import compute_stats
 
@@ -27,7 +26,7 @@ from behav_utils.stats import compute_stats
 def to_stat_vector(
     sessions: List,
     mode: str = 'pooled',
-    stat_names: Optional[Sequence[str]] = None,
+    stat_names: Sequence[str] | None = None,
 ) -> np.ndarray:
     """Build the SBI observation vector from sessions.
 

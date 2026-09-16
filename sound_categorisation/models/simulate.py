@@ -45,14 +45,14 @@ def simulate_choices(
     rng = np.random.default_rng(seed)
 
     if key == 'be':
-        from sound_categorisation.models.BE_core import BEParams, BEModel
+        from sound_categorisation.models.BE_core import BEModel, BEParams
         p = BEParams(**params)
         state = BEModel.create_initial_state(
             burn_in=burn_in, params=p, seed=seed)
         choices, _, _, _ = BEModel.simulate_session(
             p, state, stimuli, categories, rng, return_history=False)
     elif key == 'sc':
-        from sound_categorisation.models.SC_core import SCParams, SCModel
+        from sound_categorisation.models.SC_core import SCModel, SCParams
         p = SCParams(**params)
         state = SCModel.create_initial_state(
             burn_in=burn_in, params=p, seed=seed)

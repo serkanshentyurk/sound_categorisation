@@ -2,7 +2,7 @@
 
 Covers compute_rolling_stats (RollingStats tidy frame, multi-stat,
 validation, short-session fallback, cohort survival) plus a bit-identity lock
-proving the _windowed_pse refactor did not move any adaptation number.
+
 """
 
 from datetime import date, timedelta
@@ -143,34 +143,3 @@ def test_mu_runs_and_is_finite_on_clean_session():
     mu = res.curve('mu')['value'].to_numpy()
     assert mu.size == _n_windows(300, 50, 10)
     assert np.isfinite(mu).any()
-
-
-# ── bit-identity lock: the _windowed_pse refactor changed nothing ──────────
-def test_windowed_pse_bit_identical():
-    from behav_utils.analysis.adaptation import _windowed_pse
-    from behav_utils.analysis.psychometry import fit_psychometric
-
-    def _reference(stimuli, choices, window, step):
-        # The pre-refactor loop, verbatim.
-        n = stimuli.size
-        if n < window:
-            return np.array([]), np.array([])
-        centres, pses = [], []
-        for start in range(0, n - window + 1, step):
-            fit = fit_psychometric(stimuli[start:start + window],
-                                   choices[start:start + window])
-            mu = fit.get('mu', np.nan) if isinstance(fit, dict) else np.nan
-            centres.append(start + window / 2.0)
-            pses.append(mu if mu is not None else np.nan)
-        return np.asarray(centres, float), np.asarray(pses, float)
-
-    rng = np.random.default_rng(3)
-    for n in (40, 120, 305):                       # incl. n < window
-        stim = rng.uniform(-1, 1, n)
-        p = 1 / (1 + np.exp(-6 * stim))
-        ch = (rng.random(n) < p).astype(float)
-        c_new, p_new = _windowed_pse(stim, ch, 50, 10)
-        c_ref, p_ref = _reference(stim, ch, 50, 10)
-        np.testing.assert_array_equal(c_new, c_ref)
-        np.testing.assert_array_equal(np.nan_to_num(p_new, nan=-999),
-                                      np.nan_to_num(p_ref, nan=-999))

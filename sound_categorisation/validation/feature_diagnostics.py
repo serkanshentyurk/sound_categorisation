@@ -11,16 +11,31 @@ trial noise.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+from itertools import combinations
+from typing import Dict, List, Sequence, Tuple
+
 import numpy as np
 import pandas as pd
-
-from behav_utils.data.synthetic import sample_stimuli
 from behav_utils.data.arrays import TrialArrays
+from behav_utils.data.synthetic import sample_stimuli
 from behav_utils.readouts import compute_update_matrix
 from behav_utils.stats import compute_stats, list_producers
+from scipy.stats import spearmanr
+from sklearn.ensemble import (
+    GradientBoostingClassifier,
+    GradientBoostingRegressor,
+    RandomForestClassifier,
+    RandomForestRegressor,
+)
+from sklearn.linear_model import LogisticRegression, Ridge
+from sklearn.model_selection import KFold, StratifiedKFold, cross_val_score
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+
 from sound_categorisation.models.BE_core import BEModel, BEParams, BEState
 from sound_categorisation.models.SC_core import SCModel, SCParams, SCState
-
+from sound_categorisation.stimuli import sample_distribution
 
 # ── stat vocabulary ─────────────────────────────────────────────────────────
 # Feature selection reasons at the level of *producers* ('psychometric' -> mu,
@@ -170,23 +185,6 @@ def compute_param_stat_correlations(model_type, stat_names=None, n_samples=1000,
 # only as a target for um_scalar_correlation. Predictor columns are required finite per draw;
 # UM cells may be NaN (sparse at low n_trials) and are handled pairwise-complete.
 # =============================================================================
-from dataclasses import dataclass
-from typing import List, Tuple, Optional, Dict, Sequence
-from itertools import combinations
-
-import numpy as np
-import pandas as pd
-from scipy.stats import spearmanr
-from sklearn.model_selection import KFold, StratifiedKFold, cross_val_score
-from sklearn.ensemble import (
-    GradientBoostingClassifier, GradientBoostingRegressor,
-    RandomForestClassifier, RandomForestRegressor,
-)
-from sklearn.linear_model import LogisticRegression, Ridge
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
-
-from sound_categorisation.stimuli import sample_distribution
 
 _MATRIX_STATS = (UM_KEY,)
 
@@ -194,7 +192,7 @@ _MATRIX_STATS = (UM_KEY,)
 # ----------------------------------------------------------------------------
 # Pool / column bookkeeping
 # ----------------------------------------------------------------------------
-def _resolve_pool(stat_pool: Optional[Sequence[str]], need_um: bool) -> Tuple[List[str], List[str]]:
+def _resolve_pool(stat_pool: Sequence[str] | None, need_um: bool) -> Tuple[List[str], List[str]]:
     """(predictors, sim_stats). predictors = scalar named stats (matrix stats removed);
     sim_stats = predictors (+ update_matrix when a UM target is needed). All column indices
     are taken against get_stat_names_expanded(sim_stats)."""
@@ -218,7 +216,7 @@ def _groups_and_um(sim_stats: Sequence[str], predictors: Sequence[str]):
 # ----------------------------------------------------------------------------
 # Simulate core
 # ----------------------------------------------------------------------------
-def _reference_array(Params, ref: Optional[np.ndarray]) -> np.ndarray:
+def _reference_array(Params, ref: np.ndarray | None) -> np.ndarray:
     if ref is not None:
         return np.asarray(ref, float)
     b = Params.get_bounds()
@@ -236,7 +234,8 @@ def _simulate_cohort(model_type, distribution, n_sims, n_trials, stat_names, var
 
     stim0, cat0 = sample_distribution(n_trials, distribution, rng=np.random.default_rng(seed))
     no_resp = np.zeros(n_trials, dtype=bool)
-    not_bs = np.ones(n_trials, dtype=bool); not_bs[0] = False
+    not_bs = np.ones(n_trials, dtype=bool)
+    not_bs[0] = False
 
     if vary == 'all':
         theta_iter = (Params.sample_prior(rng=np.random.default_rng(seed + 1 + i)).to_array()
@@ -251,7 +250,8 @@ def _simulate_cohort(model_type, distribution, n_sims, n_trials, stat_names, var
 
         def _gen():
             for v in sweep:
-                a = ref_arr.copy(); a[pidx] = v
+                a = ref_arr.copy()
+                a[pidx] = v
                 yield a
         theta_iter = _gen()
 
@@ -306,7 +306,7 @@ class SelectionCohort:
 
 
 def simulate_selection_cohort(distribution: str = 'uniform', n_sims: int = 4000,
-                              n_trials: int = 400, stat_pool: Optional[Sequence[str]] = None,
+                              n_trials: int = 400, stat_pool: Sequence[str] | None = None,
                               vary_noise: bool = True, seed: int = 0) -> SelectionCohort:
     """Simulate BE and SC once (vary='all') and bundle everything the views need.
 
@@ -403,7 +403,7 @@ def stat_individual_power(cohort: SelectionCohort, scorer: str = 'gbm',
 
     recovery = {}
     for m in ('be', 'sc'):
-        Xm = cohort.Xp(m); th = cohort.theta[m]; pn = cohort.param_names[m]
+        Xm, th, pn = cohort.Xp(m), cohort.theta[m], cohort.param_names[m]
         recovery[m] = pd.DataFrame(
             {p: {g: _cv_r2(scorer, Xm[:, gc], th[:, j], n_splits, seed)
                  for g, gc in groups.items()}
@@ -437,7 +437,7 @@ def select_stats(cohort: SelectionCohort, shortlist: Sequence[str], scorer: str 
         auc = _cv_auc(scorer, Xid_full[:, cols], yid, n_splits, seed)
         mins = []
         for m in ('be', 'sc'):
-            th = cohort.theta[m]; Xm = cohort.X[m][:, cols]
+            th, Xm = cohort.theta[m], cohort.X[m][:, cols]
             mins += [_cv_r2(scorer, Xm, th[:, j], n_splits, seed) for j in range(th.shape[1])]
         return auc, float(np.min(mins))
 
@@ -463,7 +463,8 @@ def select_stats(cohort: SelectionCohort, shortlist: Sequence[str], scorer: str 
         while remaining:
             scored = [(score(chosen + [g]), g) for g in remaining]
             (auc, r2), g = max(scored, key=lambda t: t[0][1])
-            chosen.append(g); remaining.remove(g)
+            chosen.append(g)
+            remaining.remove(g)
             best_by_k.append({'k': len(chosen), 'stats': frozenset(chosen),
                               'identity_auc': auc, 'r2_min': r2})
 
@@ -500,11 +501,13 @@ def _group_perm_importance(scorer, task, X, y, groups, n_splits=5, n_repeats=5, 
         est = _make_estimator(scorer, task, seed)
         est.fit(X[tr], y[tr, :] if twod else y[tr])
         yte = y[te, :] if twod else y[te]
-        base = sc(est, X[te], yte); base_all.append(base)
+        base = sc(est, X[te], yte)
+        base_all.append(base)
         for g, cols in groups.items():
             drops = []
             for _ in range(n_repeats):
-                Xp = X[te].copy(); Xp[:, cols] = X[te][rng.permutation(len(te))][:, cols]
+                Xp = X[te].copy()
+                Xp[:, cols] = X[te][rng.permutation(len(te))][:, cols]
                 drops.append(base - sc(est, Xp, yte))
             imp[g].append(np.mean(drops))
     return {g: float(np.mean(v)) for g, v in imp.items()}, float(np.mean(base_all))
@@ -520,20 +523,20 @@ def stat_contributions(cohort: SelectionCohort, scorer: str = 'gbm', n_splits: i
     Xid = np.vstack([cohort.Xp('be'), cohort.Xp('sc')])
     yid = np.concatenate([np.zeros(cohort.n_valid['be']), np.ones(cohort.n_valid['sc'])])
     imp, base = _group_perm_importance(scorer, 'clf', Xid, yid, groups, n_splits, n_repeats, seed)
-    cols_out['model_id'] = imp; ceilings['model_id'] = base
+    cols_out['model_id'], ceilings['model_id'] = imp, base
     for m in ('be', 'sc'):
-        Xp = cohort.Xp(m); th = cohort.theta[m]
+        Xp, th = cohort.Xp(m), cohort.theta[m]
         if cohort.um_cols:
             um_local = cohort.X[m][:, cohort.um_cols]
             mask = np.all(np.isfinite(um_local), axis=1)   # drop sparse-UM rows for this target
             if mask.sum() > n_splits:
                 imp, base = _group_perm_importance(scorer, 'multireg', Xp[mask], um_local[mask],
                                                    groups, n_splits, n_repeats, seed)
-                cols_out[f'um_{m}'] = imp; ceilings[f'um_{m}'] = base
+                cols_out[f'um_{m}'], ceilings[f'um_{m}'] = imp, base
         for j, p in enumerate(cohort.param_names[m]):
             imp, base = _group_perm_importance(scorer, 'reg', Xp, th[:, j], groups,
                                                n_splits, n_repeats, seed)
-            cols_out[f'{m}:{p}'] = imp; ceilings[f'{m}:{p}'] = base
+            cols_out[f'{m}:{p}'], ceilings[f'{m}:{p}'] = imp, base
     return {'distribution': cohort.distribution,
             'contribution': pd.DataFrame(cols_out).reindex(list(cohort.pred_groups.keys())),
             'ceilings': pd.Series(ceilings), 'scorer': scorer}
@@ -544,8 +547,8 @@ def stat_contributions(cohort: SelectionCohort, scorer: str = 'gbm', n_splits: i
 # ----------------------------------------------------------------------------
 def stat_parameter_sensitivity(model_type: str, distribution: str = 'uniform',
                                n_sims: int = 400, n_trials: int = 400,
-                               ref: Optional[np.ndarray] = None,
-                               stat_pool: Optional[Sequence[str]] = None,
+                               ref: np.ndarray | None = None,
+                               stat_pool: Sequence[str] | None = None,
                                vary_noise: bool = False, seed: int = 0) -> dict:
     """Sweep each parameter alone (others at ref); |Spearman| with each stat. Isolation view;
     counterfactual and local to ref. Self-simulating (vary-one ≠ the shared vary-all cohort)."""

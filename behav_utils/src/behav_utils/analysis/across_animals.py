@@ -14,7 +14,7 @@ works: cohort, sex, lesion, or an ad-hoc pair of animal-name lists.
 
     rows = []
     for animal in animals:
-        r = compute_adaptation(animal, 'Hard-A', stat_names=['pse'])
+        r = compute_stat(phase, ['pse'], per_session=True).sessions
         rows += collect_rows(r['rows'], animal=animal.animal_id,
                              group=animal.genotype)
 

@@ -5,7 +5,7 @@ import pytest
 from datetime import date, timedelta
 
 from behav_utils.data.ops.selection import SessionFilter, list_presets
-from conftest import _make_trial_data, _make_session
+from .conftest import _make_trial_data, _make_session
 
 
 class TestSessionFilterBasic:
@@ -13,13 +13,13 @@ class TestSessionFilterBasic:
 
     def test_no_constraints(self, synthetic_animal):
         """Empty filter returns all sessions."""
-        f = SessionFilter(exclude_masking=False)
+        f = SessionFilter()
         result = f.apply(synthetic_animal)
         assert len(result) == len(synthetic_animal.sessions)
 
     def test_stage_filter(self, synthetic_animal):
         """Filter by stage name."""
-        f = SessionFilter(stage='Full_Task_Cont', exclude_masking=False)
+        f = SessionFilter(stage='Full_Task_Cont')
         result = f.apply(synthetic_animal)
         assert len(result) == len(synthetic_animal.sessions)
 
@@ -29,7 +29,7 @@ class TestSessionFilterBasic:
 
     def test_distribution_filter(self, synthetic_animal):
         """Filter by distribution."""
-        f = SessionFilter(distribution='Uniform', exclude_masking=False)
+        f = SessionFilter(distribution='Uniform')
         result = f.apply(synthetic_animal)
         assert len(result) == len(synthetic_animal.sessions)
 
@@ -40,42 +40,28 @@ class TestSessionFilterBasic:
         # Fixture has 300 trials per session
         assert len(result) == 0
 
-        f2 = SessionFilter(min_trials=100, exclude_masking=False)
+        f2 = SessionFilter(min_trials=100)
         result2 = f2.apply(synthetic_animal)  
         assert len(result2) == len(synthetic_animal.sessions)
 
 
-class TestMaskingFilter:
-    """Tests for exclude_masking."""
+class TestExcludeTypes:
+    """exclude_types: the library excludes nothing by default; a preset states what it drops."""
 
-    def test_exclude_masking_default(self, synthetic_animal):
-        """exclude_masking=True by default."""
+    def test_default_excludes_nothing(self, synthetic_animal):
         f = SessionFilter()
-        assert f.exclude_masking is True
+        assert f.exclude_types == ()
+        assert len(f.apply(synthetic_animal)) == len(synthetic_animal.sessions)
 
-    def test_masking_excluded(self, synthetic_animal):
-        """Masking sessions filtered out by default."""
-        f = SessionFilter()
+    def test_exclude_masking(self, synthetic_animal):
+        f = SessionFilter(exclude_types=('masking',))
         result = f.apply(synthetic_animal)
-        for sess in result:
-            assert not getattr(sess, 'masking', False)
+        assert all(s.session_type != 'masking' for s in result)
+        masking_count = sum(1 for s in synthetic_animal.sessions if s.session_type == 'masking')
+        assert len(result) == len(synthetic_animal.sessions) - masking_count
 
-    def test_masking_included(self, synthetic_animal):
-        """exclude_masking=False keeps masking sessions."""
-        f = SessionFilter(exclude_masking=False)
-        result = f.apply(synthetic_animal)
-        assert len(result) == len(synthetic_animal.sessions)
-
-    def test_masking_count(self, synthetic_animal):
-        """Correct number filtered out."""
-        all_count = len(synthetic_animal.sessions)
-        masking_count = sum(
-            1 for s in synthetic_animal.sessions
-            if getattr(s, 'masking', False)
-        )
-        f = SessionFilter()
-        result = f.apply(synthetic_animal)
-        assert len(result) == all_count - masking_count
+    def test_describe_mentions_types(self):
+        assert 'masking' in SessionFilter(exclude_types=('masking', 'washout')).describe()
 
 
 class TestPresets:
@@ -127,7 +113,7 @@ class TestSessionType:
         # Sessions 5-6 = 2
         assert len(result) == 2
         for sess in result:
-            assert sess.masking
+            assert sess.session_type == 'masking'
 
     def test_select_washout_sessions(self, synthetic_opto_animal):
         """session_type='washout' returns only washout sessions."""
@@ -136,7 +122,7 @@ class TestSessionType:
         # Sessions 12-13 = 2
         assert len(result) == 2
         for sess in result:
-            assert sess.washout
+            assert sess.session_type == 'washout'
 
     def test_select_regular_sessions(self, synthetic_opto_animal):
         """session_type='regular' returns only regular sessions."""
@@ -156,11 +142,9 @@ class TestSessionType:
         # 10 opto + 2 masking = 12
         assert len(result) == 12
 
-    def test_session_type_overrides_exclude_flags(self, synthetic_opto_animal):
-        """When session_type is set, exclude_* flags are ignored."""
-        # Ask for masking sessions even though exclude_masking=True (default)
-        f = SessionFilter(session_type='masking')
-        assert f.exclude_masking is True  # default
+    def test_session_type_overrides_exclude_types(self, synthetic_opto_animal):
+        """When session_type is set, exclude_types is ignored."""
+        f = SessionFilter(session_type='masking', exclude_types=('masking',))
         result = f.apply(synthetic_opto_animal)
         assert len(result) == 2  # still gets masking sessions
 
@@ -173,26 +157,15 @@ class TestSessionType:
 
 
 class TestWashoutExclusion:
-    """Tests for exclude_washout."""
+    """washout is just another project session type."""
 
-    def test_exclude_washout_default(self):
-        """exclude_washout=True by default."""
-        f = SessionFilter()
-        assert f.exclude_washout is True
+    def test_washout_excluded_when_asked(self, synthetic_opto_animal):
+        result = SessionFilter(exclude_types=('washout',)).apply(synthetic_opto_animal)
+        assert all(s.session_type != 'washout' for s in result)
 
-    def test_washout_excluded_by_default(self, synthetic_opto_animal):
-        """Default filter excludes washout sessions."""
-        f = SessionFilter(exclude_masking=False)
-        result = f.apply(synthetic_opto_animal)
-        for sess in result:
-            assert not getattr(sess, 'washout', False)
-
-    def test_washout_included_explicitly(self, synthetic_opto_animal):
-        """exclude_washout=False keeps washout sessions."""
-        f = SessionFilter(exclude_masking=False, exclude_washout=False)
-        result = f.apply(synthetic_opto_animal)
-        washout_count = sum(1 for s in result if getattr(s, 'washout', False))
-        assert washout_count == 2
+    def test_washout_included_by_default(self, synthetic_opto_animal):
+        result = SessionFilter().apply(synthetic_opto_animal)
+        assert sum(1 for s in result if s.session_type == 'washout') == 2
 
 
 class TestListDistribution:
@@ -202,9 +175,7 @@ class TestListDistribution:
         """Distribution as list matches any."""
         f = SessionFilter(
             distribution=['Uniform', 'Asym_Right'],
-            exclude_masking=False,
-            exclude_washout=False,
-        )
+                    )
         result = f.apply(synthetic_opto_animal)
         assert len(result) == len(synthetic_opto_animal.sessions)
 

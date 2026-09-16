@@ -1,19 +1,18 @@
 """Cohort-level overview plots for the sound-categorisation task."""
-from typing import Literal, Optional
+from typing import Literal
 
 import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
-
 from behav_utils.data.structures import AnimalData
 from behav_utils.stats import list_stats
+from matplotlib.lines import Line2D
 
 from sound_categorisation.plotting._style import DIST_COLOURS, TYPE_MARKERS
 
 
 def plot_timeline(animal: AnimalData, stat: str = 'accuracy',
                   x_axis: Literal['date', 'session_idx'] = 'date',
-                  ylim: Optional[tuple] = None, hline: Optional[float] = None,
-                  ax: Optional[plt.Axes] = None, fig_size=(12, 3)):
+                  ylim: tuple | None = None, hline: float | None = None,
+                  ax: plt.Axes | None = None, fig_size=(12, 3)):
     """Scatter a per-session statistic over time for one animal.
 
     Colour encodes distribution, marker encodes session type. Takes an ``AnimalData``

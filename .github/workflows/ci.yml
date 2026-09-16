@@ -1,0 +1,36 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e behav_utils/
+          pip install -e ".[dev]"
+      - name: Lint
+        run: |
+          ruff check behav_utils/src behav_utils/tests
+          ruff check sound_categorisation scripts tests
+      - name: Library tests
+        run: pytest behav_utils/tests -q
+      - name: Project tests (torch-free)
+        run: pytest tests -q --ignore=tests/test_amortised.py --ignore=tests/test_simulator.py
+      - name: Report pipeline selftest
+        run: python -m sound_categorisation.reports selftest --out /tmp/reports
+      - name: Summary on the selftest tables
+        run: python -m sound_categorisation.reports summary --out /tmp/reports --cohort selftest

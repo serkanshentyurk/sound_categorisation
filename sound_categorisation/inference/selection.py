@@ -35,16 +35,16 @@ Reuses (no metric reimplemented):
     models.simulate.simulate_choices                 params -> choices
 """
 
-import numpy as np
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-from sound_categorisation.inference.types import ModelType
-from sound_categorisation.fold_utils import split_folds_by_block
+import numpy as np
+from behav_utils.analysis.update_matrix import fit_update_matrix, matrix_error
 from behav_utils.data.ops.filtering import pool_arrays
 from behav_utils.data.synthetic import session_from_arrays
-from behav_utils.analysis.update_matrix import fit_update_matrix, matrix_error
-from sound_categorisation.models.simulate import simulate_choices
 
+from sound_categorisation.fold_utils import split_folds_by_block
+from sound_categorisation.inference.types import ModelType
+from sound_categorisation.models.simulate import simulate_choices
 
 # ── shared helpers ───────────────────────────────────────────────────────────
 
@@ -87,7 +87,7 @@ def _simulated_target(model, params: Dict[str, float],
 
 
 def _safe_condition(net, sessions: List, n_posterior_samples: int
-                    ) -> Optional[Dict[str, float]]:
+                    ) -> Dict[str, float] | None:
     """Condition; return the point-estimate dict, or None if the obs is
     degenerate (``condition`` raises on non-finite stats) or theta is non-finite.
     """
@@ -160,7 +160,7 @@ def _condition_single(sessions, net, model, fit_target,
             continue
         mid = n // 2
 
-        def _half(lo, hi):
+        def _half(lo, hi, stim=stim, ch=ch, cat=cat, si=si):
             return session_from_arrays(
                 stim[lo:hi], ch[lo:hi], cat[lo:hi], session_idx=si)
 

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import math
 import warnings
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, Sequence
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -19,13 +19,12 @@ from behav_utils.plotting import (
 )
 from behav_utils.readouts import UpdateMatrix
 
-from sound_categorisation.adaptation import SwitchAdaptation
 from sound_categorisation.plotting.opto import plot_delta_swarm
-from sound_categorisation.reports.compute import PHASES, AnimalResult, GroupResult, Settings
+from sound_categorisation.reports.compute import PHASES, AnimalResult, GroupResult
 
 __all__ = ['contrast_grid', 'interaction_grid', 'psychometric_page', 'update_matrix_page',
            'group_psychometric_page', 'group_update_matrix_page', 'swarm_page',
-           'adaptation_page', 'group_adaptation_page']
+           'trajectory_page', 'group_trajectory_page']
 
 OFF, ON, ALL = '#7f7f7f', '#1f77b4', '#2ca02c'
 GENO_COL = {'het': '#d62728', 'wt': '#2ca02c'}
@@ -164,87 +163,106 @@ def swarm_page(g: GroupResult, kind: str, display: Sequence[str], title: str, nc
     return fig
 
 
-# ── adaptation (convergence index, trials since switch, log axis) ──────────
+# ── session trajectory (per session, in order) ─────────────────────────────
 
-def _finish_convergence(ax, has_data: bool, empty_msg: str):
-    ax.axhline(0.0, color='0.6', lw=1, zorder=1, label='expert-Uniform PSE')
-    ax.axhline(1.0, color='crimson', ls='--', lw=1.2, zorder=1, label='normative PSE')
-    ax.set_xscale('log')
-    ax.set_xlabel('trials since switch (log)')
-    ax.set_ylabel('convergence  (PSE − PSE_uni) / (PSE_norm − PSE_uni)')
-    if not has_data and empty_msg:
-        ax.text(0.5, 0.5, empty_msg, transform=ax.transAxes, ha='center', va='center', color='0.5')
-    if ax.get_legend_handles_labels()[0]:
-        ax.legend(frameon=False, fontsize=8)
+DIST_COL = {'Hard-A': '#1f77b4', 'Hard-B': '#ff7f0e', 'Uniform': '#7f7f7f'}
 
 
-def _draw_curve(ax, ad: SwitchAdaptation, colour: str, lw: float, alpha: float, label: Optional[str] = None):
-    c = ad.curve.dropna(subset=['convergence'])
-    if len(c):
-        ax.plot(c['trial'], c['convergence'], color=colour, lw=lw, alpha=alpha, label=label, zorder=2)
-        return True
-    return False
+def _laser_boundary(ax, sess: pd.DataFrame):
+    """Vertical line where the session type changes (laser half → masking half)."""
+    types = list(sess['session_type'])
+    for i in range(1, len(types)):
+        if types[i] != types[i - 1]:
+            ax.axvline(sess['order'].iloc[i] - 0.5, color='0.5', ls=':', lw=1)
 
 
-def _mean_curve(ads: Sequence[SwitchAdaptation]) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Mean ± SEM of convergence at each shared trial centre across items (equal weight each)."""
-    frames = [ad.curve[['trial', 'convergence']].dropna().assign(i=k) for k, ad in enumerate(ads)]
-    if not frames:
-        return np.array([]), np.array([]), np.array([])
-    df = pd.concat(frames)
-    g = df.groupby('trial')['convergence']
-    x = g.mean().index.to_numpy()
-    return x, g.mean().to_numpy(), (g.std(ddof=1) / np.sqrt(g.count())).to_numpy()
+def _trajectory_axis(ax, sess: pd.DataFrame, y: str, colour_by_dist=True, label=None, lw=1.6, alpha=0.9, marker='o'):
+    x = sess['order'].to_numpy()
+    v = sess[y].to_numpy(dtype=float)
+    ax.plot(x, v, '-', color='0.4', lw=lw * 0.6, alpha=alpha * 0.6, zorder=1)
+    if colour_by_dist:
+        for d, c in DIST_COL.items():
+            m = sess['distribution'] == d
+            if m.any():
+                ax.plot(x[m], v[m], marker, color=c, ms=5, alpha=alpha, zorder=3, label=d if label is None else None)
+    else:
+        ax.plot(x, v, marker + '-', color=label[1], lw=lw, ms=4, alpha=alpha, zorder=2, label=label[0])
 
 
-def _dyn_text(ad: SwitchAdaptation) -> str:
-    d = ad.dynamics
-    parts = [f"τ={d.get('pse_tau', np.nan):.0f}{'*' if d.get('pse_censored', 0) else ''}",
-             f"end={d.get('convergence_final', np.nan):.2f}",
-             f"ΔAIC={d.get('pse_shape_daic', np.nan):+.1f}"]
-    return ', '.join(parts)
-
-
-def adaptation_page(r: AnimalResult, title: str):
-    """Per animal: thin line per session type (opto vs masking) with the fit summary in the legend."""
-    fig, ax = plt.subplots(figsize=(7.5, 5.0))
-    drew = False
-    for stype, ad in r.adaptation.items():
-        col = TYPE_COL.get(stype, '0.4')
-        drew |= _draw_curve(ax, ad, col, 2.0, 0.9, label=f'{stype} ({ad.n_sessions} sess) · {_dyn_text(ad)}')
-    _finish_convergence(ax, drew, 'no adaptation data at this phase')
-    fig.suptitle(title + '   (* = τ censored: not plateaued within the block)', fontsize=10)
+def trajectory_page(r: AnimalResult, title: str):
+    """Per session in order: PSE, delta from previous session, tau, convergence; laser/masking boundary marked."""
+    tr = r.trajectory
+    fig, axes = plt.subplots(2, 2, figsize=(11, 7))
+    if tr is None or not len(tr.sessions):
+        for ax in axes.ravel():
+            ax.text(0.5, 0.5, 'no trajectory', transform=ax.transAxes, ha='center', color='0.5')
+        fig.suptitle(title, fontsize=11)
+        return fig
+    sess = tr.sessions
+    panels = [('pse', 'criterion (PSE) fitted per session, all trials'),
+              ('delta_from_prev', 'PSE change from the previous day (switch amplitude)'),
+              ('pse_tau_fixed', 'τ per session: trials for the within-session PSE to move ~63% of the way to its endpoint\n'
+                                '(exponential fit, shape pinned; × = did not plateau within the session)'),
+              ('convergence_final', 'convergence at session end: 0 = previous day\'s PSE, 1 = normative PSE')]
+    for ax, (y, lab) in zip(axes.ravel(), panels):
+        if y not in sess:
+            ax.set_visible(False)
+            continue
+        _trajectory_axis(ax, sess, y)
+        _laser_boundary(ax, sess)
+        ax.axhline(0 if y != 'pse_tau' else 0, color='0.7', lw=0.8, zorder=0)
+        if y == 'pse':
+            ax.axhline(tr.baseline_pse, color='0.3', ls='--', lw=0.8, label='expert-Uniform PSE')
+            for d, c in DIST_COL.items():
+                m = sess['distribution'] == d
+                if m.any() and np.isfinite(sess.loc[m, 'normative_pse']).any():
+                    ax.axhline(sess.loc[m, 'normative_pse'].iloc[0], color=c, ls=':', lw=0.8)
+        if y == 'pse_tau_fixed':
+            ax.set_yscale('log')
+            cens = sess.get('pse_censored_fixed', pd.Series(dtype=float)) == 1
+            if cens.any():
+                ax.plot(sess.loc[cens, 'order'], sess.loc[cens, 'pse_tau_fixed'], 'x', color='k', ms=7, label='censored')
+        if y == 'convergence_final':
+            ax.axhline(1, color='crimson', ls='--', lw=0.8, label='normative')
+            ax.set_ylim(-3, 3)
+        ax.set_xticks(sess['order'])
+        ax.set_xticklabels([f"{t[:1]}{'L' if st in ('opto', 'alm_control_uni', 'alm_control_bi') else 'm'}"
+                            for t, st in zip(sess['distribution'].astype(str), sess['session_type'])], fontsize=7)
+        ax.set_xlabel('session (A/B = distribution, L = laser, m = masking)', fontsize=8)
+        ax.set_title(lab, fontsize=8.5)
+        ax.legend(frameon=False, fontsize=7)
+    fig.suptitle(f'{title}   (σ={tr.sigma:.2f} for the normative PSE)', fontsize=11)
     fig.tight_layout()
     return fig
 
 
-def group_adaptation_page(g: GroupResult, title: str):
-    """1×4: HET opto-vs-masking | WT opto-vs-masking | masking HET-vs-WT | opto HET-vs-WT.
-    Thin = each animal, thick = mean across animals with SEM band."""
-    het = [a for a in g.animals if g.by_animal.get(a) == 'het']
-    wt = [a for a in g.animals if g.by_animal.get(a) == 'wt']
-
-    def panel(ax, series, empty_msg):
-        has = False
-        for label, aids, stype, col in series:
-            ads = [g.adaptation[(a, stype)] for a in aids if (a, stype) in g.adaptation]
-            for ad in ads:
-                has |= _draw_curve(ax, ad, col, 0.7, 0.35)
-            x, m, sem = _mean_curve(ads)
-            if x.size:
-                ax.plot(x, m, color=col, lw=2.6, zorder=4, label=f'{label} (n={len(ads)})')
-                ax.fill_between(x, m - sem, m + sem, color=col, alpha=0.15, zorder=3)
-        _finish_convergence(ax, has, empty_msg)
-
-    fig, ax = plt.subplots(1, 4, figsize=(22, 5), sharey=True)
-    panel(ax[0], [(st, het, st, TYPE_COL[st]) for st in TYPE_COL], 'no HET sessions')
-    ax[0].set_title(f'HET (n={len(het)}) · opto vs masking', fontsize=10)
-    panel(ax[1], [(st, wt, st, TYPE_COL[st]) for st in TYPE_COL], 'no WT sessions')
-    ax[1].set_title(f'WT (n={len(wt)}) · opto vs masking', fontsize=10)
-    panel(ax[2], [('het', het, 'masking', GENO_COL['het']), ('wt', wt, 'masking', GENO_COL['wt'])], 'no masking')
-    ax[2].set_title('masking · HET vs WT', fontsize=10)
-    panel(ax[3], [('het', het, 'opto', GENO_COL['het']), ('wt', wt, 'opto', GENO_COL['wt'])], 'no opto')
-    ax[3].set_title('opto · HET vs WT', fontsize=10)
-    fig.suptitle(title, fontsize=13)
+def group_trajectory_page(g: GroupResult, title: str):
+    """PSE and delta-from-previous per session, one line per animal (genotype colour), WT and HET panels."""
+    fig, axes = plt.subplots(2, 2, figsize=(12, 7), sharex='col')
+    for col, geno in enumerate(('wt', 'het')):
+        ids = [a for a in g.animals if g.by_animal.get(a) == geno and a in g.trajectories]
+        for row, (y, lab) in enumerate((('pse', 'PSE per session'), ('delta_from_prev', 'PSE − previous session'))):
+            ax = axes[row, col]
+            for k, aid in enumerate(ids):
+                sess = g.trajectories[aid].sessions
+                if y not in sess:
+                    continue
+                ax.plot(sess['order'], sess[y], '-', color=GENO_COL[geno], alpha=0.35, lw=1)
+                for d, c in DIST_COL.items():
+                    m = sess['distribution'] == d
+                    ax.plot(sess.loc[m, 'order'], sess.loc[m, y], 'o', color=c, ms=4, alpha=0.8)
+                if k == 0:
+                    _laser_boundary(ax, sess)
+            if ids:
+                # mean across animals at each order
+                stack = pd.concat([g.trajectories[a].sessions[['order', y]].assign(a=a) for a in ids if y in g.trajectories[a].sessions])
+                m = stack.groupby('order')[y].mean()
+                ax.plot(m.index, m.to_numpy(), '-', color=GENO_COL[geno], lw=2.5, zorder=4, label=f'{geno} mean (n={len(ids)})')
+            ax.axhline(0, color='0.7', lw=0.8)
+            ax.set_title(f'{geno.upper()} · {lab}', fontsize=9)
+            ax.legend(frameon=False, fontsize=7)
+            if row == 1:
+                ax.set_xlabel('session order (laser half | masking half)', fontsize=8)
+    fig.suptitle(title, fontsize=12)
     fig.tight_layout()
     return fig

@@ -27,17 +27,13 @@ from __future__ import annotations
 
 import argparse
 import pickle
-import sys
-from pathlib import Path
 
 import numpy as np
-
-
 from sound_categorisation.models.BE_core import BEParams
 from sound_categorisation.models.SC_core import SCParams
 from sound_categorisation.models.simulate import simulate_choices
+from sound_categorisation.paths import DISTRIBUTIONS, cohort_path
 from sound_categorisation.stimuli import sample_distribution
-from sound_categorisation.paths import cohort_path, DISTRIBUTIONS
 
 _PARAMS = {'BE': BEParams, 'SC': SCParams}
 

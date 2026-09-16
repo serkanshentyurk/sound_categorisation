@@ -14,11 +14,11 @@ Usage:
     fig = plot_cv_comparison(long_df, comp_df, animal_id)
 """
 
-import numpy as np
-import matplotlib.pyplot as plt
-from typing import Optional, Dict, Tuple
+from typing import Dict, Tuple
 
-from behav_utils.plotting.styles import COLOURS, UM_CMAP
+import matplotlib.pyplot as plt
+import numpy as np
+from behav_utils.plotting.styles import COLOURS
 
 # Convenience aliases
 BE_COLOUR = COLOURS['BE']
@@ -44,7 +44,7 @@ def plot_cv_comparison(
     comparison_df,
     animal_id: str,
     fit_target: str = 'UM',
-    suptitle: Optional[str] = None,
+    suptitle: str | None = None,
     figsize: Tuple[float, float] = (12, 5),
 ) -> plt.Figure:
     """
@@ -246,9 +246,9 @@ def plot_winner_summary(
 def plot_update_matrix(
     um: np.ndarray,
     title: str = '',
-    ax: Optional[plt.Axes] = None,
-    vmin: Optional[float] = None,
-    vmax: Optional[float] = None,
+    ax: plt.Axes | None = None,
+    vmin: float | None = None,
+    vmax: float | None = None,
     cmap=None,
     show_colourbar: bool = True,
 ) -> plt.Axes:
@@ -269,7 +269,7 @@ def plot_um_comparison(
     model_ums: Dict[str, np.ndarray],
     model_errors: Dict[str, float],
     animal_id: str,
-    figsize: Optional[Tuple[float, float]] = None,
+    figsize: Tuple[float, float] | None = None,
 ) -> plt.Figure:
     """Side-by-side empirical vs model update matrices."""
     n_panels = 1 + len(model_ums)
@@ -358,7 +358,7 @@ def plot_param_distributions(
 # is known. Shared by the GS and SBI validation notebooks; both operate on the
 # comparison / recovery frames returned by utils.cv_utils.load_cv_results.
 
-def plot_confusion(comparison_df, ax: Optional[plt.Axes] = None,
+def plot_confusion(comparison_df, ax: plt.Axes | None = None,
                    labels: Tuple[str, str] = ('BE', 'SC')) -> plt.Axes:
     """Confusion matrix of identified vs true model (rows true, cols identified)."""
     if ax is None:
@@ -380,16 +380,16 @@ def plot_confusion(comparison_df, ax: Optional[plt.Axes] = None,
                     fontweight='bold')
 
     ax.set_xticks(range(len(labels)))
-    ax.set_xticklabels([f'{l} fit' for l in labels])
+    ax.set_xticklabels([f'{lab} fit' for lab in labels])
     ax.set_yticks(range(len(labels)))
-    ax.set_yticklabels([f'true {l}' for l in labels])
+    ax.set_yticklabels([f'true {lab}' for lab in labels])
     ax.set_xlabel('Identified')
     ax.set_ylabel('True')
     ax.set_title(f'Model ID: {acc:.0%} ({int(np.trace(mat))}/{int(total)})')
     return ax
 
 
-def plot_recovery(recovery_df, param: str, ax: Optional[plt.Axes] = None) -> plt.Axes:
+def plot_recovery(recovery_df, param: str, ax: plt.Axes | None = None) -> plt.Axes:
     """True vs recovered scatter for one parameter (true-model fit), identity line."""
     if ax is None:
         _, ax = plt.subplots(figsize=(4, 4))
