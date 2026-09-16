@@ -19,18 +19,16 @@ the fit-free ``accuracy`` statistic; the ``mu`` / ``sigma`` behaviour that needs
 a psychometric fit is checked directly via ``compute_stats``, which
 fits once.
 """
-import numpy as np
-import pytest
 from datetime import date, timedelta
 
-from behav_utils.data.structures import (
-    SessionData, SessionMetadata, TrialData, AnimalData)
-from behav_utils.analysis.comparison import (
-    DeltaStats, Interaction, compute_delta_stat, compute_interaction)
-from behav_utils.analysis.resampling import (
-    bootstrap_phase_stats, permute_phase_difference, summarise_draws)
+import numpy as np
+import pytest
+
+from behav_utils.analysis.comparison import DeltaStats, Interaction, compute_delta_stat, compute_interaction
+from behav_utils.analysis.resampling import bootstrap_phase_stats, permute_phase_difference, summarise_draws
 from behav_utils.data.arrays import TrialArrays
-from behav_utils.stats import compute_stats, PSYCHOMETRIC
+from behav_utils.data.structures import SessionData, SessionMetadata, TrialData
+from behav_utils.stats import PSYCHOMETRIC, compute_stats
 
 
 # ── synthetic phase builder (criterion shift = mu displacement) ──────────────

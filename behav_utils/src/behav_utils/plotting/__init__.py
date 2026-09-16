@@ -15,18 +15,24 @@ Layout is the caller's: pass ``ax``. Overlay by calling the same plotter twice
 on one axes with different colours.
 """
 
-from behav_utils.plotting.readouts import (
-    plot_psychometric_curve, plot_update_matrix, plot_conditional_psychometric,
-    plot_binned_curve, plot_sd_profile,
-)
-from behav_utils.plotting.trajectory import plot_trajectory
-from behav_utils.plotting.session_stats import plot_session_stats, plot_session_stats_single
 from behav_utils.plotting.comparison import (
-    plot_comparison, plot_stat_comparison, plot_stat_comparison_single,
-    plot_interaction, plot_interaction_single,
+    plot_comparison,
+    plot_interaction,
+    plot_interaction_single,
+    plot_stat_comparison,
+    plot_stat_comparison_single,
+)
+from behav_utils.plotting.readouts import (
+    plot_binned_curve,
+    plot_conditional_psychometric,
+    plot_psychometric_curve,
+    plot_sd_profile,
+    plot_update_matrix,
 )
 from behav_utils.plotting.session import plot_session_raster
-from behav_utils.plotting.styles import PALETTE, COLOURS, UM_CMAP, apply_style, get_colour
+from behav_utils.plotting.session_stats import plot_session_stats, plot_session_stats_single
+from behav_utils.plotting.styles import COLOURS, PALETTE, UM_CMAP, apply_style, get_colour
+from behav_utils.plotting.trajectory import plot_trajectory
 
 __all__ = [
     'plot_psychometric_curve', 'plot_update_matrix', 'plot_conditional_psychometric',

@@ -12,16 +12,18 @@ Usage:
     plot_trajectory(r, 'mu', ax=axes[1])
 """
 
-import numpy as np
+from typing import Tuple
+
 import matplotlib.pyplot as plt
-from typing import Optional, Tuple
+import numpy as np
 
 from behav_utils.analysis.statistics import PhaseStats
-
 from behav_utils.plotting.styles import (
-    PALETTE, COLOURS, DEFAULT_ALPHA, DEFAULT_LINE_WIDTH, DEFAULT_MARKER_SIZE,
+    DEFAULT_ALPHA,
+    DEFAULT_LINE_WIDTH,
+    DEFAULT_MARKER_SIZE,
+    PALETTE,
 )
-
 
 # Map dict-key (math name) → display label (literature name)
 _DISPLAY_LABEL = {
@@ -36,9 +38,9 @@ _DISPLAY_LABEL = {
 def plot_trajectory(
     result: PhaseStats,
     stat: str,
-    ax: Optional[plt.Axes] = None,
-    color: Optional[str] = None,
-    label: Optional[str] = None,
+    ax: plt.Axes | None = None,
+    color: str | None = None,
+    label: str | None = None,
     alpha: float = DEFAULT_ALPHA,
     linewidth: float = DEFAULT_LINE_WIDTH,
     marker: str = 'o',

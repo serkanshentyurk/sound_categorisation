@@ -5,8 +5,6 @@ After the consolidation, the module exposes only compute_session_features
 (others were removed). Verifies it produces expected output keys including RT.
 """
 
-import numpy as np
-import pytest
 
 
 class TestComputeSessionFeatures:

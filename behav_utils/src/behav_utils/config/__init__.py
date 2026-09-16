@@ -14,6 +14,6 @@ See configs/config_minimal.yaml for a starter template,
 or configs/config_full_reference.yaml for all available options.
 """
 
-from behav_utils.config.schema import load_config, ProjectConfig
+from behav_utils.config.schema import ProjectConfig, load_config
 
 __all__ = ['load_config', 'ProjectConfig']

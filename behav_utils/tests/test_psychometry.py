@@ -5,7 +5,6 @@ Covers the fit_psychometric engine (session-level readouts live in test_readouts
 """
 
 import numpy as np
-import pytest
 
 
 class TestFitPsychometric:

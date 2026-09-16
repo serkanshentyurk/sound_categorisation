@@ -79,7 +79,8 @@ def _fit_exponential(t, stim, choice, n, shape=None):
         return None
     if pinned:
         x_full = [*best[1], np.log(best[2]), sig, lo, hi]
-        obj = lambda y: nll_at([y[0], y[1]], np.exp(y[2]))
+        def obj(y):
+            return nll_at([y[0], y[1]], np.exp(y[2]))
         y0 = [*best[1], np.log(best[2])]
         r = minimize(obj, y0, method='L-BFGS-B', bounds=[(-1, 1), (-1, 1), (np.log(1.0), np.log(50.0 * n))])
         if np.all(np.isfinite(r.x)) and r.fun <= best[0] + 1e-9:
@@ -108,7 +109,7 @@ def _fit_step(t, stim, choice, n, shape=None):
         if shape is not None:
             sig, lo, hi = shape
 
-            def obj(x, after=after):
+            def obj(x, after=after, sig=sig, lo=lo, hi=hi):
                 return _nll(np.where(after, x[1], x[0]), sig, lo, hi, stim, choice)
             r = minimize(obj, [0.0, 0.0], method='L-BFGS-B', bounds=[(-1, 1), (-1, 1)])
             k = 3

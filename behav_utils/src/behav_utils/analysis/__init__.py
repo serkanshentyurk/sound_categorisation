@@ -11,30 +11,45 @@ readouts in ``behav_utils.readouts``. The two fit engines on raw arrays
 (``fit_psychometric``, ``fit_update_matrix``) are re-exported here.
 """
 
-from behav_utils.analysis.utils import cumulative_gaussian, generate_stimuli
-from behav_utils.analysis.psychometry import fit_psychometric, fit_psychometric_gof
-from behav_utils.analysis.update_matrix import fit_update_matrix, matrix_error
-
-from behav_utils.analysis.statistics import PhaseStats, compute_stat, infer_animal_id
+from behav_utils.analysis.across_animals import collect_rows, compare_genotypes, compare_groups
 from behav_utils.analysis.comparison import (
-    DeltaStats, PhaseSummary, Contrast, Interaction,
-    compute_delta_stat, compute_interaction, contrast_key,
-)
-from behav_utils.analysis.resampling import (
-    bootstrap_phase_stats, permute_phase_difference, summarise_draws, summarise_draw_frame,
-    DrawSummary,
+    Contrast,
+    DeltaStats,
+    Interaction,
+    PhaseSummary,
+    compute_delta_stat,
+    compute_interaction,
+    contrast_key,
 )
 from behav_utils.analysis.downsample import (
-    downsample, calculate_min_n, resample_stat_vectors,
-    resample_psychometric_curve, resample_update_matrix,
+    calculate_min_n,
+    downsample,
+    resample_psychometric_curve,
+    resample_stat_vectors,
+    resample_update_matrix,
+)
+from behav_utils.analysis.group import (
+    average_arrays,
+    bootstrap_units,
+    combine,
+    min_achievable_p,
+    paired_diff,
+    rank_test,
+)
+from behav_utils.analysis.psychometry import fit_psychometric, fit_psychometric_gof
+from behav_utils.analysis.resampling import (
+    DrawSummary,
+    bootstrap_phase_stats,
+    permute_phase_difference,
+    summarise_draw_frame,
+    summarise_draws,
 )
 from behav_utils.analysis.rolling import RollingStats, compute_rolling_stats
-from behav_utils.analysis.across_animals import collect_rows, compare_groups, compare_genotypes
-from behav_utils.analysis.group import (
-    combine, paired_diff, bootstrap_units, rank_test, average_arrays, min_achievable_p,
-)
-from behav_utils.analysis.session_raster import compute_session_raster
 from behav_utils.analysis.session_features import compute_session_features
+from behav_utils.analysis.session_raster import compute_session_raster
+from behav_utils.analysis.statistics import PhaseStats, compute_stat, infer_animal_id
+from behav_utils.analysis.update_matrix import fit_update_matrix, matrix_error
+from behav_utils.analysis.utils import cumulative_gaussian, generate_stimuli
 
 __all__ = [
     'cumulative_gaussian', 'generate_stimuli',

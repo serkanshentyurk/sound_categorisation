@@ -5,6 +5,7 @@ verified before it was deleted: 350 values, zero mismatches.)
 """
 
 import dataclasses
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -15,10 +16,13 @@ from behav_utils.data.ops.selection import select_sessions
 from behav_utils.data.structures import TrialData
 from behav_utils.data.synthetic import generate_synthetic_animal
 from behav_utils.stats import (
-    PSYCHOMETRIC, compute_stats, is_exchangeable, list_producers, list_stats,
+    PSYCHOMETRIC,
+    compute_stats,
+    is_exchangeable,
+    list_producers,
+    list_stats,
 )
 from behav_utils.stats.registry import _OUTPUT_TO_PRODUCER, _PRODUCERS, fit, stat
-
 
 # ── fixtures ────────────────────────────────────────────────────────────────
 

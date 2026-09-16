@@ -273,7 +273,7 @@ def rank_test(
     Raises:
         ValueError: paired with mismatched lengths.
     """
-    from scipy.stats import wilcoxon, mannwhitneyu
+    from scipy.stats import mannwhitneyu, wilcoxon
 
     a = np.asarray(list(a), dtype=float)
     b = np.asarray(list(b), dtype=float)

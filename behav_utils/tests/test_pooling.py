@@ -9,9 +9,9 @@ After the consolidation:
     given. It performs no filtering and no session skipping.
 """
 
-import numpy as np
-import pytest
 from datetime import date
+
+import numpy as np
 
 
 def _trials_with_aborts():
@@ -66,7 +66,7 @@ class TestGetArraysProjection:
 
     def test_aborts_removed_only_by_filter(self):
         """get_arrays keeps everything; filter_trials is what drops aborts."""
-        from behav_utils.data.ops.filtering import get_arrays, filter_trials
+        from behav_utils.data.ops.filtering import filter_trials, get_arrays
         sess = _session(_trials_with_aborts())
         assert get_arrays(sess.trials)['n_trials'] == 5       # aborts present
         clean = filter_trials([sess], min_trials=1)           # min_trials=1: keep short session
@@ -93,7 +93,7 @@ class TestPoolArrays:
         assert pooled['n_trials'] == big.trials.n_trials + 5
 
     def test_current_arrays_match_manual_concat(self, synthetic_animal):
-        from behav_utils.data.ops.filtering import pool_arrays, get_arrays
+        from behav_utils.data.ops.filtering import get_arrays, pool_arrays
         sessions = synthetic_animal.sessions[:3]
         pooled = pool_arrays(sessions)
         manual = np.concatenate([get_arrays(s.trials)['stimuli'] for s in sessions])

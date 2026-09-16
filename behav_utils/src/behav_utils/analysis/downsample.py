@@ -16,18 +16,19 @@ from __future__ import annotations
 
 import dataclasses
 import warnings
-
-import numpy as np
-
 from typing import Sequence
 
+import numpy as np
 import pandas as pd
 
 from behav_utils.data.arrays import TrialArrays
+from behav_utils.data.ops.filtering import filter_trial_data, pool_arrays
 from behav_utils.data.structures import SessionData
-from behav_utils.data.ops.filtering import pool_arrays, filter_trial_data
 from behav_utils.readouts import (
-    PsychometricCurve, UpdateMatrix, compute_psychometric_curve, compute_update_matrix,
+    PsychometricCurve,
+    UpdateMatrix,
+    compute_psychometric_curve,
+    compute_update_matrix,
 )
 from behav_utils.readouts._base import X_FIT, _ro
 from behav_utils.stats import compute_stats, is_exchangeable, validate_names

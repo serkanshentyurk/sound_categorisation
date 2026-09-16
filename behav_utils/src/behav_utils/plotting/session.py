@@ -12,16 +12,16 @@ Usage:
     fig, ax = plot_session_raster(raster, window=20)
 """
 
-import numpy as np
-import matplotlib.pyplot as plt
-from typing import Optional, Tuple
+from typing import Tuple
 
+import matplotlib.pyplot as plt
+import numpy as np
 
 
 def plot_session_raster(
     result: dict,
-    ax: Optional[plt.Axes] = None,
-    window: Optional[int] = None,
+    ax: plt.Axes | None = None,
+    window: int | None = None,
     title: str = '',
 ) -> Tuple[plt.Figure, plt.Axes]:
     """

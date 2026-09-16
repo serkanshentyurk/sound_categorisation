@@ -30,10 +30,10 @@ with a faint line, so the within-session direction — the readable signal in a
 paired design — is visible rather than hidden behind the marginal spread.
 """
 
-from typing import Mapping, Optional, Sequence
+from typing import Mapping, Sequence
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
 from behav_utils.plotting.styles import get_colour
 
@@ -43,9 +43,9 @@ __all__ = ['plot_session_stats', 'plot_session_stats_single']
 def plot_session_stats_single(
     groups: Mapping[str, 'object'],
     stat: str,
-    ax: Optional[plt.Axes] = None,
-    group_order: Optional[Sequence[str]] = None,
-    palette: Optional[Sequence[str]] = None,
+    ax: plt.Axes | None = None,
+    group_order: Sequence[str] | None = None,
+    palette: Sequence[str] | None = None,
     connect: bool = True,
     show_session_ids: bool = True,
     centre: str = 'mean',
@@ -145,12 +145,12 @@ def plot_session_stats_single(
 
 def plot_session_stats(
     groups: Mapping[str, 'object'],
-    stats: Optional[Sequence[str]] = None,
+    stats: Sequence[str] | None = None,
     ncols: int = 4,
-    group_order: Optional[Sequence[str]] = None,
-    palette: Optional[Sequence[str]] = None,
+    group_order: Sequence[str] | None = None,
+    palette: Sequence[str] | None = None,
     panel_size: tuple = (3.0, 3.0),
-    suptitle: Optional[str] = None,
+    suptitle: str | None = None,
     connect: bool = True,
     show_session_ids: bool = True,
     centre: str = 'mean',

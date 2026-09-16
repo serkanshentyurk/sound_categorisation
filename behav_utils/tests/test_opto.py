@@ -9,16 +9,16 @@ the psychometric ``mu`` with sensitivity preserved), so the contrast should
 recover a significant ``mu`` difference while accuracy stays roughly unchanged —
 the "criterion shift, preserved d′" signature.
 """
-import numpy as np
-import pytest
 from datetime import date, timedelta
 
-from behav_utils.data.structures import (
-    SessionData, SessionMetadata, TrialData, AnimalData)
-from behav_utils.data.ops.filtering import filter_trials, pool_arrays
+import numpy as np
+import pytest
+
 from behav_utils.analysis.comparison import compute_delta_stat
 from behav_utils.data.arrays import TrialArrays
-from behav_utils.stats import compute_stats, PSYCHOMETRIC
+from behav_utils.data.ops.filtering import filter_trials, pool_arrays
+from behav_utils.data.structures import SessionData, SessionMetadata, TrialData
+from behav_utils.stats import PSYCHOMETRIC, compute_stats
 
 
 def _opto_session(idx, n=320, opto_bias=0.0, opto_frac=0.3, noise=0.12, seed=0):

@@ -17,14 +17,20 @@ in ``behav_utils.readouts``.
 Importing this package registers all built-in producers.
 """
 
-from behav_utils.stats.registry import (
-    compute_stats, stat, fit,
-    list_stats, list_producers, producer_of, is_exchangeable, validate_names,
-)
-from behav_utils.stats import basic, psychometric, history, rt, dynamics   # noqa: F401  (registration)
-from behav_utils.stats.psychometric import PSYCHOMETRIC
-from behav_utils.stats.history import LOGISTIC_HISTORY, SD_PROFILE
+from behav_utils.stats import basic, dynamics, history, psychometric, rt  # noqa: F401  (registration)
 from behav_utils.stats.dynamics import PSE_DYNAMICS
+from behav_utils.stats.history import LOGISTIC_HISTORY, SD_PROFILE
+from behav_utils.stats.psychometric import PSYCHOMETRIC
+from behav_utils.stats.registry import (
+    compute_stats,
+    fit,
+    is_exchangeable,
+    list_producers,
+    list_stats,
+    producer_of,
+    stat,
+    validate_names,
+)
 
 __all__ = [
     'compute_stats', 'stat', 'fit',

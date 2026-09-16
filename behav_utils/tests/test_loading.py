@@ -15,15 +15,25 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from behav_utils.data.loading import (
-    convert_choice_to_category, parse_timespan,
-    parse_date_from_path, parse_date_from_csv,
-    load_session_csv, load_animal, load_experiment,
-    _safe_column, _read_and_merge_csvs, _extract_session_metadata,
-)
 from behav_utils.config.schema import (
-    ProjectConfig, ColumnMapping, SessionMetadataMapping, ChoiceMapping,
-    TaskConfig, FileStructure,
+    ChoiceMapping,
+    ColumnMapping,
+    FileStructure,
+    ProjectConfig,
+    SessionMetadataMapping,
+    TaskConfig,
+)
+from behav_utils.data.loading import (
+    _extract_session_metadata,
+    _read_and_merge_csvs,
+    _safe_column,
+    convert_choice_to_category,
+    load_animal,
+    load_experiment,
+    load_session_csv,
+    parse_date_from_csv,
+    parse_date_from_path,
+    parse_timespan,
 )
 from behav_utils.data.structures import SessionMetadata
 

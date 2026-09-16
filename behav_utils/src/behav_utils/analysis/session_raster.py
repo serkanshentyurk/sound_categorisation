@@ -11,8 +11,9 @@ Usage:
     fig, ax = plot_session_raster(raster, window=20)
 """
 
+from typing import TYPE_CHECKING, Dict
+
 import numpy as np
-from typing import Dict, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from behav_utils.data.structures import SessionData

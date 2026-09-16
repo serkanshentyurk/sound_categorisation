@@ -8,8 +8,8 @@ raw session and CARRIED (not recomputed) through filtering, so a survivor of a
 """
 import numpy as np
 
-from behav_utils.data.structures import TrialData, PrevTrial
 from behav_utils.data.ops.filtering import filter_trial_data
+from behav_utils.data.structures import PrevTrial, TrialData
 
 
 def _session(n: int = 6) -> TrialData:

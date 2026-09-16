@@ -6,8 +6,9 @@ path, which carries no lag-1 view). The session-level readout is
 ``behav_utils.readouts.compute_update_matrix`` on a ``TrialArrays``.
 """
 
+from typing import Dict, Literal, Tuple
+
 import numpy as np
-from typing import Optional, Dict, Tuple, Literal
 
 from behav_utils.analysis.psychometry import fit_psychometric
 
@@ -18,11 +19,11 @@ def fit_update_matrix(
     categories: np.ndarray,
     n_bins: int = 8,
     trial_filter: Literal['all', 'post_correct'] = 'post_correct',
-    no_response: Optional[np.ndarray] = None,
-    not_blockstart: Optional[np.ndarray] = None,
-    prev_stimuli: Optional[np.ndarray] = None,
-    prev_choices: Optional[np.ndarray] = None,
-    prev_categories: Optional[np.ndarray] = None,
+    no_response: np.ndarray | None = None,
+    not_blockstart: np.ndarray | None = None,
+    prev_stimuli: np.ndarray | None = None,
+    prev_choices: np.ndarray | None = None,
+    prev_categories: np.ndarray | None = None,
 ) -> Tuple[np.ndarray, np.ndarray, Dict]:
     """
     Compute update matrix from raw behavioural arrays.

@@ -43,15 +43,22 @@ Usage:
     fd = fitting_data_from_sessions(clean, animal.animal_id)
 """
 
-import numpy as np
 import warnings
 from dataclasses import dataclass, field, replace
 from typing import (
-    Optional, List, Dict, Tuple, Callable, Union, Any, TYPE_CHECKING,
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Tuple,
+    Union,
 )
 
+import numpy as np
+
 if TYPE_CHECKING:
-    from behav_utils.data.structures import AnimalData, SessionData, FittingData
+    from behav_utils.data.structures import AnimalData, SessionData
 
 
 # =============================================================================
@@ -91,21 +98,21 @@ class SessionFilter:
                       the library derives only 'regular' and 'opto' from the data.
         custom_filter: Callable(SessionData) -> bool for arbitrary filtering
     """
-    stage: Optional[Union[str, List[str]]] = None
-    distribution: Optional[Union[str, List[str]]] = None
-    session_type: Optional[Union[str, List[str]]] = None
-    min_accuracy: Optional[float] = None
-    max_accuracy: Optional[float] = None
-    last_fraction: Optional[float] = None
-    first_n: Optional[int] = None
-    last_n: Optional[int] = None
-    after_session_idx: Optional[int] = None
-    before_session_idx: Optional[int] = None
-    session_indices: Optional[List[int]] = None
+    stage: Union[str, List[str]] | None = None
+    distribution: Union[str, List[str]] | None = None
+    session_type: Union[str, List[str]] | None = None
+    min_accuracy: float | None = None
+    max_accuracy: float | None = None
+    last_fraction: float | None = None
+    first_n: int | None = None
+    last_n: int | None = None
+    after_session_idx: int | None = None
+    before_session_idx: int | None = None
+    session_indices: List[int] | None = None
     min_trials: int = 10
     exclude_opto: bool = False
     exclude_types: Tuple[str, ...] = ()      # session types to drop (skipped when session_type is set)
-    custom_filter: Optional[Callable] = field(default=None, hash=False)
+    custom_filter: Callable | None = field(default=None, hash=False)
 
     @staticmethod
     def _resolve_session_type(sess: 'SessionData') -> str:
@@ -304,7 +311,7 @@ def list_presets() -> Dict[str, str]:
 
 def select_sessions(
     animal: 'AnimalData',
-    preset: Optional[str] = None,
+    preset: str | None = None,
     **overrides,
 ) -> List['SessionData']:
     """
@@ -368,7 +375,7 @@ def register_presets_from_config(config_raw: Dict[str, Any]) -> int:
     count = 0
     for name, spec in presets_raw.items():
         if not isinstance(spec, dict):
-            warnings.warn(f"Skipping preset '{name}': expected dict, got {type(spec)}")
+            warnings.warn(f"Skipping preset '{name}': expected dict, got {type(spec)}", stacklevel=2)
             continue
 
         # Convert session_indices from YAML list if present
@@ -383,16 +390,14 @@ def register_presets_from_config(config_raw: Dict[str, Any]) -> int:
 
         unknown = set(spec.keys()) - valid_fields
         if unknown:
-            warnings.warn(
-                f"Preset '{name}': ignoring unknown fields {unknown}"
-            )
+            warnings.warn(f"Preset '{name}': ignoring unknown fields {unknown}", stacklevel=2)
 
         try:
             filt = SessionFilter(**filtered_spec)
             register_preset(name, filt)
             count += 1
         except Exception as e:
-            warnings.warn(f"Failed to register preset '{name}': {e}")
+            warnings.warn(f"Failed to register preset '{name}': {e}", stacklevel=2)
 
     return count
 

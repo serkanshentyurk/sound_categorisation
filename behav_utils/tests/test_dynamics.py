@@ -56,8 +56,8 @@ def test_short_block_is_nan():
 
 def test_trial_type_all_drops_aborts():
     """The 'all' filter must drop aborted trials like every other trial_type (bug fix)."""
-    from behav_utils.data.synthetic import generate_synthetic_animal
     from behav_utils.data.ops.filtering import filter_trials
+    from behav_utils.data.synthetic import generate_synthetic_animal
     animal, _ = generate_synthetic_animal(animal_id='T', n_sessions=1, trials_per_session=300, seed=0)
     s = animal.sessions[0]
     n_abort = int(np.asarray(s.trials.abort).sum())

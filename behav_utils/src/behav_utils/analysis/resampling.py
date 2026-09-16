@@ -38,7 +38,7 @@ per stat, columns in request order, NaN where a draw failed.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Sequence
+from typing import Sequence
 
 import numpy as np
 import pandas as pd
@@ -63,7 +63,7 @@ def bootstrap_phase_stats(
     names: Sequence[str],
     *,
     n_draws: int = 1000,
-    n_trials: Optional[int] = None,
+    n_trials: int | None = None,
     seed: int = 0,
     unit: str = 'trials',
 ) -> pd.DataFrame:
@@ -121,7 +121,7 @@ def permute_phase_difference(
     names: Sequence[str],
     *,
     n_draws: int = 1000,
-    n_trials: Optional[int] = None,
+    n_trials: int | None = None,
     seed: int = 0,
 ) -> pd.DataFrame:
     """Null distribution of ``stat(a) - stat(b)`` from shuffling the labels.
@@ -197,7 +197,7 @@ class DrawSummary:
 def summarise_draws(
     draws,
     *,
-    observed: Optional[float] = None,
+    observed: float | None = None,
     ci: float = 0.95,
     null_value: float = 0.0,
 ) -> DrawSummary:
@@ -248,7 +248,7 @@ def summarise_draws(
     return DrawSummary(ci_lo, ci_hi, p, float(np.median(values)), int(values.size))
 
 
-def summarise_draw_frame(draws: pd.DataFrame, *, observed: Optional[pd.Series] = None,
+def summarise_draw_frame(draws: pd.DataFrame, *, observed: pd.Series | None = None,
                          ci: float = 0.95, null_value: float = 0.0) -> pd.DataFrame:
     """``summarise_draws`` per column → DataFrame indexed by stat with columns ci_lo, ci_hi, p, median, n_draws."""
     rows = {}

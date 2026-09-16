@@ -13,7 +13,11 @@ import pandas as pd
 import pytest
 
 from behav_utils.analysis.group import (
-    combine, paired_diff, bootstrap_units, rank_test, average_arrays,
+    average_arrays,
+    bootstrap_units,
+    combine,
+    paired_diff,
+    rank_test,
 )
 
 

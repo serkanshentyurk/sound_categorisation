@@ -10,14 +10,13 @@ from datetime import date, timedelta
 import numpy as np
 import pytest
 
-from behav_utils.analysis.rolling import compute_rolling_stats, _iter_windows
+from behav_utils.analysis.rolling import _iter_windows, compute_rolling_stats
 
 
 # ── builders (real SessionData, so pool_arrays / prev_* behave as in prod) ──
 def _session(session_idx, n, *, noise=0.10, distribution='Hard-A',
              session_type='regular', seed=0):
-    from behav_utils.data.structures import (
-        SessionData, SessionMetadata, TrialData)
+    from behav_utils.data.structures import SessionData, SessionMetadata, TrialData
     rng = np.random.default_rng(seed + session_idx)
     stimuli = rng.uniform(-1, 1, n)
     categories = (stimuli > 0).astype(float)

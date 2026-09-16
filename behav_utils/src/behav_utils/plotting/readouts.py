@@ -5,21 +5,30 @@ readout; every function returns ``(fig, ax)`` and computes nothing.
 
 from __future__ import annotations
 
-from typing import Optional, Tuple
+from typing import Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
 
 from behav_utils.plotting.styles import (
-    COLOURS, DEFAULT_ALPHA, DEFAULT_LINE_WIDTH, DEFAULT_MARKER_SIZE, PALETTE, SEM_ALPHA, UM_CMAP,
+    COLOURS,
+    DEFAULT_ALPHA,
+    DEFAULT_LINE_WIDTH,
+    DEFAULT_MARKER_SIZE,
+    PALETTE,
+    SEM_ALPHA,
+    UM_CMAP,
 )
 from behav_utils.readouts import (
-    BinnedCurve, ConditionalPsychometric, PsychometricCurve, SerialDependenceProfile,
+    BinnedCurve,
+    ConditionalPsychometric,
+    PsychometricCurve,
+    SerialDependenceProfile,
     UpdateMatrix,
 )
 
 
-def _axes(ax: Optional[plt.Axes], figsize) -> Tuple[plt.Figure, plt.Axes]:
+def _axes(ax: plt.Axes | None, figsize) -> Tuple[plt.Figure, plt.Axes]:
     if ax is None:
         return plt.subplots(1, 1, figsize=figsize)
     return ax.get_figure(), ax
@@ -37,10 +46,10 @@ def _stimulus_axes(ax: plt.Axes, ylabel: str, reference: bool) -> None:
 
 def plot_psychometric_curve(
     curve: PsychometricCurve,
-    ax: Optional[plt.Axes] = None,
+    ax: plt.Axes | None = None,
     *,
-    color: Optional[str] = None,
-    label: Optional[str] = None,
+    color: str | None = None,
+    label: str | None = None,
     alpha: float = DEFAULT_ALPHA,
     linewidth: float = DEFAULT_LINE_WIDTH,
     linestyle: str = '-',
@@ -80,10 +89,10 @@ def plot_psychometric_curve(
 
 def plot_update_matrix(
     um: UpdateMatrix,
-    ax: Optional[plt.Axes] = None,
+    ax: plt.Axes | None = None,
     *,
-    vmin: Optional[float] = None,
-    vmax: Optional[float] = None,
+    vmin: float | None = None,
+    vmax: float | None = None,
     cmap=None,
     colorbar: bool = True,
     title: str = '',
@@ -116,11 +125,11 @@ def plot_update_matrix(
 
 def plot_conditional_psychometric(
     cp: ConditionalPsychometric,
-    ax: Optional[plt.Axes] = None,
+    ax: plt.Axes | None = None,
     *,
     param: str = 'mu',
-    color: Optional[str] = None,
-    label: Optional[str] = None,
+    color: str | None = None,
+    label: str | None = None,
     show_unconditional: bool = True,
     title: str = '',
 ) -> Tuple[plt.Figure, plt.Axes]:
@@ -146,10 +155,10 @@ def plot_conditional_psychometric(
 
 def plot_binned_curve(
     curve: BinnedCurve,
-    ax: Optional[plt.Axes] = None,
+    ax: plt.Axes | None = None,
     *,
-    color: Optional[str] = None,
-    label: Optional[str] = None,
+    color: str | None = None,
+    label: str | None = None,
     show_reference: bool = True,
     title: str = '',
 ) -> Tuple[plt.Figure, plt.Axes]:
@@ -167,10 +176,10 @@ def plot_binned_curve(
 
 def plot_sd_profile(
     prof: SerialDependenceProfile,
-    ax: Optional[plt.Axes] = None,
+    ax: plt.Axes | None = None,
     *,
-    color: Optional[str] = None,
-    label: Optional[str] = None,
+    color: str | None = None,
+    label: str | None = None,
     title: str = '',
 ) -> Tuple[plt.Figure, plt.Axes]:
     fig, ax = _axes(ax, (5, 3.5))

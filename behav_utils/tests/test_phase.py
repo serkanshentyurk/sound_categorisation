@@ -6,13 +6,13 @@ preset and/or ad-hoc ``SessionFilter`` criteria and returns a list of matching
 ``SessionData``. Ad-hoc defaults exclude nothing; presets carry exclude_types
 and keep opto (``exclude_opto=False``).
 """
-import numpy as np
-import pytest
 from datetime import date, timedelta
 
-from behav_utils.data.structures import (
-    SessionData, SessionMetadata, TrialData, AnimalData)
-from behav_utils.data.ops.selection import select_sessions, get_preset
+import numpy as np
+import pytest
+
+from behav_utils.data.ops.selection import get_preset, select_sessions
+from behav_utils.data.structures import AnimalData, SessionData, SessionMetadata, TrialData
 
 
 def _sess(idx, dist, stype, stage='Full_Task_Cont', noise=0.08, n=300, seed=0):

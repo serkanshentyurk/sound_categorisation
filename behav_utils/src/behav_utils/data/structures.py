@@ -34,19 +34,24 @@ Usage:
     plot_psychometric_curve(psych, ax=ax, color=PALETTE[0])
 """
 
+import pickle
+from dataclasses import dataclass, field
+from datetime import date
+from pathlib import Path
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    List,
+    Tuple,
+    Union,
+)
+
 import numpy as np
 import pandas as pd
-import pickle
-import matplotlib.pyplot as plt
-from pathlib import Path
-from dataclasses import dataclass, field
-from typing import (
-    Optional, Dict, List, Tuple, Union, Any, Callable, TYPE_CHECKING,
-)
-from datetime import date
 
 if TYPE_CHECKING:
-    from behav_utils.config.schema import ProjectConfig
+    pass
 
 
 # =============================================================================
@@ -302,7 +307,7 @@ class TrialData:
 
     # ── Field access ────────────────────────────────────────────────────────
 
-    def get_field(self, name: str) -> Optional[np.ndarray]:
+    def get_field(self, name: str) -> np.ndarray | None:
         """
         Get any field by name.
 
@@ -356,13 +361,13 @@ class SessionData:
     # overrides in load_experiment defer to it). Internal.
     _session_type_explicit: bool = field(default=False, repr=False)
 
-    csv_path: Optional[str] = None
+    csv_path: str | None = None
 
     # Filter provenance (None = unfiltered raw data)
-    filter_info: Optional[Dict[str, Any]] = field(default=None, repr=False)
+    filter_info: Dict[str, Any] | None = field(default=None, repr=False)
 
     # Set by AnimalData after construction
-    _days_since_first: Optional[float] = field(default=None, repr=False)
+    _days_since_first: float | None = field(default=None, repr=False)
 
     @property
     def n_trials(self) -> int:
@@ -383,7 +388,7 @@ class SessionData:
         return self.metadata.get('distribution', 'Unknown')
 
     @property
-    def days_since_first(self) -> Optional[float]:
+    def days_since_first(self) -> float | None:
         return self._days_since_first
 
     @property
@@ -443,10 +448,10 @@ class AnimalData:
     animal_id: str
     sessions: List[SessionData]
     metadata: Dict[str, Any] = field(default_factory=dict)
-    _config: Optional[Any] = field(default=None, repr=False)
+    _config: Any | None = field(default=None, repr=False)
 
     # Cache
-    _feature_matrix_cache: Optional[pd.DataFrame] = field(
+    _feature_matrix_cache: pd.DataFrame | None = field(
         default=None, repr=False
     )
 
@@ -469,7 +474,7 @@ class AnimalData:
     @property
     def n_sessions(self) -> int:
         return len(self.sessions)
-    
+
     @property
     def session_ids(self) -> list:
         """List of session IDs in chronological order."""
@@ -482,7 +487,7 @@ class AnimalData:
     @property
     def stages(self) -> List[str]:
         return list(dict.fromkeys(s.stage for s in self.sessions))
-    
+
     @property
     def session_table(self) -> pd.DataFrame:
         """One-row-per-session summary table for selection masks."""
@@ -531,7 +536,7 @@ class AnimalData:
                     stype = 'opto'
                 else:
                     stype = 'regular'
-            
+
             sess_stats = compute_stats(TrialArrays.from_pooled(sess.get_arrays()), list_stats())
             dict_to_append = {'session_idx':  summ['session_idx'],
                             'session_id':   summ['session_id'],
@@ -549,12 +554,12 @@ class AnimalData:
 
     def get_sessions(
         self,
-        stage: Optional[Union[str, List[str]]] = None,
-        distribution: Optional[Union[str, List[str]]] = None,
-        idx: Optional[Union[int, List[int], np.ndarray]] = None,
-        idx_range: Optional[Tuple[int, int]] = None,
-        mask: Optional[Union[np.ndarray, pd.Series]] = None,
-        date_range: Optional[Tuple[date, date]] = None,
+        stage: Union[str, List[str]] | None = None,
+        distribution: Union[str, List[str]] | None = None,
+        idx: Union[int, List[int], np.ndarray] | None = None,
+        idx_range: Tuple[int, int] | None = None,
+        mask: Union[np.ndarray, pd.Series] | None = None,
+        date_range: Tuple[date, date] | None = None,
         return_indices: bool = False,
     ) -> Union[List[SessionData], Tuple[List[SessionData], List[int]]]:
         """
@@ -643,7 +648,7 @@ class ExperimentData:
     """
     animals: Dict[str, AnimalData] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
-    config: Optional[Any] = field(default=None, repr=False)  # ProjectConfig
+    config: Any | None = field(default=None, repr=False)  # ProjectConfig
 
     def add_animal(self, animal: AnimalData) -> None:
         self.animals[animal.animal_id] = animal

@@ -37,8 +37,8 @@ class TestSessionFromArrays:
         assert np.isnan(pc[0])
         assert np.allclose(pc[1:], a['choices'][:-1], equal_nan=True)
         # prev_has_prev is the adjacency not_blockstart for one session
-        assert a['prev_has_prev'][0] == False
-        assert np.all(a['prev_has_prev'][1:] == True)
+        assert not a['prev_has_prev'][0]
+        assert np.all(a['prev_has_prev'][1:])
 
     def test_abort_default_all_false(self):
         s, ch, c = _data(n=50, seed=2)

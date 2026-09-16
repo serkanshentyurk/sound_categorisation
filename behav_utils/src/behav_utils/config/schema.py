@@ -14,15 +14,19 @@ Usage:
     # config.file_structure.data_dir       → '/path/to/data'
 """
 
-import yaml
 import os
-from pathlib import Path
 import warnings
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import (
-    Optional, Dict, List, Tuple, Any, Union,
+    Any,
+    Dict,
+    List,
+    Tuple,
+    Union,
 )
 
+import yaml
 
 # =============================================================================
 # COLUMN MAPPING
@@ -46,7 +50,7 @@ class ColumnMapping:
     dtype: str = 'float'
     optional: bool = False
     default: Any = None
-    mapping: Optional[Dict[Any, Any]] = None
+    mapping: Dict[Any, Any] | None = None
 
     def __post_init__(self):
         valid_dtypes = {'int', 'float', 'str', 'bool'}
@@ -89,8 +93,8 @@ class FileStructure:
     behaviour_file: str = "trial_summary*.csv"
     date_format: str = "{year}_{month}_{day}"
     date_regex: str = r"(\d{4})_(\d{1,2})_(\d{1,2})"
-    drop_last_row: bool = True   
-    min_trials_per_file: int = 10           
+    drop_last_row: bool = True
+    min_trials_per_file: int = 10
 
 
 # =============================================================================
@@ -115,7 +119,7 @@ class ChoiceMapping:
     """
     type: str = 'identity'
     no_response_value: Any = 0
-    contingency_field: Optional[str] = None
+    contingency_field: str | None = None
     contingency_rules: Dict[str, Dict[Any, int]] = field(default_factory=dict)
 
 @dataclass
@@ -142,8 +146,8 @@ class TaskConfig:
     outputs: List[str] = field(default_factory=lambda: ['choice'])
 
     # Which input/output drives psychometric analysis?
-    primary_stimulus: Optional[str] = None
-    primary_choice: Optional[str] = None
+    primary_stimulus: str | None = None
+    primary_choice: str | None = None
 
     # Category structure (only used if primary_stimulus is set)
     boundary: float = 0.0
@@ -175,7 +179,7 @@ class AnalysisConfig:
     hard_threshold: float = 0.3
     default_n_bins: int = 8
     min_valid_trials: int = 10
-    default_stage: Optional[Union[str, List[str]]] = None
+    default_stage: Union[str, List[str]] | None = None
 
 
 # =============================================================================
@@ -234,7 +238,7 @@ class ProjectConfig:
 
     # Extra columns to load but not map to specific fields
     extra_columns: List[str] = field(default_factory=list)
-    
+
     # Session-type overrides, stamped onto sessions at load time:
     #   session_types: {type_name: {animal_id: ['YYYYMMDD', ...]}}
     # Type names are the project's own vocabulary (e.g. 'masking', 'washout',
@@ -298,7 +302,7 @@ class ProjectConfig:
                     f"mapping with that name exists."
                 )
 
-    def get_csv_name(self, internal_name: str) -> Optional[str]:
+    def get_csv_name(self, internal_name: str) -> str | None:
         """Get CSV column name for an internal field name."""
         if internal_name in self.columns:
             return self.columns[internal_name].csv_name
@@ -404,7 +408,7 @@ def load_cohorts(path: Union[str, Path]) -> Dict[str, List[str]]:
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"Config file not found: {path}")
-    with open(path, 'r') as f:
+    with open(path) as f:
         raw = yaml.safe_load(f)
     cohorts = (raw or {}).get('cohorts', {}) or {}
     if not isinstance(cohorts, dict):
@@ -437,7 +441,7 @@ def load_config(path: Union[str, Path]) -> ProjectConfig:
     if not path.exists():
         raise FileNotFoundError(f"Config file not found: {path}")
 
-    with open(path, 'r') as f:
+    with open(path) as f:
         raw = yaml.safe_load(f)
 
     if not isinstance(raw, dict):
@@ -549,7 +553,7 @@ def validate_csv_against_config(
     csv_cols = set(df_columns)
     matched, missing_required, missing_optional = [], [], []
 
-    for name, mapping in config.columns.items():
+    for mapping in config.columns.values():
         if mapping.csv_name in csv_cols:
             matched.append(mapping.csv_name)
         elif mapping.optional:
@@ -557,7 +561,7 @@ def validate_csv_against_config(
         else:
             missing_required.append(mapping.csv_name)
 
-    for name, mapping in config.session_metadata.items():
+    for mapping in config.session_metadata.values():
         if mapping.csv_name in csv_cols:
             matched.append(mapping.csv_name)
         elif not mapping.optional:

@@ -16,7 +16,7 @@ comparison). A hollow marker flags an estimate lying outside its own interval.
 
 from __future__ import annotations
 
-from typing import Dict, Optional, Sequence, Tuple
+from typing import Dict, Sequence, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -33,7 +33,7 @@ def _label(stat: str) -> str:
     return _LABEL.get(stat, stat)
 
 
-def _pick_contrast(result: DeltaStats, contrast: Optional[str]) -> Contrast:
+def _pick_contrast(result: DeltaStats, contrast: str | None) -> Contrast:
     if contrast is None:
         if len(result.contrasts) != 1:
             raise KeyError(f'several contrasts present, pass one of {sorted(result.contrasts)}')
@@ -74,7 +74,7 @@ def _marker(ax: Axes, x: float, value: float, colour: str, outside: bool, size: 
 
 # ── curves ──────────────────────────────────────────────────────────────────
 
-def _delta_text(con: Contrast, stats: Sequence[str], unit: Optional[str]) -> str:
+def _delta_text(con: Contrast, stats: Sequence[str], unit: str | None) -> str:
     t = con.table(unit if con.units else None).set_index('stat') if con.units else None
     lines = []
     for key in stats:
@@ -93,8 +93,8 @@ def _delta_text(con: Contrast, stats: Sequence[str], unit: Optional[str]) -> str
 
 def plot_comparison(
     result: DeltaStats,
-    contrast: Optional[str] = None,
-    ax: Optional[Axes] = None,
+    contrast: str | None = None,
+    ax: Axes | None = None,
     *,
     color_a: str = '#d62728',
     color_b: str = '#444444',
@@ -102,7 +102,7 @@ def plot_comparison(
     show_band: bool = True,
     show_data: bool = True,
     stats_keys: Sequence[str] = ('mu', 'sigma', 'accuracy'),
-    unit: Optional[str] = None,
+    unit: str | None = None,
 ) -> Axes:
     """Two psychometric curves (phase over reference) with the Δ, CI and p annotated.
 
@@ -143,12 +143,12 @@ def _phase_order(result: DeltaStats, phase_order):
 def plot_stat_comparison_single(
     result: DeltaStats,
     stat: str,
-    ax: Optional[Axes] = None,
+    ax: Axes | None = None,
     *,
-    phase_order: Optional[Sequence[str]] = None,
-    palette: Optional[Sequence[str]] = None,
+    phase_order: Sequence[str] | None = None,
+    palette: Sequence[str] | None = None,
     show_p: bool = True,
-    units: Optional[Sequence[str]] = None,
+    units: Sequence[str] | None = None,
 ) -> Axes:
     """One stat: a point per phase with its bootstrap CI(s); p above each non-reference phase.
 
@@ -218,15 +218,15 @@ def plot_stat_comparison_single(
 
 def plot_stat_comparison(
     result: DeltaStats,
-    stats: Optional[Sequence[str]] = None,
+    stats: Sequence[str] | None = None,
     *,
     ncols: int = 3,
-    phase_order: Optional[Sequence[str]] = None,
-    palette: Optional[Sequence[str]] = None,
+    phase_order: Sequence[str] | None = None,
+    palette: Sequence[str] | None = None,
     panel_size: tuple = (3.0, 3.0),
-    suptitle: Optional[str] = None,
+    suptitle: str | None = None,
     show_p: bool = True,
-    units: Optional[Sequence[str]] = None,
+    units: Sequence[str] | None = None,
 ):
     """Grid of :func:`plot_stat_comparison_single`, one panel per stat. Returns ``(fig, axes)``."""
     from behav_utils.plotting.styles import get_colour
@@ -256,14 +256,14 @@ def plot_stat_comparison(
 def plot_interaction_single(
     interaction: Interaction,
     stat: str,
-    ax: Optional[Axes] = None,
+    ax: Axes | None = None,
     *,
     show_p: bool = True,
     show_components: bool = True,
     colour_a: str = '#1f77b4',
     colour_b: str = '#ff7f0e',
     colour_interaction: str = '#7f2704',
-    units: Optional[Sequence[str]] = None,
+    units: Sequence[str] | None = None,
 ) -> Axes:
     """One stat: Δ_a, Δ_b (context) and their difference with its CI and bootstrap p.
 
@@ -331,17 +331,17 @@ def plot_interaction_single(
 
 def plot_interaction(
     interaction: Interaction,
-    stats: Optional[Sequence[str]] = None,
+    stats: Sequence[str] | None = None,
     *,
     ncols: int = 4,
     panel_size: tuple = (3.0, 3.0),
-    suptitle: Optional[str] = None,
+    suptitle: str | None = None,
     show_p: bool = True,
     show_components: bool = True,
     colour_a: str = '#1f77b4',
     colour_b: str = '#ff7f0e',
     colour_interaction: str = '#7f2704',
-    units: Optional[Sequence[str]] = None,
+    units: Sequence[str] | None = None,
 ):
     """Grid of :func:`plot_interaction_single`, one panel per stat, each with its own y-scale."""
     stats = list(stats) if stats is not None else list(interaction.interaction.index)

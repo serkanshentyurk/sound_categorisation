@@ -23,23 +23,30 @@ Usage:
     experiment = load_experiment('config.yaml')  # loads config automatically
 """
 
+import glob
+import re
+import warnings
+from datetime import date
+from pathlib import Path
+from typing import List, Union
+
 import numpy as np
 import pandas as pd
-import warnings
-import re
-import glob
-from pathlib import Path
-from datetime import date
-from typing import Optional, List, Union
 
 from behav_utils.config.schema import (
-    ProjectConfig, ColumnMapping, SessionMetadataMapping,
-    ChoiceMapping, load_config, validate_csv_against_config,
+    ChoiceMapping,
+    ColumnMapping,
+    ProjectConfig,
+    load_config,
+    validate_csv_against_config,
 )
 from behav_utils.data.structures import (
-    ExperimentData, AnimalData, SessionData, SessionMetadata, TrialData,
+    AnimalData,
+    ExperimentData,
+    SessionData,
+    SessionMetadata,
+    TrialData,
 )
-
 
 # =============================================================================
 # CHOICE ENCODING CONVERSION
@@ -75,7 +82,7 @@ def convert_choice_to_category(
             warnings.warn(
                 f"No '{choice_mapping.contingency_field}' in session metadata. "
                 f"Cannot convert choice. Storing raw values."
-            )
+            , stacklevel=2)
             return choice_raw.astype(float).copy()
 
         contingency = str(contingency)
@@ -85,7 +92,7 @@ def convert_choice_to_category(
                 f"Unknown contingency '{contingency}'. "
                 f"Known: {list(choice_mapping.contingency_rules.keys())}. "
                 f"Storing raw values."
-            )
+            , stacklevel=2)
             return choice_raw.astype(float).copy()
 
         rules = choice_mapping.contingency_rules[contingency]
@@ -108,7 +115,7 @@ def convert_choice_to_category(
 # TIMESPAN PARSING
 # =============================================================================
 
-def parse_timespan(val, default=None) -> Optional[float]:
+def parse_timespan(val, default=None) -> float | None:
     """
     Parse Bonsai TimeSpan string (HH:MM:SS.fff) to seconds.
     Returns float seconds, or default if unparseable.
@@ -135,7 +142,7 @@ def parse_timespan(val, default=None) -> Optional[float]:
 # DATE PARSING
 # =============================================================================
 
-def parse_date_from_path(path_str: str, regex: str) -> Optional[date]:
+def parse_date_from_path(path_str: str, regex: str) -> date | None:
     """
     Extract date from a path string using a regex with named groups
     (year, month, day) or positional groups.
@@ -159,7 +166,7 @@ def parse_date_from_path(path_str: str, regex: str) -> Optional[date]:
     return None
 
 
-def parse_date_from_csv(df: pd.DataFrame) -> Optional[date]:
+def parse_date_from_csv(df: pd.DataFrame) -> date | None:
     """Extract date from a 'Date' column if present."""
     if 'Date' in df.columns and len(df) > 0:
         date_val = df['Date'].iloc[0]
@@ -253,7 +260,7 @@ def _safe_column(
         warnings.warn(
             f"Column '{mapping.csv_name}': dtype conversion to "
             f"'{mapping.dtype}' failed: {e}. Using raw values."
-        )
+        , stacklevel=2)
         result = raw
 
     return result
@@ -305,8 +312,8 @@ def load_session_csv(
     csv_path: Union[str, Path],
     config: ProjectConfig,
     session_idx: int = 0,
-    session_date: Optional[date] = None,
-    df: Optional[pd.DataFrame] = None,
+    session_date: date | None = None,
+    df: pd.DataFrame | None = None,
 ) -> SessionData:
     """
     Load a single session CSV into a SessionData object.
@@ -331,15 +338,15 @@ def load_session_csv(
         try:
             df = pd.read_csv(csv_path, low_memory=False)
         except Exception as e:
-            raise IOError(f"Failed to read {csv_path}: {e}")
+            raise OSError(f"Failed to read {csv_path}: {e}") from e
 
         # Drop last row if configured (Bonsai CSVs may have truncated final row)
         if getattr(config.file_structure, 'drop_last_row', True) and len(df) > 1:
             df = df.iloc[:-1]
 
     if len(df) == 0:
-        warnings.warn(f"Empty CSV: {csv_path}")
-        
+        warnings.warn(f"Empty CSV: {csv_path}", stacklevel=2)
+
 
     # Validate columns
     validation = validate_csv_against_config(list(df.columns), config)
@@ -475,7 +482,7 @@ def load_session_csv(
         )
     if session_date is None:
         session_date = date(2000, 1, 1)  # fallback
-        warnings.warn(f"Could not determine date for {csv_path.name}")
+        warnings.warn(f"Could not determine date for {csv_path.name}", stacklevel=2)
 
     # ── Build session ID ────────────────────────────────────────────────────
     animal_id = metadata.animal_id or csv_path.parent.parent.name
@@ -519,7 +526,7 @@ def load_session_csv(
 def _read_and_merge_csvs(
     csv_paths: List[Union[str, Path]],
     config: ProjectConfig,
-) -> Optional[pd.DataFrame]:
+) -> pd.DataFrame | None:
     """
     Read one or more session CSVs and merge into a single DataFrame.
 
@@ -588,7 +595,7 @@ def load_animal(
 
     sessions = []
     for sess_dir in session_dirs:
-        
+
         # Find behaviour CSV(s)
         pattern = config.file_structure.behaviour_file
         csv_files = sorted(glob.glob(str(sess_dir / pattern)))
@@ -626,7 +633,7 @@ def load_animal(
                 )
             sessions.append(session)
         except Exception as e:
-            warnings.warn(f"Failed to load {sess_dir.name}: {e}")
+            warnings.warn(f"Failed to load {sess_dir.name}: {e}", stacklevel=2)
             continue
     return AnimalData(animal_id=animal_id, sessions=sessions)
 
@@ -666,7 +673,7 @@ def _apply_session_type(experiment, mapping, stype) -> None:
                         f"{animal_id} {sess.date}: config lists it as '{stype}' "
                         f"but the CSV session_type is '{sess.session_type}'; "
                         f"keeping the CSV value."
-                    )
+                    , stacklevel=2)
                 continue
             sess.session_type = stype
 
@@ -710,11 +717,11 @@ def load_experiment(
             else:
                 warnings.warn(
                     f"Animal {animal.animal_id}: no valid sessions found"
-                )
+                , stacklevel=2)
         except Exception as e:
-            warnings.warn(f"Failed to load animal {animal_dir.name}: {e}")
+            warnings.warn(f"Failed to load animal {animal_dir.name}: {e}", stacklevel=2)
             continue
-    
+
     # Load animal metadata if file exists
     meta_path = data_dir / 'animal_metadata.json'
     if meta_path.exists():
@@ -725,7 +732,7 @@ def load_experiment(
             animal = experiment.animals.get(animal_id)
             if animal is not None:
                 animal.metadata.update(meta)
-    
+
     # Stamp session_type from the config lists. opto_on is left untouched:
     # on a masking session its True trials are the (power-0) fake-opto trials,
     # selectable via opto_on & session_type=='masking'.

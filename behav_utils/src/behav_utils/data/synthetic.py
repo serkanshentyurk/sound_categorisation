@@ -29,16 +29,24 @@ Usage:
     animal, info = generate_synthetic_animal(n_sessions=10)
 """
 
-import numpy as np
 from datetime import date, timedelta
 from typing import (
-    Optional, List, Dict, Tuple, Callable, Union, Any,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Tuple,
+    Union,
 )
+
+import numpy as np
 
 from behav_utils.data.structures import (
-    ExperimentData, AnimalData, SessionData, SessionMetadata, TrialData,
+    AnimalData,
+    SessionData,
+    SessionMetadata,
+    TrialData,
 )
-
 
 # =============================================================================
 # STIMULUS GENERATION
@@ -47,7 +55,7 @@ from behav_utils.data.structures import (
 def sample_stimuli(
     n_trials: int,
     distribution: str = 'uniform',
-    rng: Optional[np.random.Generator] = None,
+    rng: np.random.Generator | None = None,
     stim_range: Tuple[float, float] = (-1.0, 1.0),
     boundary: float = 0.0,
     **dist_kwargs,
@@ -169,12 +177,12 @@ def session_from_arrays(
     choices: np.ndarray,
     categories: np.ndarray,
     session_idx: int = 0,
-    distribution: Optional[str] = None,
-    abort: Optional[np.ndarray] = None,
-    reaction_time: Optional[np.ndarray] = None,
+    distribution: str | None = None,
+    abort: np.ndarray | None = None,
+    reaction_time: np.ndarray | None = None,
     animal_id: str = 'SIM',
     stage: str = 'Full_Task_Cont',
-    base_date: Optional[date] = None,
+    base_date: date | None = None,
     stim_range: Tuple[float, float] = (-1.0, 1.0),
 ) -> SessionData:
     """Assemble a SessionData from raw per-trial arrays.
@@ -271,10 +279,10 @@ def generate_synthetic_session(
     abort_rate: float = 0.05,
     animal_id: str = 'SYN01',
     stage: str = 'Full_Task_Cont',
-    base_date: Optional[date] = None,
-    rng: Optional[np.random.Generator] = None,
-    simulator: Optional[Callable] = None,
-    simulator_kwargs: Optional[Dict[str, Any]] = None,
+    base_date: date | None = None,
+    rng: np.random.Generator | None = None,
+    simulator: Callable | None = None,
+    simulator_kwargs: Dict[str, Any] | None = None,
     **dist_kwargs,
 ) -> SessionData:
     """
@@ -351,10 +359,10 @@ def generate_synthetic_animal(
     abort_rate: float = 0.05,
     stage: str = 'Full_Task_Cont',
     seed: int = 42,
-    simulator: Optional[Callable] = None,
-    simulator_kwargs: Optional[Dict[str, Any]] = None,
-    per_session_simulator_kwargs: Optional[List[Dict[str, Any]]] = None,
-    distribution_schedule: Optional[List[str]] = None,
+    simulator: Callable | None = None,
+    simulator_kwargs: Dict[str, Any] | None = None,
+    per_session_simulator_kwargs: List[Dict[str, Any]] | None = None,
+    distribution_schedule: List[str] | None = None,
 ) -> Tuple[AnimalData, Dict]:
     """
     Generate a synthetic animal with multiple sessions.

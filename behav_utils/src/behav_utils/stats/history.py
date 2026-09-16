@@ -13,8 +13,8 @@ import numpy as np
 from scipy.optimize import minimize
 
 from behav_utils.data.arrays import TrialArrays
-from behav_utils.stats.registry import fit, stat
 from behav_utils.stats._binning import DEFAULT_N_BINS, bin_index
+from behav_utils.stats.registry import fit, stat
 
 MIN_RESPONDED = 10
 MIN_PAIRS = 5

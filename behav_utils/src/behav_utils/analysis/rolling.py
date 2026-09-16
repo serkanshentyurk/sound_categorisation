@@ -42,8 +42,6 @@ import pandas as pd
 from behav_utils.data.arrays import TrialArrays
 from behav_utils.stats import compute_stats, validate_names
 
-import numpy as np
-
 
 def _iter_windows(n: int, window: int, step: int) -> List[Tuple[float, slice]]:
     """Full windows only: ``(centre, slice)`` for each start in ``range(0, n-window+1, step)``."""
@@ -182,7 +180,7 @@ def compute_rolling_stats(
             c, v = _roll(TrialArrays.from_sessions([s]), names, window, step, min_short)
         except Exception as exc:
             warnings.warn(f'compute_rolling_stats: session {sid!r} failed ({exc}); emitting empty curve.',
-                          RuntimeWarning)
+                          RuntimeWarning, stacklevel=2)
             c, v = np.array([]), np.zeros((0, len(names)))
         sidx, stype = getattr(s, 'session_idx', None), getattr(s, 'session_type', '')
         frames.append(_rows(c, v, names, sid, sidx, stype, dist))

@@ -24,7 +24,7 @@ curve and the update matrix are readouts (``behav_utils.readouts``).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Sequence
+from typing import Sequence
 
 import numpy as np
 import pandas as pd
@@ -48,7 +48,7 @@ class PhaseStats:
     """
 
     pooled: pd.Series
-    sessions: Optional[pd.DataFrame]
+    sessions: pd.DataFrame | None
     animal: str
     n_sessions: int
     n_trials: int
@@ -99,8 +99,8 @@ def compute_stat(
     names: Sequence[str],
     *,
     per_session: bool = False,
-    animal_id: Optional[str] = None,
-    rng: Optional[np.random.Generator] = None,
+    animal_id: str | None = None,
+    rng: np.random.Generator | None = None,
 ) -> PhaseStats:
     """Scalar statistics for a phase.
 

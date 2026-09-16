@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, Optional, Sequence
+from typing import Literal, Sequence
 
 import numpy as np
 import pandas as pd
@@ -33,8 +33,8 @@ class UpdateMatrix:
     n_trials: int                 # pairs entering the unconditional fit
     trial_filter: str
     n_sources: int = 1            # blocks averaged into this matrix (1 = single fit)
-    coverage: Optional[np.ndarray] = None   # (n_bins, n_bins) sources per cell, when averaged
-    sem: Optional[np.ndarray] = None        # (n_bins, n_bins), when averaged
+    coverage: np.ndarray | None = None   # (n_bins, n_bins) sources per cell, when averaged
+    sem: np.ndarray | None = None        # (n_bins, n_bins), when averaged
 
     def __repr__(self) -> str:
         finite = int(np.isfinite(self.matrix).sum())
@@ -72,7 +72,7 @@ class UpdateMatrix:
         })
 
     @classmethod
-    def from_matrix(cls, matrix, *, trial_filter: str = 'post_correct') -> 'UpdateMatrix':
+    def from_matrix(cls, matrix, *, trial_filter: str = 'post_correct') -> UpdateMatrix:
         """Wrap a raw shift matrix (e.g. a model-generated one) for plotting; other fields are NaN/0."""
         m = np.asarray(matrix, dtype=float)
         n = m.shape[0]
@@ -80,7 +80,7 @@ class UpdateMatrix:
                    _ro(np.zeros(n, dtype=int)), 0, trial_filter)
 
     @classmethod
-    def average(cls, items: Sequence['UpdateMatrix'], *, min_sources: int = 1) -> 'UpdateMatrix':
+    def average(cls, items: Sequence[UpdateMatrix], *, min_sources: int = 1) -> UpdateMatrix:
         """Cell-wise mean over matrices (equal weight per item; the item is the unit).
 
         Valid because every matrix bins on the same fixed grid. Cells backed by

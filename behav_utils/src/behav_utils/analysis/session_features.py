@@ -16,9 +16,9 @@ For a multi-session matrix, the workflow is inline in the notebook:
     df = pd.DataFrame([compute_session_features(s) for s in animal.sessions])
 """
 
+from typing import TYPE_CHECKING, Dict, List, Union
+
 import numpy as np
-import pandas as pd
-from typing import Dict, List, Union, Optional, TYPE_CHECKING
 
 from behav_utils.data.arrays import TrialArrays
 from behav_utils.stats import compute_stats, list_stats
@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 
 def compute_session_features(
     session: 'SessionData',
-    stat_names: Optional[List[str]] = None,
+    stat_names: List[str] | None = None,
     hard_threshold: float = 0.3,
     fast_threshold: float = 50.0,
 ) -> Dict[str, float]:

@@ -10,9 +10,14 @@ import os
 import pytest
 
 from behav_utils.config.schema import (
-    ColumnMapping, SessionMetadataMapping, FileStructure, ChoiceMapping,
-    TaskConfig, ProjectConfig, load_config, validate_csv_against_config,
-    _parse_column_mapping, _parse_session_metadata,
+    ColumnMapping,
+    ProjectConfig,
+    SessionMetadataMapping,
+    TaskConfig,
+    _parse_column_mapping,
+    _parse_session_metadata,
+    load_config,
+    validate_csv_against_config,
 )
 
 

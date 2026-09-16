@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 
 from behav_utils.data.arrays import TrialArrays
-from behav_utils.stats.registry import stat
 from behav_utils.stats._binning import DEFAULT_N_BINS, HARD_THRESHOLD, bin_index
+from behav_utils.stats.registry import stat
 
 
 @stat('accuracy')

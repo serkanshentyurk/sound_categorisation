@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -37,8 +36,8 @@ class PsychometricCurve:
     bin_counts: np.ndarray        # (n_bins,)
     n_trials: int
     success: bool
-    ci: Optional[np.ndarray] = None       # (4, 2) lo/hi per param, PARAMS order
-    band: Optional[np.ndarray] = None     # (2, 200) lo/hi curve
+    ci: np.ndarray | None = None       # (4, 2) lo/hi per param, PARAMS order
+    band: np.ndarray | None = None     # (2, 200) lo/hi curve
     n_bootstrap: int = 0                  # successful bootstrap fits
 
     def __repr__(self) -> str:

@@ -34,7 +34,7 @@ lag 1 (multi-lag regressions, run-length measures). Resamplers consult
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, Iterable, List, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
@@ -128,7 +128,7 @@ def compute_stats(
     arrays: TrialArrays,
     names: Sequence[str],
     *,
-    rng: Optional[np.random.Generator] = None,
+    rng: np.random.Generator | None = None,
     strict: bool = True,
 ) -> pd.Series:
     """Compute scalar statistics on one block of trials.

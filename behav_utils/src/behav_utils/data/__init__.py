@@ -11,38 +11,40 @@ Pipeline:
     pool_arrays(filtered_sessions)                    → dict of arrays
 """
 
-from behav_utils.data.structures import (
-    ExperimentData,
-    AnimalData,
-    SessionData,
-    SessionMetadata,
-    TrialData,
-)
 from behav_utils.data.loading import (
-    load_experiment,
     load_animal,
+    load_experiment,
     load_session_csv,
-)
-from behav_utils.data.ops.selection import (
-    select_sessions,
-    SessionFilter,
-    register_preset,
-    list_presets,
-    register_presets_from_config,
 )
 from behav_utils.data.ops.filtering import (
     filter_trials,
     pool_arrays,
 )
+from behav_utils.data.ops.selection import (
+    SessionFilter,
+    list_presets,
+    register_preset,
+    register_presets_from_config,
+    select_sessions,
+)
+from behav_utils.data.ops.switches import find_switches
+from behav_utils.data.structures import (
+    AnimalData,
+    ExperimentData,
+    SessionData,
+    SessionMetadata,
+    TrialData,
+)
 from behav_utils.data.synthetic import (
     generate_synthetic_animal,
     generate_synthetic_session,
-    sample_stimuli,
-    random_choice_simulator,
     noisy_psychometric_simulator,
+    random_choice_simulator,
+    sample_stimuli,
 )
 
 __all__ = [
+    'random_choice_simulator', 'find_switches',
     # Loading
     'load_experiment',
     'load_session_csv',
@@ -73,4 +75,3 @@ __all__ = [
     'noisy_psychometric_simulator',
 ]
 
-from behav_utils.data.ops.switches import find_switches  # noqa: E402

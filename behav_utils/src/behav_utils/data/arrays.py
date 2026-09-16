@@ -22,12 +22,12 @@ Nothing here filters: pass already-filtered sessions.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Mapping, Optional, Sequence
+from typing import Mapping, Sequence
 
 import numpy as np
 
 
-def _as_float_1d(x, n: Optional[int] = None, name: str = '') -> np.ndarray:
+def _as_float_1d(x, n: int | None = None, name: str = '') -> np.ndarray:
     """Coerce to a 1-D float array; ``None`` becomes an all-NaN array of length n."""
     if x is None:
         if n is None:
@@ -76,7 +76,7 @@ class TrialArrays:
     # ── constructors ────────────────────────────────────────────────────────
 
     @classmethod
-    def from_pooled(cls, pooled: Mapping[str, np.ndarray]) -> 'TrialArrays':
+    def from_pooled(cls, pooled: Mapping[str, np.ndarray]) -> TrialArrays:
         """From the dict produced by ``pool_arrays`` / ``get_arrays``."""
         return cls(
             choice=pooled['choices'],
@@ -89,7 +89,7 @@ class TrialArrays:
         )
 
     @classmethod
-    def from_sessions(cls, sessions: Sequence) -> 'TrialArrays':
+    def from_sessions(cls, sessions: Sequence) -> TrialArrays:
         """From a list of (pre-filtered) SessionData, via ``pool_arrays``."""
         from behav_utils.data.ops.filtering import pool_arrays
         return cls.from_pooled(pool_arrays(list(sessions)))
@@ -101,7 +101,7 @@ class TrialArrays:
         stimulus,
         category,
         reaction_time=None,
-    ) -> 'TrialArrays':
+    ) -> TrialArrays:
         """From one contiguous block with no carried lag-1 view.
 
         The predecessor of trial t is trial t-1 by adjacency, with no
@@ -144,11 +144,11 @@ class TrialArrays:
         """Boolean mask of trials with a usable (responded, same-block) predecessor."""
         return ~np.isnan(self.prev_choice)
 
-    def valid(self) -> 'TrialArrays':
+    def valid(self) -> TrialArrays:
         """Responded trials only (the ``prev_*`` view is preserved, not re-shifted)."""
         return self.take(self.responded)
 
-    def take(self, mask_or_index) -> 'TrialArrays':
+    def take(self, mask_or_index) -> TrialArrays:
         """Row-subset by boolean mask or integer index; ``prev_*`` travel with the rows."""
         idx = np.asarray(mask_or_index)
         return TrialArrays(
@@ -157,7 +157,7 @@ class TrialArrays:
             self.reaction_time[idx],
         )
 
-    def lag1_pairs(self) -> 'TrialArrays':
+    def lag1_pairs(self) -> TrialArrays:
         """Trials with a responded current choice AND a usable predecessor.
 
         The subset every lag-1 history statistic is computed on.

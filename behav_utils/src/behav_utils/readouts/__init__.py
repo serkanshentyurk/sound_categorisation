@@ -6,12 +6,14 @@ Array-valued readouts of a block of trials (see ``_base`` for the contract).
     um.matrix, um.profile(), um.to_rows()
 """
 
-from behav_utils.readouts.update_matrix import UpdateMatrix, compute_update_matrix
-from behav_utils.readouts.psychometric import PsychometricCurve, compute_psychometric_curve, PARAMS
-from behav_utils.readouts.conditional_psychometric import (
-    ConditionalPsychometric, compute_conditional_psychometric)
 from behav_utils.readouts.binned import BinnedCurve, compute_binned_curve
+from behav_utils.readouts.conditional_psychometric import (
+    ConditionalPsychometric,
+    compute_conditional_psychometric,
+)
+from behav_utils.readouts.psychometric import PARAMS, PsychometricCurve, compute_psychometric_curve
 from behav_utils.readouts.sd_profile import SerialDependenceProfile, compute_sd_profile
+from behav_utils.readouts.update_matrix import UpdateMatrix, compute_update_matrix
 
 __all__ = [
     'UpdateMatrix', 'compute_update_matrix',

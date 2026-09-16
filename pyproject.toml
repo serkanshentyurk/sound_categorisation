@@ -24,7 +24,7 @@ pythonpath = [".", "behav_utils/src"]
 line-length = 110
 target-version = "py310"
 src = ["sound_categorisation", "scripts", "tests"]
-extend-exclude = ["behav_utils", "notebooks", "arpit"]
+extend-exclude = ["notebooks", "arpit"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP"]

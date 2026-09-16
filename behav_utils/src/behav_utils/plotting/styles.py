@@ -12,9 +12,8 @@ Usage:
         plot_psychometric_curve(curve, ax=ax, color=PALETTE[i], label=label)
 """
 
-import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
-
+import matplotlib.pyplot as plt
 
 # =============================================================================
 # COLOUR PALETTES

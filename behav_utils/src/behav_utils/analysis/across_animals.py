@@ -37,7 +37,7 @@ Public API:
     compare_genotypes — thin alias of compare_groups (group column 'genotype')
 """
 
-from typing import Dict, List, Mapping, Optional, Sequence
+from typing import Dict, List, Mapping, Sequence
 
 import numpy as np
 
@@ -47,7 +47,7 @@ __all__ = ['collect_rows', 'compare_groups', 'compare_genotypes']
 def collect_rows(
     scalars: Sequence[Mapping],
     animal: str,
-    group: Optional[str] = None,
+    group: str | None = None,
     group_col: str = 'group',
     **labels,
 ) -> List[Dict]:
@@ -87,7 +87,7 @@ def compare_groups(
     rows,
     group_col: str = 'group',
     groups=None,
-    stats: Optional[Sequence[str]] = None,
+    stats: Sequence[str] | None = None,
     value_col: str = 'value',
     stat_col: str = 'stat',
     unit_col: str = 'animal',
@@ -134,7 +134,8 @@ def compare_groups(
             without exactly two groups.
     """
     import pandas as pd
-    from behav_utils.analysis.group import rank_test, min_achievable_p
+
+    from behav_utils.analysis.group import min_achievable_p, rank_test
 
     df = rows if isinstance(rows, pd.DataFrame) else pd.DataFrame(list(rows))
     if df.empty:
@@ -181,7 +182,7 @@ def compare_groups(
         sub = df[df[stat_col] == stat].copy()
         sub['_grp'] = sub.apply(_group_of, axis=1)
 
-        def _values(label):
+        def _values(label, sub=sub):
             rows_g = sub[sub['_grp'] == label]
             per_unit = rows_g.groupby(unit_col)[value_col].mean()
             v = per_unit.to_numpy(dtype=float)

@@ -25,17 +25,22 @@ intervals together.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, Mapping, Optional, Sequence, Tuple
+from typing import Dict, Mapping, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
 
 from behav_utils.analysis.resampling import (
-    bootstrap_phase_stats, permute_phase_difference, summarise_draw_frame,
+    bootstrap_phase_stats,
+    permute_phase_difference,
+    summarise_draw_frame,
 )
 from behav_utils.data.arrays import TrialArrays
 from behav_utils.readouts import (
-    PsychometricCurve, UpdateMatrix, compute_psychometric_curve, compute_update_matrix,
+    PsychometricCurve,
+    UpdateMatrix,
+    compute_psychometric_curve,
+    compute_update_matrix,
 )
 from behav_utils.readouts.psychometric import PARAMS as PSYCHOMETRIC
 from behav_utils.stats import compute_stats, is_exchangeable, validate_names
@@ -64,15 +69,15 @@ class PhaseSummary:
     n_trials: int                                  # responded trials
     n_sessions: int
     draws: Mapping[str, pd.DataFrame] = field(default_factory=dict)   # unit → (n_draws × stats)
-    stats_matched: Optional[pd.Series] = None      # median of matched-n trial draws (downsample=True)
-    curve: Optional[PsychometricCurve] = None
-    update_matrix: Optional[UpdateMatrix] = None
+    stats_matched: pd.Series | None = None      # median of matched-n trial draws (downsample=True)
+    curve: PsychometricCurve | None = None
+    update_matrix: UpdateMatrix | None = None
 
     @property
     def units(self) -> Tuple[str, ...]:
         return tuple(self.draws)
 
-    def ci(self, unit: Optional[str] = None, *, ci: float = 0.95) -> pd.DataFrame:
+    def ci(self, unit: str | None = None, *, ci: float = 0.95) -> pd.DataFrame:
         """Bootstrap interval per stat for ``unit`` (default: first available). Columns ci_lo, ci_hi, p, median, n_draws."""
         unit = _pick_unit(self.draws, unit)
         if unit is None:
@@ -96,8 +101,8 @@ class Contrast:
     n_sessions_a: int
     n_sessions_b: int
     difference_draws: Mapping[str, pd.DataFrame] = field(default_factory=dict)   # unit → draws of Δ
-    perm_p: Optional[pd.Series] = None
-    um_diff: Optional[np.ndarray] = None
+    perm_p: pd.Series | None = None
+    um_diff: np.ndarray | None = None
     um_rmse: float = np.nan
     um_corr: float = np.nan
 
@@ -109,14 +114,14 @@ class Contrast:
     def units(self) -> Tuple[str, ...]:
         return tuple(self.difference_draws)
 
-    def boot(self, unit: Optional[str] = None, *, ci: float = 0.95) -> pd.DataFrame:
+    def boot(self, unit: str | None = None, *, ci: float = 0.95) -> pd.DataFrame:
         """Bootstrap ci_lo, ci_hi, p (two-sided vs 0), median, n_draws per stat."""
         unit = _pick_unit(self.difference_draws, unit)
         if unit is None:
             return _empty_summary(self.diff.index)
         return summarise_draw_frame(self.difference_draws[unit], ci=ci)
 
-    def table(self, unit: Optional[str] = None, *, ci: float = 0.95) -> pd.DataFrame:
+    def table(self, unit: str | None = None, *, ci: float = 0.95) -> pd.DataFrame:
         """One row per stat: diff, ci_lo, ci_hi, boot_p, perm_p, unit."""
         b = self.boot(unit, ci=ci)
         unit = _pick_unit(self.difference_draws, unit)
@@ -154,7 +159,7 @@ class DeltaStats:
         """The contrast of ``label`` vs the reference."""
         return self.contrasts[contrast_key(label, self.reference)]
 
-    def table(self, unit: Optional[str] = None, *, ci: float = 0.95) -> pd.DataFrame:
+    def table(self, unit: str | None = None, *, ci: float = 0.95) -> pd.DataFrame:
         """All contrasts stacked; adds a ``contrast`` column."""
         frames = [c.table(unit, ci=ci).assign(contrast=k) for k, c in self.contrasts.items()]
         return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
@@ -184,7 +189,7 @@ class Interaction:
     def units(self) -> Tuple[str, ...]:
         return tuple(self.draws)
 
-    def table(self, unit: Optional[str] = None, *, ci: float = 0.95) -> pd.DataFrame:
+    def table(self, unit: str | None = None, *, ci: float = 0.95) -> pd.DataFrame:
         """Per stat: delta_a, ci_a_lo/hi, delta_b, ci_b_lo/hi, interaction, ci_lo, ci_hi, p, n_draws."""
         unit = _pick_unit(self.draws, unit)
         if unit is None:
@@ -210,7 +215,7 @@ class Interaction:
                 f'units={list(self.draws)})')
 
 
-def _pick_unit(draws: Mapping[str, pd.DataFrame], unit: Optional[str]) -> Optional[str]:
+def _pick_unit(draws: Mapping[str, pd.DataFrame], unit: str | None) -> str | None:
     if not draws:
         return None
     if unit is None:
@@ -233,8 +238,8 @@ def compute_delta_stat(
     phases,
     names: Sequence[str] = PSYCHOMETRIC,
     *,
-    labels: Optional[Sequence[str]] = None,
-    reference: Optional[str] = None,
+    labels: Sequence[str] | None = None,
+    reference: str | None = None,
     curve: bool = True,
     update_matrix: bool = False,
     downsample: bool = False,
@@ -353,7 +358,7 @@ def compute_delta_stat(
     # ── contrasts vs reference ───────────────────────────────────────────
     ref = summaries[reference]
     contrasts: Dict[str, Contrast] = {}
-    for k, label in enumerate(l for l in order if l != reference):
+    for k, label in enumerate(lab for lab in order if lab != reference):
         ph = summaries[label]
         a = ph.stats_matched if ph.stats_matched is not None else ph.stats
         b = ref.stats_matched if ref.stats_matched is not None else ref.stats
@@ -412,7 +417,7 @@ def compute_interaction(
     result_b: DeltaStats,
     contrast: str,
     *,
-    contrast_b: Optional[str] = None,
+    contrast_b: str | None = None,
     label_a: str = 'a',
     label_b: str = 'b',
 ) -> Interaction:

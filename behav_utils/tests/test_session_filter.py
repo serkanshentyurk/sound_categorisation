@@ -1,11 +1,12 @@
 """Tests for behav_utils.data.selection.SessionFilter."""
 
+from datetime import date
+
 import numpy as np
-import pytest
-from datetime import date, timedelta
 
 from behav_utils.data.ops.selection import SessionFilter, list_presets
-from .conftest import _make_trial_data, _make_session
+
+from .conftest import _make_session, _make_trial_data
 
 
 class TestSessionFilterBasic:
@@ -24,7 +25,7 @@ class TestSessionFilterBasic:
         assert len(result) == len(synthetic_animal.sessions)
 
         f2 = SessionFilter(stage='Nonexistent')
-        result2 = f2.apply(synthetic_animal)          
+        result2 = f2.apply(synthetic_animal)
         assert len(result2) == 0
 
     def test_distribution_filter(self, synthetic_animal):
@@ -41,7 +42,7 @@ class TestSessionFilterBasic:
         assert len(result) == 0
 
         f2 = SessionFilter(min_trials=100)
-        result2 = f2.apply(synthetic_animal)  
+        result2 = f2.apply(synthetic_animal)
         assert len(result2) == len(synthetic_animal.sessions)
 
 
@@ -211,7 +212,6 @@ class TestResolveSessionType:
 
     def test_washout_takes_priority(self, rng):
         """A session marked as both washout and masking is 'washout'."""
-        from behav_utils.data.structures import SessionData, SessionMetadata
         trials = _make_trial_data(100, rng, opto_frac=0.0)
         sess = _make_session(0, date(2026, 1, 1), trials,
                              masking=True, washout=True)

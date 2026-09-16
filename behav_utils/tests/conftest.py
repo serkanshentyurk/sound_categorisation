@@ -5,6 +5,8 @@ Provides synthetic animals, sessions, and trial data for testing
 without requiring real data or cluster access.
 """
 
+from datetime import date, timedelta
+
 import numpy as np
 import pytest
 
@@ -19,7 +21,6 @@ register_presets_from_config({'session_presets': {
                       'exclude_types': ['masking', 'washout']},
     'all_stages': {'exclude_types': ['masking', 'washout']},
 }})
-from datetime import date, timedelta
 
 
 @pytest.fixture

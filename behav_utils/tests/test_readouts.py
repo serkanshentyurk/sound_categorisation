@@ -17,13 +17,21 @@ from behav_utils.data.ops.filtering import filter_trials
 from behav_utils.data.ops.selection import select_sessions
 from behav_utils.data.structures import TrialData
 from behav_utils.data.synthetic import generate_synthetic_animal
-from behav_utils.readouts import (
-    PARAMS, UpdateMatrix, compute_binned_curve, compute_conditional_psychometric,
-    compute_psychometric_curve, compute_sd_profile, compute_update_matrix,
-)
 from behav_utils.plotting.readouts import (
-    plot_binned_curve, plot_conditional_psychometric, plot_psychometric_curve, plot_sd_profile,
+    plot_binned_curve,
+    plot_conditional_psychometric,
+    plot_psychometric_curve,
+    plot_sd_profile,
     plot_update_matrix,
+)
+from behav_utils.readouts import (
+    PARAMS,
+    UpdateMatrix,
+    compute_binned_curve,
+    compute_conditional_psychometric,
+    compute_psychometric_curve,
+    compute_sd_profile,
+    compute_update_matrix,
 )
 
 
