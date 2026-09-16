@@ -39,7 +39,7 @@ def fast_result(exp):
 def test_contrast_table_schema(fast_result):
     t = to_tables(fast_result)['contrasts']
     assert list(t.columns) == CONTRAST_COLUMNS
-    assert set(t['kind']) == {'within', 'within_masking', 'between', 'dod'}
+    assert set(t['kind']) == {'within', 'within_masking', 'between', 'compensation', 'dod'}
     assert set(t['unit']) == {'trials', 'sessions'}
     assert t['perm_p'].notna().sum() > 0 and t.loc[t['kind'] == 'between', 'perm_p'].isna().all()
 
@@ -81,7 +81,7 @@ def test_readouts_and_trajectory_present_when_enabled(exp):
 
 def test_group_fold(exp):
     g = compute_group(exp, list(exp.animals), 'Uniform', 'opto', settings=Settings.fast())
-    assert set(g.rows['kind']) == {'within', 'within_masking', 'between', 'dod'}
+    assert set(g.rows['kind']) == {'within', 'within_masking', 'between', 'compensation', 'dod'}
     assert set(g.rows['group']) == {'wt', 'het'}
     assert {'kind', 'stat', 'p', 'n_a', 'n_b'} <= set(g.tests.columns)
     gt = group_tables(g)

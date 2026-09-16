@@ -17,6 +17,7 @@ _TITLES = {
     'within': 'within-phase · {a} sessions ({toi} vs non_opto)',
     'within_masking': 'within-phase · MASKING sessions ({toi} vs non_opto)',
     'between': 'between-phase ({between}, all trials)',
+    'compensation': 'laser-OFF trials of {a} sessions vs masking sessions, all trials (compensation)',
     'dod': 'delta-of-deltas (silencing beyond artefact)',
     'vs_ppc': 'ALM vs PPC-opto (all trials)',
 }
@@ -49,6 +50,8 @@ def animal_pdf(r: AnimalResult, out_path, settings: Settings) -> Path:
                                        f'{tag} · {_title("within_masking", r)}'))
         if 'between' in c:
             _save(pdf, F.contrast_grid(c['between'], display, settings.units, f'{tag} · {_title("between", r)}'))
+        if 'compensation' in c:
+            _save(pdf, F.contrast_grid(c['compensation'], display, settings.units, f'{tag} · {_title("compensation", r)}'))
         if 'dod' in c:
             _save(pdf, F.interaction_grid(c['dod'], display, settings.units, f'{tag} · {_title("dod", r)}'))
         if 'vs_ppc' in c:
@@ -70,7 +73,7 @@ def group_pdf(g: GroupResult, per_animal: Dict[str, AnimalResult], out_path, set
                                                       f'{prefix} · {phase} · genotype-mean UM'))
         if g.trajectories:
             _save(pdf, F.group_trajectory_page(g, f'{prefix} · session trajectories (WT vs HET)'))
-        kinds = [k for k in ('within', 'within_masking', 'between', 'dod', 'vs_ppc') if k in set(g.rows['kind'])]
+        kinds = [k for k in ('within', 'within_masking', 'between', 'compensation', 'dod', 'vs_ppc') if k in set(g.rows['kind'])]
         for kind in kinds:
             n = g.rows.loc[g.rows['kind'] == kind, 'animal'].nunique()
             _save(pdf, F.swarm_page(g, kind, display, f'{prefix} · {_title(kind, g)} — WT vs HET (n={n})'))

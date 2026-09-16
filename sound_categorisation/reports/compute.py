@@ -113,7 +113,7 @@ class AnimalResult:
 
     def __repr__(self) -> str:
         return (f'AnimalResult({self.animal!r}, {self.distribution!r}, {self.design}, toi={self.toi!r}, '
-                f'contrasts={[k for k in ("within", "within_masking", "between", "dod", "vs_ppc") if k in self.contrasts]})')
+                f'contrasts={[k for k in ("within", "within_masking", "between", "compensation", "dod", "vs_ppc") if k in self.contrasts]})')
 
 
 @dataclass(frozen=True)
@@ -211,6 +211,8 @@ def _point_rows(con: OptoContrasts, design: str, aid: str, group: str) -> List[d
         add('within_masking', con['within_masking'].contrasts[con.key].diff)
     if 'between' in con:
         add('between', con['between'].contrasts[BETWEEN_KEY[design]].diff)
+    if 'compensation' in con:
+        add('compensation', con['compensation'].contrasts['laser_off_vs_masking'].diff)
     if 'vs_ppc' in con:
         add('vs_ppc', con['vs_ppc'].contrasts['alm_vs_opto'].diff)
     if 'within' in con and 'within_masking' in con:

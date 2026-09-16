@@ -184,21 +184,23 @@ def _trajectory_panel(ax, tr: pd.DataFrame, y: str, geno: str, title: str, logy=
 
 def uniform_page(T: dict, cohort: str):
     df, gt, tr = T['contrasts'], T['group_tests'], T['trajectory']
-    fig = plt.figure(figsize=(16, 10.5))
-    gs = fig.add_gridspec(3, 4, hspace=0.55, wspace=0.35, height_ratios=[1, 1, 0.55])
+    fig = plt.figure(figsize=(16, 14))
+    gs = fig.add_gridspec(4, 4, hspace=0.6, wspace=0.35, height_ratios=[1, 1, 1, 0.55])
     _stat_row(fig, gs, 0, df, gt, distribution='Uniform', kind='within', stats=STATS4,
-              title='1  Within laser sessions: laser-on trials minus laser-off trials (one dot per animal, bar = 95% CI, filled = permutation p < 0.05)')
+              title='1  ONLY OPTO SESSIONS: opto (laser-on) trials − non-opto (laser-off) trials.   One dot per mouse, bar = 95% CI, filled = permutation p < 0.05')
     _stat_row(fig, gs, 1, df, gt, distribution='Uniform', kind='between', stats=STATS4,
-              title='2  Between sessions: laser sessions minus masking sessions, all trials (session bootstrap; masking block recorded later — includes drift)')
+              title='2  OPTO SESSIONS − MASKING SESSIONS, no trial filtering (opto sessions include laser-on and laser-off trials).   Session bootstrap; filled = CI excludes 0')
+    _stat_row(fig, gs, 2, df, gt, distribution='Uniform', kind='compensation', stats=STATS4,
+              title='3  LASER-OFF TRIALS OF OPTO SESSIONS − MASKING SESSIONS (all trials): does the baseline move in a lasered session? (compensation)')
     # small: fake-opto null, post-laser
-    ax = fig.add_subplot(gs[2, 0])
+    ax = fig.add_subplot(gs[3, 0])
     _dots(ax, _sel(df, distribution='Uniform', kind='within_masking', stat='mu'), ylabel='Δ μ', label_animals=False)
-    ax.set_title('3  Masking sessions (laser at zero): flagged trials minus the rest — should be null', fontsize=9, loc='left')
-    ax = fig.add_subplot(gs[2, 1])
+    ax.set_title('4  ONLY MASKING SESSIONS:\nopto-flagged (laser at 0) − non-opto trials', fontsize=8.5, loc='left')
+    ax = fig.add_subplot(gs[3, 1])
     _dots(ax, _sel(df, distribution='Uniform', toi='post_opto', kind='within', stat='mu'), ylabel='Δ μ', label_animals=False)
-    ax.set_title('4  The trial after a laser trial minus laser-off trials (carry-over)', fontsize=9, loc='left')
+    ax.set_title('5  ONLY OPTO SESSIONS:\ntrial after a laser-on trial − laser-off trials', fontsize=8.5, loc='left')
     # session-order strip
-    ax = fig.add_subplot(gs[2, 2:])
+    ax = fig.add_subplot(gs[3, 2:])
     u = tr[(tr['phase'] == 'Uniform')] if len(tr) and 'phase' in tr else pd.DataFrame()
     if len(u):
         for k, (_aid, sess) in enumerate(u.sort_values(['genotype', 'animal']).groupby('animal', sort=False)):
@@ -209,7 +211,7 @@ def uniform_page(T: dict, cohort: str):
         ax.set_yticks(range(k + 1))
         ax.set_yticklabels(u.sort_values(['genotype', 'animal'])['animal'].unique(), fontsize=7)
         ax.set_xlabel('session order (coloured = laser sessions, grey = masking)', fontsize=8)
-    ax.set_title('5  Session order per animal (coloured = laser block, grey = masking block)', fontsize=9, loc='left')
+    ax.set_title('6  Session order per mouse\n(coloured = opto block, grey = masking block)', fontsize=8.5, loc='left')
     ax.spines[['top', 'right']].set_visible(False)
     _legend(fig)
     fig.suptitle(f'{cohort} — Expert Uniform · laser at PPC', fontsize=13, y=0.995)
@@ -218,37 +220,39 @@ def uniform_page(T: dict, cohort: str):
 
 def hard_page(T: dict, cohort: str, distribution: str):
     df, gt, tr = T['contrasts'], T['group_tests'], T['trajectory']
-    fig = plt.figure(figsize=(16, 13.5))
-    gs = fig.add_gridspec(4, 4, hspace=0.7, wspace=0.35, bottom=0.11, top=0.94)
+    fig = plt.figure(figsize=(16, 17))
+    gs = fig.add_gridspec(5, 4, hspace=0.7, wspace=0.35, bottom=0.09, top=0.95)
     _stat_row(fig, gs, 0, df, gt, distribution=distribution, kind='within', stats=STATS4,
-              title=f'1  {distribution}, within laser sessions: laser-on minus laser-off trials, pooled over the six laser sessions (filled = permutation p < 0.05)')
+              title=f'1  {distribution}, ONLY OPTO SESSIONS: opto (laser-on) trials − non-opto (laser-off) trials, pooled over the six opto sessions.   Filled = permutation p < 0.05')
     _stat_row(fig, gs, 1, df, gt, distribution=distribution, kind='between', stats=STATS4,
-              title=f'2  {distribution}, between sessions: six laser sessions minus six masking sessions, all trials (masking recorded later — includes drift)')
+              title=f'2  {distribution}, OPTO SESSIONS − MASKING SESSIONS, no trial filtering (six vs six; masking recorded later, so drift is inside this number)')
+    _stat_row(fig, gs, 2, df, gt, distribution=distribution, kind='compensation', stats=STATS4,
+              title=f'3  {distribution}, LASER-OFF TRIALS OF OPTO SESSIONS − MASKING SESSIONS (all trials): the compensation')
     hard = tr[tr['phase'].isin(['Hard-A', 'Hard-B'])] if len(tr) and 'phase' in tr else pd.DataFrame()
     # trajectory: the whole A/B alternation, both distributions, one panel per genotype
     for c, geno in enumerate(('wt', 'het')):
-        ax = fig.add_subplot(gs[2, 2 * c:2 * c + 2])
-        _trajectory_panel(ax, hard, 'pse', geno, f'3  {geno.upper()}: criterion (PSE) fitted per session')
+        ax = fig.add_subplot(gs[3, 2 * c:2 * c + 2])
+        _trajectory_panel(ax, hard, 'pse', geno, f'4  {geno.upper()}: PSE fitted per session (slope and lapses free)')
         if c == 0:
             ax.set_ylabel('PSE (all trials)', fontsize=9)
     for c, geno in enumerate(('wt', 'het')):
-        ax = fig.add_subplot(gs[3, c])
-        _trajectory_panel(ax, hard, 'delta_from_prev', geno, f'4  {geno.upper()}: PSE change from the previous day')
+        ax = fig.add_subplot(gs[4, c])
+        _trajectory_panel(ax, hard, 'delta_from_prev', geno, f'5  {geno.upper()}: PSE change from the previous day')
         if c == 0:
             ax.set_ylabel('ΔPSE (switch amplitude)', fontsize=9)
     for c, geno in enumerate(('wt', 'het')):
-        ax = fig.add_subplot(gs[3, 2 + c])
-        _trajectory_panel(ax, hard, 'pse_fixed', geno, f'5  {geno.upper()}: PSE per session, shape pinned')
+        ax = fig.add_subplot(gs[4, 2 + c])
+        _trajectory_panel(ax, hard, 'pse_fixed', geno, f'6  {geno.upper()}: PSE per session, slope and lapses fixed at Uniform values')
         if c == 0:
             ax.set_ylabel('PSE, shape pinned', fontsize=9)
-    fig.text(0.5, 0.055, 'Rows 3–5: one thin line per animal, thick = genotype mean; blue dot = Hard-A day, orange = Hard-B day; '
-             'dotted line = last laser session | first masking session.\nRow 4 is the day-to-day switch amplitude (a tracking animal '
-             'alternates sign). Row 5 refits the PSE with slope and lapses held at the animal\'s Uniform values, so only the '
+    fig.text(0.5, 0.045, 'Rows 4–6: one thin line per mouse, thick = genotype mean; blue dot = Hard-A day, orange = Hard-B day; '
+             'dotted line = last opto session | first masking session.\nRow 5 is the day-to-day switch amplitude (a tracking mouse '
+             'alternates sign). Row 6 refits the PSE with slope and lapses held at the mouse\'s Uniform values, so only the '
              'criterion moves.', ha='center', va='top', fontsize=8, color='0.3')
     handles = [plt.Line2D([], [], marker='o', ls='', color=c, label=d) for d, c in DIST_COL.items() if d != 'Uniform']
     fig.legend(handles=handles, loc='lower right', ncol=2, frameon=False, fontsize=8, bbox_to_anchor=(0.98, 0.005))
     _legend(fig)
-    fig.suptitle(f'{cohort} — {distribution} · laser at PPC.   Rows 1–2: pooled contrasts.   Rows 3–5: the full daily A/B alternation, session by session', fontsize=12, y=0.995)
+    fig.suptitle(f'{cohort} — {distribution} · laser at PPC.   Rows 1–3: pooled contrasts.   Rows 4–6: the full daily A/B alternation, session by session', fontsize=12, y=0.995)
     return fig
 
 
@@ -259,20 +263,20 @@ def overall_page(T: dict, cohort: str):
     for k, dist in enumerate(('Uniform', 'Hard-A', 'Hard-B')):
         ax = fig.add_subplot(gs[0, k])
         _dots(ax, _sel(df, distribution=dist, kind='within', stat='mu'), ylabel='Δ μ, laser − no-laser trials' if k == 0 else '')
-        ax.set_title(f'{dist}: laser-on minus laser-off trials', fontsize=10, loc='left')
+        ax.set_title(f'{dist}: opto sessions, laser-on − laser-off trials', fontsize=10, loc='left')
         _ptxt(ax, _group_p(gt, design='ppc', distribution=dist, toi='opto', kind='within', stat='mu'))
         ax = fig.add_subplot(gs[1, k])
         _dots(ax, _sel(df, distribution=dist, kind='between', stat='mu'), ylabel='Δ μ, laser − masking sessions' if k == 0 else '')
-        ax.set_title(f'{dist}: laser sessions minus masking sessions', fontsize=10, loc='left')
+        ax.set_title(f'{dist}: opto sessions − masking sessions (all trials)', fontsize=10, loc='left')
         _ptxt(ax, _group_p(gt, design='ppc', distribution=dist, toi='opto', kind='between', stat='mu'))
     ax = fig.add_subplot(gs[0, 3])
     _dots(ax, _sel(df, design='alm', site='bi', distribution='Uniform', stat='accuracy'), ylabel='Δ accuracy', label_animals=False)
-    ax.set_title('ALM (bilateral): laser-on minus laser-off, accuracy', fontsize=10, loc='left')
+    ax.set_title('ALM bilateral sessions: laser-on − laser-off, accuracy', fontsize=10, loc='left')
     ax = fig.add_subplot(gs[1, 3])
     _dots(ax, _sel(df, distribution='Uniform', toi='post_opto', kind='within', stat='mu'), ylabel='Δ μ', label_animals=False)
-    ax.set_title('Uniform: trial after a laser trial minus laser-off, μ', fontsize=10, loc='left')
+    ax.set_title('Uniform opto sessions: post-laser trials − laser-off, μ', fontsize=10, loc='left')
     _legend(fig)
-    fig.suptitle(f'{cohort} — overall: change in criterion μ per animal (positive = shifted toward A). Top: within laser sessions. Bottom: laser vs masking sessions', fontsize=12, y=0.995)
+    fig.suptitle(f'{cohort} — overall: change in criterion μ per mouse (positive = shifted toward A).   Top row: only opto sessions, laser-on − laser-off trials.   Bottom row: opto sessions − masking sessions, no trial filtering', fontsize=11, y=0.995)
     return fig
 
 

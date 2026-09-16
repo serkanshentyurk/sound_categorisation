@@ -6,6 +6,9 @@ For one animal at one distribution, given its session sets (``cohort.collect_ses
     within          {toi} vs non_opto trials, in the manipulation sessions   (permutation p valid)
     within_masking  {toi} vs non_opto trials, in the masking sessions        (permutation p valid)
     between         manipulation vs masking sessions, all trials             (bootstrap only)
+    compensation    laser-OFF trials of the manipulation sessions vs masking sessions, all trials
+                    (bootstrap only) — does the animal's baseline move in a session where 30 % of
+                    trials are lasered? In WT this is the criterion offset that compensates the light effect.
     dod             within − within_masking                                   (bootstrap only)
     vs_ppc          ALM vs PPC-opto sessions, all trials (ALM design only)    (bootstrap only)
 
@@ -56,6 +59,7 @@ class OptoContrasts:
     within: DeltaStats | None = None
     within_masking: DeltaStats | None = None
     between: DeltaStats | None = None
+    compensation: DeltaStats | None = None
     dod: Interaction | None = None
     vs_ppc: DeltaStats | None = None
     labels: Dict[str, str] = field(default_factory=dict)   # {'between': 'opto_vs_masking', ...}
@@ -72,7 +76,7 @@ class OptoContrasts:
     def table(self, unit: str | None = None) -> pd.DataFrame:
         """All available contrasts stacked: adds a ``kind`` column (within, between, dod, …)."""
         frames = []
-        for kind in ('within', 'within_masking', 'between', 'vs_ppc'):
+        for kind in ('within', 'within_masking', 'between', 'compensation', 'vs_ppc'):
             r = getattr(self, kind)
             if r is not None:
                 u = unit if unit in r.units else None
@@ -98,17 +102,19 @@ def ppc_contrasts(opto, masking, toi: str, names: Sequence[str] = STATS, *,
     o_toi, o_non = filter_trials(opto, trial_type=toi), filter_trials(opto, trial_type='non_opto')
     m_toi, m_non = filter_trials(masking, trial_type=toi), filter_trials(masking, trial_type='non_opto')
     o_all, m_all = filter_trials(opto, trial_type='all'), filter_trials(masking, trial_type='all')
-    within = within_masking = between = dod = None
+    within = within_masking = between = compensation = dod = None
     if o_toi and o_non:
         within = _delta({toi: o_toi, 'non_opto': o_non}, names, 'non_opto', n_perm, n_boot, units)
     if m_toi and m_non:
         within_masking = _delta({toi: m_toi, 'non_opto': m_non}, names, 'non_opto', n_perm, n_boot, units)
     if o_all and m_all:
         between = _delta({'opto': o_all, 'masking': m_all}, names, 'masking', 0, n_boot, units)
+    if o_non and m_all:
+        compensation = _delta({'laser_off': o_non, 'masking': m_all}, names, 'masking', 0, n_boot, units)
     if n_boot > 0 and within is not None and within_masking is not None:
         dod = compute_interaction(within, within_masking, key, label_a='opto', label_b='masking')
-    return OptoContrasts(toi, key, within, within_masking, between, dod, None,
-                         labels={'between': 'opto_vs_masking'})
+    return OptoContrasts(toi, key, within, within_masking, between, compensation, dod, None,
+                         labels={'between': 'opto_vs_masking', 'compensation': 'laser_off_vs_masking'})
 
 
 def alm_contrasts(alm, masking, opto, toi: str, names: Sequence[str] = STATS_RT, *,
@@ -120,19 +126,22 @@ def alm_contrasts(alm, masking, opto, toi: str, names: Sequence[str] = STATS_RT,
     m_toi, m_non = filter_trials(masking, trial_type=toi), filter_trials(masking, trial_type='non_opto')
     a_all, m_all, o_all = (filter_trials(alm, trial_type='all'), filter_trials(masking, trial_type='all'),
                            filter_trials(opto, trial_type='all'))
-    within = within_masking = between = dod = vs_ppc = None
+    within = within_masking = between = compensation = dod = vs_ppc = None
     if a_toi and a_non:
         within = _delta({toi: a_toi, 'non_opto': a_non}, names, 'non_opto', n_perm, n_boot, units)
     if m_toi and m_non:
         within_masking = _delta({toi: m_toi, 'non_opto': m_non}, names, 'non_opto', n_perm, n_boot, units)
     if a_all and m_all:
         between = _delta({'alm': a_all, 'masking': m_all}, names, 'masking', 0, n_boot, units)
+    if a_non and m_all:
+        compensation = _delta({'laser_off': a_non, 'masking': m_all}, names, 'masking', 0, n_boot, units)
     if n_boot > 0 and within is not None and within_masking is not None:
         dod = compute_interaction(within, within_masking, key, label_a='alm', label_b='masking')
     if a_all and o_all:
         vs_ppc = _delta({'alm': a_all, 'opto': o_all}, names, 'opto', 0, n_boot, units)
-    return OptoContrasts(toi, key, within, within_masking, between, dod, vs_ppc,
-                         labels={'between': 'alm_vs_masking', 'vs_ppc': 'alm_vs_opto'})
+    return OptoContrasts(toi, key, within, within_masking, between, compensation, dod, vs_ppc,
+                         labels={'between': 'alm_vs_masking', 'compensation': 'laser_off_vs_masking',
+                                 'vs_ppc': 'alm_vs_opto'})
 
 
 def dod_point(r: OptoContrasts) -> pd.Series:

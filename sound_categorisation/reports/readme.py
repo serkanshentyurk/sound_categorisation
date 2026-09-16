@@ -51,6 +51,7 @@ Every folder carries a `meta.json` with the snapshot, config, settings, versions
 | `within` | `toi` trials vs non-laser trials, in the laser sessions | trials (and sessions) | permutation (laser randomised per trial) |
 | `within_masking` | fake-opto trials vs the rest, in masking sessions (null control for the trial flag) | trials | permutation |
 | `between` | laser sessions vs masking sessions, all trials | sessions (and trials) | none: session type was not randomised; the masking sessions came later |
+| `compensation` | laser-OFF trials of the laser sessions vs masking sessions, all trials: does the baseline criterion move in a session where 30 % of trials are lasered? | sessions (and trials) | none (same reason) |
 | `dod` | `within` minus `within_masking` (masking-based delta-of-deltas) | sessions/trials | bootstrap only |
 | `vs_ppc` | ALM sessions vs PPC-laser sessions, all trials (alm design) | sessions/trials | none |
 

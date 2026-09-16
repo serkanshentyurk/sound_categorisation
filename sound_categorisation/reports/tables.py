@@ -10,7 +10,7 @@ One schema for every contrast row, whatever the design:
     cohort, animal, genotype, distribution, design, site, toi, kind, contrast, unit,
     stat, diff, ci_lo, ci_hi, boot_p, perm_p, n_a, n_b, n_sessions_a, n_sessions_b
 
-``kind`` ∈ within, within_masking, between, dod, vs_ppc. Group tables add
+``kind`` ∈ within, within_masking, between, compensation, dod, vs_ppc. Group tables add
 ``group`` and the rank-test columns. CSV + JSON, not pickle: a table written
 today is readable by any code tomorrow.
 """
@@ -43,7 +43,7 @@ def to_tables(r: AnimalResult) -> Dict[str, pd.DataFrame]:
     """Flatten an AnimalResult: every contrast for every available unit, plus adaptation."""
     lab = _labels(r)
     frames = []
-    for kind in ('within', 'within_masking', 'between', 'vs_ppc'):
+    for kind in ('within', 'within_masking', 'between', 'compensation', 'vs_ppc'):
         if kind not in r.contrasts:
             continue
         d = r.contrasts[kind]

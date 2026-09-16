@@ -11,6 +11,10 @@ selftest,ST00,wt,Uniform,ppc,,opto,between,opto_vs_masking,trials,accuracy,0.020
 selftest,ST00,wt,Uniform,ppc,,opto,between,opto_vs_masking,trials,side_bias,-0.04999999999999999,-0.0975,-0.017962962962962993,0.06451612903225806,,540.0,540.0,3.0,3.0
 selftest,ST00,wt,Uniform,ppc,,opto,between,opto_vs_masking,sessions,accuracy,0.020370370370370372,0.0008333333333332689,0.040416666666666656,0.12903225806451613,,540.0,540.0,3.0,3.0
 selftest,ST00,wt,Uniform,ppc,,opto,between,opto_vs_masking,sessions,side_bias,-0.04999999999999999,-0.104212962962963,0.03875,0.45161290322580644,,540.0,540.0,3.0,3.0
+selftest,ST00,wt,Uniform,ppc,,opto,compensation,laser_off_vs_masking,trials,accuracy,0.01768219832735962,-0.02525985663082442,0.05904868578255676,0.3870967741935484,,372.0,540.0,3.0,3.0
+selftest,ST00,wt,Uniform,ppc,,opto,compensation,laser_off_vs_masking,trials,side_bias,-0.0754480286738351,-0.11737455197132618,-0.04432646356033456,0.06451612903225806,,372.0,540.0,3.0,3.0
+selftest,ST00,wt,Uniform,ppc,,opto,compensation,laser_off_vs_masking,sessions,accuracy,0.01768219832735962,-0.00672195767195764,0.04081023185483872,0.3225806451612903,,372.0,540.0,3.0,3.0
+selftest,ST00,wt,Uniform,ppc,,opto,compensation,laser_off_vs_masking,sessions,side_bias,-0.0754480286738351,-0.13406795224977047,0.018684759131671003,0.3225806451612903,,372.0,540.0,3.0,3.0
 selftest,ST00,wt,Uniform,ppc,,opto,dod,dod_opto_vs_non_opto,trials,accuracy,-0.0174602080822569,-0.09712505102217564,0.07401658723667758,1.0,,,,,
 selftest,ST00,wt,Uniform,ppc,,opto,dod,dod_opto_vs_non_opto,trials,side_bias,0.11107304395986728,0.0075767271853682625,0.1879963648111915,0.12903225806451613,,,,,
 selftest,ST00,wt,Uniform,ppc,,opto,dod,dod_opto_vs_non_opto,sessions,accuracy,-0.0174602080822569,-0.0533150998570987,0.006010102961151604,0.3870967741935484,,,,,
