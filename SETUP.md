@@ -1,191 +1,104 @@
-# Setup Guide
+# Setup
 
-## Folder Structure
+## 1. Environment
 
-The project expects this layout — the repo sits inside a parent folder alongside a shared `data/` directory:
-
-```
-.../
-├── data/
-│   └── behaviour/
-│       └── snapshots/              ← processed snapshots
-└── repos/
-    └── sound_categorisation/       ← this repo
-```
-
-The lab's raw data lives on a shared drive, mounted differently per machine (e.g. `/Volumes/akrami/` on macOS, `/ceph/akrami/` on the SWC cluster).
-
-## Installation
+Python ≥ 3.10. One conda env for everything; on the cluster it is called `sound_cat`, locally whatever
+you like.
 
 ```bash
-cd .../repos
-git clone https://github.com/serkanshentyurk/sound_categorisation.git
-cd sound_categorisation
-
-conda create -n sound_categorisation python=3.11 -y
-conda activate sound_categorisationegorisation
-
-pip install -e behav_utils/
-pip install numpy scipy pandas matplotlib seaborn joblib pyyaml ipywidgets
-
-# SBI (required for inference notebooks)
-pip install torch sbi
-
-# SSM (required for SLDS notebook)
-cd .../repos
-git clone https://github.com/lindermanlab/ssm
-cd ssm && pip install numpy cython && pip install -e . --no-build-isolation
+conda create -n sound_cat python=3.11 && conda activate sound_cat
+cd <repo root>                      # the folder with pyproject.toml
+pip install -e behav_utils/         # the library, from src/ layout
+pip install -e ".[dev]"             # the project + pytest + ruff
+pip install -e ".[fit]"             # torch, sbi, ssm, hmmlearn — only needed for model fitting
 ```
 
-## Data Configuration
-
-The project uses a single `config.yaml` with an environment variable for the data path, so it works on any machine without editing.
-
-### Set the environment variable
-
-Find where the lab drive is mounted on your machine, then add one line to your shell profile.
-
-**macOS** (`~/.zshrc`):
+Both packages must be installed; nothing in the repo puts folders on `sys.path`. Check:
 
 ```bash
-export BEHAV_DATA_DIR="/Volumes/akrami/Serkan/Head_Fixed_Behavior/Data"
+python -c "import behav_utils, sound_categorisation; print(behav_utils.__version__, behav_utils.__file__)"
 ```
 
-**Linux / SWC cluster** (`~/.bashrc`):
+The path must end in `behav_utils/src/behav_utils/__init__.py`.
+
+## 2. Data
+
+Raw sessions are Bonsai CSVs, one folder per animal, per session, under a root the config points to.
+Two locations are known to the code (`sound_categorisation/paths.py`):
+
+| where   | data root                                                                   |
+| ------- | --------------------------------------------------------------------------- |
+| laptop  | `<repo>/../../data/` — i.e. a `data/` folder two levels above the repo |
+| cluster | `/ceph/akrami/Serkan/Head_Fixed_Behavior/Data/Processed`                  |
+
+`config.yaml` (repo root) maps the CSV columns, names the cohorts, defines session presets and
+per-animal session-type overrides (`session_types`). On the cluster a `config_slurm.yaml` next to it,
+if present, overrides paths.
+
+## 3. Snapshot
+
+Everything analysis-side loads a pickled snapshot of the experiment rather than the CSVs:
 
 ```bash
-export BEHAV_DATA_DIR="/ceph/akrami/Serkan/Head_Fixed_Behavior/Data"
+python -m scripts.export_snapshot            # writes <data root>/behaviour/snapshots/sound_cat_snapshot.pkl
+python -m scripts.export_snapshot --check-only
 ```
 
-**Windows** (System Settings → Environment Variables):
+Re-export when sessions are added or when column mappings in `config.yaml` change. Session types and
+presets are re-applied from the config at load time, so editing those does **not** require a re-export.
+The loader warns when the snapshot is old or the config hash differs.
 
-```
-BEHAV_DATA_DIR = Z:\akrami\Serkan\Head_Fixed_Behavior\Data
-```
+Animal genotypes come from `animal_metadata.json` next to the data; an animal without one is reported
+as `unknown` and excluded from genotype tests.
 
-Then reload: `source ~/.zshrc` (macOS) or `source ~/.bashrc` (Linux).
-
-Verify:
+## 4. Verify
 
 ```bash
-echo $BEHAV_DATA_DIR
-ls $BEHAV_DATA_DIR/Raw    # should show animal folders
+pytest behav_utils/tests -q           # library, no data needed
+pytest tests -q                       # project (torch-only files skip without torch)
+ruff check .
+python -m sound_categorisation.reports selftest     # synthetic end-to-end, ~30 s
 ```
 
-### Cluster: ensure SSH sessions load the variable
-
-SSH login shells sometimes skip `~/.bashrc`. Add to `~/.bash_profile`:
+## 5. Reports
 
 ```bash
-source ~/.bashrc
+bash run_reports.sh                   # selftest → fast structure check on real data → full battery → summary
+python -m sound_categorisation.reports group --with-animals --distribution Hard-A --toi opto   # one job
+python -m sound_categorisation.reports summary
 ```
 
-## Data Loading
+Outputs: `results/reports/<cohort>/…` (git-ignored). See `docs/results_guide.md`.
 
-Notebooks load data via **snapshots** — preprocessed pickles that are fast to load and don't require the lab drive to be mounted.
-
-### Export a snapshot
-
-On any machine with access to the raw data:
+## 6. Cluster (SWC HPC)
 
 ```bash
-cd .../repos/sound_categorisation
-python scripts/export_snapshot.py
+ssh <user>@ssh.swc.ucl.ac.uk
+module load miniconda && conda activate sound_cat
+cd <repo>
+bash slurm/submit.sh train                                         # 18 SBI networks
+bash slurm/submit.sh condition --source real --distribution uniform --run expert
+bash slurm/submit.sh gs --source real --fit-target update_matrix --distribution uniform
+python -m scripts.run_gs --gather --source real --distribution uniform --fit-target update_matrix
+python -m scripts.consensus --run expert --cohort real
 ```
 
-This reads CSVs from `$BEHAV_DATA_DIR/Raw`, processes them, and saves the snapshot. On the SWC cluster it saves to the lab drive's `Processed/behaviour/snapshots/` directory; locally it saves to `.../data/behaviour/snapshots/`.
+`submit.sh` asks each script for its array range (`--print-array`) so the job count always matches the
+task grid in `sound_categorisation/tasks.py`. Logs go to `results/logs/`. Smoke first:
+`sbatch --array=0 slurm/train_sbi.sh --smoke-test`.
 
-### Copy a snapshot (if you can't access raw data)
+## 7. Notebooks
 
-Ask a colleague for their `sound_cat_snapshot.pkl` and place it at:
-
-```
-.../data/behaviour/snapshots/sound_cat_snapshot.pkl
-```
-
-### Use in notebooks
-
-```python
-from shared_setup import *
-experiment, info = load_data()
-```
-
-This tries, in order: snapshot → CSV from config → synthetic fallback. No code changes needed per machine.
-
-### Check if a snapshot is stale
-
-```bash
-python scripts/export_snapshot.py --check-only
-```
-
-This compares the snapshot's session counts against current raw data and reports any new sessions.
-
-## Syncing Data from the Cluster
-
-After running cluster jobs or exporting a snapshot on the cluster:
-
-**If the lab drive is mounted locally** (macOS):
-
-```bash
-# Copy snapshot
-cp /Volumes/akrami/.../Processed/behaviour/snapshots/sound_cat_snapshot.pkl \
-   .../data/behaviour/snapshots/sound_cat_snapshot.pkl
-
-# Copy cluster results (GS, SBI outputs)
-scp -r user@ssh.swc.ucl.ac.uk:~/repos/sound_categorisation/results/ \
-    .../repos/sound_categorisation/results/
-```
-
-**One-command sync** (optional): place `scripts/sync_snapshot.sh` and run:
-
-```bash
-./scripts/sync_snapshot.sh
-```
-
-This SSHes into the cluster, exports the snapshot, then copies from the mounted drive.
-
-## Running Notebooks
-
-```bash
-cd .../repos/sound_categorisation/notebooks
-jupyter notebook
-```
-
-Each notebook has a `MODE` toggle:
-
-- `'load'` — reads pre-computed results from `results/` (default)
-- `'run'` — quick local execution with small settings
-
-For `'load'` mode, cluster results must be in `results/`. See the cluster pipeline in `README.md`.
-
-## Cluster Setup
-
-```bash
-ssh ssh.swc.ucl.ac.uk
-cd ~/repos/sound_categorisation
-
-# Load environment
-module load miniconda
-conda activate sound_categorisation
-
-# Submit jobs (see slurm/README.md for details)
-sbatch slurm/train_snpe.sh
-
-# After jobs complete, gather results
-python scripts/gather_cv_results.py --all
-
-# Export snapshot
-python scripts/export_snapshot.py
-```
+`notebooks/shared_setup.py` gives `load_data()` (snapshot or CSV), paths and cohorts. Analysis imports go
+in the cell that uses them. The notebooks are being rewritten to read `results/reports/` tables rather
+than recompute (see ARCHITECTURE.md, "Notebooks").
 
 ## Troubleshooting
 
-| Error                                               | Cause                     | Fix                                              |
-| --------------------------------------------------- | ------------------------- | ------------------------------------------------ |
-| `Data directory not found: ${BEHAV_DATA_DIR}/Raw` | Env var not set           | Add to shell profile, then`source` it          |
-| `Snapshot is Xh old`                              | Stale data                | Re-export:`python scripts/export_snapshot.py`  |
-| `Failed to unpickle snapshot`                     | Code changed since export | Re-export from raw data                          |
-| `Config has changed since snapshot was exported`  | Column mappings changed   | Re-export                                        |
-| Notebooks show synthetic data                       | No snapshot found         | Check`.../data/behaviour/snapshots/` exists    |
-| `ModuleNotFoundError`                             | Wrong conda env           | `conda activate sound_categorisation`          |
-| Capitalised + lowercase folders on cluster          | macOS case insensitivity  | `git config core.ignorecase false`, see README |
+| symptom                               | cause / fix                                                                                                                                                    |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ModuleNotFoundError: behav_utils`  | not installed in this env →`pip install -e behav_utils/`                                                                                                    |
+| `KeyError: preset 'expert_uniform'` | presets come from the config; load an experiment/snapshot first, or call`sound_categorisation.cohort.ensure_presets()`                                       |
+| snapshot "config has changed" warning | column mappings changed → re-export; session-type/preset edits alone are fine                                                                                 |
+| `compare_groups: need two groups`   | only one genotype in the selection (e.g.`--limit 1`); rows are still written, tests skipped                                                                  |
+| CI passes locally but not on GitHub   | a file under`sound_categorisation/reports/` not committed (check `git status`), or ruff run only on part of the tree — run `ruff check .` from the root |

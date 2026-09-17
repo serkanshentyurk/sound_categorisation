@@ -112,4 +112,7 @@ def write_readme(root: Path) -> Path:
     root.mkdir(parents=True, exist_ok=True)
     path = root / 'README.md'
     path.write_text(README.format(bu=behav_utils.__version__, sc=sound_categorisation.__version__))
+    guide = Path(__file__).resolve().parents[2] / 'docs' / 'results_guide.md'
+    if guide.exists():
+        (root / 'GUIDE.md').write_text(guide.read_text())
     return path
