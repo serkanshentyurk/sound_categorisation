@@ -9,6 +9,8 @@ which only needs the package import.
 import numpy as np
 import pytest
 
+pytestmark = pytest.mark.fit
+
 torch = pytest.importorskip('torch')
 pytest.importorskip('sbi')
 

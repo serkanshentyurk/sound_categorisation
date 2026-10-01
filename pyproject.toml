@@ -28,6 +28,10 @@ include = ["sound_categorisation*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "e2e: the report pipeline end to end on synthetic data (minutes)",
+    "fit: needs torch + sbi; skipped where they are not installed",
+]
 
 [tool.ruff]
 line-length = 110

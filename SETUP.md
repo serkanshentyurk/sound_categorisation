@@ -55,10 +55,15 @@ as `unknown` and excluded from genotype tests.
 
 ```bash
 pytest behav_utils/tests -q           # library, no data needed
-pytest tests -q                       # project (torch-only files skip without torch)
+pytest tests/unit -q                  # project, fast
+pytest tests/e2e -q                   # the report pipeline on synthetic data + pinned numbers, minutes
+pytest tests/fit -q                   # torch + sbi; skips itself where they are missing
 ruff check .
-sc-reports selftest                   # synthetic end-to-end (opto + switches + summary), a few minutes
 ```
+
+Tests never touch a results root; everything goes to pytest's `tmp_path`. To keep the e2e outputs for a
+look: `pytest tests/e2e -q --basetemp=/tmp/sc_e2e`. If a deliberate change moves the pinned numbers:
+`pytest tests/e2e -q --regen-reference`, then commit `tests/e2e/reference/e2e_contrasts.csv` and say so.
 
 ## 5. Runs and results
 

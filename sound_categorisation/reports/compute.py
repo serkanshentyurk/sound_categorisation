@@ -9,7 +9,7 @@ readouts, and the adaptation results; ``tables.to_tables`` flattens it to tidy
 frames and ``tables.write_result`` persists them with metadata.
 
 Design-level settings live in :class:`Settings`; ``Settings.fast()`` is the
-seconds-long structural check used by ``--fast`` and the selftest.
+seconds-long structural check used by ``--fast`` and the e2e tests.
 """
 
 from __future__ import annotations

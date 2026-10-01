@@ -20,7 +20,8 @@ data/
                      AnimalRecord + load_animals (real or synthetic animals for model identification)
   snapshot.py        export/load the pickled experiment; re-applies session types and presets from config
   stimuli.py         Hard-A / Hard-B densities, normative PSE at a given sigma, stimulus sampling
-  paths.py           data/results roots (laptop vs cluster), result-dir naming, build_metadata, project config
+  paths.py           data/results roots (laptop vs cluster), run ids, latest resolution, build_metadata, project config
+  synthetic.py       synthetic ExperimentData with the real designs' shape (the e2e tests' data)
 behaviour/
   contrasts.py       OptoContrasts = the contrasts of the opto design, as typed library results:
                        within         opto sessions:    laser-on − laser-off trials     (permutation p valid)
@@ -42,7 +43,7 @@ reports/             compute.py  AnimalResult / GroupResult / Settings (no matpl
                      tables.py   to_tables, group_tables, readout_arrays, write_result / read_result
                      figures.py  one function per page; pdf.py  per-animal and group PDFs
                      summary.py  the four-page summary; switches.py  the switch-adaptation report
-                     readme.py   the generated results README; selftest.py synthetic ExperimentData
+                     readme.py   the generated results README
                      cli.py      `python -m sound_categorisation.reports` / `sc-reports`
 plotting/            project plotters (CV, opto swarms, assignment, SBI diagnostics)
 cli/                 entry points (pyproject [project.scripts]): sc-reports, sc-export-snapshot,
@@ -72,8 +73,8 @@ snapshot ──▶ compute_animal ──▶ AnimalResult ──▶ to_tables ─
 Scripts compute deterministically from the snapshot and write tidy tables with metadata (snapshot,
 config, settings, package versions, git SHA). Figures are drawn from results or tables, never computed
 in place. Notebooks are meant to read a run's tables and narrate; a notebook that runs a bootstrap is
-a smell. `tests/reference/selftest_contrasts.csv` pins every number the fast selftest produces; a change
-that moves a number fails `tests/test_reports.py` until the reference is regenerated on purpose.
+a smell. `tests/e2e/reference/e2e_contrasts.csv` pins every number the fast settings produce; a change
+that moves a number fails `tests/e2e` until the reference is regenerated on purpose (`--regen-reference`).
 
 Resampling units: within-session contrasts use the trial bootstrap and a permutation p (the laser was
 randomised per trial); between-session contrasts use the session bootstrap and no p (session type was
@@ -107,4 +108,6 @@ notebook shows the library pipeline explicitly.
 ## Conventions
 - Verbs: `load_`, `select_`, `filter_`, `compute_`, `plot_`; results are typed; plotters draw only.
 - CSV/JSON on disk for anything a human or notebook reads; pickle only for the snapshot and networks.
-- British English; line length 110; `ruff` clean; CI runs both suites and the report selftest.
+- British English; line length 110; `ruff` clean; CI runs the library suite, `tests/unit`, `tests/e2e`, `tests/fit`.
+- Tests live in `tests/{unit,e2e,fit}` and write only to `tmp_path`; validation runs (synthetic cohorts,
+  recovery) are analyses and go through the same `sc-*` commands as real data.

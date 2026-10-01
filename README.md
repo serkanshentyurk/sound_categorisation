@@ -27,13 +27,13 @@ sound_categorisation/                 ← repo root (pyproject.toml, config.yaml
 │   ├── inference/                    amortised SBI, simulator, representation, selection, grid_search,
 │   │                                 cv_utils, fold_utils, consensus, tasks (TaskGrid for every SLURM array)
 │   ├── features/                     SBI feature-selection diagnostics
-│   ├── reports/                      compute → tables → figures → PDF → summary (+ README, selftest, CLI)
+│   ├── reports/                      compute → tables → figures → PDF → summary (+ README, CLI)
 │   ├── plotting/                     project plotters (CV, opto swarms, assignment, SBI diagnostics)
 │   └── cli/                          entry points, installed as sc-* commands: reports, export_snapshot,
 │                                     make_synthetic_cohort, new_run, train_sbi, run_sbi, run_gs, consensus
 ├── slurm/                            job scripts + submit.sh (array size derived from tasks.py)
 ├── notebooks/                        exploration; shared_setup.py (paths, load_data)
-├── tests/                            project tests (+ tests/reference: pinned report numbers)
+├── tests/                            unit/ (fast) · e2e/ (report pipeline on synthetic data, pinned reference) · fit/ (torch)
 ├── docs/                             runs.md (every command and where it writes), results_guide.md
 └── config.yaml                       cohorts, column mappings, session_presets, session_types
 ```
@@ -42,8 +42,8 @@ sound_categorisation/                 ← repo root (pyproject.toml, config.yaml
 
 ```bash
 pip install -e behav_utils/ && pip install -e ".[dev]"     # both packages (see SETUP.md for the data); installs the sc-* commands
-pytest behav_utils/tests -q && pytest tests -q
-sc-reports selftest                                          # synthetic end-to-end (opto + switches + summary)
+pytest behav_utils/tests -q && pytest tests/unit -q         # fast
+pytest tests/e2e -q                                          # the report pipeline end to end on synthetic data
 sc-reports battery                                           # the real opto battery (hours)
 ```
 

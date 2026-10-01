@@ -17,7 +17,7 @@ Three kinds of run, three homes:
 
 | kind | purpose | lives in | writes to |
 |---|---|---|---|
-| tests | prove the code works | `tests/`, `behav_utils/tests/` | pytest `tmp_path` only |
+| tests | prove the code works | `tests/{unit,e2e,fit}`, `behav_utils/tests/` | pytest `tmp_path` only |
 | validation | prove the method works on synthetic ground truth | the same commands, on a `synthetic_*` cohort | `model_identification/synthetic_*/<run_id>/` |
 | analysis | real cohorts | `sc-*` commands, `slurm/` | `<report>/<cohort>/<run_id>/` |
 
@@ -30,7 +30,6 @@ Three kinds of run, three homes:
 | `sc-reports summary [--run latest\|<id>]` | the four summary pages + generated `README.md`/`GUIDE.md` from a run's tables (no recomputation) | an opto run | `<run>/summary.pdf`, `summary_*.png`, `README.md` | seconds |
 | `sc-reports battery [--limit N]` | fast one-animal structure check (its own `_fast` run) → `opto --all` → `summary` | snapshot | two runs; `latest` ends on the full one | hours |
 | `sc-reports switches --cohort C` | block-level adaptation after each distribution switch: switches, pre/post, convergence (manuscript Fig. 5C recipe), session dynamics, psychometrics; per-animal and summary PDFs | snapshot | `switch_adaptation/<cohort>/<run_id>/switches/` | minutes |
-| `sc-reports selftest [--out DIR]` | the whole report pipeline on synthetic data (opto fast + one full condition, summary, switches) | nothing | `DIR` (default a temp dir), same layout as real runs | minutes |
 
 Common options: `--cohort` (default `opto1-cohort`), `--snapshot`, `--config`, `--root`, `--run-id`
 (write into an existing run), `--fast` (few draws, scalar stats, no readouts), `--limit N`, `--animals`.
@@ -65,7 +64,7 @@ cohort name, or `--label` (default `real`) for real data.
 | `sc-reports summary` | the opto run it is given (`latest` by default) |
 | `sc-consensus` | one `model_identification` run, one distribution |
 | notebooks (being rewritten) | a run's tables via `paths.resolve_run(report, cohort, 'latest')` |
-| `tests/test_reports.py` | nothing on disk; it runs the selftest into `tmp_path` and compares against `tests/reference/` |
+| `tests/e2e/` | nothing on disk; it builds the synthetic experiment, runs the pipeline into `tmp_path` and compares against `tests/e2e/reference/` |
 
 ## Not yet here
 

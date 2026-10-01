@@ -13,7 +13,8 @@ and points ``<report>/<cohort>/latest`` at itself.
     sc-reports switches --cohort behaviour1-cohort
     sc-reports summary  [--run latest|<run_id>]          # summary pages from a run's tables
     sc-reports battery  [--limit N]                      # fast structure check → full opto → summary
-    sc-reports selftest [--out DIR]                      # synthetic end-to-end check (moves to tests/)
+
+The synthetic end-to-end check of this pipeline is ``pytest tests/e2e -q`` (not a subcommand).
 
 Common options: --cohort (default opto1-cohort), --snapshot PATH, --config PATH, --run-id ID
 (reuse an existing run directory), --root DIR (override the results root), --fast (few draws,
@@ -183,11 +184,6 @@ def cmd_battery(a):
     cmd_summary(argparse.Namespace(cohort=a.cohort, run=full.run_id, root=a.root))
 
 
-def cmd_selftest(a):
-    from sound_categorisation.reports.selftest import run_selftest
-    run_selftest(Path(a.out))
-
-
 # ── parser ───────────────────────────────────────────────────────────────────
 
 def build_parser() -> argparse.ArgumentParser:
@@ -231,9 +227,6 @@ def build_parser() -> argparse.ArgumentParser:
     sb.add_argument('--limit', type=int, default=None)
     sb.set_defaults(fn=cmd_battery)
 
-    st = sub.add_parser('selftest', help='synthetic end-to-end check')
-    st.add_argument('--out', type=Path, default=None, help='default: a temporary directory')
-    st.set_defaults(fn=cmd_selftest)
     return p
 
 

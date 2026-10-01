@@ -37,13 +37,13 @@ module roles: `README.md`, `ARCHITECTURE.md`. Environments, data, cluster: `SETU
 4. Reports are a pipeline: scripts compute from the snapshot and write tidy tables + `meta.json`; figures
    and summary pages read results/tables; notebooks read a run's tables (`paths.resolve_run`). Do not put a bootstrap in a
    notebook, and do not draw a page from anything but a result or a table.
-5. Numbers are pinned: `tests/reference/selftest_contrasts.csv`. A change that moves a number must
-   regenerate it deliberately and say so in the commit.
+5. Numbers are pinned: `tests/e2e/reference/e2e_contrasts.csv`. A change that moves a number must
+   regenerate it deliberately (`pytest tests/e2e --regen-reference`) and say so in the commit.
 6. Statistics honesty: permutation p only for within-session contrasts (label randomised per trial);
    session-level contrasts get session-bootstrap intervals and no p; genotype rank tests have a floor
    (`min_achievable_p`) — per-animal consistency is the evidence.
 7. Working style: agree the design before code for anything above a bug fix; deliver complete files;
-   run `ruff check .`, `pytest behav_utils/tests -q`, `pytest tests -q`, and the report selftest; British
+   run `ruff check .`, `pytest behav_utils/tests -q`, `pytest tests/unit tests/e2e -q`; British
    English; say what a change costs and what could go wrong.
 
 ## Where to look for

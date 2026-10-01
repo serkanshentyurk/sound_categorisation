@@ -1,8 +1,12 @@
-"""Report pipeline: schema, persistence round-trip, and a committed reference on synthetic data.
+"""End-to-end: the report pipeline on synthetic data — schema, persistence round-trip, the opto run
+with summary pages, the switch report, and a committed reference that pins every number the fast
+settings produce.
 
-The reference (tests/reference/selftest_contrasts.csv) pins every number the fast
-selftest produces. If a deliberate change moves them, regenerate with
-``sc-reports selftest --out DIR`` + copy, and say so in the commit.
+If a deliberate change moves the numbers, regenerate the reference on purpose and say so in the commit:
+
+    pytest tests/e2e -q --regen-reference
+
+To keep the synthetic outputs for inspection: ``pytest tests/e2e -q --basetemp=/tmp/sc_e2e``.
 """
 
 import json
@@ -11,6 +15,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
+
+pytestmark = pytest.mark.e2e
+from sound_categorisation.data.synthetic import synthetic_experiment
 from sound_categorisation.reports import (
     CONTRAST_COLUMNS,
     Settings,
@@ -22,9 +29,8 @@ from sound_categorisation.reports import (
     to_tables,
     write_result,
 )
-from sound_categorisation.reports.selftest import synthetic_experiment
 
-REFERENCE = Path(__file__).parent / 'reference' / 'selftest_contrasts.csv'
+REFERENCE = Path(__file__).parent / 'reference' / 'e2e_contrasts.csv'
 
 
 @pytest.fixture(scope='module')
@@ -89,10 +95,14 @@ def test_group_fold(exp):
     assert 'group_rows' in gt and 'group_tests' in gt
 
 
-def test_reference_numbers(fast_result):
+def test_reference_numbers(fast_result, request):
     got = to_tables(fast_result)['contrasts'].sort_values(['kind', 'unit', 'stat']).reset_index(drop=True)
+    if request.config.getoption('--regen-reference'):
+        REFERENCE.parent.mkdir(parents=True, exist_ok=True)
+        got.to_csv(REFERENCE, index=False)
+        pytest.skip(f'reference regenerated: {REFERENCE}')
     if not REFERENCE.exists():
-        pytest.skip('no reference committed')
+        pytest.fail(f'no reference at {REFERENCE}; run with --regen-reference once and commit it')
     ref = pd.read_csv(REFERENCE).sort_values(['kind', 'unit', 'stat']).reset_index(drop=True)
     assert list(got['stat']) == list(ref['stat'])
     for col in ('diff', 'ci_lo', 'ci_hi', 'boot_p', 'perm_p'):

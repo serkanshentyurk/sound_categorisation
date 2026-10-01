@@ -90,7 +90,7 @@ def snpe_net_path(rep: str, model: str, distribution: str) -> Path:
 # resolve_run(), never by a hard-coded path.
 # =============================================================================
 
-REPORTS = ('opto_contrasts', 'switch_adaptation', 'model_identification', 'selftest')
+REPORTS = ('opto_contrasts', 'switch_adaptation', 'model_identification')
 
 
 def results_root() -> Path:

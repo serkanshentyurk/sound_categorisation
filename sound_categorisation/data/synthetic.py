@@ -1,14 +1,18 @@
-"""Synthetic end-to-end check of the report pipeline (no data load, seconds)."""
+"""Synthetic ExperimentData with the shape of the real opto and blocked-switch designs.
+
+Used by the end-to-end tests (``tests/e2e``) and anywhere an in-memory experiment is wanted without
+the snapshot. Ground truth is by construction: HET animals shift their criterion on laser trials, the
+blocked animals drift toward each new distribution across a block.
+"""
 
 from __future__ import annotations
 
 from datetime import date, timedelta
-from pathlib import Path
 
 import numpy as np
 from behav_utils.data.structures import AnimalData, ExperimentData, SessionData, SessionMetadata, TrialData
 
-__all__ = ['synthetic_experiment', 'run_selftest']
+__all__ = ['synthetic_experiment']
 
 
 def _trials(n, rng, bias, rt_mean, p_opto=0.3):
@@ -70,37 +74,3 @@ def synthetic_experiment(n_animals=4, seed=0, n_trials=180) -> ExperimentData:
             idx += 1
         exp.add_animal(AnimalData(animal_id=f'SB{k:02d}', sessions=sessions, metadata={'genotype': 'wt'}))
     return exp
-
-
-def run_selftest(out_dir: Path | None = None) -> Path:
-    """Synthetic end-to-end: opto report (fast), one slow condition, the switch report, the summary.
-    Writes under ``out_dir`` (default: a fresh temporary directory) using the same run layout as
-    real runs: ``<out_dir>/opto_contrasts/selftest/<run_id>/`` and ``switch_adaptation/...``."""
-    import tempfile
-    from types import SimpleNamespace
-
-    from sound_categorisation.data.paths import start_run
-    from sound_categorisation.reports.cli import run_animal, run_group
-    from sound_categorisation.reports.compute import Settings
-    from sound_categorisation.reports.summary import write_summary
-    from sound_categorisation.reports.switches import run_switches
-
-    out_dir = Path(out_dir) if out_dir else Path(tempfile.mkdtemp(prefix='sc_selftest_'))
-    exp = synthetic_experiment()
-    ids = list(exp.animals)
-    run = start_run('opto_contrasts', 'selftest', fast=True, root=out_dir)
-    a = SimpleNamespace(cohort='selftest', snapshot=None, config=None, fast=True, run_path=run, run_id=run.name)
-    s = Settings.fast()
-    per = run_animal(exp, ids, 'Uniform', 'opto', 'ppc', None, a, s)
-    run_group(exp, ids, 'Uniform', 'opto', 'ppc', None, a, s, per)
-    per = run_animal(exp, ids[:2], 'Uniform', 'opto', 'alm', 'uni', a, s)
-    run_group(exp, ids[:2], 'Uniform', 'opto', 'alm', 'uni', a, s, per)
-    # the slow pages once, on one animal, with readouts + adaptation on
-    full = Settings(n_boot=20, n_perm=20, curve_bootstrap=10)
-    per = run_animal(exp, ids[:1], 'Hard-A', 'opto', 'ppc', None, a, full)
-    run_group(exp, ids, 'Hard-A', 'opto', 'ppc', None, a, full, per)
-    write_summary(run, 'selftest')
-    srun = start_run('switch_adaptation', 'selftest', fast=True, root=out_dir)
-    run_switches(exp, ['SB00', 'SB01'], srun, 'selftest', min_block_trials=300, max_trials=800)
-    print(f'selftest OK -> {out_dir}')
-    return out_dir

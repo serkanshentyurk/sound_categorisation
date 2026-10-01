@@ -1,8 +1,13 @@
 """
 sound_categorisation test fixtures (the library's own tests live in behav_utils/tests).
 
-Provides synthetic animals, sessions, and trial data for testing
-without requiring real data or cluster access.
+Layout:
+    tests/unit/   fast, no data, no torch            pytest tests/unit -q
+    tests/e2e/    the report pipeline on synthetic     pytest tests/e2e -q      (marker: e2e)
+                  data, with a pinned reference
+    tests/fit/    needs torch + sbi; skipped without   pytest tests/fit -q      (marker: fit)
+
+Nothing here reads or writes a results root: everything goes to pytest's tmp_path.
 """
 
 from datetime import date, timedelta
@@ -15,6 +20,11 @@ from behav_utils.data.ops.selection import register_presets_from_config
 
 # Presets are defined by the project config, not the library: register them once for the suite.
 register_presets_from_config(yaml.safe_load((Path(__file__).parent.parent / 'config.yaml').read_text()))
+
+
+def pytest_addoption(parser):
+    parser.addoption('--regen-reference', action='store_true', default=False,
+                     help='rewrite tests/e2e/reference/e2e_contrasts.csv from the current code (deliberate)')
 
 
 @pytest.fixture

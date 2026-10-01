@@ -38,7 +38,7 @@ def ensure_presets(config_path: Path | None = None) -> None:
 
     Presets are project vocabulary (``expert_uniform`` …) and live in the config;
     loading an experiment registers them, but code paths that build data in
-    memory (selftest, tests, synthetic cohorts) need this call.
+    memory (tests, synthetic cohorts) need this call.
     """
     if 'expert_uniform' in list_presets():
         return
