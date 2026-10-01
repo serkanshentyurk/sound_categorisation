@@ -1,6 +1,6 @@
-"""Write results/reports/README.md — the layout, tables, columns and page conventions.
+"""Write the README.md of an opto run — the layout, tables, columns and page conventions.
 
-Regenerated on every ``all`` / ``summary`` run so it always matches the code
+Regenerated on every ``summary`` run so it always matches the code
 that produced the folder. It describes what the files are; it makes no claims
 about what the numbers show (that belongs in the notebooks and the thesis).
 """
@@ -11,13 +11,16 @@ from pathlib import Path
 
 README = '''# Report outputs
 
-Produced by `python -m sound_categorisation.reports` (behav_utils {bu}, sound_categorisation {sc}).
-Every folder carries a `meta.json` with the snapshot, config, settings, versions and git SHA that produced it.
+Produced by `sc-reports` (behav_utils {bu}, sound_categorisation {sc}). This folder is one run:
+`<results root>/opto_contrasts/<cohort>/<run_id>/`; `../latest` points at the newest run of this cohort.
+Every subfolder carries a `meta.json` with the run id, command line, snapshot, config, settings, versions
+and git state (sha + dirty flag) that produced it.
 
 ## Layout
 
 ```
-<cohort>/
+<run_id>/
+  logs/                                  job logs, when run on the cluster
   summary.pdf, summary_<page>.png        four pages: overall, uniform, hard_a, hard_b
   README.md                              this file
   <distribution>/<design>[_<site>]_<toi>/
@@ -121,9 +124,9 @@ for all animals. `pdf/<animal>_switches.pdf`: convergence per switch; psychometr
 
 ## Regenerating
 
-`bash run_reports.sh` (selftest, fast structure check, full battery, summary). Single pieces:
-`python -m sound_categorisation.reports animal|group --distribution Hard-A --toi opto [--design alm --site uni]`,
-`python -m sound_categorisation.reports summary`.
+`sc-reports battery` (fast structure check, full battery, summary — each a run; `latest` ends on the full one).
+Single pieces: `sc-reports opto --distribution Hard-A --toi opto [--design alm --site uni] [--level animal|group]`,
+`sc-reports summary [--run <run_id>]`. See `docs/runs.md` for every command.
 '''
 
 

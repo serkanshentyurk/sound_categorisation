@@ -27,7 +27,7 @@ Cluster (SLURM array, one network per task)::
 
 Smoke test (tiny n_simulations, just checks the pipeline runs end to end)::
 
-    sc-train-sbi --rep pooled --model BE --smoke-test
+    sc-train-sbi --rep pooled --model BE --fast
 """
 
 from __future__ import annotations
@@ -40,11 +40,11 @@ from sound_categorisation.inference.tasks import TRAIN_GRID
 from sound_categorisation.settings import (
     BASE_SEED,
     DISTRIBUTIONS,
+    FAST_SBI_N_SIMULATIONS,
     MODEL_TYPES,
     SBI_BURN_IN,
     SBI_REPRESENTATIONS,
     SBI_TRAIN_DISTRIBUTIONS,
-    SMOKE_SBI_N_SIMULATIONS,
 )
 
 REPRESENTATIONS = tuple(SBI_REPRESENTATIONS)
@@ -64,7 +64,7 @@ def train_one(rep, model, distribution, n_simulations=None, seed=BASE_SEED,
 
     ``dist_schedule=distribution`` makes the training curriculum match the phase the network
     will be conditioned on. ``n_simulations`` overrides the per-rep default in
-    SBI_REPRESENTATIONS (used by --smoke-test and --n-simulations).
+    SBI_REPRESENTATIONS (used by --fast and --n-simulations).
     """
     if rep not in SBI_REPRESENTATIONS:
         raise ValueError(f'Unknown rep {rep!r}; choose from {REPRESENTATIONS}.')
@@ -117,8 +117,8 @@ def main():
                    help='Override the per-rep simulation budget.')
     p.add_argument('--seed', type=int, default=BASE_SEED,
                    help='Training seed (default %(default)s).')
-    p.add_argument('--smoke-test', action='store_true',
-                   help=f'Use {SMOKE_SBI_N_SIMULATIONS} sims to check the '
+    p.add_argument('--fast', action='store_true',
+                   help=f'Use {FAST_SBI_N_SIMULATIONS} sims to check the '
                         'pipeline runs.')
     p.add_argument('--print-array', action='store_true', help='print the SLURM --array range and exit')
     p.add_argument('--count', action='store_true',
@@ -132,8 +132,8 @@ def main():
         print(N_TASKS)
         return
 
-    if args.smoke_test:
-        n_sims = SMOKE_SBI_N_SIMULATIONS
+    if args.fast:
+        n_sims = FAST_SBI_N_SIMULATIONS
     else:
         n_sims = args.n_simulations
 

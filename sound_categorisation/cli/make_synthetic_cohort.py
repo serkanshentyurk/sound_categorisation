@@ -1,27 +1,26 @@
 #!/usr/bin/env python
-"""Generate a small synthetic cohort for local smoke-testing run_gs / run_sbi.
+"""Generate a synthetic cohort (ground truth known) for validating run_gs / run_sbi.
 
 A cohort is a pickle at ``cohort_path(name)`` with the shape ``_synthetic_records``
 expects: ``{'animals': [{'animal_id', 'sessions': [{stimuli, choices, categories}],
 'true_model', 'true_params'}, ...]}``. Animals are simulated from the BE and SC
 priors, so the cohort carries ground truth for the recovery / identification checks.
 
-The cohort name should encode the phase (matching run_gs / run_sbi's convention),
-so make one per phase to smoke-test all three:
+The cohort name encodes the phase (run_gs / run_sbi fit one phase per launch); the default name
+is ``synthetic_<distribution>``:
 
-    sc-make-smoke-cohort --name smoke_uniform --distribution uniform
-    sc-make-smoke-cohort --name smoke_hard_a  --distribution hard_a
-    sc-make-smoke-cohort --name smoke_hard_b  --distribution hard_b
+    sc-make-synthetic-cohort --distribution uniform            # -> synthetic_uniform
+    sc-make-synthetic-cohort --distribution hard_a --n-per-model 20 --name synthetic_hard_a_n20
 
 Then (GS is torch-free, so it runs anywhere; SBI needs torch + trained nets):
 
-    sc-run-gs  --source synthetic --cohort smoke_uniform \
-        --distribution uniform --run quick --fit-target update_matrix --task-id 0
-    sc-run-sbi --source synthetic --cohort smoke_uniform \
-        --distribution uniform --run smoke --smoke-test
+    sc-run-gs  --source synthetic --cohort synthetic_uniform --distribution uniform \
+        --fit-target update_matrix --fast
+    sc-run-sbi --source synthetic --cohort synthetic_uniform --distribution uniform --fast
+    sc-consensus --cohort synthetic_uniform --distribution uniform
 
-Defaults are deliberately tiny (fast to simulate); GS grid-search is still slow,
-so prefer a single ``--task-id 0`` array task over the whole cohort for a pipe-clean.
+A validation run is an analysis, not a test: its results (recovery, confusion) are reported. The
+pipeline test lives in ``tests/`` and uses no cohort file.
 """
 from __future__ import annotations
 
@@ -69,8 +68,8 @@ def make_cohort(name, distribution='uniform', n_per_model=3, n_sessions=5,
 
 
 def main():
-    p = argparse.ArgumentParser(description='Make a small synthetic cohort for smoke tests.')
-    p.add_argument('--name', required=True, help='Cohort name (encode the phase, e.g. smoke_uniform).')
+    p = argparse.ArgumentParser(description='Make a synthetic cohort with known ground truth.')
+    p.add_argument('--name', default=None, help='Cohort name (default synthetic_<distribution>).')
     p.add_argument('--distribution', default='uniform', choices=list(DISTRIBUTIONS),
                    help='Stimulus distribution to simulate (default uniform).')
     p.add_argument('--n-per-model', type=int, default=3, help='Animals per model (BE, SC).')
@@ -80,7 +79,8 @@ def main():
     p.add_argument('--seed', type=int, default=0)
     args = p.parse_args()
 
-    path = make_cohort(args.name, distribution=args.distribution,
+    name = args.name or f'synthetic_{args.distribution}'
+    path = make_cohort(name, distribution=args.distribution,
                        n_per_model=args.n_per_model, n_sessions=args.n_sessions,
                        trials=args.trials, burn_in=args.burn_in, seed=args.seed)
     n = 2 * args.n_per_model

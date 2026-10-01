@@ -6,7 +6,8 @@ For each (rep, model) this loads the phase-matched specialist
 on every animal, writing one neutral-schema pickle per (animal, model) into the
 phase's results directory:
 
-    {data_root}/sbi/{run}/{cohort}/{distribution}/{rep}/{animal_id}_{model}.pkl
+    <results root>/model_identification/<cohort>/<run_id>/sbi/<fit_target>/<distribution>/<rep>/<animal>_<model>.pkl
+(``paths.model_id_dir``; run_gs writes ``grid_search/...`` into the same run, consensus reads both).
 
 Each result stamps which network produced it (rep, model, distribution, the net's
 filename and its own stat vector) into the metadata, so a file is self-identifying.
@@ -20,22 +21,18 @@ serially -- no partials/gather. The BE-vs-SC winner and recovery come afterwards
 from ``load_cv_results`` + ``compare_models`` (run per rep dir); cross-rep /
 cross-method consensus from ``analysis.consensus``.
 
-Local (all six (rep, model) on a synthetic uniform cohort)::
+Local (all six (rep, model) on a synthetic uniform cohort; a new run is created)::
 
-    sc-run-sbi --source synthetic --cohort static_uniform \
-        --distribution uniform --run full --fit-target update_matrix
+    sc-run-sbi --source synthetic --cohort synthetic_uniform \
+        --distribution uniform --fit-target update_matrix
 
-Cluster (SLURM array, one (rep, model) per task; one phase per submit)::
+Cluster (SLURM array, one (rep, model) per task; one phase per submit; the run id is shared)::
 
-    N=$(sc-run-sbi --count)          # -> 6
-    sbatch --array=0-$((N-1)) slurm/run_sbi.sh --source real --distribution uniform --run expert
-    sbatch --array=0-$((N-1)) slurm/run_sbi.sh --source real --distribution hard_a --run expert
-    sbatch --array=0-$((N-1)) slurm/run_sbi.sh --source real --distribution hard_b --run expert
+    RUN=$(sc-new-run --report model_identification --cohort real)
+    bash slurm/submit.sh condition --source real --distribution uniform --run-id $RUN
+    bash slurm/submit.sh condition --source real --distribution hard_a  --run-id $RUN
 
-Real data (one phase)::
-
-    sc-run-sbi --source real --distribution hard_a \
-        --rep pooled --model all --run expert --fit-target update_matrix
+--fast: FAST_N_REPEATS repeats to check the pipeline; run id suffixed _fast.
 """
 
 from __future__ import annotations
@@ -44,7 +41,7 @@ import argparse
 import time
 
 from sound_categorisation.data.cohort import load_animals
-from sound_categorisation.data.paths import build_metadata, results_dir, snpe_net_path
+from sound_categorisation.data.paths import build_metadata, model_id_dir, snpe_net_path, start_run
 from sound_categorisation.inference.amortised import AmortisedSBI
 from sound_categorisation.inference.cv_utils import save_cv_result
 from sound_categorisation.inference.selection import condition_sbi
@@ -64,7 +61,7 @@ from sound_categorisation.settings import (
 # A net trained by TRAIN_GRID task (rep, model, *) is conditioned by CONDITION_GRID task (rep, model).
 REPRESENTATIONS = tuple(SBI_REPRESENTATIONS)
 N_TASKS = CONDITION_GRID.n
-SMOKE_N_REPEATS = 2
+FAST_N_REPEATS = 2
 
 
 def decode_task(task_id):
@@ -131,7 +128,7 @@ def main():
                    choices=('synthetic', 'real'))
     p.add_argument('--cohort', default=None,
                    help='Cohort name (required for synthetic).')
-    p.add_argument('--run', default='full', help='Run label (directory level).')
+    p.add_argument('--run-id', default=None, help='existing run id to write into (required with --task-id)')
     p.add_argument('--fit-target', default='update_matrix', choices=FIT_TARGETS)
     p.add_argument('--rep', default='all', choices=(*REPRESENTATIONS, 'all'))
     p.add_argument('--model', default='all', choices=(*MODEL_TYPES, 'all'))
@@ -151,8 +148,8 @@ def main():
     p.add_argument('--n-repeats', type=int, default=None,
                    help='Override repeats (multi-session path).')
     p.add_argument('--seed', type=int, default=BASE_SEED)
-    p.add_argument('--smoke-test', action='store_true',
-                   help=f'Use {SMOKE_N_REPEATS} repeats to check the pipeline.')
+    p.add_argument('--fast', action='store_true',
+                   help=f'Use {FAST_N_REPEATS} repeats to check the pipeline; run id gets _fast.')
     p.add_argument('--count', action='store_true',
                    help='Print the number of array tasks and exit.')
     args = p.parse_args()
@@ -171,8 +168,10 @@ def main():
     if args.source == 'synthetic' and not args.cohort:
         p.error("--source synthetic requires --cohort")
 
-    if args.smoke_test:
-        n_repeats = SMOKE_N_REPEATS
+    if args.task_id is not None and not args.run_id:
+        p.error('--task-id needs --run-id (every array task must write into the same run)')
+    if args.fast:
+        n_repeats = FAST_N_REPEATS
     else:
         n_repeats = args.n_repeats or SBI_N_CV_REPEATS
 
@@ -193,12 +192,11 @@ def main():
           f'cohort={cohort_label} phase={args.distribution} preset={preset} '
           f'| jobs={jobs} | n_repeats={n_repeats}')
 
-    meta = build_metadata('run_sbi', vars(args))
+    run = start_run('model_identification', cohort_label, args.run_id, fast=args.fast)
+    meta = build_metadata('run_sbi', vars(args), run_id=run.name)
     t0 = time.time()
     for rep, model in jobs:
-        # distribution as a path level so phases never collide on disk.
-        out_dir = (results_dir('sbi', args.run, cohort_label, args.fit_target)
-                   / args.distribution / rep)
+        out_dir = model_id_dir(run, 'sbi', args.fit_target, args.distribution, rep)
         condition_cohort(records, rep, model, args.distribution, out_dir,
                          args.fit_target, n_repeats=n_repeats, seed=args.seed,
                          metadata=meta)

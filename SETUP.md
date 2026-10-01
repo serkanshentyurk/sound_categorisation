@@ -57,41 +57,50 @@ as `unknown` and excluded from genotype tests.
 pytest behav_utils/tests -q           # library, no data needed
 pytest tests -q                       # project (torch-only files skip without torch)
 ruff check .
-python -m sound_categorisation.reports selftest     # synthetic end-to-end, ~30 s
+sc-reports selftest                   # synthetic end-to-end (opto + switches + summary), a few minutes
 ```
 
-## 5. Reports
+## 5. Runs and results
+
+Every analysis run writes under one root as `<report>/<cohort>/<run_id>/` and points `latest` at
+itself. The root is `<repo>/results` locally and `<data root>/results` on the cluster; `SC_RESULTS_ROOT`
+overrides it (and `SC_DATA_ROOT` the data root). Nothing under it is versioned — provenance is the
+`meta.json` in every folder (run id, command line, snapshot, settings, versions, git sha + dirty flag).
 
 ```bash
-bash run_reports.sh                   # selftest → fast structure check on real data → full battery → summary
-python -m sound_categorisation.reports group --with-animals --distribution Hard-A --toi opto   # one job
-python -m sound_categorisation.reports summary
+sc-reports battery                                         # fast check → full opto battery → summary
+sc-reports opto --distribution Hard-A --toi opto           # one condition, a new run
+sc-reports opto --distribution Hard-A --run-id <id>        # into an existing run
+sc-reports switches --cohort behaviour1-cohort             # the switch-adaptation report
+sc-reports summary [--run <id>]                            # pages from the latest (or named) opto run
 ```
 
-Outputs: `results/reports/<cohort>/…` (git-ignored). See `docs/results_guide.md`.
+`docs/runs.md` lists every command, what it computes, inputs, outputs and rough duration;
+`docs/results_guide.md` explains how to read an opto run.
 
 ## 6. Cluster (SWC HPC)
 
 ```bash
 ssh <user>@ssh.swc.ucl.ac.uk
 module load miniconda && conda activate sound_cat
-cd <repo>
-bash slurm/submit.sh train                                         # 18 SBI networks
-bash slurm/submit.sh condition --source real --distribution uniform --run expert
-bash slurm/submit.sh gs --source real --fit-target update_matrix --distribution uniform
-sc-run-gs --gather --source real --distribution uniform --fit-target update_matrix
-sc-consensus --run expert --cohort real
+cd <repo> && pip install -e behav_utils/ && pip install -e .     # once per checkout: provides the sc-* commands
+bash slurm/submit.sh train                                                     # 18 SBI networks → data root
+RUN=$(sc-new-run --report model_identification --cohort real)                  # one run id for the chain
+bash slurm/submit.sh gs        --source real --distribution uniform --fit-target update_matrix --run-id $RUN
+bash slurm/submit.sh condition --source real --distribution uniform --run-id $RUN
+sc-run-gs --source real --distribution uniform --fit-target update_matrix --run-id $RUN --gather
+sc-consensus --cohort real --distribution uniform --run-id $RUN
 ```
 
-`submit.sh` asks each script for its array range (`--print-array`) so the job count always matches the
-task grid in `sound_categorisation/tasks.py`. Logs go to `results/logs/`. Smoke first:
-`sbatch --array=0 slurm/train_sbi.sh --smoke-test`.
+`submit.sh` asks each command for its array range (`--print-array`) so the job count always matches the
+task grid in `sound_categorisation/inference/tasks.py`, and sends the Slurm logs to `<run>/logs/`. Check
+the pipeline first with `--fast` (tiny grids, few repeats; the run id gets a `_fast` suffix).
 
 ## 7. Notebooks
 
 `notebooks/shared_setup.py` gives `load_data()` (snapshot or CSV), paths and cohorts. Analysis imports go
-in the cell that uses them. The notebooks are being rewritten to read `results/reports/` tables rather
-than recompute (see ARCHITECTURE.md, "Notebooks").
+in the cell that uses them. The notebooks are being rewritten to read a run's tables
+(`paths.resolve_run`) rather than recompute (see ARCHITECTURE.md, "Notebooks").
 
 ## Troubleshooting
 

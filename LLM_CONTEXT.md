@@ -35,7 +35,7 @@ module roles: `README.md`, `ARCHITECTURE.md`. Environments, data, cluster: `SETU
 3. Every compute returns a typed result (Series/DataFrame or a frozen dataclass with `to_rows()`).
    Contrasts are `DeltaStats` / `Interaction`; the project wraps them in `OptoContrasts`.
 4. Reports are a pipeline: scripts compute from the snapshot and write tidy tables + `meta.json`; figures
-   and summary pages read results/tables; notebooks read `results/reports/`. Do not put a bootstrap in a
+   and summary pages read results/tables; notebooks read a run's tables (`paths.resolve_run`). Do not put a bootstrap in a
    notebook, and do not draw a page from anything but a result or a table.
 5. Numbers are pinned: `tests/reference/selftest_contrasts.csv`. A change that moves a number must
    regenerate it deliberately and say so in the commit.
@@ -49,7 +49,8 @@ module roles: `README.md`, `ARCHITECTURE.md`. Environments, data, cluster: `SETU
 ## Where to look for
 - which sessions an animal has of each type → `data/cohort.py: collect_sessions_ppc / _alm`; `config.yaml: session_types`
 - what a contrast is → `behaviour/contrasts.py` docstring; `docs/results_guide.md` in words
-- the numbers behind any page → `results/reports/<cohort>/<dist>/<design>_<toi>/<animal>/contrasts.csv`
+- the numbers behind any page → `results/opto_contrasts/<cohort>/latest/<dist>/<design>_<toi>/<animal>/contrasts.csv`
+- which command writes what, and where → `docs/runs.md`
 - per-session adaptation → `behaviour/adaptation.py` (`Trajectory`); columns explained in the generated results README
 - SLURM job counts → `inference/tasks.py`; never hard-code an `--array`
 - run provenance → `meta.json` in every results folder (snapshot, config, settings, versions, git SHA)

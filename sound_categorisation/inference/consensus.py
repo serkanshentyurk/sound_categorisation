@@ -10,11 +10,12 @@ directory written in the neutral CV schema (save_cv_result). load_cv_results +
 compare_models turn that directory into per-animal winners + p-values, so this
 module never re-reads pickles or recomputes winners by hand — it only loads,
 joins, and votes. That keeps it in lock-step with run_gs / run_sbi via the
-shared results_dir() convention and the shared on-disk schema.
+shared ``paths.model_id_dir`` layout and the shared on-disk schema. Everything is read from ONE
+run directory (``model_identification/<cohort>/<run_id>/``) and one distribution.
 
 Methods (configurable):
-    ('grid_search', None, ft) -> GS-UM / GS-CP      dir: grid_search/{run}/{cohort}_{ft}
-    ('sbi', rep, ft)          -> SBI-{rep}-UM / -CP  dir: sbi/{run}/{cohort}_{ft}/{rep}
+    ('grid_search', None, ft) -> GS-UM / GS-CP      dir: <run>/grid_search/<ft>/<distribution>
+    ('sbi', rep, ft)          -> SBI-{rep}-UM / -CP  dir: <run>/sbi/<ft>/<distribution>/<rep>
 
 DEFAULT_METHODS mirrors the old four-method scheme (GS + SBI `pooled`, both fit
 targets); add 'moments'/'single' once NB12 shows a rep is trustworthy enough to
@@ -34,7 +35,7 @@ from typing import TYPE_CHECKING, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from sound_categorisation.data.paths import results_dir
+from sound_categorisation.data.paths import model_id_dir
 from sound_categorisation.inference.cv_utils import load_cv_results
 
 if TYPE_CHECKING:
@@ -65,10 +66,8 @@ def _method_label(source: str, rep: str | None, fit_target: str) -> str:
     return f'{source}-{rep}-{ft}'
 
 
-def _method_dir(source: str, rep: str | None, fit_target: str,
-                run: str, cohort: str) -> Path:
-    d = results_dir(source, run, cohort, fit_target)
-    return d / rep if (source == 'sbi' and rep) else d
+def _method_dir(source: str, rep: str | None, fit_target: str, run: Path, distribution: str) -> Path:
+    return model_id_dir(run, source, fit_target, distribution, rep if source == 'sbi' else None)
 
 
 # ── consensus rule (row-based; auto-detects method columns) ──────────────────
@@ -99,8 +98,8 @@ def _compute_consensus(row: dict, alpha: float = 0.05,
 # ── public API ───────────────────────────────────────────────────────────────
 
 def load_all_assignments(
-    run: str,
-    cohort: str,
+    run: Path,
+    distribution: str,
     methods: List[Method] | None = None,
     experiment: Optional['ExperimentData'] = None,
     alpha: float = 0.05,
@@ -109,8 +108,8 @@ def load_all_assignments(
     """Load each method's BE/SC call and compute a consensus per animal.
 
     Args:
-        run: Run label (e.g. 'full'), as passed to run_gs / run_sbi.
-        cohort: Cohort label (synthetic cohort name, or e.g. 'real').
+        run: The run directory (``model_identification/<cohort>/<run_id>``) run_gs / run_sbi wrote into.
+        distribution: The phase ('uniform' / 'hard_a' / 'hard_b') — one consensus per phase.
         methods: (source, rep, fit_target) triples; defaults to DEFAULT_METHODS.
         experiment: If given, animals present in it but absent from results are
             still listed (an all-missing row -> 'Unclear').
@@ -127,7 +126,7 @@ def load_all_assignments(
     true_model_by_animal = {}
     for source, rep, ft in methods:
         label = _method_label(source, rep, ft)
-        cv = load_cv_results(_method_dir(source, rep, ft, run, cohort))
+        cv = load_cv_results(_method_dir(source, rep, ft, run, distribution))
         comp = cv.comparison
         rows = {}
         if comp is not None and len(comp):

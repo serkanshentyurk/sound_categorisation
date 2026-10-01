@@ -9,11 +9,11 @@ Three entry points share the per-seed unit (_gs_seed):
                       PARTIAL. The full cluster run.
   - main() --gather:  concatenate partials into the FINAL neutral pickle.
 
-Output dir: grid_search/{run}/{label}_{fit_target}/{distribution}/  (label = cohort
-or experiment). Same {run}/{label}_{fit_target}/{distribution}/ layout as run_sbi,
-so the two methods line up per phase for the consensus.
+Output: <results root>/model_identification/<cohort>/<run_id>/grid_search/<fit_target>/<distribution>/
+(``paths.model_id_dir``; run_sbi writes ``sbi/...`` into the same run, consensus reads both).
   finals:   {animal}_{model}.pkl
   partials: partials/{animal}_{model}_seed{seed}.pkl
+<cohort> is the synthetic cohort name, or --label for real data (default 'real').
 All finals are written via save_cv_result (neutral cross-method schema), so
 load_cv_results reads quick, full, synthetic and real identically. Each result's
 metadata stamps model, distribution and fit_target.
@@ -22,18 +22,15 @@ metadata stamps model, distribution and fit_target.
 subdir). For real data the sessions default to expert_<distribution> unless
 --preset is given; for synthetic the --cohort name should encode the phase.
 
-Cluster usage (real, one phase; repeat for hard_a and hard_b):
-    # array upper bound (per phase):
-    N=$(sc-run-gs --source real --distribution uniform \
-            --run full --fit-target update_matrix --count)
-    # one task per (animal, model, seed):
-    sbatch --array=0-$((N-1)) slurm/run_gs.sh --source real --distribution uniform \
-        --run full --fit-target update_matrix
-    # then a single gather job for that phase:
-    sc-run-gs --source real --distribution uniform \
-        --run full --fit-target update_matrix --gather
+Cluster usage (real, one phase; repeat for hard_a and hard_b). The run id is created once and
+shared by every array task — ``slurm/submit.sh gs ...`` does all of this:
+    RUN=$(sc-new-run --report model_identification --cohort real)
+    bash slurm/submit.sh gs --source real --distribution uniform --fit-target update_matrix --run-id $RUN
+    sc-run-gs --source real --distribution uniform --fit-target update_matrix --run-id $RUN --gather
 
-Synthetic: same, with --source synthetic --cohort <name> (name should encode the phase).
+Locally: omit --run-id (a new run is created) and --task-id (all seeds run in-process).
+--fast: the tiny grid and FAST_GS_N_SEEDS, run id suffixed _fast. --coarse: the coarse grid.
+Synthetic: --source synthetic --cohort <name> (name should encode the phase).
 """
 
 import argparse
@@ -45,22 +42,22 @@ from pathlib import Path
 import numpy as np
 
 from sound_categorisation.data.cohort import load_animals
-from sound_categorisation.data.paths import build_metadata, results_dir
+from sound_categorisation.data.paths import build_metadata, model_id_dir, start_run
 from sound_categorisation.inference.cv_utils import save_cv_result
 from sound_categorisation.inference.grid_search import (
     COARSE_GRID,
     DEFAULT_GRID,
-    SMOKE_GRID,
+    FAST_GRID,
     compute_grid_search_cv,
 )
 from sound_categorisation.settings import (
     BASE_SEED,
     DISTRIBUTIONS,
+    FAST_GS_N_SEEDS,
     FIT_TARGETS,
     GS_BURN_IN,
     GS_N_BINS,
     GS_N_FOLDS,
-    SMOKE_GS_N_SEEDS,
     SYNTH_GS_N_SEEDS,
 )
 
@@ -114,7 +111,7 @@ def run_gs_cohort(records, out_dir, n_seeds, fit_target, distribution, coarse=Tr
 
     ``distribution`` (uniform / hard_a / hard_b) is stamped into each result's
     metadata; it must match the phase the sessions were selected for. ``grid``
-    overrides the grid explicitly (e.g. SMOKE_GRID); otherwise COARSE/DEFAULT by
+    overrides the grid explicitly (e.g. FAST_GRID); otherwise COARSE/DEFAULT by
     ``coarse``.
     """
     grid_set = grid or (COARSE_GRID if coarse else DEFAULT_GRID)
@@ -189,7 +186,9 @@ def main():
     p.add_argument('--preset', default=None,
                    help='real: session-selection preset '
                         '(default expert_<distribution>).')
-    p.add_argument('--run', choices=['quick', 'full'], default='full')
+    p.add_argument('--run-id', default=None, help='existing run id to write into (required with --task-id)')
+    p.add_argument('--fast', action='store_true', help='tiny grid + FAST_GS_N_SEEDS; run id gets _fast')
+    p.add_argument('--coarse', action='store_true', help='coarse grid instead of the full grid')
     p.add_argument('--fit-target', required=True, choices=list(FIT_TARGETS))
     p.add_argument('--task-id', type=int, default=None, help='SLURM array task id')
     p.add_argument('--print-array', action='store_true', help='print the SLURM --array range and exit')
@@ -197,7 +196,6 @@ def main():
     p.add_argument('--count', action='store_true',
                    help='print the array size (n_animals*n_models*n_seeds) and exit')
     p.add_argument('--n-seeds', type=int, default=None)
-    p.add_argument('--smoke-test', action='store_true')
     args = p.parse_args()
 
     if not args.distribution:
@@ -206,14 +204,16 @@ def main():
     preset = args.preset or f'expert_{args.distribution}'
 
     label = args.cohort if args.source == 'synthetic' else (args.label or 'real')
-    # distribution as a path level -> same layout as run_sbi; phases never collide.
-    out_dir = (results_dir('grid_search', args.run, label, args.fit_target)
-               / args.distribution)
-    coarse = args.run == 'quick'
-    n_seeds = args.n_seeds or (SMOKE_GS_N_SEEDS if args.smoke_test else SYNTH_GS_N_SEEDS)
+    if args.task_id is not None and not args.run_id:
+        p.error('--task-id needs --run-id (every array task must write into the same run)')
+    n_seeds = args.n_seeds or (FAST_GS_N_SEEDS if args.fast else SYNTH_GS_N_SEEDS)
+    coarse = args.coarse
 
     if args.gather:
-        gather_results(out_dir, args.distribution)
+        if not args.run_id:
+            p.error('--gather needs --run-id')
+        run = start_run('model_identification', label, args.run_id, fast=args.fast)
+        gather_results(model_id_dir(run, 'grid_search', args.fit_target, args.distribution), args.distribution)
         return
 
     records = load_animals(args.source, cohort=args.cohort,
@@ -227,17 +227,18 @@ def main():
         print(gs_grid([r.animal_id for r in records], n_seeds, MODELS).slurm_range())
         return
 
-    grid_set = (SMOKE_GRID if args.smoke_test
+    run = start_run('model_identification', label, args.run_id, fast=args.fast)
+    out_dir = model_id_dir(run, 'grid_search', args.fit_target, args.distribution)
+    grid_set = (FAST_GRID if args.fast
                 else (COARSE_GRID if coarse else DEFAULT_GRID))
     ng = (len(grid_set['BE'].sigma_percep_values) *
           len(grid_set['BE'].A_repulsion_values) *
           len(grid_set['BE'].model_param1_values) *
           len(grid_set['BE'].model_param2_values))
-    print(f'=== GS [{args.run}{" SMOKE" if args.smoke_test else ""}] '
-          f'{args.source}/{label} phase={args.distribution} preset={preset} '
+    print(f'=== GS [{run.name}] {args.source}/{label} phase={args.distribution} preset={preset} '
           f'/ {args.fit_target} | grid={ng} pts x {n_seeds} seeds ===')
     print(f'  {len(records)} animals x {len(MODELS)} models x {n_seeds} seeds, '
-          f'grid={"smoke" if args.smoke_test else ("coarse" if coarse else "full")}')
+          f'grid={"fast" if args.fast else ("coarse" if coarse else "full")}')
     print(f'  out={out_dir}')
 
     t0 = time.time()

@@ -12,7 +12,8 @@ Layered on ``behav_utils`` (the generic 2-AFC library). Subpackages follow the a
     features/    SBI feature-selection diagnostics
     reports/     compute → tables → figures → PDF → summary, and the report CLI
     plotting/    project plotters (CV, opto swarms, assignment, SBI diagnostics)
-    cli/         entry points: export_snapshot, make_smoke_cohort, train_sbi, run_sbi, run_gs, consensus
+    cli/         entry points (sc-*): reports, export_snapshot, make_synthetic_cohort, new_run, train_sbi,
+                 run_sbi, run_gs, consensus
 """
 
 __version__ = '0.4.0'

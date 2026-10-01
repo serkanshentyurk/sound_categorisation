@@ -1,47 +1,50 @@
 """
 Consensus BE/SC assignment across methods (grid search + SBI representations).
 
-    sc-consensus --run full --cohort real --out results/consensus/full_real
-    sc-consensus --run full --cohort synth_v3 --alpha 0.05 --min-votes 2
+    sc-consensus --cohort real --distribution uniform                      # latest run of that cohort
+    sc-consensus --cohort synthetic_uniform --distribution uniform --run-id 2026-10-01_abc1234 --min-votes 2
 
-Reads the finals written by run_gs (``--gather``) and run_sbi, computes one
-row per animal with each method's call and the consensus, writes
-``assignments.csv`` + ``summary.txt`` + ``meta.json``, and prints the summary.
+Reads the finals run_gs (``--gather``) and run_sbi wrote into one run
+(``model_identification/<cohort>/<run_id>/``), computes one row per animal with each method's call
+and the consensus, and writes ``consensus/<distribution>/{assignments.csv, summary.txt, meta.json}``
+into the same run.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 
-from sound_categorisation.data.paths import REPO_ROOT, build_metadata
+from sound_categorisation.data.paths import build_metadata, resolve_run
 from sound_categorisation.inference.consensus import compute_consensus_summary, load_all_assignments
+from sound_categorisation.settings import DISTRIBUTIONS
 
 
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('--run', default='full', help='run label used by run_gs / run_sbi')
-    p.add_argument('--cohort', required=True, help="synthetic cohort name, or 'real'")
+    p.add_argument('--cohort', required=True, help="synthetic cohort name, or 'real' (the --label of run_gs)")
+    p.add_argument('--distribution', required=True, choices=list(DISTRIBUTIONS))
+    p.add_argument('--run-id', default='latest', help="run id under model_identification/<cohort>, or 'latest'")
     p.add_argument('--alpha', type=float, default=0.05)
     p.add_argument('--min-votes', type=int, default=1, help='significant votes needed for a consensus call')
     p.add_argument('--with-experiment', action='store_true',
                    help='list animals present in the experiment but absent from results (real only)')
-    p.add_argument('--out', type=Path, default=None, help='default results/consensus/<run>_<cohort>')
     a = p.parse_args(argv)
 
+    run = resolve_run('model_identification', a.cohort, a.run_id)
     experiment = None
     if a.with_experiment and a.cohort == 'real':
         from sound_categorisation.data.cohort import load_experiment_any
         experiment = load_experiment_any()
-    df = load_all_assignments(a.run, a.cohort, experiment=experiment, alpha=a.alpha,
+    df = load_all_assignments(run, a.distribution, experiment=experiment, alpha=a.alpha,
                               min_significant_votes=a.min_votes)
-    out = a.out or (REPO_ROOT / 'results' / 'consensus' / f'{a.run}_{a.cohort}')
+    out = run / 'consensus' / a.distribution
     out.mkdir(parents=True, exist_ok=True)
     df.to_csv(out / 'assignments.csv', index=False)
     summary = compute_consensus_summary(df)
     (out / 'summary.txt').write_text(summary + '\n')
-    meta = build_metadata('consensus', {'run': a.run, 'cohort': a.cohort, 'alpha': a.alpha, 'min_votes': a.min_votes})
+    meta = build_metadata('consensus', {'cohort': a.cohort, 'distribution': a.distribution, 'alpha': a.alpha,
+                                        'min_votes': a.min_votes}, run_id=run.name)
     (out / 'meta.json').write_text(json.dumps(meta, indent=2, default=str))
     print(summary)
     print(f'-> {out}')

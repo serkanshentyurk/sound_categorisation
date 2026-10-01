@@ -1,7 +1,7 @@
 """
 Switch report (pre-opto cohorts): adaptation across whole blocks after a distribution switch.
 
-    python -m sound_categorisation.reports switches --cohort behaviour1-cohort
+    sc-reports switches --cohort behaviour1-cohort
 
 Per animal: every qualifying switch (blocks ≥ 1000 trials) → SwitchResult; per cohort:
 tables (switches.csv, convergence.csv, sessions.csv, overnight.csv), a per-animal PDF, and
@@ -501,11 +501,12 @@ def switches_summary(T: Dict[str, pd.DataFrame], cohort: str, out_dir: Path) -> 
     return path
 
 
-def run_switches(experiment, animals: Sequence[str], out_root: Path, cohort: str, meta: dict | None = None,
+def run_switches(experiment, animals: Sequence[str], run: Path, cohort: str, meta: dict | None = None,
                  **kw) -> Path:
+    """Write the switch report into ``<run>/switches/`` (``run`` is a run directory from ``start_run``)."""
     matplotlib.use('Agg')
     g = compute_switches_cohort(experiment, animals, cohort=cohort, **kw)
-    out = Path(out_root) / cohort / 'switches'
+    out = Path(run) / 'switches'
     (out / 'pdf').mkdir(parents=True, exist_ok=True)
     T = switch_tables(g)
     write_result(out, T, None, {**(meta or {}), 'animals': g.animals, 'kind': 'switches'})

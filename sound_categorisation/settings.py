@@ -70,12 +70,12 @@ SBI_REPRESENTATIONS = {
 # to the matching network automatically via snpe_net_path's filename.
 SBI_TRAIN_DISTRIBUTIONS = DISTRIBUTIONS
 
-# Smoke test: used when --smoke-test is passed on the command line
-SMOKE_GS_N_SEEDS = 2
-SMOKE_SBI_N_SIMULATIONS = 500
-SMOKE_SBI_N_GENERIC_TRIALS = 200
-SMOKE_N_ANIMALS_LIMIT = 2
-SMOKE_SYNTH_N_PER_MODEL = 2
+# Fast runs: used when --fast is passed on the command line (same code path, fewer draws)
+FAST_GS_N_SEEDS = 2
+FAST_SBI_N_SIMULATIONS = 500
+FAST_SBI_N_GENERIC_TRIALS = 200
+FAST_N_ANIMALS_LIMIT = 2
+FAST_SYNTH_N_PER_MODEL = 2
 
 
 # =============================================================================

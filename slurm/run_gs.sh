@@ -1,13 +1,11 @@
 #!/bin/bash
-#SBATCH --job-name=run_gs
-#SBATCH --output=results/logs/run_gs_%A_%a.out
-#SBATCH --error=results/logs/run_gs_%A_%a.err
 #SBATCH -p cpu
 #SBATCH -N 1
 #SBATCH -c 4
 #SBATCH --mem=8G
 #SBATCH --time=12:00:00
-# Submit via:  bash slurm/submit.sh {train|condition|gs} [args]   (derives --array from the task grid)
+# Submit via:  bash slurm/submit.sh {train|condition|gs} [args]
+# submit.sh sets --array, --job-name and the log paths (inside the run directory) and passes --run-id.
 set -euo pipefail
 
 module load miniconda

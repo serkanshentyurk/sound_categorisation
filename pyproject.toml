@@ -16,7 +16,8 @@ dev = ["pytest", "ruff"]
 [project.scripts]
 sc-reports         = "sound_categorisation.reports.cli:main"
 sc-export-snapshot = "sound_categorisation.cli.export_snapshot:main"
-sc-make-smoke-cohort = "sound_categorisation.cli.make_smoke_cohort:main"
+sc-make-synthetic-cohort = "sound_categorisation.cli.make_synthetic_cohort:main"
+sc-new-run         = "sound_categorisation.cli.new_run:main"
 sc-train-sbi       = "sound_categorisation.cli.train_sbi:main"
 sc-run-sbi         = "sound_categorisation.cli.run_sbi:main"
 sc-run-gs          = "sound_categorisation.cli.run_gs:main"

@@ -29,13 +29,13 @@ sound_categorisation/                 ← repo root (pyproject.toml, config.yaml
 │   ├── features/                     SBI feature-selection diagnostics
 │   ├── reports/                      compute → tables → figures → PDF → summary (+ README, selftest, CLI)
 │   ├── plotting/                     project plotters (CV, opto swarms, assignment, SBI diagnostics)
-│   └── cli/                          entry points: export_snapshot, make_smoke_cohort, train_sbi, run_sbi,
-│                                     run_gs, consensus  (installed as sc-* commands)
+│   └── cli/                          entry points, installed as sc-* commands: reports, export_snapshot,
+│                                     make_synthetic_cohort, new_run, train_sbi, run_sbi, run_gs, consensus
 ├── slurm/                            job scripts + submit.sh (array size derived from tasks.py)
 ├── notebooks/                        exploration; shared_setup.py (paths, load_data)
 ├── tests/                            project tests (+ tests/reference: pinned report numbers)
-├── config.yaml                       cohorts, column mappings, session_presets, session_types
-└── run_reports.sh                    the overnight report battery
+├── docs/                             runs.md (every command and where it writes), results_guide.md
+└── config.yaml                       cohorts, column mappings, session_presets, session_types
 ```
 
 ## Quick start
@@ -43,12 +43,14 @@ sound_categorisation/                 ← repo root (pyproject.toml, config.yaml
 ```bash
 pip install -e behav_utils/ && pip install -e ".[dev]"     # both packages (see SETUP.md for the data); installs the sc-* commands
 pytest behav_utils/tests -q && pytest tests -q
-python -m sound_categorisation.reports selftest              # synthetic end-to-end, seconds
-bash run_reports.sh                                          # the real battery (hours) → results/reports/
+sc-reports selftest                                          # synthetic end-to-end (opto + switches + summary)
+sc-reports battery                                           # the real opto battery (hours)
 ```
 
-Results land in `results/reports/<cohort>/`: tidy CSV tables + `meta.json` per animal and group, PDFs,
-a four-page `summary.pdf`, and a generated `README.md` describing every column and page.
+Every run writes under `results/<report>/<cohort>/<run_id>/` (`opto_contrasts`, `switch_adaptation`,
+`model_identification`; run id = date + git SHA; `latest` points at the newest run): tidy CSV tables +
+`meta.json` next to every PDF, a four-page `summary.pdf`, and a generated `README.md` describing every
+column and page. `docs/runs.md` lists every command, what it computes and where it writes.
 
 ## Read next
 

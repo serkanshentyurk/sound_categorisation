@@ -85,21 +85,18 @@ class TestComputeConsensus:
 class TestLoadAllAssignments:
     """load_all_assignments builds the per-animal × per-method winner table.
 
-    results_dir is monkeypatched into a tmp tree so no real data root is touched;
-    fabricated BE/SC files in the neutral schema stand in for run_gs / run_sbi
-    output.
+    The run directory is a tmp tree (no real results root is touched); fabricated
+    BE/SC files in the neutral schema stand in for run_gs / run_sbi output.
     """
 
-    RUN, COH = 'r', 'c'
+    DIST = 'uniform'
 
     def _patch(self, monkeypatch, root):
-        monkeypatch.setattr(
-            'sound_categorisation.inference.consensus.results_dir',
-            lambda source, run, cohort, ft: root / source / run / f'{cohort}_{ft}')
+        self.RUN = root / 'model_identification' / 'c' / '2026-01-01_0000000'
 
     def _write_method(self, source, rep, ft, animal, true_model, be_lo, sc_lo):
         """Write a paired BE/SC result (8 reps) where BE wins iff be_lo < sc_lo."""
-        d = _method_dir(source, rep, ft, self.RUN, self.COH)
+        d = _method_dir(source, rep, ft, self.RUN, self.DIST)
         tp = {'sigma_percep': 0.2, 'eta_learning': 0.1}
         be = [be_lo + 0.001 * i for i in range(8)]
         sc = [sc_lo + 0.001 * i for i in range(8)]
@@ -120,7 +117,7 @@ class TestLoadAllAssignments:
         for s, rp, ft in methods:
             self._write_method(s, rp, ft, 'A', 'BE', be_lo=0.10, sc_lo=0.20)
             self._write_method(s, rp, ft, 'B', 'SC', be_lo=0.20, sc_lo=0.10)
-        df = load_all_assignments(self.RUN, self.COH, methods=methods).set_index('id')
+        df = load_all_assignments(self.RUN, self.DIST, methods=methods).set_index('id')
         assert df.loc['A', 'GS-UM'] == 'BE' and df.loc['A', 'SBI-pooled-UM'] == 'BE'
         assert df.loc['A', 'Consensus'] == 'BE'
         assert df.loc['B', 'Consensus'] == 'SC'
@@ -132,7 +129,7 @@ class TestLoadAllAssignments:
         self._patch(monkeypatch, tmp_path)
         methods = [('grid_search', None, 'update_matrix')]
         self._write_method('grid_search', None, 'update_matrix', 'A', 'BE', 0.10, 0.20)
-        df = load_all_assignments(self.RUN, self.COH, methods=methods)
+        df = load_all_assignments(self.RUN, self.DIST, methods=methods)
         for col in ['id', 'GS-UM', 'GS-UM_p', 'GS-UM_be', 'GS-UM_sc',
                     'true_model', 'Consensus', 'consensus_correct']:
             assert col in df.columns
@@ -144,7 +141,7 @@ class TestLoadAllAssignments:
                    ('sbi', 'pooled', 'update_matrix')]
         self._write_method('grid_search', None, 'update_matrix', 'A', 'BE', 0.10, 0.20)
         self._write_method('sbi', 'pooled', 'update_matrix', 'A', 'BE', 0.20, 0.10)
-        df = load_all_assignments(self.RUN, self.COH, methods=methods).set_index('id')
+        df = load_all_assignments(self.RUN, self.DIST, methods=methods).set_index('id')
         assert df.loc['A', 'GS-UM'] == 'BE' and df.loc['A', 'SBI-pooled-UM'] == 'SC'
         assert df.loc['A', 'Consensus'] == 'Split'
 
@@ -154,7 +151,7 @@ class TestLoadAllAssignments:
         methods = [('grid_search', None, 'update_matrix'),
                    ('sbi', 'pooled', 'update_matrix')]
         self._write_method('grid_search', None, 'update_matrix', 'A', 'BE', 0.10, 0.20)
-        df = load_all_assignments(self.RUN, self.COH, methods=methods).set_index('id')
+        df = load_all_assignments(self.RUN, self.DIST, methods=methods).set_index('id')
         assert df.loc['A', 'GS-UM'] == 'BE'
         assert pd.isna(df.loc['A', 'SBI-pooled-UM'])
         assert df.loc['A', 'Consensus'] == 'BE'      # single significant vote
@@ -164,21 +161,21 @@ class TestLoadAllAssignments:
         self._patch(monkeypatch, tmp_path)
         methods = [('grid_search', None, 'conditional_psych')]
         self._write_method('grid_search', None, 'conditional_psych', 'A', 'BE', 0.10, 0.20)
-        df = load_all_assignments(self.RUN, self.COH, methods=methods).set_index('id')
+        df = load_all_assignments(self.RUN, self.DIST, methods=methods).set_index('id')
         assert 'GS-CP' in df.columns
         assert df.loc['A', 'Consensus'] == 'BE'
 
     def test_no_truth_omits_correct_columns(self, tmp_path, monkeypatch):
         """Files without true_model → no true_model / consensus_correct columns."""
         self._patch(monkeypatch, tmp_path)
-        d = _method_dir('grid_search', None, 'update_matrix', self.RUN, self.COH)
+        d = _method_dir('grid_search', None, 'update_matrix', self.RUN, self.DIST)
         save_cv_result(d / 'A_BE.pkl', 'A', 'BE',
                        [{'rep': i, 'test_error': 0.1 + 0.001 * i, 'best_params': {'a': 1}}
                         for i in range(8)], 'update_matrix')
         save_cv_result(d / 'A_SC.pkl', 'A', 'SC',
                        [{'rep': i, 'test_error': 0.2 + 0.001 * i, 'best_params': {'a': 1}}
                         for i in range(8)], 'update_matrix')
-        df = load_all_assignments(self.RUN, self.COH,
+        df = load_all_assignments(self.RUN, self.DIST,
                                   methods=[('grid_search', None, 'update_matrix')])
         assert 'consensus_correct' not in df.columns
         assert 'true_model' not in df.columns

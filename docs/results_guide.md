@@ -6,8 +6,9 @@ every column; this one explains what the analyses mean and where to look).
 ## 1. Where things are
 
 ```
-results/reports/opto1-cohort/
+results/opto_contrasts/opto1-cohort/<run_id>/        (../latest points at the newest run)
 │
+├── logs/                       job logs (cluster runs)
 ├── summary.pdf                 ← START HERE. Four pages: overall, Uniform, Hard-A, Hard-B.
 ├── summary_*.png               the same four pages as images
 ├── README.md                   technical reference (columns, conventions)
@@ -143,6 +144,6 @@ psychometric curves themselves. All are in the per-animal and group PDFs and in 
 
 ## 7. Regenerating
 
-`bash run_reports.sh` rebuilds everything from the snapshot (a few hours). Single pieces:
-`python -m sound_categorisation.reports group --with-animals --distribution Hard-A --toi opto`,
-`python -m sound_categorisation.reports summary`.
+`sc-reports battery` rebuilds everything from the snapshot into a new run (a few hours). Single pieces:
+`sc-reports opto --distribution Hard-A --toi opto`, `sc-reports summary [--run <run_id>]`. Every command is
+in `docs/runs.md`.

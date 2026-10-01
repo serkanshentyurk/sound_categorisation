@@ -63,7 +63,7 @@ else:  # fallback when the config is absent (e.g. a bare synthetic run)
     OPTO_COHORT  = [f'SS{i:02d}' for i in range(14, 24)]
 
 # ── Results paths ──────────────────────────────────────────────────────────
-from sound_categorisation.data.paths import cohort_path, data_root, results_dir, snpe_networks_dir
+from sound_categorisation.data.paths import cohort_path, data_root, resolve_run, results_root, snpe_networks_dir
 
 FIT_TARGETS = ['update_matrix', 'conditional_psych']
 FT_LABEL = {'update_matrix': 'UM', 'conditional_psych': 'CP'}

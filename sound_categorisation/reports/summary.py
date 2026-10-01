@@ -1,7 +1,7 @@
 """
 Summary pages, drawn from the report tables only.
 
-    python -m sound_categorisation.reports summary [--out results/reports] [--cohort opto1-cohort]
+    sc-reports summary [--cohort opto1-cohort] [--run latest|<run_id>]
 
 Writes ``<out>/<cohort>/summary.pdf`` with four pages (and a PNG of each):
 
@@ -281,9 +281,10 @@ def overall_page(T: dict, cohort: str):
     return fig
 
 
-def write_summary(out_root: Path, cohort: str) -> Path:
+def write_summary(run: Path, cohort: str) -> Path:
+    """Summary pages + generated README for one opto run (``run`` is the run directory)."""
     from sound_categorisation.reports.readme import write_readme
-    root = Path(out_root) / cohort
+    root = Path(run)
     write_readme(root)
     T = load_tables(root)
     pages = [('overall', overall_page(T, cohort)), ('uniform', uniform_page(T, cohort)),

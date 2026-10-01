@@ -109,11 +109,11 @@ COARSE_GRID = {
 }
 
 
-# SMOKE_GRID: a deliberately tiny sweep for "does it run" checks only. Two params
+# FAST_GRID: a deliberately tiny sweep for "does it run" checks only. Two params
 # vary (sigma_percep x the first model param), the other two are pinned -> 3x1x3x1
 # = 9 points (vs COARSE 384, DEFAULT 8000), so a single unit finishes in seconds.
 # NOT for real fits -- the winner is meaningless at this resolution.
-SMOKE_GRID = {
+FAST_GRID = {
     'BE': ParameterGrid(
         sigma_percep_values=np.linspace(0.10, 0.25, 3),
         A_repulsion_values=np.array([0.2]),               # pinned

@@ -2,9 +2,10 @@
 
 The reference (tests/reference/selftest_contrasts.csv) pins every number the fast
 selftest produces. If a deliberate change moves them, regenerate with
-``python -m sound_categorisation.reports selftest`` + copy, and say so in the commit.
+``sc-reports selftest --out DIR`` + copy, and say so in the commit.
 """
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -105,17 +106,23 @@ def test_summary_pages_draw(exp, tmp_path):
     matplotlib.use('Agg')
     from types import SimpleNamespace
 
+    from sound_categorisation.data.paths import latest_run, start_run
     from sound_categorisation.reports.cli import run_animal, run_group
     from sound_categorisation.reports.summary import write_summary
     ids = list(exp.animals)
-    a = SimpleNamespace(out=tmp_path, cohort='selftest', snapshot=None, config=None, fast=True)
+    run = start_run('opto_contrasts', 'selftest', fast=True, root=tmp_path)
+    assert run.name.endswith('_fast') and (run / 'logs').is_dir()
+    assert latest_run('opto_contrasts', 'selftest', root=tmp_path) == run
+    a = SimpleNamespace(cohort='selftest', snapshot=None, config=None, fast=True, run_path=run, run_id=run.name)
     per = run_animal(exp, ids, 'Uniform', 'opto', 'ppc', None, a, Settings.fast())
     run_group(exp, ids, 'Uniform', 'opto', 'ppc', None, a, Settings.fast(), per)
     full = Settings(n_boot=10, n_perm=0, curve_bootstrap=0)
     per = run_animal(exp, ids[:2], 'Hard-A', 'opto', 'ppc', None, a, full)
     run_group(exp, ids[:2], 'Hard-A', 'opto', 'ppc', None, a, full, per)
-    path = write_summary(tmp_path, 'selftest')
-    assert path.exists() and (tmp_path / 'selftest' / 'summary_hard_a.png').exists()
+    path = write_summary(run, 'selftest')
+    assert path.exists() and (run / 'summary_hard_a.png').exists()
+    meta = json.loads((run / 'Uniform' / 'ppc_opto' / ids[0] / 'meta.json').read_text())
+    assert meta['run_id'] == run.name and 'argv' in meta and 'git_dirty' in meta
 
 
 def test_switches_pipeline(exp, tmp_path):
@@ -138,7 +145,10 @@ def test_switches_pipeline(exp, tmp_path):
     T = switch_tables(g)
     assert set(T) == {'switches', 'pre_post', 'convergence', 'sessions', 'overnight', 'psychometrics', 'psychometric_curves'}
     assert {'animal', 'switch_idx', 'transition', 'stat', 'value'} <= set(T['switches'].columns)
-    out = run_switches(exp, ['SB00', 'SB01'], tmp_path, 'selftest', min_block_trials=300, max_trials=800)
+    from sound_categorisation.data.paths import start_run
+    run = start_run('switch_adaptation', 'selftest', root=tmp_path)
+    out = run_switches(exp, ['SB00', 'SB01'], run, 'selftest', min_block_trials=300, max_trials=800)
+    assert out == run / 'switches'
     assert (out / 'summary_switches.pdf').exists() and (out / 'pdf' / 'SB00_switches.pdf').exists()
 
 

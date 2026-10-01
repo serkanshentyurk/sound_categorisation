@@ -72,14 +72,24 @@ def synthetic_experiment(n_animals=4, seed=0, n_trials=180) -> ExperimentData:
     return exp
 
 
-def run_selftest(out_dir: Path):
+def run_selftest(out_dir: Path | None = None) -> Path:
+    """Synthetic end-to-end: opto report (fast), one slow condition, the switch report, the summary.
+    Writes under ``out_dir`` (default: a fresh temporary directory) using the same run layout as
+    real runs: ``<out_dir>/opto_contrasts/selftest/<run_id>/`` and ``switch_adaptation/...``."""
+    import tempfile
     from types import SimpleNamespace
 
+    from sound_categorisation.data.paths import start_run
     from sound_categorisation.reports.cli import run_animal, run_group
     from sound_categorisation.reports.compute import Settings
+    from sound_categorisation.reports.summary import write_summary
+    from sound_categorisation.reports.switches import run_switches
+
+    out_dir = Path(out_dir) if out_dir else Path(tempfile.mkdtemp(prefix='sc_selftest_'))
     exp = synthetic_experiment()
     ids = list(exp.animals)
-    a = SimpleNamespace(out=Path(out_dir), cohort='selftest', snapshot=None, config=None, fast=True)
+    run = start_run('opto_contrasts', 'selftest', fast=True, root=out_dir)
+    a = SimpleNamespace(cohort='selftest', snapshot=None, config=None, fast=True, run_path=run, run_id=run.name)
     s = Settings.fast()
     per = run_animal(exp, ids, 'Uniform', 'opto', 'ppc', None, a, s)
     run_group(exp, ids, 'Uniform', 'opto', 'ppc', None, a, s, per)
@@ -89,7 +99,8 @@ def run_selftest(out_dir: Path):
     full = Settings(n_boot=20, n_perm=20, curve_bootstrap=10)
     per = run_animal(exp, ids[:1], 'Hard-A', 'opto', 'ppc', None, a, full)
     run_group(exp, ids, 'Hard-A', 'opto', 'ppc', None, a, full, per)
-    from sound_categorisation.reports.switches import run_switches
-    run_switches(exp, ['SB00', 'SB01'], Path(out_dir), 'selftest', min_block_trials=300, max_trials=800)
+    write_summary(run, 'selftest')
+    srun = start_run('switch_adaptation', 'selftest', fast=True, root=out_dir)
+    run_switches(exp, ['SB00', 'SB01'], srun, 'selftest', min_block_trials=300, max_trials=800)
     print(f'selftest OK -> {out_dir}')
-    return Path(out_dir)
+    return out_dir

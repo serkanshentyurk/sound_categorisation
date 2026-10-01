@@ -45,9 +45,21 @@ reports/             compute.py  AnimalResult / GroupResult / Settings (no matpl
                      readme.py   the generated results README; selftest.py synthetic ExperimentData
                      cli.py      `python -m sound_categorisation.reports` / `sc-reports`
 plotting/            project plotters (CV, opto swarms, assignment, SBI diagnostics)
-cli/                 entry points (pyproject [project.scripts]): sc-export-snapshot, sc-make-smoke-cohort,
-                     sc-train-sbi, sc-run-sbi, sc-run-gs, sc-consensus
+cli/                 entry points (pyproject [project.scripts]): sc-reports, sc-export-snapshot,
+                     sc-make-synthetic-cohort, sc-new-run, sc-train-sbi, sc-run-sbi, sc-run-gs, sc-consensus
 ```
+
+## Runs: one root, one layout, one id
+
+```
+<results root>/<report>/<cohort>/<run_id>/...      results_root(): <repo>/results locally, ceph on the cluster
+<results root>/<report>/<cohort>/latest            symlink (+ latest.txt) to the newest run
+```
+`report` ∈ `opto_contrasts`, `switch_adaptation`, `model_identification`; `run_id` = `YYYY-MM-DD_<sha7>`,
+`_fast` for reduced runs. Every producer calls `paths.start_run` and stamps run id, argv and git state into
+its `meta.json`; every consumer (`sc-reports summary`, `sc-consensus`, the notebooks) resolves a run with
+`paths.resolve_run(report, cohort, 'latest' | run_id)`. On the cluster the run id is created once by
+`slurm/submit.sh` (`sc-new-run`) and shared by every array task, whose logs land in `<run>/logs/`.
 
 ## The report pipeline
 
@@ -59,7 +71,7 @@ snapshot ──▶ compute_animal ──▶ AnimalResult ──▶ to_tables ─
 ```
 Scripts compute deterministically from the snapshot and write tidy tables with metadata (snapshot,
 config, settings, package versions, git SHA). Figures are drawn from results or tables, never computed
-in place. Notebooks are meant to read `results/reports/` and narrate; a notebook that runs a bootstrap is
+in place. Notebooks are meant to read a run's tables and narrate; a notebook that runs a bootstrap is
 a smell. `tests/reference/selftest_contrasts.csv` pins every number the fast selftest produces; a change
 that moves a number fails `tests/test_reports.py` until the reference is regenerated on purpose.
 
