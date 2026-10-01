@@ -6,7 +6,7 @@ All computation (seed error extraction, dataframe building, statistical
 tests) has been moved to utils/cv_utils.py.
 
 Usage:
-    from sound_categorisation.cv_utils import compute_seed_errors, compute_cv_dataframes
+    from sound_categorisation.inference.cv_utils import compute_seed_errors, compute_cv_dataframes
     from sound_categorisation.plotting.cv import plot_cv_comparison, plot_winner_summary
 
     errors, best = compute_seed_errors(gs_pickle)

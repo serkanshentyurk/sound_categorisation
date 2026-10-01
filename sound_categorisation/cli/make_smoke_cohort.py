@@ -9,15 +9,15 @@ priors, so the cohort carries ground truth for the recovery / identification che
 The cohort name should encode the phase (matching run_gs / run_sbi's convention),
 so make one per phase to smoke-test all three:
 
-    python -m scripts.make_smoke_cohort --name smoke_uniform --distribution uniform
-    python -m scripts.make_smoke_cohort --name smoke_hard_a  --distribution hard_a
-    python -m scripts.make_smoke_cohort --name smoke_hard_b  --distribution hard_b
+    sc-make-smoke-cohort --name smoke_uniform --distribution uniform
+    sc-make-smoke-cohort --name smoke_hard_a  --distribution hard_a
+    sc-make-smoke-cohort --name smoke_hard_b  --distribution hard_b
 
 Then (GS is torch-free, so it runs anywhere; SBI needs torch + trained nets):
 
-    python -m scripts.run_gs  --source synthetic --cohort smoke_uniform \
+    sc-run-gs  --source synthetic --cohort smoke_uniform \
         --distribution uniform --run quick --fit-target update_matrix --task-id 0
-    python -m scripts.run_sbi --source synthetic --cohort smoke_uniform \
+    sc-run-sbi --source synthetic --cohort smoke_uniform \
         --distribution uniform --run smoke --smoke-test
 
 Defaults are deliberately tiny (fast to simulate); GS grid-search is still slow,
@@ -29,11 +29,13 @@ import argparse
 import pickle
 
 import numpy as np
-from sound_categorisation.models.BE_core import BEParams
-from sound_categorisation.models.SC_core import SCParams
+
+from sound_categorisation.data.paths import cohort_path
+from sound_categorisation.data.stimuli import sample_distribution
+from sound_categorisation.models.be_core import BEParams
+from sound_categorisation.models.sc_core import SCParams
 from sound_categorisation.models.simulate import simulate_choices
-from sound_categorisation.paths import DISTRIBUTIONS, cohort_path
-from sound_categorisation.stimuli import sample_distribution
+from sound_categorisation.settings import DISTRIBUTIONS
 
 _PARAMS = {'BE': BEParams, 'SC': SCParams}
 

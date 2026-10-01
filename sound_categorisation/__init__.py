@@ -1,21 +1,18 @@
 """
 sound_categorisation — project code for the PPC / auditory-categorisation PhD.
 
-Layered on ``behav_utils`` (the generic 2-AFC library):
+Layered on ``behav_utils`` (the generic 2-AFC library). Subpackages follow the aims:
 
-    cohort       load the experiment, genotypes, per-animal session sets, AnimalRecord providers
-    contrasts    the PPC / ALM opto contrasts as typed DeltaStats / Interaction
-    stimuli      Hard-A / Hard-B stimulus densities, normative PSE
-    models       BE and SC generative models
-    inference    amortised SBI (network training, conditioning, representation)
-    grid_search  CV grid search over model parameters, update-matrix MSE
-    consensus    GS + SBI model-identification consensus
-    tasks        one task-index grid per SLURM array (train / condition / grid search)
-    validation   SBI feature selection diagnostics
-    reports      per-animal / group PDF report builders
-    plotting     project-specific plotters (CV, opto swarms, assignment)
-    paths        data / results locations and run metadata
-    snapshot     experiment snapshot export / load
+    settings     project constants: distributions, model types, fit sizes, thresholds, seeds
+    data/        cohort (experiment, genotypes, session sets, AnimalRecord), snapshot, stimuli, paths
+    behaviour/   contrasts (the PPC / ALM opto contrasts), adaptation (switch and per-session trajectories)
+    models/      BE and SC generative models, perception, simulation, traces
+    inference/   amortised SBI, simulator, representation, selection, grid search, CV utilities,
+                 block-aware folds, GS+SBI consensus, the SLURM task grids
+    features/    SBI feature-selection diagnostics
+    reports/     compute → tables → figures → PDF → summary, and the report CLI
+    plotting/    project plotters (CV, opto swarms, assignment, SBI diagnostics)
+    cli/         entry points: export_snapshot, make_smoke_cohort, train_sbi, run_sbi, run_gs, consensus
 """
 
-__version__ = '0.3.0'
+__version__ = '0.4.0'

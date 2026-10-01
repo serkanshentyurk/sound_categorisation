@@ -1,7 +1,7 @@
-"""sound_categorisation.tasks — one task-index convention for every SLURM array."""
+"""sound_categorisation.inference.tasks — one task-index convention for every SLURM array."""
 
 import pytest
-from sound_categorisation.tasks import CONDITION_GRID, TRAIN_GRID, TaskGrid, gs_grid
+from sound_categorisation.inference.tasks import CONDITION_GRID, TRAIN_GRID, TaskGrid, gs_grid
 
 
 def test_decode_encode_roundtrip():
@@ -40,7 +40,7 @@ def test_out_of_range():
 def test_scripts_use_the_grids():
     import sys
     sys.argv = ['x']
-    import scripts.run_sbi as R
-    import scripts.train_sbi as T
+    import sound_categorisation.cli.run_sbi as R
+    import sound_categorisation.cli.train_sbi as T
     assert all(T.decode_task(i) == tuple(TRAIN_GRID.decode(i).values()) for i in range(TRAIN_GRID.n))
     assert all(R.decode_task(i) == tuple(CONDITION_GRID.decode(i).values()) for i in range(CONDITION_GRID.n))

@@ -14,13 +14,13 @@ class TestParameterGrid:
 
     def test_default_grid_has_be_and_sc(self):
         """DEFAULT_GRID has presets for both models."""
-        from sound_categorisation.grid_search import COARSE_GRID, DEFAULT_GRID
+        from sound_categorisation.inference.grid_search import COARSE_GRID, DEFAULT_GRID
         assert DEFAULT_GRID is not None
         assert COARSE_GRID is not None
 
     def test_coarse_grid_smaller_than_default(self):
         """COARSE_GRID exists and is fewer points than DEFAULT_GRID."""
-        from sound_categorisation.grid_search import COARSE_GRID, DEFAULT_GRID
+        from sound_categorisation.inference.grid_search import COARSE_GRID, DEFAULT_GRID
         # Both should be ParameterGrid or expose .n_points
         if hasattr(DEFAULT_GRID, 'n_points') and hasattr(COARSE_GRID, 'n_points'):
             assert COARSE_GRID.n_points() < DEFAULT_GRID.n_points()
@@ -31,7 +31,7 @@ class TestSimulateModelMatrices:
 
     def test_returns_arrays(self):
         """Returns numpy arrays of expected shape."""
-        from sound_categorisation.grid_search import simulate_model_matrices
+        from sound_categorisation.inference.grid_search import simulate_model_matrices
 
         # Minimal call: a single param set
         try:
@@ -57,7 +57,7 @@ class TestComputeGridSearchCV:
 
     def test_runs_on_synthetic_animal(self, synthetic_animal):
         """Function runs without error on small synthetic data."""
-        from sound_categorisation.grid_search import COARSE_GRID, compute_grid_search_cv
+        from sound_categorisation.inference.grid_search import COARSE_GRID, compute_grid_search_cv
 
         clean = [s for s in synthetic_animal.sessions if s.session_type != 'masking'][:4]
 

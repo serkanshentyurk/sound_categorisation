@@ -20,7 +20,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.backends.backend_pdf import PdfPages
 
-from sound_categorisation.adaptation import (
+from sound_categorisation.behaviour.adaptation import (
     SwitchResult,
     animal_switches,
     compute_phase_curves,

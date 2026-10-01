@@ -21,7 +21,7 @@ summary statistics, and analysis code can swap between models
 transparently.
 
 Usage:
-    from sound_categorisation.models.SC_core import SCParams, SCState, SCModel
+    from sound_categorisation.models.sc_core import SCParams, SCState, SCModel
 
     params = SCParams(sigma_percep=0.15, A_repulsion=0.1,
                       gamma=0.95, sigma_update=0.3)

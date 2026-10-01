@@ -18,16 +18,16 @@ without loading torch.
 
 Local (all six, serial)::
 
-    python -m scripts.train_sbi --rep all --model all
+    sc-train-sbi --rep all --model all
 
 Cluster (SLURM array, one network per task)::
 
-    N=$(python -m scripts.train_sbi --count)        # -> 6
+    N=$(sc-train-sbi --count)        # -> 6
     sbatch --array=0-$((N-1)) train_sbi.sh          # task_id -> (rep, model)
 
 Smoke test (tiny n_simulations, just checks the pipeline runs end to end)::
 
-    python -m scripts.train_sbi --rep pooled --model BE --smoke-test
+    sc-train-sbi --rep pooled --model BE --smoke-test
 """
 
 from __future__ import annotations
@@ -35,8 +35,9 @@ from __future__ import annotations
 import argparse
 import time
 
-# Run as a plain script (python scripts/train_sbi.py) or a module
-from sound_categorisation.paths import (
+from sound_categorisation.data.paths import snpe_net_path
+from sound_categorisation.inference.tasks import TRAIN_GRID
+from sound_categorisation.settings import (
     BASE_SEED,
     DISTRIBUTIONS,
     MODEL_TYPES,
@@ -44,9 +45,7 @@ from sound_categorisation.paths import (
     SBI_REPRESENTATIONS,
     SBI_TRAIN_DISTRIBUTIONS,
     SMOKE_SBI_N_SIMULATIONS,
-    snpe_net_path,
 )
-from sound_categorisation.tasks import TRAIN_GRID
 
 REPRESENTATIONS = tuple(SBI_REPRESENTATIONS)
 TRAIN_DISTRIBUTIONS = tuple(SBI_TRAIN_DISTRIBUTIONS)   # per-distribution specialists
@@ -54,7 +53,7 @@ N_TASKS = TRAIN_GRID.n                                  # 3 reps × 2 models × 
 
 
 def decode_task(task_id):
-    """SLURM array index -> (rep, model, distribution); see sound_categorisation.tasks.TRAIN_GRID."""
+    """SLURM array index -> (rep, model, distribution); see sound_categorisation.inference.tasks.TRAIN_GRID."""
     d = TRAIN_GRID.decode(task_id)
     return d['rep'], d['model'], d['distribution']
 

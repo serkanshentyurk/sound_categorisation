@@ -29,8 +29,8 @@ matplotlib.use('Agg')
 
 from behav_utils.config.schema import load_cohorts
 
-from sound_categorisation.cohort import gather_genotypes, load_experiment_any
-from sound_categorisation.paths import REPO_ROOT
+from sound_categorisation.data.cohort import gather_genotypes, load_experiment_any
+from sound_categorisation.data.paths import REPO_ROOT
 from sound_categorisation.reports.compute import Settings, compute_animal, compute_group
 from sound_categorisation.reports.pdf import animal_pdf, group_pdf
 from sound_categorisation.reports.tables import group_tables, readout_arrays, to_tables, write_result

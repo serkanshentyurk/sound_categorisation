@@ -2,10 +2,10 @@
 Experiment Snapshot Export / Import
 
 Usage (export — on cluster):
-    python scripts/export_snapshot.py
+    sc-export-snapshot
 
 Usage (load — in notebooks):
-    from sound_categorisation.snapshot import load_snapshot
+    from sound_categorisation.data.snapshot import load_snapshot
     experiment, meta = load_snapshot(PATH_SNAPSHOT)
 """
 
@@ -39,7 +39,7 @@ def snapshot_dir(repo_root: Path | None = None) -> Path:
         return _CLUSTER_SNAPSHOT_DIR
     else:
         if repo_root is None:
-            from sound_categorisation.paths import REPO_ROOT
+            from sound_categorisation.data.paths import REPO_ROOT
             repo_root = REPO_ROOT
         return repo_root.parent.parent / 'data' / 'behaviour' / 'snapshots'
 
@@ -160,7 +160,7 @@ def load_snapshot(
     if not isinstance(snapshot, dict) or 'experiment' not in snapshot:
         raise ValueError(
             'Not a valid snapshot file. Re-export with '
-            'scripts/export_snapshot.py.'
+            'sc-export-snapshot.'
         )
 
     meta = snapshot.get('metadata', {})

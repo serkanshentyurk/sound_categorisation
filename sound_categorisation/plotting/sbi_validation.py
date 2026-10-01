@@ -1,7 +1,7 @@
 """
 plotting/sbi_validation.py — Visualisations for SBI validation.
 
-Each plotter consumes a result dict from sound_categorisation.validation.sbi:
+Each plotter consumes a result dict from sound_categorisation.features.sbi:
 
     plot_sbc_ranks(sbc_result)         ← compute_sbc_ranks
     plot_sbc_ecdf(sbc_result)          ← compute_sbc_ranks
@@ -392,7 +392,7 @@ def plot_param_stat_correlations(
 
 # =============================================================================
 # Summary-stat selection / attribution  (draw-only, single-panel, plot_x(result, ax=None))
-# Consume the dicts from sound_categorisation.validation.feature_diagnostics:
+# Consume the dicts from sound_categorisation.features.feature_diagnostics:
 #   plot_um_scalar_correlation ← um_scalar_correlation   (what scalars miss)
 #   plot_stat_correlation      ← stat_correlation        (redundancy)
 #   plot_individual_identity   ← stat_individual_power    (Q2: identity AUC per stat)

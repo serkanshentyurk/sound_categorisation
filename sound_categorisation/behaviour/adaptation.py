@@ -45,7 +45,7 @@ from behav_utils.stats.dynamics import fit_pse_dynamics
 from scipy.optimize import minimize_scalar
 from scipy.stats import norm
 
-from sound_categorisation.stimuli import compute_normative_pse
+from sound_categorisation.data.stimuli import compute_normative_pse
 
 __all__ = ['Trajectory', 'compute_trajectory', 'expert_reference', 'TRAJECTORY_STATS',
            'HARD_WINDOW', 'HARD_STEP', 'SwitchResult', 'compute_switch', 'compute_switches', 'SWITCH_METHODS',
@@ -75,7 +75,7 @@ class Trajectory:
 def expert_reference(animal, *, preset: str = 'expert_uniform', last_n: int = 5,
                      trials: str = 'non_opto') -> tuple:
     """(PSE, sigma, lapse_low, lapse_high) pooled over the animal's last ``last_n`` expert-Uniform sessions."""
-    from sound_categorisation.cohort import ensure_presets
+    from sound_categorisation.data.cohort import ensure_presets
     ensure_presets()
     sessions = select_sessions(animal, preset=preset)
     if last_n:
@@ -377,7 +377,7 @@ def compute_switch(
 def animal_switches(animal, *, stage: str = 'Full_Task_Cont', exclude_types=None,
                     min_block_trials: int = SWITCH_MIN_BLOCK) -> tuple:
     """(ordered regular sessions, qualifying switches) for one animal."""
-    from sound_categorisation.cohort import CONTROL_TYPES
+    from sound_categorisation.data.cohort import CONTROL_TYPES
     sessions = sorted(select_sessions(animal, stage=stage,
                                       exclude_types=CONTROL_TYPES if exclude_types is None else exclude_types),
                       key=lambda s: s.session_idx)

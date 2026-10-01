@@ -34,8 +34,8 @@ from typing import TYPE_CHECKING, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from sound_categorisation.cv_utils import load_cv_results
-from sound_categorisation.paths import results_dir
+from sound_categorisation.data.paths import results_dir
+from sound_categorisation.inference.cv_utils import load_cv_results
 
 if TYPE_CHECKING:
     from behav_utils.data.structures import ExperimentData

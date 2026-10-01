@@ -62,14 +62,14 @@ class ParamConfig:
 def get_default_param_configs(model_type: ModelType) -> Dict[str, ParamConfig]:
     """Get default ParamConfig for each parameter of a model."""
     if model_type == ModelType.BE:
-        from sound_categorisation.models.BE_core import BEParams
+        from sound_categorisation.models.be_core import BEParams
         bounds = BEParams.get_bounds()
         return {
             name: ParamConfig(name, bounds=bounds[name])
             for name in BEParams.get_param_names()
         }
     elif model_type == ModelType.SC:
-        from sound_categorisation.models.SC_core import SCParams
+        from sound_categorisation.models.sc_core import SCParams
         bounds = SCParams.get_bounds()
         return {
             name: ParamConfig(name, bounds=bounds[name])

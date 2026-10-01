@@ -26,7 +26,7 @@ Integration:
     Or use _sample_hard_a() / _sample_hard_b() directly.
 
 Usage:
-    from sound_categorisation.stimuli import _sample_hard_a, _sample_hard_b
+    from sound_categorisation.data.stimuli import _sample_hard_a, _sample_hard_b
 
     rng = np.random.default_rng(42)
     stim_a, cat_a = _sample_hard_a(300, rng=rng)

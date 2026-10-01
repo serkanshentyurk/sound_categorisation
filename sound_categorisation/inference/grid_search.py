@@ -20,7 +20,7 @@ Protocol (matching manuscript):
     4. Return per-fold test errors, best params
 
 Usage:
-    from sound_categorisation.grid_search import compute_grid_search_cv, DEFAULT_GRID
+    from sound_categorisation.inference.grid_search import compute_grid_search_cv, DEFAULT_GRID
 
     results = compute_grid_search_cv(
         sessions=expert_sessions,
@@ -42,7 +42,7 @@ from behav_utils.analysis.update_matrix import fit_update_matrix, matrix_error
 from behav_utils.data.ops.filtering import pool_arrays
 from joblib import Parallel, delayed
 
-from sound_categorisation.fold_utils import split_folds_by_block
+from sound_categorisation.inference.fold_utils import split_folds_by_block
 
 if TYPE_CHECKING:
     from behav_utils.data.structures import SessionData
@@ -162,7 +162,7 @@ def simulate_model_matrices(
     rng = np.random.default_rng(seed)
 
     if model_type.upper() == 'BE':
-        from sound_categorisation.models.BE_core import BEModel, BEParams
+        from sound_categorisation.models.be_core import BEModel, BEParams
 
         params = BEParams(
             sigma_percep=sigma_percep,
@@ -180,7 +180,7 @@ def simulate_model_matrices(
         )
 
     elif model_type.upper() == 'SC':
-        from sound_categorisation.models.SC_core import SCModel, SCParams
+        from sound_categorisation.models.sc_core import SCModel, SCParams
 
         params = SCParams(
             sigma_percep=sigma_percep,

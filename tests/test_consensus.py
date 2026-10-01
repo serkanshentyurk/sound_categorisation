@@ -3,8 +3,8 @@
 
 import numpy as np
 import pandas as pd
-from sound_categorisation.consensus import _compute_consensus, _method_dir, load_all_assignments
-from sound_categorisation.cv_utils import save_cv_result
+from sound_categorisation.inference.consensus import _compute_consensus, _method_dir, load_all_assignments
+from sound_categorisation.inference.cv_utils import save_cv_result
 
 
 class TestComputeConsensus:
@@ -94,7 +94,7 @@ class TestLoadAllAssignments:
 
     def _patch(self, monkeypatch, root):
         monkeypatch.setattr(
-            'sound_categorisation.consensus.results_dir',
+            'sound_categorisation.inference.consensus.results_dir',
             lambda source, run, cohort, ft: root / source / run / f'{cohort}_{ft}')
 
     def _write_method(self, source, rep, ft, animal, true_model, be_lo, sc_lo):

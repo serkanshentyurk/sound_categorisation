@@ -10,10 +10,10 @@ utils.cv_utils.compare_models and is tested there, not here.
 import numpy as np
 import pytest
 from behav_utils.data.synthetic import session_from_arrays
+from sound_categorisation.data.stimuli import sample_distribution
 from sound_categorisation.inference.selection import condition_sbi
 from sound_categorisation.inference.types import ModelType, get_default_param_configs
 from sound_categorisation.models.simulate import simulate_choices
-from sound_categorisation.stimuli import sample_distribution
 
 
 def _mid(m):

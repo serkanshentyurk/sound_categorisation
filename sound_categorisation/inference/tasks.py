@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Sequence, Tuple
 
-from sound_categorisation.paths import MODEL_TYPES, SBI_REPRESENTATIONS, SBI_TRAIN_DISTRIBUTIONS
+from sound_categorisation.settings import MODEL_TYPES, SBI_REPRESENTATIONS, SBI_TRAIN_DISTRIBUTIONS
 
 __all__ = ['TaskGrid', 'TRAIN_GRID', 'CONDITION_GRID', 'gs_grid']
 

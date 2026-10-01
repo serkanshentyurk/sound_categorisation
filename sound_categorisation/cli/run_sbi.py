@@ -22,19 +22,19 @@ cross-method consensus from ``analysis.consensus``.
 
 Local (all six (rep, model) on a synthetic uniform cohort)::
 
-    python -m scripts.run_sbi --source synthetic --cohort static_uniform \
+    sc-run-sbi --source synthetic --cohort static_uniform \
         --distribution uniform --run full --fit-target update_matrix
 
 Cluster (SLURM array, one (rep, model) per task; one phase per submit)::
 
-    N=$(python -m scripts.run_sbi --count)          # -> 6
+    N=$(sc-run-sbi --count)          # -> 6
     sbatch --array=0-$((N-1)) slurm/run_sbi.sh --source real --distribution uniform --run expert
     sbatch --array=0-$((N-1)) slurm/run_sbi.sh --source real --distribution hard_a --run expert
     sbatch --array=0-$((N-1)) slurm/run_sbi.sh --source real --distribution hard_b --run expert
 
 Real data (one phase)::
 
-    python -m scripts.run_sbi --source real --distribution hard_a \
+    sc-run-sbi --source real --distribution hard_a \
         --rep pooled --model all --run expert --fit-target update_matrix
 """
 
@@ -43,13 +43,13 @@ from __future__ import annotations
 import argparse
 import time
 
-from sound_categorisation.cohort import load_animals
-from sound_categorisation.cv_utils import save_cv_result
-
-# Run as a plain script (python scripts/run_sbi.py) or a module
+from sound_categorisation.data.cohort import load_animals
+from sound_categorisation.data.paths import build_metadata, results_dir, snpe_net_path
 from sound_categorisation.inference.amortised import AmortisedSBI
+from sound_categorisation.inference.cv_utils import save_cv_result
 from sound_categorisation.inference.selection import condition_sbi
-from sound_categorisation.paths import (
+from sound_categorisation.inference.tasks import CONDITION_GRID
+from sound_categorisation.settings import (
     BASE_SEED,
     DISTRIBUTIONS,
     FIT_TARGETS,
@@ -59,11 +59,7 @@ from sound_categorisation.paths import (
     SBI_N_CV_REPEATS,
     SBI_N_POSTERIOR_SAMPLES,
     SBI_REPRESENTATIONS,
-    build_metadata,
-    results_dir,
-    snpe_net_path,
 )
-from sound_categorisation.tasks import CONDITION_GRID
 
 # A net trained by TRAIN_GRID task (rep, model, *) is conditioned by CONDITION_GRID task (rep, model).
 REPRESENTATIONS = tuple(SBI_REPRESENTATIONS)
@@ -72,7 +68,7 @@ SMOKE_N_REPEATS = 2
 
 
 def decode_task(task_id):
-    """SLURM array index -> (rep, model); see sound_categorisation.tasks.CONDITION_GRID."""
+    """SLURM array index -> (rep, model); see sound_categorisation.inference.tasks.CONDITION_GRID."""
     d = CONDITION_GRID.decode(task_id)
     return d['rep'], d['model']
 

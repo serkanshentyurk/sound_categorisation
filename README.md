@@ -19,20 +19,18 @@ This repository holds two things:
 sound_categorisation/                 ← repo root (pyproject.toml, config.yaml)
 ├── behav_utils/                      library: src/behav_utils, tests, docs, own pyproject
 ├── sound_categorisation/             project package
-│   ├── cohort.py                     load the experiment, genotypes, per-animal session sets, AnimalRecord
-│   ├── contrasts.py                  the opto contrasts (OptoContrasts, ppc_contrasts, alm_contrasts)
-│   ├── adaptation.py                 per-session trajectory + PSE dynamics after a switch
-│   ├── stimuli.py                    Hard-A/B densities, normative PSE
-│   ├── models/                       BE and SC generative models, simulation, traces
-│   ├── inference/                    amortised SBI (types, simulator, representation, selection, amortised)
-│   ├── grid_search.py, consensus.py  grid-search CV, GS+SBI consensus
-│   ├── cv_utils.py, fold_utils.py    CV result schema, block-aware folds
-│   ├── validation/                   SBI feature selection diagnostics
-│   ├── tasks.py                      TaskGrid: one task-index convention for every SLURM array
-│   ├── paths.py, snapshot.py         data/result locations, run metadata, snapshot export/load
+│   ├── settings.py                   constants: distributions, model types, fit sizes, thresholds, seeds
+│   ├── data/                         cohort (experiment, genotypes, session sets, AnimalRecord),
+│   │                                 snapshot (export/load), stimuli (Hard-A/B densities, normative PSE), paths
+│   ├── behaviour/                    contrasts (OptoContrasts, ppc/alm_contrasts), adaptation (switches, trajectory)
+│   ├── models/                       BE and SC generative models, perception, simulation, traces
+│   ├── inference/                    amortised SBI, simulator, representation, selection, grid_search,
+│   │                                 cv_utils, fold_utils, consensus, tasks (TaskGrid for every SLURM array)
+│   ├── features/                     SBI feature-selection diagnostics
+│   ├── reports/                      compute → tables → figures → PDF → summary (+ README, selftest, CLI)
 │   ├── plotting/                     project plotters (CV, opto swarms, assignment, SBI diagnostics)
-│   └── reports/                      compute → tables → figures → PDF → summary (+ README, selftest)
-├── scripts/                          CLIs: export_snapshot, make_smoke_cohort, train_sbi, run_sbi, run_gs, consensus
+│   └── cli/                          entry points: export_snapshot, make_smoke_cohort, train_sbi, run_sbi,
+│                                     run_gs, consensus  (installed as sc-* commands)
 ├── slurm/                            job scripts + submit.sh (array size derived from tasks.py)
 ├── notebooks/                        exploration; shared_setup.py (paths, load_data)
 ├── tests/                            project tests (+ tests/reference: pinned report numbers)
@@ -43,7 +41,7 @@ sound_categorisation/                 ← repo root (pyproject.toml, config.yaml
 ## Quick start
 
 ```bash
-pip install -e behav_utils/ && pip install -e ".[dev]"     # both packages (see SETUP.md for the data)
+pip install -e behav_utils/ && pip install -e ".[dev]"     # both packages (see SETUP.md for the data); installs the sc-* commands
 pytest behav_utils/tests -q && pytest tests -q
 python -m sound_categorisation.reports selftest              # synthetic end-to-end, seconds
 bash run_reports.sh                                          # the real battery (hours) → results/reports/

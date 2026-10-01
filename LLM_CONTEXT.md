@@ -23,7 +23,8 @@ model (grid search + simulation-based inference); silence PPC in expert and post
 
 ## Repository shape
 Two packages, imports one way: `sound_categorisation` (project) → `behav_utils` (library). Both are pip
-installed (`pip install -e behav_utils/ && pip install -e .`); nothing manipulates `sys.path`. Layout and
+installed (`pip install -e behav_utils/ && pip install -e .`), which also installs the `sc-*` commands;
+nothing in the packages manipulates `sys.path`. Layout and
 module roles: `README.md`, `ARCHITECTURE.md`. Environments, data, cluster: `SETUP.md`.
 
 ## Rules that hold
@@ -46,11 +47,11 @@ module roles: `README.md`, `ARCHITECTURE.md`. Environments, data, cluster: `SETU
    English; say what a change costs and what could go wrong.
 
 ## Where to look for
-- which sessions an animal has of each type → `cohort.collect_sessions_ppc / _alm`; `config.yaml: session_types`
-- what a contrast is → `contrasts.py` docstring; `docs/results_guide.md` in words
+- which sessions an animal has of each type → `data/cohort.py: collect_sessions_ppc / _alm`; `config.yaml: session_types`
+- what a contrast is → `behaviour/contrasts.py` docstring; `docs/results_guide.md` in words
 - the numbers behind any page → `results/reports/<cohort>/<dist>/<design>_<toi>/<animal>/contrasts.csv`
-- per-session adaptation → `adaptation.py` (`Trajectory`); columns explained in the generated results README
-- SLURM job counts → `tasks.py`; never hard-code an `--array`
+- per-session adaptation → `behaviour/adaptation.py` (`Trajectory`); columns explained in the generated results README
+- SLURM job counts → `inference/tasks.py`; never hard-code an `--array`
 - run provenance → `meta.json` in every results folder (snapshot, config, settings, versions, git SHA)
 
 ## Traps
@@ -59,14 +60,13 @@ module roles: `README.md`, `ARCHITECTURE.md`. Environments, data, cluster: `SETU
 - Each Hard session is one switch; there is no multi-session block after a switch. Do not analyse
   "trials since switch across sessions".
 - `expert_uniform` and other presets exist only after a config/snapshot is loaded; for in-memory data
-  call `sound_categorisation.cohort.ensure_presets()`.
+  call `sound_categorisation.data.cohort.ensure_presets()`.
 - `filter_trials(trial_type='all')` keeps laser trials (and drops aborts, like every trial type).
 - Per-session PSE at this cohort's sigma has SE ≈ 0.1; `pse_fixed` (only the criterion free) is steadier.
   `pse_dynamics` τ is not identifiable at ~500 trials; it is in the tables and per-animal PDFs, not on the
   summary pages, for that reason.
 - SS12 has no data; SS17 and SS22 have no Hard sessions; SS20 has no Uniform laser sessions.
-- The `sound_categorisation.egg-info` / `behav_utils/src/behav_utils.egg-info` folders are build
-  artefacts; they must not be tracked.
+- `*.egg-info`, `build/`, `__pycache__` are build artefacts; they must not be tracked.
 
 ## Open work
 Notebooks (stage 3) await the agreed chapter story; Aim 1 real-data consensus run; next-cohort design

@@ -122,7 +122,7 @@ def test_switches_pipeline(exp, tmp_path):
     """Blocked animals: qualifying switches, transition labels, table schema, summary pages."""
     import matplotlib
     matplotlib.use('Agg')
-    from sound_categorisation.adaptation import compute_switches
+    from sound_categorisation.behaviour.adaptation import compute_switches
     from sound_categorisation.reports.switches import compute_switches_cohort, run_switches, switch_tables
     res = compute_switches(exp.animals['SB00'], min_block_trials=300, max_trials=800)
     assert [r.to_distribution for r in res] == ['Hard-B', 'Hard-A', 'Hard-B', 'Hard-A']
@@ -145,7 +145,7 @@ def test_switches_pipeline(exp, tmp_path):
 def test_bias_rule_flags_distribution_independent_bias():
     """A clean animal is not flagged; an animal with |PSE| > 0.4 of the same sign on A and B blocks is."""
     import pandas as pd
-    from sound_categorisation.adaptation import flag_biased_sessions
+    from sound_categorisation.behaviour.adaptation import flag_biased_sessions
     rows = []
     for k in range(10):
         dist = 'Hard-A' if k % 2 else 'Hard-B'

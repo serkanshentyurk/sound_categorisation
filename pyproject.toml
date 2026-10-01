@@ -4,26 +4,34 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sound-categorisation"
-version = "0.3.0"
+version = "0.4.0"
 description = "PPC causal role in auditory categorisation — project code on top of behav_utils"
 requires-python = ">=3.10"
-dependencies = ["numpy", "pandas", "scipy", "matplotlib", "pyyaml", "joblib"]
+dependencies = ["numpy", "pandas", "scipy", "matplotlib", "pyyaml", "joblib", "behav_utils>=0.5"]
 
 [project.optional-dependencies]
 fit = ["torch", "sbi", "ssm", "hmmlearn"]
 dev = ["pytest", "ruff"]
 
+[project.scripts]
+sc-reports         = "sound_categorisation.reports.cli:main"
+sc-export-snapshot = "sound_categorisation.cli.export_snapshot:main"
+sc-make-smoke-cohort = "sound_categorisation.cli.make_smoke_cohort:main"
+sc-train-sbi       = "sound_categorisation.cli.train_sbi:main"
+sc-run-sbi         = "sound_categorisation.cli.run_sbi:main"
+sc-run-gs          = "sound_categorisation.cli.run_gs:main"
+sc-consensus       = "sound_categorisation.cli.consensus:main"
+
 [tool.setuptools.packages.find]
 include = ["sound_categorisation*"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "behav_utils/tests"]
-pythonpath = [".", "behav_utils/src"]
+testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 110
 target-version = "py310"
-src = ["sound_categorisation", "scripts", "tests"]
+src = ["sound_categorisation", "tests"]
 extend-exclude = ["notebooks", "arpit"]
 
 [tool.ruff.lint]

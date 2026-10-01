@@ -22,7 +22,7 @@ from behav_utils.data.loading import load_experiment
 from behav_utils.data.ops.selection import list_presets, register_presets_from_config, select_sessions
 from behav_utils.data.synthetic import session_from_arrays
 
-from sound_categorisation.paths import REPO_ROOT, cohort_path, load_project_config
+from sound_categorisation.data.paths import REPO_ROOT, cohort_path, load_project_config
 
 __all__ = ['load_experiment_any', 'gather_genotypes', 'collect_sessions_ppc',
            'collect_sessions_alm', 'ensure_presets', 'SITE_TYPE', 'GENOTYPES', 'CONTROL_TYPES',
@@ -59,13 +59,13 @@ def load_experiment_any(config_path: Path | None = None, snapshot_path: Path | N
     config_path = Path(config_path) if config_path else REPO_ROOT / 'config.yaml'
     if snapshot_path is None:
         try:
-            from sound_categorisation.snapshot import SNAPSHOT_FILENAME, snapshot_dir
+            from sound_categorisation.data.snapshot import SNAPSHOT_FILENAME, snapshot_dir
             snapshot_path = snapshot_dir(REPO_ROOT) / SNAPSHOT_FILENAME
         except Exception:
             snapshot_path = None
     snapshot_path = Path(snapshot_path) if snapshot_path else None
     if snapshot_path and snapshot_path.exists():
-        from sound_categorisation.snapshot import load_snapshot
+        from sound_categorisation.data.snapshot import load_snapshot
         experiment, _ = load_snapshot(
             snapshot_path, config_path=config_path if config_path.exists() else None)
         print(f'loaded snapshot: {snapshot_path}')

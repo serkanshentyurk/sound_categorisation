@@ -29,9 +29,8 @@ from behav_utils.readouts import (
     compute_update_matrix,
 )
 
-from sound_categorisation.adaptation import Trajectory, compute_trajectory
-from sound_categorisation.cohort import collect_sessions_alm, collect_sessions_ppc, gather_genotypes
-from sound_categorisation.contrasts import (
+from sound_categorisation.behaviour.adaptation import Trajectory, compute_trajectory
+from sound_categorisation.behaviour.contrasts import (
     BIAS,
     DUAL_UNITS,
     N_BOOT,
@@ -44,6 +43,7 @@ from sound_categorisation.contrasts import (
     dod_point,
     ppc_contrasts,
 )
+from sound_categorisation.data.cohort import collect_sessions_alm, collect_sessions_ppc, gather_genotypes
 
 __all__ = ['Settings', 'AnimalResult', 'GroupResult', 'compute_animal', 'compute_group', 'DESIGNS',
            'trajectory_distributions']

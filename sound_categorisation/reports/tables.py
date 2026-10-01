@@ -38,7 +38,7 @@ def _qc(sessions: pd.DataFrame) -> pd.DataFrame:
     """Apply the cohort QC rule (adaptation.flag_biased_sessions) to a trajectory frame."""
     if not len(sessions) or 'pse_fixed' not in sessions:
         return sessions
-    from sound_categorisation.adaptation import flag_biased_sessions
+    from sound_categorisation.behaviour.adaptation import flag_biased_sessions
     hard = sessions[sessions['distribution'].isin(['Hard-A', 'Hard-B'])]
     if not len(hard):
         return sessions.assign(flagged=False, biased_animal=False)

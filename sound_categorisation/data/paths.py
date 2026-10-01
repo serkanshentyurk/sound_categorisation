@@ -2,7 +2,7 @@
 Shared Configuration for Scripts
 
 Central location for constants used by cluster scripts, local scripts,
-and notebooks. Change here, not in the scripts.
+and notebooks. Change here, not in the CLIs.
 
 Everything that affects a run (settings, versions, paths) should be
 saved alongside results via the `build_metadata()` helper, so runs
@@ -15,17 +15,32 @@ from datetime import datetime
 from pathlib import Path
 
 from sound_categorisation.inference.constants import SBI_STATS
+from sound_categorisation.settings import (
+    BASE_SEED,
+    EXPERT_LAST_FRACTION,
+    EXPERT_MIN_ACCURACY,
+    GS_BURN_IN,
+    GS_N_BINS,
+    GS_N_FOLDS,
+    GS_N_SEEDS,
+    MIN_VALID_TRIALS,
+    SBI_BURN_IN,
+    SBI_N_CV_REPEATS,
+    SBI_N_GENERIC_TRIALS,
+    SBI_N_SIMULATIONS,
+    STAGE,
+)
 
 # =============================================================================
 # PATHS
 # =============================================================================
 
 # Relative to repo root. Scripts should Path(__file__).parent.parent to reach it.
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent   # <repo>/sound_categorisation/data/paths.py
 
 
 # --- External data root (results live outside the repo) -----------------------
-# Mirrors scripts/snapshot.py: local = <repo>/../../data, cluster = ceph Processed.
+# Mirrors data/snapshot.py: local = <repo>/../../data, cluster = ceph Processed.
 # All results / validation / cohort paths derive from data_root() — see
 # results_dir(), cohort_path(), snpe_networks_dir() below.
 _CLUSTER_DATA_ROOT = Path('/ceph/akrami/Serkan/Head_Fixed_Behavior/Data/Processed')
@@ -64,98 +79,6 @@ def snpe_net_path(rep: str, model: str, distribution: str) -> Path:
     writes it, run_sbi reads it.
     """
     return snpe_networks_dir() / f'snpe_{rep}_{model}_{distribution}.pkl'
-
-
-# =============================================================================
-# FIT TARGETS (shared vocabulary)
-# =============================================================================
-
-FIT_TARGETS = ('update_matrix', 'conditional_psych')
-
-
-# =============================================================================
-# MODEL TYPES
-# =============================================================================
-
-MODEL_TYPES = ('BE', 'SC')
-MODEL_TYPES_LOWER = ('be', 'sc')
-
-
-# =============================================================================
-# DISTRIBUTIONS
-# =============================================================================
-
-DISTRIBUTIONS = ('uniform', 'hard_a', 'hard_b')
-
-
-# =============================================================================
-# SIMULATION & FITTING PARAMETERS
-# =============================================================================
-
-# Grid search
-GS_N_FOLDS = 2
-GS_N_SEEDS = 32
-SYNTH_GS_N_SEEDS = 8        # Synthetic validation needs fewer seeds than real data
-GS_BURN_IN = 1000
-GS_N_BINS = 8
-
-# SBI training
-SBI_N_SIMULATIONS = 50_000
-SBI_N_GENERIC_TRIALS = 2500
-SBI_BURN_IN = 1000
-
-# SBI conditioning / CV
-SBI_N_CV_REPEATS = 64
-SBI_N_POSTERIOR_SAMPLES = 50
-SBI_N_STOCHASTIC_REPS = 10
-
-# Synthetic validation cohorts
-SYNTH_N_PER_MODEL = 20
-SYNTH_N_SESSIONS = 15
-SYNTH_TRIALS_PER_SESSION = 600   # cohort/validation session length (~ real expert sessions)
-
-# SBI representations: 3 networks x 2 models = 6. N/mode flow into AmortisedSBI;
-# n_simulations is per-rep (moments is 2*D-dim, so it needs more than the D-dim reps).
-SBI_SESSIONS_RANGE = (4, 6)   # multi-session reps draw N ~ uniform{4,5,6} per simulation,
-                              # matching the 4-6 sessions a real animal typically has.
-SBI_TRAIN_T = 500   # trials per session for ALL reps -- matches one real session, so the
-                    # single net conditions in-distribution and its midpoint CV folds land
-                    # at ~250 trials (accepted: noisier held-out UM, honest to real data).
-SBI_REPRESENTATIONS = {
-    'pooled':  {'N': SBI_SESSIONS_RANGE, 'T': SBI_TRAIN_T, 'mode': 'pooled',  'n_simulations':  50_000},
-    'moments': {'N': SBI_SESSIONS_RANGE, 'T': SBI_TRAIN_T, 'mode': 'moments', 'n_simulations': 100_000},
-    'single':  {'N': 1,                  'T': SBI_TRAIN_T, 'mode': 'pooled',  'n_simulations':  50_000},
-}
-# Per-distribution SBI training: conditioning is always on a single, KNOWN phase
-# (uniform / hard_a / hard_b), so a specialist network matched to each phase beats
-# one network marginalising over phase (which you'd never need, since the phase is
-# always supplied). 3 reps x 2 models x 3 dists = 18 networks; conditioning routes
-# to the matching network automatically via snpe_net_path's filename.
-SBI_TRAIN_DISTRIBUTIONS = DISTRIBUTIONS
-
-# Smoke test: used when --smoke-test is passed on the command line
-SMOKE_GS_N_SEEDS = 2
-SMOKE_SBI_N_SIMULATIONS = 500
-SMOKE_SBI_N_GENERIC_TRIALS = 200
-SMOKE_N_ANIMALS_LIMIT = 2
-SMOKE_SYNTH_N_PER_MODEL = 2
-
-
-# =============================================================================
-# SESSION SELECTION
-# =============================================================================
-
-EXPERT_MIN_ACCURACY = 0.70
-EXPERT_LAST_FRACTION = 0.50
-MIN_VALID_TRIALS = 30
-STAGE = 'Full_Task_Cont'
-
-
-# =============================================================================
-# RANDOM SEED (base)
-# =============================================================================
-
-BASE_SEED = 42
 
 
 # =============================================================================
@@ -235,24 +158,6 @@ def _get_git_sha() -> str:
     return 'unknown'
 
 
-def apply_smoke_test_overrides(config_dict: dict) -> dict:
-    """
-    Return a copy of config_dict with smoke-test overrides applied.
-
-    Use in scripts: `if args.smoke_test: cfg = apply_smoke_test_overrides(cfg)`.
-    """
-    overrides = {
-        'GS_N_SEEDS': SMOKE_GS_N_SEEDS,
-        'SBI_N_SIMULATIONS': SMOKE_SBI_N_SIMULATIONS,
-        'SBI_N_GENERIC_TRIALS': SMOKE_SBI_N_GENERIC_TRIALS,
-        'SYNTH_N_PER_MODEL': SMOKE_SYNTH_N_PER_MODEL,
-        'N_ANIMALS_LIMIT': SMOKE_N_ANIMALS_LIMIT,
-    }
-    out = dict(config_dict)
-    out.update(overrides)
-    return out
-
-
 # =============================================================================
 # DATA LOADING HELPERS
 # =============================================================================
@@ -278,38 +183,3 @@ def load_project_config(config_path=None):
 
     return load_config(str(DEFAULT_CONFIG))
 
-
-def load_animal_data(animal_id, config=None, config_path=None):
-    """
-    Load one animal's data, handling path construction.
-
-    Args:
-        animal_id: e.g. 'SS01'
-        config: ProjectConfig (if already loaded)
-        config_path: Path to config YAML (loads if config is None)
-
-    Returns:
-        AnimalData
-    """
-    from behav_utils.data.loading import load_animal
-
-    if config is None:
-        config = load_project_config(config_path)
-
-    data_dir = Path(config.file_structure.data_dir)
-    return load_animal(data_dir / animal_id, config)
-
-
-def list_animal_ids(config=None, config_path=None):
-    """List available animal IDs from the data directory."""
-    if config is None:
-        config = load_project_config(config_path)
-
-    data_dir = Path(config.file_structure.data_dir)
-    if not data_dir.exists():
-        return []
-
-    return sorted([
-        d.name for d in data_dir.iterdir()
-        if d.is_dir() and not d.name.startswith('.')
-    ])

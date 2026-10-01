@@ -8,7 +8,7 @@ Analysis imports belong in the notebook cell that uses them, so every step is
 visible at its call site:
 
     from behav_utils import TrialArrays, compute_stats, PSYCHOMETRIC
-    from sound_categorisation.contrasts import ppc_contrasts
+    from sound_categorisation.behaviour.contrasts import ppc_contrasts
 """
 
 import os
@@ -22,11 +22,8 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# ── Path setup ──────────────────────────────────────────────────────────────
-_NOTEBOOK_DIR = Path(os.path.abspath(''))
-_PROJECT_ROOT = _NOTEBOOK_DIR.parent
-if str(_PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PROJECT_ROOT))
+# ── Paths: both packages are pip-installed; nothing goes on sys.path ──────────
+from sound_categorisation.data.paths import REPO_ROOT as _PROJECT_ROOT
 
 # ── Snapshot and config paths ───────────────────────────────────────────────
 #
@@ -37,7 +34,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 # Cluster (fixed):
 #   /ceph/akrami/Serkan/.../Processed/snapshots/sound_cat_snapshot.pkl
 #
-from sound_categorisation.snapshot import snapshot_dir
+from sound_categorisation.data.snapshot import snapshot_dir
 PATH_SNAPSHOT = snapshot_dir(_PROJECT_ROOT) / 'sound_cat_snapshot.pkl'
 PATH_CONFIG = _PROJECT_ROOT / 'config.yaml'
 
@@ -65,8 +62,8 @@ else:  # fallback when the config is absent (e.g. a bare synthetic run)
     FIRST_COHORT = [f'SS{i:02d}' for i in range(1, 14)]
     OPTO_COHORT  = [f'SS{i:02d}' for i in range(14, 24)]
 
-# ── Results paths: derive from data_root() (scripts/config.py) ─────────────
-from sound_categorisation.paths import data_root, results_dir, cohort_path, snpe_networks_dir
+# ── Results paths ──────────────────────────────────────────────────────────
+from sound_categorisation.data.paths import cohort_path, data_root, results_dir, snpe_networks_dir
 
 FIT_TARGETS = ['update_matrix', 'conditional_psych']
 FT_LABEL = {'update_matrix': 'UM', 'conditional_psych': 'CP'}
@@ -74,7 +71,8 @@ FT_LABEL = {'update_matrix': 'UM', 'conditional_psych': 'CP'}
 # ── Common imports ──────────────────────────────────────────────────────────
 from behav_utils.data.structures import ExperimentData, AnimalData, SessionData
 from behav_utils.data.loading import load_experiment
-from sound_categorisation.cohort import gather_genotypes   # noqa: F401  (kept for notebook use)
+from behav_utils.data.synthetic import generate_synthetic_animal
+from sound_categorisation.data.cohort import gather_genotypes   # noqa: F401  (kept for notebook use
 
 def load_snpe_networks(snpe_dir: Optional[Path] = None, rep: str = 'pooled') -> dict:
     """
@@ -169,7 +167,7 @@ def load_data(
     # 1. Snapshot
     if mode in ('snapshot', 'auto') and snapshot_path.exists():
         try:
-            from sound_categorisation.snapshot import load_snapshot
+            from sound_categorisation.data.snapshot import load_snapshot
             experiment, meta = load_snapshot(
                 snapshot_path,
                 config_path=config_path if config_path.exists() else None,

@@ -2,12 +2,10 @@
 plotting/opto.py — draw-only single-panel plotters for the opto analysis.
 
 Contract: every plot_x(data, …, ax=None) draws on a single Axes and does no
-analysis (no pooling, fitting, or statistical tests — those live in the
-notebooks). Inputs are tidy frames from the library analysis layer:
+analysis (no pooling, fitting, or statistical tests — those live in
+``reports.compute``). Inputs are tidy frames from the library analysis layer:
 
     plot_delta_swarm     <- paired_diff  (the opto − nonopto Δ frame, one stat)
-    plot_delta_paired    <- paired_diff per phase, concatenated with a 'phase' column
-    plot_stat_trajectory <- compute_phase_stats(condition, [stat], per_session=True)
 
 Genotype palette: het warm, wt cool.
 """
@@ -70,122 +68,5 @@ def plot_delta_swarm(delta_df, stat: str, ax: plt.Axes | None = None,
     if p_value is not None:
         ax.annotate(f"p = {p_value:.3g}", xy=(0.5, 0.98), xycoords='axes fraction',
                     ha='center', va='top', fontsize=9)
-    ax.spines[['top', 'right']].set_visible(False)
-    return ax
-
-
-def plot_stat_trajectory(result, stat: str, ax: plt.Axes | None = None,
-                         color: str | None = None, label: str | None = None,
-                         marker: str = 'o', linestyle: str = '-') -> plt.Axes:
-    """Per-session trajectory of one stat for one condition — a single line.
-
-    ``result`` is a ``compute_phase_stats(condition, [stat], per_session=True)``
-    result, or just its ``sessions`` frame (columns: animal, session, stat,
-    value, n_trials). Draws value against session ordinal for ``stat``, dropping
-    sessions whose fit failed (value is NaN). One condition, one animal, one
-    line — overlay opto vs non_opto, or several animals, by calling this again
-    on the same ``ax`` with a different ``color`` and ``label``.
-
-    Args:
-        result:    PhaseStats from compute_phase_stats(per_session=True), or its ``sessions`` frame.
-        stat:      the stat to draw.
-        ax:        Axes to draw on; a new one is made if None.
-        color:     line colour; matplotlib default if None.
-        label:     legend label for this line.
-        marker, linestyle: line style.
-
-    Returns:
-        the Axes drawn on.
-
-    Raises:
-        KeyError:   if the result carries no per-session frame (pooled mode).
-        ValueError: if `stat` is not in the frame.
-    """
-    frame = getattr(result, 'sessions', result)
-    if frame is None or not hasattr(frame, 'columns'):
-        raise KeyError("plot_stat_trajectory: need a per-session frame — call "
-                       "compute_phase_stats(..., per_session=True)")
-    rows = frame[frame['stat'] == stat]
-    if rows.empty:
-        raise ValueError(f"plot_stat_trajectory: stat {stat!r} not in the per-session frame")
-    rows = rows.sort_values('session')
-    x = rows['session'].to_numpy()
-    y = rows['value'].to_numpy(dtype=float)
-    m = np.isfinite(y)
-
-    if ax is None:
-        _, ax = plt.subplots(figsize=(5.0, 3.4))
-    ax.plot(x[m], y[m], marker=marker, ms=4, lw=1.4, ls=linestyle,
-            color=color, alpha=0.85, label=label)
-    ax.set_xlabel('session (ordinal)')
-    ax.set_ylabel(stat)
-    ax.set_title(stat)
-    ax.spines[['top', 'right']].set_visible(False)
-    if label is not None:
-        ax.legend(frameon=False, fontsize=9)
-    return ax
-
-
-def plot_delta_paired(delta_df, stat: str, ax: plt.Axes | None = None,
-                      phase_a: str = 'uniform', phase_b: str = 'hard',
-                      p_value: float | None = None,
-                      genotype_order: Sequence[str] | None = None,
-                      group_col: str = 'genotype', value_col: str = 'delta') -> plt.Axes:
-    """Per-animal Δ at phase_a vs phase_b, connected — the dispensability view.
-
-    delta_df: per-phase paired_diff Δ frames concatenated with a 'phase' column.
-    For one stat, each animal contributes a line from its phase_a Δ to its
-    phase_b Δ (coloured by genotype), so a steepening of the opto effect from
-    expert to post-shift shows up per animal. Only animals with BOTH phases are
-    drawn (the paired set). Genotypes are offset horizontally. `p_value` (the
-    interaction test) is annotated, not computed here.
-    """
-    if ax is None:
-        _, ax = plt.subplots(figsize=(3.6, 3.8))
-    sub = delta_df[delta_df['stat'] == stat]
-    wide = sub.pivot_table(index=['animal', group_col], columns='phase',
-                           values=value_col).rename_axis(columns=None)
-    for ph in (phase_a, phase_b):
-        if ph not in wide.columns:
-            ax.set_title(f"{stat} (missing '{ph}')")
-            ax.spines[['top', 'right']].set_visible(False)
-            return ax
-    wide = wide.dropna(subset=[phase_a, phase_b]).reset_index()
-    present = set(wide[group_col])
-    order = list(genotype_order) if genotype_order else \
-        [g for g in _GENO_ORDER if g in present] + \
-        [g for g in sorted(present) if g not in _GENO_ORDER]
-    off = {g: (i - (len(order) - 1) / 2) * 0.12 for i, g in enumerate(order)}
-    xa, xb = 0.0, 1.0
-
-    ax.axhline(0.0, color='0.6', lw=1, ls='--', zorder=0)
-    for g in order:
-        gw = wide[wide[group_col] == g]
-        c = _geno_colour(g)
-        xpa, xpb = xa + off[g], xb + off[g]
-        for _, r in gw.iterrows():
-            ax.plot([xpa, xpb], [r[phase_a], r[phase_b]],
-                    color=c, lw=1.2, alpha=0.6, zorder=2)
-            ax.scatter([xpa, xpb], [r[phase_a], r[phase_b]], color=c, s=34,
-                       alpha=0.9, edgecolor='white', linewidth=0.5, zorder=3)
-        for xp, ph in [(xpa, phase_a), (xpb, phase_b)]:
-            v = gw[ph].to_numpy(dtype=float)
-            v = v[~np.isnan(v)]
-            if len(v):
-                ax.plot([xp - 0.07, xp + 0.07], [np.median(v), np.median(v)],
-                        color=c, lw=2.4, zorder=4)
-
-    ax.set_xticks([xa, xb])
-    ax.set_xticklabels([phase_a, phase_b])
-    ax.set_xlim(-0.45, 1.45)
-    ax.set_ylabel(f"Δ {stat}  (opto − nonopto)")
-    ax.set_title(stat)
-    if p_value is not None:
-        ax.annotate(f"interaction p = {p_value:.3g}", xy=(0.5, 0.98),
-                    xycoords='axes fraction', ha='center', va='top', fontsize=9)
-    handles = [plt.Line2D([0], [0], color=_geno_colour(g), lw=2,
-                          label=f"{g} (n={int((wide[group_col] == g).sum())})")
-               for g in order]
-    ax.legend(handles=handles, frameon=False, fontsize=8)
     ax.spines[['top', 'right']].set_visible(False)
     return ax

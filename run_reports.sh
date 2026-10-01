@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Overnight report battery. From the repo root:   bash run_reports.sh
-# Snapshot is found automatically (see sound_categorisation.snapshot); override with
+# Snapshot is found automatically (see sound_categorisation.data.snapshot); override with
 #   SNAP=/path/to/sound_cat_snapshot.pkl bash run_reports.sh
 # Outputs: results/reports/<cohort>/<distribution>/<design>_<toi>/{<animal>/,group/,pdf/}
 set -uo pipefail

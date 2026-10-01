@@ -12,34 +12,41 @@ in the library. When in doubt: if a new function needs the word `masking` or `Ha
 ## The project layer
 
 ```
-cohort.py        load_experiment_any (snapshot or CSV), gather_genotypes, ensure_presets,
-                 collect_sessions_ppc / collect_sessions_alm (the per-animal session sets a design compares),
-                 AnimalRecord + load_animals (real or synthetic animals for model identification)
-contrasts.py     OptoContrasts = the contrasts of the opto design, as typed library results:
-                   within         opto sessions:    laser-on − laser-off trials     (permutation p valid)
-                   within_masking masking sessions: flagged − unflagged trials      (null control)
-                   between        opto sessions − masking sessions, all trials      (bootstrap only)
-                   compensation   laser-off trials of opto sessions − masking sessions (bootstrap only)
-                   dod            within − within_masking (Interaction)
-                   vs_ppc         ALM sessions − PPC opto sessions (ALM design)
-                 STATS / STATS_RT / SENSITIVITY / BIAS: which statistics each design reports
-adaptation.py    compute_trajectory(animal, distributions) -> Trajectory: one row per session in order,
-                 pooled stats, pse (free), pse_fixed (shape pinned to the Uniform fit), pse_dynamics
-                 (free and pinned), previous-day baseline, normative PSE, convergence, delta_from_prev
-stimuli.py       Hard-A / Hard-B densities, normative PSE at a given sigma, stimulus sampling
-models/          BE (boundary-estimation) and SC (statistical-categorisation) generative models
-inference/       amortised SBI: parameter configs, simulator, summary-stat representation, conditioning
-grid_search.py   grid-search CV over model parameters, held-out update-matrix / conditional-psychometric MSE
-consensus.py     GS + SBI votes → per-animal BE/SC consensus
-tasks.py         TaskGrid: TRAIN_GRID (rep × model × distribution), CONDITION_GRID (rep × model), gs_grid
-paths.py         data/results roots (laptop vs cluster), result-dir naming, build_metadata
-snapshot.py      export/load the pickled experiment; re-applies session types and presets from config
-reports/         compute.py  AnimalResult / GroupResult / Settings (no matplotlib)
-                 tables.py   to_tables, group_tables, readout_arrays, write_result / read_result
-                 figures.py  one function per page; pdf.py  per-animal and group PDFs
-                 summary.py  the four-page summary; readme.py  the generated results README
-                 selftest.py synthetic ExperimentData; cli.py  `python -m sound_categorisation.reports`
-plotting/        project plotters (CV, opto swarms, assignment, SBI diagnostics)
+settings.py          constants: DISTRIBUTIONS, MODEL_TYPES, FIT_TARGETS, GS_*/SBI_*/SYNTH_*/SMOKE_* sizes,
+                     expert-selection thresholds, BASE_SEED
+data/
+  cohort.py          load_experiment_any (snapshot or CSV), gather_genotypes, ensure_presets,
+                     collect_sessions_ppc / collect_sessions_alm (the per-animal session sets a design compares),
+                     AnimalRecord + load_animals (real or synthetic animals for model identification)
+  snapshot.py        export/load the pickled experiment; re-applies session types and presets from config
+  stimuli.py         Hard-A / Hard-B densities, normative PSE at a given sigma, stimulus sampling
+  paths.py           data/results roots (laptop vs cluster), result-dir naming, build_metadata, project config
+behaviour/
+  contrasts.py       OptoContrasts = the contrasts of the opto design, as typed library results:
+                       within         opto sessions:    laser-on − laser-off trials     (permutation p valid)
+                       within_masking masking sessions: flagged − unflagged trials      (null control)
+                       between        opto sessions − masking sessions, all trials      (bootstrap only)
+                       compensation   laser-off trials of opto sessions − masking sessions (bootstrap only)
+                       dod            within − within_masking (Interaction)
+                       vs_ppc         ALM sessions − PPC opto sessions (ALM design)
+                     STATS / STATS_RT / SENSITIVITY / BIAS: which statistics each design reports
+  adaptation.py      compute_trajectory(animal, distributions) -> Trajectory: one row per session in order;
+                     compute_switches / SwitchResult: block-level adaptation after a distribution switch
+models/              BE (boundary-estimation) and SC (statistical-categorisation) generative models
+inference/           amortised SBI (types, simulator, representation, selection, amortised),
+                     grid_search (CV over model parameters, held-out UM / conditional-psychometric MSE),
+                     cv_utils (CV result schema), fold_utils (block-aware folds), consensus (GS + SBI votes),
+                     tasks (TaskGrid: TRAIN_GRID, CONDITION_GRID, gs_grid)
+features/            feature_diagnostics: which summary statistics carry BE/SC identity and parameters
+reports/             compute.py  AnimalResult / GroupResult / Settings (no matplotlib)
+                     tables.py   to_tables, group_tables, readout_arrays, write_result / read_result
+                     figures.py  one function per page; pdf.py  per-animal and group PDFs
+                     summary.py  the four-page summary; switches.py  the switch-adaptation report
+                     readme.py   the generated results README; selftest.py synthetic ExperimentData
+                     cli.py      `python -m sound_categorisation.reports` / `sc-reports`
+plotting/            project plotters (CV, opto swarms, assignment, SBI diagnostics)
+cli/                 entry points (pyproject [project.scripts]): sc-export-snapshot, sc-make-smoke-cohort,
+                     sc-train-sbi, sc-run-sbi, sc-run-gs, sc-consensus
 ```
 
 ## The report pipeline
@@ -65,13 +72,13 @@ p = 0.016, so per-animal consistency carries the argument.
 ## The model-identification chain
 
 ```
-scripts/train_sbi   TRAIN_GRID (18 tasks)   simulate BE/SC → train one amortised network per (rep, model, distribution)
-scripts/run_sbi     CONDITION_GRID (6)      condition each animal's expert data → posterior + held-out MSE
-scripts/run_gs      gs_grid(animals, seeds) grid search CV per (animal, model, seed) → partials → --gather
-scripts/consensus                           GS + SBI calls → assignments.csv, summary.txt
+sc-train-sbi    TRAIN_GRID (18 tasks)   simulate BE/SC → train one amortised network per (rep, model, distribution)
+sc-run-sbi      CONDITION_GRID (6)      condition each animal's expert data → posterior + held-out MSE
+sc-run-gs       gs_grid(animals, seeds) grid search CV per (animal, model, seed) → partials → --gather
+sc-consensus                            GS + SBI calls → assignments.csv, summary.txt
 slurm/submit.sh {train|condition|gs}        derives --array from the grids
 ```
-`load_animals(source)` in `cohort.py` gives the same `AnimalRecord` shape for real and synthetic animals,
+`load_animals(source)` in `data/cohort.py` gives the same `AnimalRecord` shape for real and synthetic animals,
 so the runners are identical downstream; synthetic cohorts carry ground truth for validation.
 
 ## Design as executed (opto1 cohort)

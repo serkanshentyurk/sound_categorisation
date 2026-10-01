@@ -1,8 +1,8 @@
 """
 Consensus BE/SC assignment across methods (grid search + SBI representations).
 
-    python -m scripts.consensus --run full --cohort real --out results/consensus/full_real
-    python -m scripts.consensus --run full --cohort synth_v3 --alpha 0.05 --min-votes 2
+    sc-consensus --run full --cohort real --out results/consensus/full_real
+    sc-consensus --run full --cohort synth_v3 --alpha 0.05 --min-votes 2
 
 Reads the finals written by run_gs (``--gather``) and run_sbi, computes one
 row per animal with each method's call and the consensus, writes
@@ -15,8 +15,8 @@ import argparse
 import json
 from pathlib import Path
 
-from sound_categorisation.consensus import compute_consensus_summary, load_all_assignments
-from sound_categorisation.paths import REPO_ROOT, build_metadata
+from sound_categorisation.data.paths import REPO_ROOT, build_metadata
+from sound_categorisation.inference.consensus import compute_consensus_summary, load_all_assignments
 
 
 def main(argv=None):
@@ -32,7 +32,7 @@ def main(argv=None):
 
     experiment = None
     if a.with_experiment and a.cohort == 'real':
-        from sound_categorisation.cohort import load_experiment_any
+        from sound_categorisation.data.cohort import load_experiment_any
         experiment = load_experiment_any()
     df = load_all_assignments(a.run, a.cohort, experiment=experiment, alpha=a.alpha,
                               min_significant_votes=a.min_votes)

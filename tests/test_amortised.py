@@ -13,10 +13,10 @@ torch = pytest.importorskip('torch')
 pytest.importorskip('sbi')
 
 from behav_utils.data.synthetic import session_from_arrays  # noqa: E402
+from sound_categorisation.data.stimuli import sample_distribution  # noqa: E402
 from sound_categorisation.inference import AmortisedSBI  # noqa: E402
 from sound_categorisation.inference.types import ModelType, get_default_param_configs  # noqa: E402
 from sound_categorisation.models.simulate import simulate_choices  # noqa: E402
-from sound_categorisation.stimuli import sample_distribution  # noqa: E402
 
 # Small, fast configuration for the test run.
 STATS = ['accuracy', 'mu', 'sigma', 'lapse_low', 'lapse_high', 'side_bias', 'win_stay']

@@ -15,5 +15,5 @@ conda activate sound_cat
 cd "${SLURM_SUBMIT_DIR}"
 
 echo "=== train_sbi task ${SLURM_ARRAY_TASK_ID} on $(hostname) $(date) ==="
-python -m scripts.train_sbi --task-id "${SLURM_ARRAY_TASK_ID}" "$@"
+sc-train-sbi --task-id "${SLURM_ARRAY_TASK_ID}" "$@"
 echo "=== done $(date) ==="

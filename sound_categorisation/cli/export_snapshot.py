@@ -3,10 +3,10 @@
 Export experiment snapshot.
 
 Usage:
-    python scripts/export_snapshot.py                      # auto-detect config
-    python scripts/export_snapshot.py --config config.yaml
-    python scripts/export_snapshot.py --output /custom/path.pkl
-    python scripts/export_snapshot.py --check-only
+    sc-export-snapshot                      # auto-detect config
+    sc-export-snapshot --config config.yaml
+    sc-export-snapshot --output /custom/path.pkl
+    sc-export-snapshot --check-only
 """
 
 import argparse
@@ -21,7 +21,7 @@ def _resolve_config_path(explicit_path=None) -> Path:
 
     import socket
 
-    from sound_categorisation.paths import CLUSTER_CONFIG, DEFAULT_CONFIG
+    from sound_categorisation.data.paths import CLUSTER_CONFIG, DEFAULT_CONFIG
     hostname = socket.gethostname()
     if CLUSTER_CONFIG.exists() and any(
         x in hostname for x in ('hpc', 'gpu', 'enc', 'sgw')
@@ -40,7 +40,7 @@ def main():
                         help='Compare existing snapshot against current data')
     args = parser.parse_args()
 
-    from sound_categorisation.snapshot import check_staleness, default_output_path, export_snapshot
+    from sound_categorisation.data.snapshot import check_staleness, default_output_path, export_snapshot
 
     config_path = _resolve_config_path(args.config)
     output_path = Path(args.output) if args.output else default_output_path()

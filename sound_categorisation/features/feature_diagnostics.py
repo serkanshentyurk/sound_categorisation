@@ -33,9 +33,9 @@ from sklearn.model_selection import KFold, StratifiedKFold, cross_val_score
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
-from sound_categorisation.models.BE_core import BEModel, BEParams, BEState
-from sound_categorisation.models.SC_core import SCModel, SCParams, SCState
-from sound_categorisation.stimuli import sample_distribution
+from sound_categorisation.data.stimuli import sample_distribution
+from sound_categorisation.models.be_core import BEModel, BEParams, BEState
+from sound_categorisation.models.sc_core import SCModel, SCParams, SCState
 
 # ── stat vocabulary ─────────────────────────────────────────────────────────
 # Feature selection reasons at the level of *producers* ('psychometric' -> mu,

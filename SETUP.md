@@ -13,7 +13,7 @@ pip install -e ".[dev]"             # the project + pytest + ruff
 pip install -e ".[fit]"             # torch, sbi, ssm, hmmlearn — only needed for model fitting
 ```
 
-Both packages must be installed; nothing in the repo puts folders on `sys.path`. Check:
+Both packages must be installed; `pip install -e .` also installs the `sc-*` commands (`sc-reports`, `sc-export-snapshot`, `sc-train-sbi`, `sc-run-sbi`, `sc-run-gs`, `sc-consensus`). Check:
 
 ```bash
 python -c "import behav_utils, sound_categorisation; print(behav_utils.__version__, behav_utils.__file__)"
@@ -40,8 +40,8 @@ if present, overrides paths.
 Everything analysis-side loads a pickled snapshot of the experiment rather than the CSVs:
 
 ```bash
-python -m scripts.export_snapshot            # writes <data root>/behaviour/snapshots/sound_cat_snapshot.pkl
-python -m scripts.export_snapshot --check-only
+sc-export-snapshot            # writes <data root>/behaviour/snapshots/sound_cat_snapshot.pkl
+sc-export-snapshot --check-only
 ```
 
 Re-export when sessions are added or when column mappings in `config.yaml` change. Session types and
@@ -79,8 +79,8 @@ cd <repo>
 bash slurm/submit.sh train                                         # 18 SBI networks
 bash slurm/submit.sh condition --source real --distribution uniform --run expert
 bash slurm/submit.sh gs --source real --fit-target update_matrix --distribution uniform
-python -m scripts.run_gs --gather --source real --distribution uniform --fit-target update_matrix
-python -m scripts.consensus --run expert --cohort real
+sc-run-gs --gather --source real --distribution uniform --fit-target update_matrix
+sc-consensus --run expert --cohort real
 ```
 
 `submit.sh` asks each script for its array range (`--print-array`) so the job count always matches the
@@ -98,7 +98,7 @@ than recompute (see ARCHITECTURE.md, "Notebooks").
 | symptom                               | cause / fix                                                                                                                                                    |
 | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ModuleNotFoundError: behav_utils`  | not installed in this env →`pip install -e behav_utils/`                                                                                                    |
-| `KeyError: preset 'expert_uniform'` | presets come from the config; load an experiment/snapshot first, or call`sound_categorisation.cohort.ensure_presets()`                                       |
+| `KeyError: preset 'expert_uniform'` | presets come from the config; load an experiment/snapshot first, or call`sound_categorisation.data.cohort.ensure_presets()`                                       |
 | snapshot "config has changed" warning | column mappings changed → re-export; session-type/preset edits alone are fine                                                                                 |
 | `compare_groups: need two groups`   | only one genotype in the selection (e.g.`--limit 1`); rows are still written, tests skipped                                                                  |
 | CI passes locally but not on GitHub   | a file under`sound_categorisation/reports/` not committed (check `git status`), or ruff run only on part of the tree — run `ruff check .` from the root |

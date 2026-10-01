@@ -137,7 +137,7 @@ def build_simulator(
         stat_names = list(stat_names)
 
     def sim_fn(theta, seed: int | None = None) -> np.ndarray:
-        from sound_categorisation.stimuli import sample_distribution
+        from sound_categorisation.data.stimuli import sample_distribution
         if seed is None:
             seed = int(np.random.randint(0, 2**31 - 1))
         params = theta_to_params(theta, model)

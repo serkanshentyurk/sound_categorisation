@@ -24,13 +24,13 @@ subdir). For real data the sessions default to expert_<distribution> unless
 
 Cluster usage (real, one phase; repeat for hard_a and hard_b):
     # array upper bound (per phase):
-    N=$(python scripts/run_gs.py --source real --distribution uniform \
+    N=$(sc-run-gs --source real --distribution uniform \
             --run full --fit-target update_matrix --count)
     # one task per (animal, model, seed):
     sbatch --array=0-$((N-1)) slurm/run_gs.sh --source real --distribution uniform \
         --run full --fit-target update_matrix
     # then a single gather job for that phase:
-    python scripts/run_gs.py --source real --distribution uniform \
+    sc-run-gs --source real --distribution uniform \
         --run full --fit-target update_matrix --gather
 
 Synthetic: same, with --source synthetic --cohort <name> (name should encode the phase).
@@ -43,10 +43,17 @@ import time
 from pathlib import Path
 
 import numpy as np
-from sound_categorisation.cohort import load_animals
-from sound_categorisation.cv_utils import save_cv_result
-from sound_categorisation.grid_search import COARSE_GRID, DEFAULT_GRID, SMOKE_GRID, compute_grid_search_cv
-from sound_categorisation.paths import (
+
+from sound_categorisation.data.cohort import load_animals
+from sound_categorisation.data.paths import build_metadata, results_dir
+from sound_categorisation.inference.cv_utils import save_cv_result
+from sound_categorisation.inference.grid_search import (
+    COARSE_GRID,
+    DEFAULT_GRID,
+    SMOKE_GRID,
+    compute_grid_search_cv,
+)
+from sound_categorisation.settings import (
     BASE_SEED,
     DISTRIBUTIONS,
     FIT_TARGETS,
@@ -55,8 +62,6 @@ from sound_categorisation.paths import (
     GS_N_FOLDS,
     SMOKE_GS_N_SEEDS,
     SYNTH_GS_N_SEEDS,
-    build_metadata,
-    results_dir,
 )
 
 MODELS = ('BE', 'SC')
@@ -165,8 +170,8 @@ def gather_results(out_dir, distribution):
 
 
 def _decode_task(task_id, n_animals, n_seeds):
-    """Flat SLURM array index -> (animal_idx, model, seed_idx); see sound_categorisation.tasks.gs_grid."""
-    from sound_categorisation.tasks import gs_grid
+    """Flat SLURM array index -> (animal_idx, model, seed_idx); see sound_categorisation.inference.tasks.gs_grid."""
+    from sound_categorisation.inference.tasks import gs_grid
     d = gs_grid(list(range(n_animals)), n_seeds, MODELS).decode(task_id)
     return d['animal'], d['model'], d['seed']
 
@@ -218,7 +223,7 @@ def main():
         print(len(records) * len(MODELS) * n_seeds)
         return
     if args.print_array:
-        from sound_categorisation.tasks import gs_grid
+        from sound_categorisation.inference.tasks import gs_grid
         print(gs_grid([r.animal_id for r in records], n_seeds, MODELS).slurm_range())
         return
 
