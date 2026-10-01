@@ -424,7 +424,7 @@ def compute_interaction(
     """Difference of differences between two :class:`DeltaStats` results.
 
     Answers "is the opto effect different in *these* sessions than in *those*"
-    — e.g. whether the opto − non_opto shift on masking sessions differs from
+    — e.g. whether the on − off shift on sham sessions differs from
     the shift on real opto sessions, which is what separates an inactivation
     effect from the light-delivery artefact. Comparing two p-values is not a
     substitute: "significant here, not there" is not evidence they differ.

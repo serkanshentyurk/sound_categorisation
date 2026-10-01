@@ -200,11 +200,11 @@ def load_snapshot(
             # Presets and session types live in the config, not the pickle: re-apply both
             # so a snapshot behaves exactly like a fresh load.
             from behav_utils.config.schema import load_config
-            from behav_utils.data.loading import _apply_session_type
+            from behav_utils.data.loading import apply_session_type
             from behav_utils.data.ops.selection import register_presets_from_config
             cfg = load_config(config_path)
             for type_name, mapping in cfg.session_types.items():
-                _apply_session_type(experiment, mapping, type_name)
+                apply_session_type(experiment, mapping, type_name)
             if cfg.session_presets:
                 register_presets_from_config({'session_presets': cfg.session_presets})
 

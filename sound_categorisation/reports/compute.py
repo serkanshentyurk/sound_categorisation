@@ -250,7 +250,7 @@ def compute_group(experiment, animals: Sequence[str], distribution: str, toi: st
     for kind, sub in df.groupby('kind', sort=False):
         if sub['group'].nunique() < 2:       # one genotype present (e.g. --limit 1): rows only, no test
             continue
-        res = compare_groups(sub, group_col='group')
+        res = compare_groups(sub, group_col='group', groups=('wt', 'het'))   # WT is the reference
         for stat, r in res.items():
             tests.append({'kind': kind, 'stat': stat, **{k: v for k, v in r.items() if np.isscalar(v)}})
     tests_df = pd.DataFrame(tests, columns=['kind', 'stat', 'p'] if not tests else None)

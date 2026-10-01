@@ -48,6 +48,7 @@ def plot_timeline(animal: AnimalData, stat: str = 'accuracy',
                 for t, m in TYPE_MARKERS.items()])
     ax.legend(handles=handles, ncol=4, fontsize=8, loc='lower right')
 
-    fig.suptitle(f'{animal.animal_id} ({animal.genotype.upper()}) — Session Timeline', fontsize=14)
+    genotype = str(animal.metadata.get('genotype', 'unknown')).upper()
+    fig.suptitle(f'{animal.animal_id} ({genotype}) — Session Timeline', fontsize=14)
     fig.tight_layout()
     return fig

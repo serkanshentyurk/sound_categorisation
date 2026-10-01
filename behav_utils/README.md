@@ -21,7 +21,7 @@ Requires Python ≥ 3.10; numpy, pandas, scipy, matplotlib, pyyaml.
 ```python
 from behav_utils import (load_experiment, select_sessions, filter_trials, TrialArrays,
                          compute_stats, PSYCHOMETRIC, compute_psychometric_curve,
-                         compute_stat, compute_delta_stat, plot_psychometric_curve)
+                         compute_phase_stats, compute_delta_stat, plot_psychometric_curve)
 
 experiment = load_experiment('config.yaml')          # {animal_id: AnimalData}
 animal     = experiment.animals['A01']
@@ -36,7 +36,7 @@ s['mu'], s['sigma']
 curve = compute_psychometric_curve(arrays)                    # fit + bootstrap band
 plot_psychometric_curve(curve)                                # one axes, nothing computed
 
-r = compute_stat(phase, ['accuracy', 'mu'], per_session=True) # pooled Series + tidy per-session frame
+r = compute_phase_stats(phase, ['accuracy', 'mu'], per_session=True) # pooled Series + tidy per-session frame
 d = compute_delta_stat({'off': phase, 'on': filter_trials(sessions, trial_type='opto')},
                        ['mu', 'accuracy'], reference='off')  # bootstrap CI + permutation p
 d.contrast('on').table()
@@ -50,7 +50,7 @@ d.contrast('on').table()
 | `behav_utils.data` | data structures, CSV loading, session selection, trial filtering, synthetic data | `load_experiment`, `select_sessions`, `filter_trials`, `pool_arrays`, `TrialArrays`, `generate_synthetic_animal`, `find_switches` |
 | `behav_utils.stats` | scalar statistics registry | `compute_stats`, `list_stats`, `PSYCHOMETRIC`, `PSE_DYNAMICS` |
 | `behav_utils.readouts` | array-valued readouts as dataclasses | `compute_psychometric_curve`, `compute_update_matrix`, `compute_conditional_psychometric`, `compute_binned_curve`, `compute_sd_profile` |
-| `behav_utils.analysis` | phase statistics, contrasts, resampling, rolling, group tests | `compute_stat`, `compute_delta_stat`, `compute_interaction`, `bootstrap_phase_stats`, `permute_phase_difference`, `compute_rolling_stats`, `collect_rows`, `compare_groups` |
+| `behav_utils.analysis` | phase statistics, contrasts, resampling, rolling, group tests | `compute_phase_stats`, `compute_delta_stat`, `compute_interaction`, `bootstrap_phase_stats`, `permute_phase_difference`, `compute_rolling_stats`, `collect_rows`, `compare_groups` |
 | `behav_utils.plotting` | one draw-only `plot_x` per `compute_x` | `plot_psychometric_curve`, `plot_update_matrix`, `plot_comparison`, `plot_stat_comparison`, `plot_interaction`, `plot_trajectory` |
 
 Full details: [ARCHITECTURE.md](ARCHITECTURE.md) (design and contracts), [docs/config_guide.md](docs/config_guide.md),

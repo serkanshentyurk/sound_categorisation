@@ -3,10 +3,10 @@ Trajectory Plotting
 
 plot_trajectory(result, stat, ax=None)
 
-Draw-only. Takes a PhaseStats from compute_stat(sessions, names, per_session=True).
+Draw-only. Takes a PhaseStats from compute_phase_stats(sessions, names, per_session=True).
 
 Usage:
-    r = compute_stat(sessions, ['accuracy', 'mu'], per_session=True)
+    r = compute_phase_stats(sessions, ['accuracy', 'mu'], per_session=True)
     fig, axes = plt.subplots(1, 2)
     plot_trajectory(r, 'accuracy', ax=axes[0])
     plot_trajectory(r, 'mu', ax=axes[1])
@@ -49,7 +49,7 @@ def plot_trajectory(
     show_distribution_boundaries: bool = True,
     title: str = '',
 ) -> Tuple[plt.Figure, plt.Axes]:
-    """One stat per session, in session order, from ``compute_stat(..., per_session=True)``.
+    """One stat per session, in session order, from ``compute_phase_stats(..., per_session=True)``.
 
     Args:
         result: :class:`PhaseStats` with ``sessions`` filled.
@@ -57,7 +57,7 @@ def plot_trajectory(
         show_distribution_boundaries: vertical lines where ``distribution`` changes.
     """
     if result.sessions is None:
-        raise ValueError('plot_trajectory needs compute_stat(..., per_session=True)')
+        raise ValueError('plot_trajectory needs compute_phase_stats(..., per_session=True)')
     if ax is None:
         fig, ax = plt.subplots(1, 1, figsize=(8, 3.5))
     else:

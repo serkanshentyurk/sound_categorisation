@@ -7,22 +7,23 @@ stat, take one value per animal, split into two groups, and rank-test. That is
 the ONLY level that supports a population claim — a within-animal p describes
 that animal, not the group.
 
-Grouping is arbitrary. The common axis is genotype (WT vs HET), but any split
-works: cohort, sex, lesion, or an ad-hoc pair of animal-name lists.
+Grouping is arbitrary: genotype, cohort, sex, lesion, or an ad-hoc pair of
+animal-name lists. Pass ``groups=(a, b)`` to fix which group is the reference;
+without it the two labels are taken in sorted order.
 
     from behav_utils.analysis import collect_rows, compare_groups
 
     rows = []
     for animal in animals:
-        r = compute_stat(phase, ['pse'], per_session=True).sessions
-        rows += collect_rows(r['rows'], animal=animal.animal_id,
-                             group=animal.genotype)
+        r = compute_phase_stats(phase, ['pse']).to_rows()
+        rows += collect_rows(r.to_dict('records'), animal=animal.animal_id,
+                             group=animal.metadata['group'])
 
-    # group by the stamped column
-    result = compare_groups(rows)
+    # group by the stamped column, control first
+    result = compare_groups(rows, groups=('control', 'lesion'))
     # or split by explicit animal-name lists, no group column needed
-    result = compare_groups(rows, groups={'lesion': ['SS14', 'SS15'],
-                                          'sham':   ['SS16', 'SS17']})
+    result = compare_groups(rows, groups={'lesion': ['A01', 'A02'],
+                                          'sham':   ['A03', 'A04']})
     result['pse_plateau']['p'], result['pse_plateau']['min_p']
 
 The unit is the ANIMAL, never the session or trial — pooling those into the
@@ -34,14 +35,13 @@ underpowered null is not read as a real one.
 Public API:
     collect_rows      — stamp per-animal scalars with animal, group and labels
     compare_groups    — rank-test each stat across animals, split by group
-    compare_genotypes — thin alias of compare_groups (group column 'genotype')
 """
 
 from typing import Dict, List, Mapping, Sequence
 
 import numpy as np
 
-__all__ = ['collect_rows', 'compare_groups', 'compare_genotypes']
+__all__ = ['collect_rows', 'compare_groups']
 
 
 def collect_rows(
@@ -61,11 +61,10 @@ def collect_rows(
                    with at least ``stat`` and ``value`` (extra keys carried
                    through).
         animal:    animal id.
-        group:     the group this animal belongs to (genotype, cohort, ...).
+        group:     the group this animal belongs to (cohort, condition, ...).
                    Optional: omit if you will split by explicit name-lists in
                    ``compare_groups`` instead.
-        group_col: the column name to store ``group`` under. Default 'group';
-                   pass 'genotype' if you prefer that label downstream.
+        group_col: the column name to store ``group`` under. Default 'group'.
         **labels:  any extra columns to stamp on every row (session_type,
                    distribution, contrast, ...).
 
@@ -103,7 +102,7 @@ def compare_groups(
     Grouping is specified one of two ways:
 
     * by column — ``group_col`` names a column already on the rows (the default,
-      'group'; use 'genotype' if that is how you stamped them);
+      'group');
     * by name-lists — ``groups={label: [animal, ...]}`` assigns each animal to a
       group explicitly, needing no group column. Use this for an ad-hoc split.
 
@@ -114,13 +113,14 @@ def compare_groups(
         groups:      either the two group labels in (a, b) order (selecting from
                      ``group_col``), or a ``{label: [animal_ids]}`` mapping that
                      defines the split directly. If None, the two labels present
-                     in ``group_col`` are used, with ('wt','het') ordered first.
+                     in ``group_col`` are used in sorted order — pass the pair
+                     explicitly whenever the reference group matters.
         stats:       which stats to test; default is every stat present.
         value_col, stat_col, unit_col: column names.
         paired:      Wilcoxon signed-rank instead of Mann-Whitney. Requires the
                      same animals in both groups aligned by ``unit_col`` — for a
-                     within-animal design only, NOT a between-group split like
-                     genotype, so the default is unpaired.
+                     within-animal design only, NOT a between-group split, so
+                     the default is unpaired.
         alternative: 'two-sided' | 'less' | 'greater'.
 
     Returns:
@@ -161,8 +161,7 @@ def compare_groups(
         present = list(pd.unique(df[group_col]))
         selected = list(groups) if groups is not None else None
         if selected is None:
-            order = {'wt': 0, 'het': 1}
-            selected = sorted(present, key=lambda g: (order.get(str(g).lower(), 2), str(g)))
+            selected = sorted(present, key=str)
         selected = [g for g in selected if g in present]
         if len(selected) < 2:
             raise ValueError(
@@ -218,13 +217,3 @@ def compare_groups(
         }
     return out
 
-
-def compare_genotypes(rows, **kwargs):
-    """Alias of :func:`compare_groups` for the common genotype split.
-
-    Defaults ``group_col='genotype'`` so rows stamped with a ``genotype`` column
-    (e.g. ``collect_rows(..., group=animal.genotype, group_col='genotype')``)
-    compare directly. All other arguments pass through.
-    """
-    kwargs.setdefault('group_col', 'genotype')
-    return compare_groups(rows, **kwargs)

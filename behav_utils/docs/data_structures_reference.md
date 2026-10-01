@@ -96,10 +96,10 @@ One behavioural session — metadata + trial data.
 
 ### Filtering trials
 
-Filtering uses module-level functions from `behav_utils.data.filtering`:
+Filtering uses module-level functions from `behav_utils.data.ops.filtering`:
 
 ```python
-from behav_utils.data.filtering import filter_session, opto_mask, filter_trials
+from behav_utils.data.ops.filtering import filter_session, opto_mask, filter_trials
 
 # Standard filter: drop aborts and opto trials
 clean = filter_session(session)
@@ -156,24 +156,21 @@ One animal — all sessions in chronological order.
 ### Working with an animal
 
 ```python
-from behav_utils.data.selection import select_sessions
-from behav_utils.data.filtering import filter_trials
-from behav_utils.analysis.psychometry import compute_psychometric
-from behav_utils.plotting.psychometric import plot_psychometric
-from behav_utils.plotting.styles import PALETTE
+from behav_utils import select_sessions, filter_trials, pool_arrays
+from behav_utils import compute_psychometric_curve, plot_psychometric_curve, PALETTE
 
-# 1. Select sessions
-sessions = select_sessions(animal, preset='expert_uniform')
+# 1. Select sessions (presets come from your config's session_presets)
+sessions = select_sessions(animal, preset='expert')
 
-# 2. Filter trials
+# 2. Filter trials (abort / no-response / opto exclusions)
 clean = filter_trials(sessions)
 
-# 3. Analyse
-result = compute_psychometric(clean, mode='pooled', n_bootstrap=200)
+# 3. Compute a readout on the pooled arrays
+curve = compute_psychometric_curve(pool_arrays(clean), n_bootstrap=200)
 
-# 4. Plot
+# 4. Draw
 fig, ax = plt.subplots()
-plot_psychometric(result, ax=ax, color=PALETTE[0])
+plot_psychometric_curve(curve, ax=ax, color=PALETTE[0])
 ```
 
 ---
@@ -206,8 +203,8 @@ all_animals = experiment.get_animals(min_sessions=10)
 Flat per-session arrays for SBI inference. Built from pre-filtered sessions:
 
 ```python
-from behav_utils.data.selection import select_sessions
-from behav_utils.data.filtering import filter_trials
+from behav_utils.data.ops.selection import select_sessions
+from behav_utils.data.ops.filtering import filter_trials
 from behav_utils.data.fitting_data import fitting_data_from_sessions
 
 sessions = select_sessions(animal, preset='expert_uniform')
@@ -224,46 +221,43 @@ fd = fitting_data_from_sessions(clean, animal.animal_id)
 
 ## Pipeline pattern
 
-Every notebook follows the same four steps:
+Every analysis follows the same four steps:
 
 ```python
-from behav_utils.data.loading import load_experiment
-from behav_utils.data.selection import select_sessions
-from behav_utils.data.filtering import filter_trials
-from behav_utils.analysis.psychometry import compute_psychometric
-from behav_utils.analysis.update_matrix import compute_um
-from behav_utils.analysis.trajectory import compute_trajectory
-from behav_utils.plotting.psychometric import plot_psychometric
-from behav_utils.plotting.update_matrix import plot_um
-from behav_utils.plotting.trajectory import plot_trajectory
-from behav_utils.plotting.styles import PALETTE, apply_style
+from behav_utils import (load_experiment, select_sessions, filter_trials, pool_arrays,
+                         compute_stats, PSYCHOMETRIC,
+                         compute_psychometric_curve, compute_update_matrix, compute_phase_stats,
+                         plot_psychometric_curve, plot_update_matrix, plot_trajectory,
+                         PALETTE, apply_style)
 
 apply_style()
 
 # 1. LOAD
 experiment = load_experiment('config.yaml')
-animal = experiment.get_animal('SS05')
+animal = experiment.get_animal('A05')
 
-# 2. FILTER (session-level + trial-level)
-sessions = select_sessions(animal, preset='expert_uniform')
+# 2. SELECT sessions, FILTER trials
+sessions = select_sessions(animal, preset='expert')
 clean = filter_trials(sessions)
+arrays = pool_arrays(clean)
 
-# 3. COMPUTE
-psych = compute_psychometric(clean, mode='pooled', n_bootstrap=200)
-um = compute_um(clean)
-traj = compute_trajectory(clean, ['accuracy', 'mu'])
+# 3. COMPUTE — scalars, readouts, per-session trajectory
+scalars = compute_stats(arrays, ['accuracy', *PSYCHOMETRIC])          # pd.Series
+curve   = compute_psychometric_curve(arrays, n_bootstrap=200)         # PsychometricCurve
+um      = compute_update_matrix(arrays)                               # UpdateMatrix
+traj    = compute_phase_stats(clean, ['accuracy', 'mu'], per_session=True)   # PhaseStats
 
-# 4. PLOT
+# 4. PLOT — draw-only, one axes each
 fig, axes = plt.subplots(1, 3, figsize=(15, 4))
-plot_psychometric(psych, ax=axes[0], color=PALETTE[0])
-plot_um(um, ax=axes[1])
+plot_psychometric_curve(curve, ax=axes[0], color=PALETTE[0])
+plot_update_matrix(um, ax=axes[1])
 plot_trajectory(traj, 'accuracy', ax=axes[2])
 ```
 
 ### Comparing two conditions
 
 ```python
-from behav_utils.data.filtering import filter_session, opto_mask
+from behav_utils.data.ops.filtering import filter_session, opto_mask
 from behav_utils.analysis.comparison import compute_comparison
 from behav_utils.plotting.comparison import plot_comparison
 
@@ -291,38 +285,31 @@ Note: bootstrap band keys are `lo` and `hi`, not `lower`/`upper`.
 
 ### Group-level claims (across animals)
 
-For across-animal comparisons (e.g. HET vs WT, or paired opto effects), use the
+For across-animal comparisons (two groups, or paired on/off effects), use the
 group-level functions — never pool trials across animals.
 
-Tier A (`extract_stats`) turns each animal's sessions into one pooled row per
-stat; Tier B (`group`) tests the per-animal values. The *animal* is the unit.
+`compute_phase_stats` turns each animal's sessions into one pooled row per stat;
+`across_animals` / `group` test the per-animal values. The *animal* is the unit.
 
 ```python
-import pandas as pd
-from behav_utils.analysis import extract_stats, rank_test, paired_diff, bootstrap_units
+from behav_utils.analysis import collect_rows, compare_groups, paired_diff, bootstrap_units
+from behav_utils import compute_phase_stats, PSYCHOMETRIC
 
-# One pooled row per animal; 'psychometric' expands to mu/sigma/lapse rows.
-def per_animal(animals, sessions_of, **meta_fn):
-    return pd.concat([
-        extract_stats(sessions_of(a), animal_id=a.animal_id,
-                      stats=['psychometric', 'accuracy'], mode='pooled',
-                      meta={k: f(a) for k, f in meta_fn.items()}).estimates
-        for a in animals
-    ], ignore_index=True)
+# One pooled row per animal, stamped with its group
+rows = []
+for a in animals:
+    r = compute_phase_stats(sessions_of(a), [*PSYCHOMETRIC, 'accuracy'])
+    rows += collect_rows(r.to_rows().to_dict('records'), animal=a.animal_id,
+                         group=a.metadata['group'])
 
-# Unpaired (cohort comparison: HET vs WT)
-points = per_animal(het_animals + wt_animals, lambda a: a.sessions,
-                    genotype=lambda a: a.genotype)
-mu = points[points.stat == 'mu']
-rank_test(mu[mu.genotype == 'het'].value.values,
-          mu[mu.genotype == 'wt'].value.values, paired=False)   # Mann-Whitney → {'p', ...}
+# Unpaired (between-group): one rank test per stat, control first
+res = compare_groups(rows, groups=('control', 'treated'))
+res['mu']['p'], res['mu']['min_p']        # min_p = floor at these group sizes
 
-# Paired (opto-on vs opto-off within the same animals)
-on  = per_animal(animals, lambda a: sessions_on[a.animal_id],  condition=lambda a: 'opto_on')
-off = per_animal(animals, lambda a: sessions_off[a.animal_id], condition=lambda a: 'opto_off')
-points = pd.concat([on, off], ignore_index=True)
-delta = paired_diff(points, by='condition', a='opto_on', b='opto_off')  # per-animal Δ ('delta' col)
-bootstrap_units(delta[delta.stat == 'mu'].delta.values)                  # across-animal CI on the Δ
+# Paired (on vs off within the same animals): per-animal Δ, then an across-animal CI
+points = pd.DataFrame(rows_on + rows_off)                 # rows stamped condition='on' / 'off'
+delta = paired_diff(points, by='condition', a='on', b='off')
+bootstrap_units(delta[delta.stat == 'mu'].delta.values)
 ```
 
 ---

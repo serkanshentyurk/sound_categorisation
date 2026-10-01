@@ -84,12 +84,12 @@ def load_experiment_any(config_path: Path | None = None, snapshot_path: Path | N
 
 
 def gather_genotypes(experiment) -> Tuple[Dict[str, str], Dict[str, List[str]]]:
-    """``({animal_id: genotype}, {genotype: [animal_id, ...]})`` from ``animal.genotype``.
+    """``({animal_id: genotype}, {genotype: [animal_id, ...]})`` from ``animal.metadata['genotype']``.
 
     Genotype comes from ``animal_metadata.json`` — the single source of truth.
     Missing -> 'unknown' (warned).
     """
-    by_animal = {aid: str(getattr(a, 'genotype', 'unknown') or 'unknown').lower()
+    by_animal = {aid: str(a.metadata.get('genotype') or 'unknown').lower()
                  for aid, a in experiment.animals.items()}
     unknown = sorted(a for a, g in by_animal.items() if g in ('unknown', 'none', ''))
     if unknown:

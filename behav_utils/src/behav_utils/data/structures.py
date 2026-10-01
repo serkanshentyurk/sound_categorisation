@@ -25,7 +25,7 @@ Usage:
     )
 
     experiment = load_experiment('config.yaml')
-    animal = experiment.get_animal('SS05')
+    animal = experiment.get_animal('A05')
     sessions = select_sessions(animal, preset='expert_uniform')
     clean = filter_trials(sessions)
 
@@ -341,7 +341,7 @@ class SessionData:
         trials:      TrialData (per-trial arrays)
         session_type: Session classification. The library derives 'regular' and
                      'opto' from the data; any other value is a project type stamped
-                     from ``config.session_types`` (e.g. 'masking'). Single source of truth.
+                     from ``config.session_types`` (e.g. 'sham'). Single source of truth.
         csv_path:    Path to source CSV file
         filter_info: Metadata about filtering applied (None if unfiltered)
 
@@ -481,10 +481,6 @@ class AnimalData:
         return [s.session_id for s in self.sessions]
 
     @property
-    def genotype(self) -> str:
-        return self.metadata.get('genotype', 'unknown')
-
-    @property
     def stages(self) -> List[str]:
         return list(dict.fromkeys(s.stage for s in self.sessions))
 
@@ -501,16 +497,15 @@ class AnimalData:
         Convenience for picking *sessions* (not trials). Mask against it, e.g.::
 
             t = animal.session_table
-            opto = t[t.session_type == 'opto']                 # laser-on sessions
-            light = t[t.session_type != 'regular']             # opto or masking
-            good_uniform = t[(t.distribution == 'Uniform') & (t.accuracy > 0.7)]
+            opto = t[t.session_type == 'opto']                 # sessions with opto trials
+            manipulated = t[t.session_type != 'regular']       # any non-regular type
+            good = t[(t.distribution == 'uniform') & (t.accuracy > 0.7)]
 
         Columns:
             session_idx, session_id, date, stage, distribution,
             n_trials, n_valid,
-            session_type — one of 'regular' | 'masking' | 'opto' | 'washout'
-                ('masking' = blue light, no laser; 'opto' = laser-on present;
-                    'washout' = post-opto washout period, no inactivation),
+            session_type — 'regular' | 'opto' (derived from the data) or any
+                type name stamped from ``config.session_types``,
             accuracy — fraction correct over *valid* (non-aborted) trials.
 
         Notes:

@@ -35,7 +35,7 @@ import numpy as np
 import pandas as pd
 from behav_utils.analysis.psychometry import fit_psychometric
 from behav_utils.analysis.rolling import compute_rolling_stats
-from behav_utils.analysis.statistics import compute_stat
+from behav_utils.analysis.statistics import compute_phase_stats
 from behav_utils.data.arrays import TrialArrays
 from behav_utils.data.ops.filtering import filter_trials
 from behav_utils.data.ops.selection import select_sessions
@@ -83,7 +83,7 @@ def expert_reference(animal, *, preset: str = 'expert_uniform', last_n: int = 5,
     phase = filter_trials(sessions, trial_type=trials)
     if not phase:
         return np.nan, np.nan, np.nan, np.nan
-    r = compute_stat(phase, ['pse', 'sigma', 'lapse_low', 'lapse_high']).pooled
+    r = compute_phase_stats(phase, ['pse', 'sigma', 'lapse_low', 'lapse_high']).pooled
     return float(r['pse']), float(r['sigma']), float(r['lapse_low']), float(r['lapse_high'])
 
 

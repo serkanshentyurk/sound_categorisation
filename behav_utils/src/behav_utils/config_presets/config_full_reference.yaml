@@ -115,37 +115,6 @@ extra_columns:
   - "ExperimenterID"
 
 # ══════════════════════════════════════════════════════════════════════════════
-# ANALYSIS — defaults for analysis functions
-# ══════════════════════════════════════════════════════════════════════════════
-analysis:
-  n_stim_bins: 8                       # Default bins for update matrix
-  default_stats:                       # Default stat names for compute_trajectory
-    - accuracy
-    - pse
-    - slope
-    - recency
-    - win_stay
-    - side_bias
-  feature_matrix_stats:                # Stats for build_feature_matrix
-    - accuracy
-    - pse
-    - slope
-    - lapse_low
-    - lapse_high
-    - recency
-    - win_stay
-    - lose_shift
-    - side_bias
-    - choice_entropy
-
-# ══════════════════════════════════════════════════════════════════════════════
-# PLOTTING — visual defaults
-# ══════════════════════════════════════════════════════════════════════════════
-plotting:
-  figsize: [5, 4]
-  dpi: 150
-
-# ══════════════════════════════════════════════════════════════════════════════
 # SESSION FILTER PRESETS — named presets for select_sessions()
 # ══════════════════════════════════════════════════════════════════════════════
 # Fields match SessionFilter dataclass:

@@ -53,6 +53,11 @@ class SwitchesResult:
         return f'SwitchesResult({self.cohort!r}, n_animals={len(self.results)}, n_switches={n})'
 
 
+
+def _cat(frames) -> pd.DataFrame:
+    """Concatenate a list of frames; an empty list gives an empty frame."""
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
 def compute_switches_cohort(experiment, animals: Sequence[str], *, cohort: str = '', **kw) -> SwitchesResult:
     out, params, curves = {}, [], []
     for aid in animals:
@@ -71,8 +76,7 @@ def compute_switches_cohort(experiment, animals: Sequence[str], *, cohort: str =
             out[aid] = res
             params.append(p)
             curves.append(c)
-    cat = lambda xs: pd.concat(xs, ignore_index=True) if xs else pd.DataFrame()
-    return SwitchesResult(cohort, out, cat(params), cat(curves))
+    return SwitchesResult(cohort, out, _cat(params), _cat(curves))
 
 
 def switch_tables(g: SwitchesResult) -> Dict[str, pd.DataFrame]:
@@ -86,11 +90,10 @@ def switch_tables(g: SwitchesResult) -> Dict[str, pd.DataFrame]:
             conv.append(r.convergence.assign(**key))
             sess.append(r.sessions.assign(**key))
             over.append(r.overnight.assign(**key))
-    cat = lambda xs: pd.concat(xs, ignore_index=True) if xs else pd.DataFrame()
-    sessions = cat(sess)
+    sessions = _cat(sess)
     if len(sessions):
         sessions = flag_biased_sessions(sessions)
-    sw = cat(rows)
+    sw = _cat(rows)
     # pre/post per switch from the block-pooled 4-parameter fits (robust) + the pinned last-250-trial values
     pre_post = pd.DataFrame()
     if len(sw) and len(g.phase_params):
@@ -106,7 +109,7 @@ def switch_tables(g: SwitchesResult) -> Dict[str, pd.DataFrame]:
         pp['pse_post'] = [pooled.get((a, int(k) + 1)) for a, k in zip(pp['animal'], pp['switch_idx'])]
         pp['delta'] = pp['pse_post'] - pp['pse_pre']
         pre_post = pp.assign(**lab)
-    return {'switches': sw, 'pre_post': pre_post, 'convergence': cat(conv), 'sessions': sessions, 'overnight': cat(over),
+    return {'switches': sw, 'pre_post': pre_post, 'convergence': _cat(conv), 'sessions': sessions, 'overnight': _cat(over),
             'psychometrics': g.phase_params.assign(**lab) if len(g.phase_params) else pd.DataFrame(),
             'psychometric_curves': g.phase_curves.assign(**lab) if len(g.phase_curves) else pd.DataFrame()}
 
@@ -261,7 +264,7 @@ def dynamics_page(T: Dict[str, pd.DataFrame], cohort: str, clean: bool = True):
     se = _subset(T['sessions'], T, clean)
     if len(se):
         for tr, sub in se.groupby('transition'):
-            for (a, k), s in sub.groupby(['animal', 'switch_idx']):
+            for _, s in sub.groupby(['animal', 'switch_idx']):
                 s = s.sort_values('order_in_block')
                 ax.plot(s['order_in_block'], s['pse_fixed'] - s['pse_fixed'].iloc[0], color=TRANS_COL[tr], alpha=0.25, lw=0.8)
             m = sub.groupby('order_in_block')['pse_fixed'].mean()
@@ -391,7 +394,7 @@ def psychometrics_combined_page(T: Dict[str, pd.DataFrame], cohort: str, exclude
         cc = C[C['phase'] == ph]
         dist = P.loc[P['phase'] == ph, 'distribution'].iloc[0]
         Y = []
-        for a, d in cc.groupby('animal'):
+        for _, d in cc.groupby('animal'):
             ax.plot(d['x'], d['y'], color=DIST_COL.get(dist, '0.3'), lw=0.6, alpha=0.3)
             Y.append(d['y'].to_numpy())
         if Y:

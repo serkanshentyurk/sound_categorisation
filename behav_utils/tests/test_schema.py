@@ -3,7 +3,7 @@
 Covers the real branch points: dtype validation, the ProjectConfig._validate rules
 (required trial_number, primary auto-detection, dangling references), the YAML parser's
 normalisations (str-vs-dict column specs, list-of-pairs mappings, contingency-rule
-coercion, masking/washout shapes, data_dir expandvars), and validate_csv_against_config.
+coercion, session_types shapes, data_dir expandvars), and validate_csv_against_config.
 """
 import os
 
@@ -167,12 +167,13 @@ columns:
 session_metadata:
   stage:
     csv_name: Stage
-masking_sessions:
-  Animal1: [20240315, 20240316]
-  Animal2: 20240301
-  Animal3: null
-washout_sessions:
-  Animal1: [20240320]
+session_types:
+  masking:
+    Animal1: [20240315, 20240316]
+    Animal2: 20240301
+    Animal3: null
+  washout:
+    Animal1: [20240320]
 """
 
 
@@ -217,7 +218,7 @@ class TestLoadConfig:
         # outer keys are strings, inner keys/values are ints
         assert rules == {'1': {-1: 0, 1: 1}, '2': {-1: 1, 1: 0}}
 
-    def test_masking_washout_normalised(self, tmp_path):
+    def test_session_types_normalised(self, tmp_path):
         p = tmp_path / 'config.yaml'
         p.write_text(_YAML)
         cfg = load_config(p)

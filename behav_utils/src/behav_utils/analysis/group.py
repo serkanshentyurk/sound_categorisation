@@ -1,7 +1,7 @@
 """Group-level combination, resampling and testing — pure numeric, no behavioural objects.
 
 This is the "Tier B" layer: every function takes a tidy stat table (the
-``sessions`` frame from :func:`behav_utils.analysis.statistics.compute_stat`) or
+``sessions`` frame from :func:`behav_utils.analysis.statistics.compute_phase_stats`) or
 plain arrays, never ``SessionData`` / ``AnimalData``. Each verb does one job, so
 combining / bootstrapping / testing compose freely:
 
@@ -50,13 +50,13 @@ def combine(
     """Collapse one axis of a tidy stat table, carrying all other label columns.
 
     Groups by every column except ``over`` and the value/weight/CI columns, so it
-    can never silently average across conditions, phases, stats or genotypes.
+    can never silently average across conditions, phases, stats or groups.
 
       * ``over='session'`` → one value per (animal, stat, label…)  — per-animal.
       * ``over='animal'``  → one value per (stat, label…)          — per-group.
 
     This is the *average* path. The trial-weighted alternative (re-pool trials,
-    compute once) comes from ``compute_stat(...).to_rows()`` instead — a
+    compute once) comes from ``compute_phase_stats(...).to_rows()`` instead — a
     deliberately different number. Within-unit CIs are dropped on output because
     they no longer apply; a group CI comes from :func:`bootstrap_units`.
 
@@ -141,7 +141,7 @@ def paired_diff(
     """Per-unit difference ``value[a] - value[b]`` across label column ``by``.
 
     Expects one row per (unit, ``by``-level, stat) — i.e. animal-level input
-    (use ``compute_stat(...).to_rows()`` or :func:`combine` first). Inner-joins
+    (use ``compute_phase_stats(...).to_rows()`` or :func:`combine` first). Inner-joins
     the two levels on every identifying column, so units missing ``a`` or ``b``
     are dropped — and a warning reports how many.
 

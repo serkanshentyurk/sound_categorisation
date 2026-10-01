@@ -15,7 +15,6 @@ Usage:
 """
 
 import os
-import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import (
@@ -159,58 +158,8 @@ class TaskConfig:
 
 
 # =============================================================================
-# ANALYSIS SETTINGS
-# =============================================================================
-
-@dataclass
-class AnalysisConfig:
-    """
-    Default analysis parameters. Can be overridden per-call.
-
-    Attributes:
-        excluded_stats: Stat names to skip (e.g. slow ones like 'update_matrix')
-        hard_threshold: |stimulus| split for easy/hard classification
-        default_n_bins: Default number of bins for psychometric/update matrix
-        min_valid_trials: Sessions below this are dropped from analysis
-        default_stage: Default stage filter. A single string or a list of
-            strings (OR logic). None = no filter.
-    """
-    excluded_stats: List[str] = field(default_factory=list)
-    hard_threshold: float = 0.3
-    default_n_bins: int = 8
-    min_valid_trials: int = 10
-    default_stage: Union[str, List[str]] | None = None
-
-
-# =============================================================================
-# PLOTTING DEFAULTS
-# =============================================================================
-
-@dataclass
-class PlottingConfig:
-    """
-    Default plotting parameters.
-    """
-    dpi: int = 100
-    font_size: int = 10
-    figure_width: float = 10.0
-    colourmap: str = 'tab10'
-    model_colours: Dict[str, str] = field(default_factory=lambda: {
-        'default': 'steelblue',
-    })
-
-
-# =============================================================================
 # TOP-LEVEL CONFIG
 # =============================================================================
-
-_LEGACY_SESSION_TYPE_KEYS = {
-    'masking_sessions': 'masking',
-    'washout_sessions': 'washout',
-    'unilateral_alm_control_sessions': 'alm_control_uni',
-    'bilateral_alm_control_sessions': 'alm_control_bi',
-}
-
 
 @dataclass
 class ProjectConfig:
@@ -225,8 +174,6 @@ class ProjectConfig:
 
     file_structure: FileStructure = field(default_factory=FileStructure)
     task: TaskConfig = field(default_factory=TaskConfig)
-    analysis: AnalysisConfig = field(default_factory=AnalysisConfig)
-    plotting: PlottingConfig = field(default_factory=PlottingConfig)
 
     # Column mappings: internal_name → ColumnMapping
     columns: Dict[str, ColumnMapping] = field(default_factory=dict)
@@ -241,10 +188,8 @@ class ProjectConfig:
 
     # Session-type overrides, stamped onto sessions at load time:
     #   session_types: {type_name: {animal_id: ['YYYYMMDD', ...]}}
-    # Type names are the project's own vocabulary (e.g. 'masking', 'washout',
-    # 'alm_control_uni'); the library only knows 'regular' and 'opto', which it
-    # derives from the data. Legacy keys (masking_sessions, washout_sessions,
-    # unilateral/bilateral_alm_control_sessions) are folded in with a warning.
+    # Type names are the project's own vocabulary (e.g. 'sham', 'washout');
+    # the library only knows 'regular' and 'opto', which it derives from the data.
     session_types: Dict[str, Dict[str, List[str]]] = field(default_factory=dict)
 
     # Named session presets (raw dicts from 'session_presets'), registered at load
@@ -389,9 +334,8 @@ def _normalise_session_dict(raw) -> Dict[str, List[str]]:
 def load_cohorts(path: Union[str, Path]) -> Dict[str, List[str]]:
     """Load the ``cohorts:`` block from the project YAML.
 
-    Cohort membership only (which animals belong to which cohort) — genotype is
-    sourced per-animal from ``animal_metadata.json`` and is deliberately not
-    duplicated here. Import-safe: reads the raw YAML and touches nothing else, so
+    Cohort membership only (which animals belong to which cohort); per-animal
+    attributes belong in the animal metadata, not here. Import-safe: reads the raw YAML and touches nothing else, so
     behaviour-only report scripts can call it without pulling in the fitting
     stack.
 
@@ -488,20 +432,6 @@ def load_config(path: Union[str, Path]) -> ProjectConfig:
                'primary_stimulus', 'primary_choice',
            )},
     )
-    # Analysis
-    analysis_raw = raw.get('analysis', {})
-    analysis = AnalysisConfig(**{
-        k: analysis_raw[k] for k in AnalysisConfig.__dataclass_fields__
-        if k in analysis_raw
-    })
-
-    # Plotting
-    plot_raw = raw.get('plotting', {})
-    plotting = PlottingConfig(**{
-        k: plot_raw[k] for k in PlottingConfig.__dataclass_fields__
-        if k in plot_raw
-    })
-
     # Columns
     columns = {}
     for name, spec in raw.get('columns', {}).items():
@@ -515,13 +445,6 @@ def load_config(path: Union[str, Path]) -> ProjectConfig:
     # Session-type overrides: {type_name: {animal_id: ['YYYYMMDD', ...]}}
     session_types = {name: _normalise_session_dict(m or {})
                      for name, m in (raw.get('session_types') or {}).items()}
-    for legacy_key, type_name in _LEGACY_SESSION_TYPE_KEYS.items():
-        if legacy_key in raw:
-            warnings.warn(f"config key '{legacy_key}' is deprecated; use session_types: {{{type_name}: {{...}}}}",
-                          DeprecationWarning, stacklevel=2)
-            merged = dict(session_types.get(type_name, {}))
-            merged.update(_normalise_session_dict(raw[legacy_key] or {}))
-            session_types[type_name] = merged
     sessions_to_ignore = _normalise_session_dict(raw.get('sessions_to_ignore', {}))
 
     return ProjectConfig(
@@ -529,8 +452,6 @@ def load_config(path: Union[str, Path]) -> ProjectConfig:
         description=raw.get('project', {}).get('description', ''),
         file_structure=file_structure,
         task=task,
-        analysis=analysis,
-        plotting=plotting,
         columns=columns,
         session_metadata=session_metadata,
         extra_columns=raw.get('extra_columns', []),

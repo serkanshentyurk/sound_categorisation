@@ -1,15 +1,15 @@
 """
-compute_stat — scalar statistics on a phase, pooled and (optionally) per session.
+compute_phase_stats — scalar statistics on a phase, pooled and (optionally) per session.
 
     load_experiment → select_sessions → filter_trials → phase
                                                           ↓
-                                     compute_stat(phase, names, per_session=...)
+                                     compute_phase_stats(phase, names, per_session=...)
 
-    r = compute_stat(phase, ['accuracy', 'side_bias', *PSYCHOMETRIC])
+    r = compute_phase_stats(phase, ['accuracy', 'side_bias', *PSYCHOMETRIC])
     r.pooled['side_bias']          # trial-weighted pooled estimate (pd.Series)
     r.sessions                     # None unless per_session=True
 
-    r = compute_stat(phase, ['accuracy', 'mu'], per_session=True)
+    r = compute_phase_stats(phase, ['accuracy', 'mu'], per_session=True)
     r.sessions                     # tidy DataFrame: animal, session, stat, value, n_trials
 
 Invariant: ``pooled`` is ALWAYS the genuine pooled fit — one fit on all trials,
@@ -32,7 +32,7 @@ import pandas as pd
 from behav_utils.data.arrays import TrialArrays
 from behav_utils.stats import compute_stats, validate_names
 
-__all__ = ['PhaseStats', 'compute_stat', 'infer_animal_id', 'SESSION_COLUMNS']
+__all__ = ['PhaseStats', 'compute_phase_stats', 'infer_animal_id', 'SESSION_COLUMNS']
 
 SESSION_COLUMNS = ['animal', 'session', 'session_type', 'distribution', 'stat', 'value', 'n_trials']
 
@@ -94,7 +94,7 @@ def _session_label(session):
     return getattr(session, 'session_idx', getattr(session, 'session_id', None))
 
 
-def compute_stat(
+def compute_phase_stats(
     phase,
     names: Sequence[str],
     *,

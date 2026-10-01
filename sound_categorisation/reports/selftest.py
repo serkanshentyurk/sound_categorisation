@@ -60,7 +60,7 @@ def synthetic_experiment(n_animals=4, seed=0, n_trials=180) -> ExperimentData:
     for k in range(2):
         sessions, idx = [], 0
         schedule = [('Uniform', 0.0)] * 4 + [('Hard-B', -0.15)] * 4 + [('Hard-A', 0.15)] * 4 + [('Hard-B', -0.15)] * 3 + [('Hard-A', 0.15)] * 3
-        prev_target, cur = 0.0, 0.0
+        cur = 0.0
         for dist, target in schedule:
             cur = cur + 0.5 * (target - cur)            # approach the new criterion by half each session
             sessions.append(SessionData(

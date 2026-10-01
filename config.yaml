@@ -445,28 +445,6 @@ session_presets:
   alm_control_bi:
     session_type: "alm_control_bi"
 
-# =============================================================================
-# Analysis defaults
-# =============================================================================
-analysis:
-  excluded_stats: []
-  hard_threshold: 0.3
-  default_n_bins: 8
-  min_valid_trials: 10
-  default_stage: "Full_Task_Cont"
-
-# =============================================================================
-# Plotting defaults
-# =============================================================================
-plotting:
-  dpi: 100
-  font_size: 10
-  figure_width: 10.0
-  colourmap: "tab10"
-  model_colours:
-    BE: "steelblue"
-    SC: "darkorange"
-    default: "grey"
 sessions_to_ignore:
   SS01: []
   SS02: []

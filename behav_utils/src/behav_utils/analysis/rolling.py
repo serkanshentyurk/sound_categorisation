@@ -14,8 +14,8 @@ that have already been through ``filter_trials``, per the pipeline
     load -> select_sessions -> filter_trials -> compute_rolling_stats -> plot
 
 so this function never re-filters. The session_type label rides along on each
-per-session entry as neutral metadata; assigning it meaning (opto vs masking,
-genotype, …) is the caller's job in the plot.
+per-session entry as neutral metadata; assigning it meaning (opto vs sham,
+group, …) is the caller's job in the plot.
 
 μ is fitted through the stat registry (``compute_stats``), so
 windows the registry judges unreliable — the curve too flat (σ above threshold)

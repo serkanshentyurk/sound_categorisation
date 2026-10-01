@@ -7,7 +7,7 @@ imports from a project.
 
 ```
 plotting     draw-only: plot_x(result, ax=None) for every compute_x
-analysis     phase-level: compute_stat, contrasts (DeltaStats), resampling, rolling, group tests
+analysis     phase-level: compute_phase_stats, contrasts (DeltaStats), resampling, rolling, group tests
 stats        scalar statistics registry: compute_stats(TrialArrays, names) -> pd.Series
 readouts     array-valued readouts: curves, matrices, profiles as frozen dataclasses
 data         structures, CSV loading, select_sessions, filter_trials, pool_arrays, TrialArrays, synthetic
@@ -57,7 +57,7 @@ family names — `PSYCHOMETRIC` is a tuple you splat.
 curve without uncertainty is not useful; everything else leaves uncertainty to `analysis.resampling`.
 
 ### Phase results (`analysis/`)
-- `compute_stat(phase, names, per_session=False) -> PhaseStats(pooled: Series, sessions: DataFrame|None, ...)`.
+- `compute_phase_stats(phase, names, per_session=False) -> PhaseStats(pooled: Series, sessions: DataFrame|None, ...)`.
   `pooled` is always the genuine pooled fit, never a mean of per-session values.
 - `compute_delta_stat(phases, names, reference=, units=, ...) -> DeltaStats` with `.phases[label]`
   (`PhaseSummary`: stats, bootstrap draws per unit, optional curve/UM) and `.contrasts[key]` (`Contrast`:

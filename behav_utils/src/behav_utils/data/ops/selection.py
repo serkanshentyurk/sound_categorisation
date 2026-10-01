@@ -77,7 +77,7 @@ class SessionFilter:
         stage: Task stage (exact match, or list for OR-logic)
         distribution: Stimulus distribution (exact match, or list for OR-logic)
         session_type: Session type — 'regular', 'opto', or any project type stamped
-                      from config.session_types (e.g. 'masking').
+                      from config.session_types (e.g. 'sham').
                       Accepts a string or list.  When set, the exclude_opto /
                       exclude_opto / exclude_types are ignored (the
                       caller is explicitly choosing which types to include).
@@ -94,7 +94,7 @@ class SessionFilter:
         exclude_opto: If True, exclude sessions with opto trials
                       (ignored when session_type is set)
         exclude_types: Session types to drop when session_type is not set,
-                      e.g. ('masking', 'washout'). The names are the project's;
+                      e.g. ('sham', 'washout'). The names are the project's;
                       the library derives only 'regular' and 'opto' from the data.
         custom_filter: Callable(SessionData) -> bool for arbitrary filtering
     """
@@ -358,9 +358,9 @@ def register_presets_from_config(config_raw: Dict[str, Any]) -> int:
             distribution: "Uniform"
             min_accuracy: 0.70
             last_fraction: 0.50
-          post_shift_hard_a:
+          post_shift_skewed:
             stage: "Full_Task_Cont"
-            distribution: "Hard-A"
+            distribution: "skewed_left"
 
     Args:
         config_raw: Parsed YAML dict (the full config)

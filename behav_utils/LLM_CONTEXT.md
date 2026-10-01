@@ -37,7 +37,7 @@ src/behav_utils/
   stats/registry.py                 @stat, @fit, compute_stats, list_stats, is_exchangeable
   stats/basic.py history.py psychometric.py rt.py dynamics.py    the producers
   readouts/                         UpdateMatrix, PsychometricCurve, ConditionalPsychometric, BinnedCurve, SerialDependenceProfile
-  analysis/statistics.py            compute_stat -> PhaseStats
+  analysis/statistics.py            compute_phase_stats -> PhaseStats
   analysis/comparison.py            compute_delta_stat -> DeltaStats; compute_interaction -> Interaction
   analysis/resampling.py            bootstrap_phase_stats, permute_phase_difference, summarise_draws
   analysis/downsample.py            the single resampling engine (draws), resample_* readouts
@@ -60,7 +60,7 @@ tests/                              conftest (synthetic fixtures, test-local pre
 
 ## Traps
 - `filter_trials(trial_type='all')` keeps laser trials but drops aborts (all trial types drop aborts).
-- `compute_stat(...).pooled` is a real pooled fit; never average per-session values to get it.
+- `compute_phase_stats(...).pooled` is a real pooled fit; never average per-session values to get it.
 - Permutation p is only valid when the label was randomised per trial. Session-level conditions get
   bootstrap intervals only.
 - With few animals the rank test has a hard floor (`min_achievable_p`); per-animal consistency is the

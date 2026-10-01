@@ -491,7 +491,7 @@ def load_session_csv(
     # ── Session type ────────────────────────────────────────────────────────
     # A CSV session_type column (mapped in metadata or present directly) is
     # authoritative. Otherwise derive 'opto'/'regular' from opto content;
-    # project session types (masking, washout, …) are stamped later from config.session_types.
+    # project session types (sham, washout, …) are stamped later from config.session_types.
     csv_stype = metadata.get('session_type', None)
     if csv_stype is None or str(csv_stype).strip().lower() in ('', 'nan', 'none'):
         csv_stype = None
@@ -653,7 +653,7 @@ def _dates_from_strs(date_strs) -> set:
     return dates
 
 
-def _apply_session_type(experiment, mapping, stype) -> None:
+def apply_session_type(experiment, mapping, stype) -> None:
     """Set session_type=<stype> on sessions whose date is in the mapping.
 
     Sessions whose session_type came from an explicit CSV column are left
@@ -734,10 +734,10 @@ def load_experiment(
                 animal.metadata.update(meta)
 
     # Stamp session_type from the config lists. opto_on is left untouched:
-    # on a masking session its True trials are the (power-0) fake-opto trials,
-    # selectable via opto_on & session_type=='masking'.
+    # on a sham session (light, no effective perturbation) its True trials are the
+    # sham-opto trials, selectable via opto_on & the project's session type.
     for type_name, mapping in config.session_types.items():
-        _apply_session_type(experiment, mapping, type_name)
+        apply_session_type(experiment, mapping, type_name)
     if config.session_presets:
         from behav_utils.data.ops.selection import register_presets_from_config
         register_presets_from_config({'session_presets': config.session_presets})

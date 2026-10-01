@@ -347,7 +347,7 @@ class TestLoadAnimalAndExperiment:
         assert exp.n_animals == 1
         animal = exp.animals['Animal1']
         assert animal.n_sessions == 2
-        assert animal.genotype == 'het'              # merged from animal_metadata.json
+        assert animal.metadata['genotype'] == 'het'   # merged from animal_metadata.json
 
         by_date = {s.date: s for s in animal.sessions}
         assert by_date[date(2024, 3, 15)].session_type == 'masking'

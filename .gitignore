@@ -17,3 +17,4 @@ figures/
 arpit/
 *.egg-info/
 .ruff_cache/
+build/

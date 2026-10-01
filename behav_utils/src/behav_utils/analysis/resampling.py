@@ -17,7 +17,7 @@ Two engines, two jobs — they are not interchangeable:
 **Bootstrap** resamples trials with labels fixed. It answers "how precisely is
 this quantity pinned down", and is valid wherever the trials were sampled, which
 is everywhere. Use it for confidence intervals, and for any contrast between
-phases that were not randomised against each other (masking sessions vs opto
+phases that were not randomised against each other (sham sessions vs opto
 sessions were recorded on different days, so no shuffle mimics the design).
 
 **Permutation** shuffles the condition label to build a null. It answers "could
@@ -79,7 +79,7 @@ def bootstrap_phase_stats(
     ``unit='sessions'`` resamples whole sessions with replacement instead: it
     treats the session as the independent unit, so the interval reflects
     session-to-session scatter (the right unit when the phase spans sessions that
-    were not randomised per trial — e.g. an opto phase vs a masking phase). A
+    were not randomised per trial — e.g. an opto phase vs a sham phase). A
     matched ``n_trials`` only applies to the trial bootstrap.
 
     The trial draw is stratified by stimulus bin: the stimulus composition is

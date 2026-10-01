@@ -7,7 +7,7 @@ notebooks). Inputs are tidy frames from the library analysis layer:
 
     plot_delta_swarm     <- paired_diff  (the opto − nonopto Δ frame, one stat)
     plot_delta_paired    <- paired_diff per phase, concatenated with a 'phase' column
-    plot_stat_trajectory <- compute_stat(condition, [stat], per_session=True)
+    plot_stat_trajectory <- compute_phase_stats(condition, [stat], per_session=True)
 
 Genotype palette: het warm, wt cool.
 """
@@ -79,7 +79,7 @@ def plot_stat_trajectory(result, stat: str, ax: plt.Axes | None = None,
                          marker: str = 'o', linestyle: str = '-') -> plt.Axes:
     """Per-session trajectory of one stat for one condition — a single line.
 
-    ``result`` is a ``compute_stat(condition, [stat], per_session=True)``
+    ``result`` is a ``compute_phase_stats(condition, [stat], per_session=True)``
     result, or just its ``sessions`` frame (columns: animal, session, stat,
     value, n_trials). Draws value against session ordinal for ``stat``, dropping
     sessions whose fit failed (value is NaN). One condition, one animal, one
@@ -87,7 +87,7 @@ def plot_stat_trajectory(result, stat: str, ax: plt.Axes | None = None,
     on the same ``ax`` with a different ``color`` and ``label``.
 
     Args:
-        result:    PhaseStats from compute_stat(per_session=True), or its ``sessions`` frame.
+        result:    PhaseStats from compute_phase_stats(per_session=True), or its ``sessions`` frame.
         stat:      the stat to draw.
         ax:        Axes to draw on; a new one is made if None.
         color:     line colour; matplotlib default if None.
@@ -104,7 +104,7 @@ def plot_stat_trajectory(result, stat: str, ax: plt.Axes | None = None,
     frame = getattr(result, 'sessions', result)
     if frame is None or not hasattr(frame, 'columns'):
         raise KeyError("plot_stat_trajectory: need a per-session frame — call "
-                       "compute_stat(..., per_session=True)")
+                       "compute_phase_stats(..., per_session=True)")
     rows = frame[frame['stat'] == stat]
     if rows.empty:
         raise ValueError(f"plot_stat_trajectory: stat {stat!r} not in the per-session frame")
