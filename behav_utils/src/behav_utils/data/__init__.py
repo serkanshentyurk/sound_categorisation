@@ -27,7 +27,7 @@ from behav_utils.data.ops.selection import (
     register_presets_from_config,
     select_sessions,
 )
-from behav_utils.data.ops.switches import find_switches
+from behav_utils.data.ops.switches import Block, block_after, block_before, find_blocks, find_switches
 from behav_utils.data.structures import (
     AnimalData,
     ExperimentData,
@@ -44,7 +44,7 @@ from behav_utils.data.synthetic import (
 )
 
 __all__ = [
-    'random_choice_simulator', 'find_switches',
+    'random_choice_simulator', 'find_switches', 'find_blocks', 'block_before', 'block_after', 'Block',
     # Loading
     'load_experiment',
     'load_session_csv',

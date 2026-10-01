@@ -83,6 +83,29 @@ Caveats that apply to every trajectory number: one session (~500 trials) at sigm
 +/-0.1 and tau only loosely; `pse_censored` = 1 means the fit did not plateau within the session; |shape_daic| < 2
 is no evidence either way.
 
+## Switches (`<cohort>/switches/`, pre-opto cohorts)
+
+Adaptation across whole blocks after a distribution switch (blocks ≥ 1000 trials; short excursions are
+folded into their neighbours). `switches.csv`: one row per animal × switch × stat — `pre_*` (last 250 trials
+before the switch, 4-parameter fit), `normative_pse` (constant-σ observer at the animal's pre-switch σ),
+the `pse_dynamics` fit on the whole block with shape pinned (`pse_tau`, `pse_final`, `pse_censored`,
+`pse_shape_daic`, …), `trials_to_criterion` (first running window at ≥ 80 % convergence), `plateau` (mean
+convergence over the last third of the block). `convergence.csv`: one row per animal × switch × method ×
+bin — `method` ∈ `manuscript` (4-parameter fit per 50-trial bin, `convergence_clipped` to [0, 1], the
+Fig. 5C recipe), `pinned` (only the criterion fitted per bin, unclipped), `pinned_running` (running 50-trial
+windows, step 10). `sessions.csv`: per session within the block. `overnight.csv`: PSE over the last 100
+trials of a session vs the first 100 of the next; `toward_pre` > 0 means the overnight change went back
+toward the pre-switch criterion. `transition` ∈ first (Uniform→Hard), novel, return. Pages:
+`psychometrics.csv` / `psychometric_curves.csv`: one 4-parameter fit per animal × phase (the pre-switch
+Uniform block, each Hard block in order — `Hard-B #1`, `Hard-A #1`, … — and all Hard-A / all Hard-B pooled).
+`sessions.csv` carries the QC flags: `flagged` (|PSE| > 0.4, a lapse > 0.3, or accuracy < 0.6) and
+`biased_animal` (majority of Hard sessions flagged with the same PSE sign on A and B blocks — a side bias that
+ignores the distribution; thresholds in `adaptation.py`). `pre_post.csv`: PSE over the last 250 trials before each switch vs the last 250 of the block. Pages of
+`summary_switches.pdf`, in order: cohort QC; psychometrics by phase (clean animals; Uniform = last 5 sessions
+before the first switch); PSE before/after each switch; convergence (manuscript recipe, clipped, beside the
+shape-pinned unclipped version); speed/shape/overnight/drift by transition; then psychometrics and convergence
+for all animals. `pdf/<animal>_switches.pdf`: convergence per switch; psychometrics by phase.
+
 ## Reading the summary pages
 
 - One marker per animal, WT green, HET red, vertical line = 95 % CI.

@@ -161,7 +161,8 @@ def _trajectory_panel(ax, tr: pd.DataFrame, y: str, geno: str, title: str, logy=
         return
     for k, (_aid, sess) in enumerate(d.groupby('animal')):
         sess = sess.sort_values('order')
-        ax.plot(sess['order'], sess[y], '-', color=GENO_COL[geno], alpha=0.3, lw=1)
+        biased = bool(sess['biased_animal'].iloc[0]) if 'biased_animal' in sess else False
+        ax.plot(sess['order'], sess[y], ':' if biased else '-', color=GENO_COL[geno], alpha=0.3, lw=1)
         for dist, c in DIST_COL.items():
             m = sess['distribution'] == dist
             ax.plot(sess.loc[m, 'order'], sess.loc[m, y], 'o', color=c, ms=3.5, alpha=0.8)
@@ -248,7 +249,7 @@ def hard_page(T: dict, cohort: str, distribution: str):
     fig.text(0.5, 0.045, 'Rows 4–6: one thin line per mouse, thick = genotype mean; blue dot = Hard-A day, orange = Hard-B day; '
              'dotted line = last opto session | first masking session.\nRow 5 is the day-to-day switch amplitude (a tracking mouse '
              'alternates sign). Row 6 refits the PSE with slope and lapses held at the mouse\'s Uniform values, so only the '
-             'criterion moves.', ha='center', va='top', fontsize=8, color='0.3')
+             'criterion moves. Dotted thin lines = animals flagged BIASED by the cohort QC rule (see the switches report); the mean includes them.', ha='center', va='top', fontsize=8, color='0.3')
     handles = [plt.Line2D([], [], marker='o', ls='', color=c, label=d) for d, c in DIST_COL.items() if d != 'Uniform']
     fig.legend(handles=handles, loc='lower right', ncol=2, frameon=False, fontsize=8, bbox_to_anchor=(0.98, 0.005))
     _legend(fig)

@@ -116,3 +116,59 @@ def test_summary_pages_draw(exp, tmp_path):
     run_group(exp, ids[:2], 'Hard-A', 'opto', 'ppc', None, a, full, per)
     path = write_summary(tmp_path, 'selftest')
     assert path.exists() and (tmp_path / 'selftest' / 'summary_hard_a.png').exists()
+
+
+def test_switches_pipeline(exp, tmp_path):
+    """Blocked animals: qualifying switches, transition labels, table schema, summary pages."""
+    import matplotlib
+    matplotlib.use('Agg')
+    from sound_categorisation.adaptation import compute_switches
+    from sound_categorisation.reports.switches import compute_switches_cohort, run_switches, switch_tables
+    res = compute_switches(exp.animals['SB00'], min_block_trials=300, max_trials=800)
+    assert [r.to_distribution for r in res] == ['Hard-B', 'Hard-A', 'Hard-B', 'Hard-A']
+    assert [r.transition for r in res] == ['first', 'novel', 'return', 'return']
+    r = res[1]
+    assert set(r.convergence['method']) == {'manuscript', 'pinned', 'pinned_running'}
+    assert (r.convergence['trial'] >= 1).all()
+    assert r.convergence.loc[r.convergence['method'] == 'manuscript', 'convergence_clipped'].dropna().between(0, 1).all()
+    assert {'pse_tau', 'trials_to_criterion', 'plateau', 'pse_shape_daic'} <= set(r.dynamics.index)
+    assert len(r.sessions) == r.n_sessions_after and len(r.overnight) == r.n_sessions_after - 1
+    g = compute_switches_cohort(exp, ['SB00', 'SB01', 'ST00'], cohort='selftest', min_block_trials=300, max_trials=800)
+    assert g.animals == ['SB00', 'SB01']                      # ST00 has no blocks
+    T = switch_tables(g)
+    assert set(T) == {'switches', 'pre_post', 'convergence', 'sessions', 'overnight', 'psychometrics', 'psychometric_curves'}
+    assert {'animal', 'switch_idx', 'transition', 'stat', 'value'} <= set(T['switches'].columns)
+    out = run_switches(exp, ['SB00', 'SB01'], tmp_path, 'selftest', min_block_trials=300, max_trials=800)
+    assert (out / 'summary_switches.pdf').exists() and (out / 'pdf' / 'SB00_switches.pdf').exists()
+
+
+def test_bias_rule_flags_distribution_independent_bias():
+    """A clean animal is not flagged; an animal with |PSE| > 0.4 of the same sign on A and B blocks is."""
+    import pandas as pd
+    from sound_categorisation.adaptation import flag_biased_sessions
+    rows = []
+    for k in range(10):
+        dist = 'Hard-A' if k % 2 else 'Hard-B'
+        rows.append({'animal': 'clean', 'to_distribution': dist, 'pse_fixed': 0.05 * (1 if dist == 'Hard-A' else -1),
+                     'lapse_low': 0.05, 'lapse_high': 0.05, 'accuracy': 0.8})
+        rows.append({'animal': 'biased', 'to_distribution': dist, 'pse_fixed': 0.7,
+                     'lapse_low': 0.05, 'lapse_high': 0.05, 'accuracy': 0.65})
+        rows.append({'animal': 'flips', 'to_distribution': dist, 'pse_fixed': 0.7 * (1 if dist == 'Hard-A' else -1),
+                     'lapse_low': 0.05, 'lapse_high': 0.05, 'accuracy': 0.65})
+    f = flag_biased_sessions(pd.DataFrame(rows))
+    by = f.groupby('animal')['biased_animal'].first()
+    assert not by['clean'] and by['biased']
+    assert not by['flips']          # large but distribution-following PSE is not "independent of the distribution"
+    assert f.loc[f['animal'] == 'clean', 'flagged'].sum() == 0
+    assert f.loc[f['animal'] == 'biased', 'flagged'].all()
+
+
+def test_phase_psychometrics_tables(exp):
+    from sound_categorisation.reports.switches import compute_switches_cohort, switch_tables
+    g = compute_switches_cohort(exp, ['SB00'], cohort='selftest', min_block_trials=300, max_trials=800)
+    T = switch_tables(g)
+    P = T['psychometrics']
+    assert list(P.sort_values('order')['phase']) == ['Uniform', 'Hard-B #1', 'Hard-A #1', 'Hard-B #2', 'Hard-A #2', 'Hard-A all', 'Hard-B all']
+    assert {'pse', 'sigma', 'accuracy', 'hard_accuracy', 'n_trials', 'n_sessions'} <= set(P.columns)
+    assert {'flagged', 'biased_animal'} <= set(T['sessions'].columns)
+    assert len(T['psychometric_curves']) == 7 * 200

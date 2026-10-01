@@ -34,6 +34,21 @@ CONTRAST_COLUMNS = ['cohort', 'animal', 'genotype', 'distribution', 'design', 's
                     'n_a', 'n_b', 'n_sessions_a', 'n_sessions_b']
 
 
+def _qc(sessions: pd.DataFrame) -> pd.DataFrame:
+    """Apply the cohort QC rule (adaptation.flag_biased_sessions) to a trajectory frame."""
+    if not len(sessions) or 'pse_fixed' not in sessions:
+        return sessions
+    from sound_categorisation.adaptation import flag_biased_sessions
+    hard = sessions[sessions['distribution'].isin(['Hard-A', 'Hard-B'])]
+    if not len(hard):
+        return sessions.assign(flagged=False, biased_animal=False)
+    f = flag_biased_sessions(hard.rename(columns={'distribution': 'to_distribution'}))
+    out = sessions.copy()
+    out['flagged'] = f['flagged'].reindex(out.index).fillna(False).astype(bool)
+    out['biased_animal'] = out['animal'].map(f.groupby('animal')['biased_animal'].first()).fillna(False).astype(bool)
+    return out
+
+
 def _labels(r: AnimalResult) -> dict:
     return {'cohort': r.cohort, 'animal': r.animal, 'genotype': r.genotype, 'distribution': r.distribution,
             'design': r.design, 'site': r.site or '', 'toi': r.toi}
@@ -70,7 +85,7 @@ def to_tables(r: AnimalResult) -> Dict[str, pd.DataFrame]:
     tlab = {k: v for k, v in lab.items() if k != 'distribution'} | {'phase': r.distribution}
     return {
         'contrasts': contrasts,
-        'trajectory': (tr.sessions.assign(expert_pse=tr.baseline_pse, sigma=tr.sigma, **tlab)
+        'trajectory': (_qc(tr.sessions.assign(expert_pse=tr.baseline_pse, sigma=tr.sigma, **tlab))
                        if tr is not None else pd.DataFrame()),
         'trajectory_curves': tr.curves.assign(**tlab) if tr is not None else pd.DataFrame(),
     }
@@ -79,8 +94,8 @@ def to_tables(r: AnimalResult) -> Dict[str, pd.DataFrame]:
 def group_tables(g: GroupResult) -> Dict[str, pd.DataFrame]:
     lab = {'cohort': g.cohort, 'distribution': g.distribution, 'design': g.design, 'site': g.site or '', 'toi': g.toi}
     tlab = {k: v for k, v in lab.items() if k != 'distribution'} | {'phase': g.distribution}
-    sess = [tr.sessions.assign(animal=aid, genotype=g.by_animal.get(aid, 'unknown'), expert_pse=tr.baseline_pse,
-                               sigma=tr.sigma, **tlab) for aid, tr in g.trajectories.items()]
+    sess = [_qc(tr.sessions.assign(animal=aid, genotype=g.by_animal.get(aid, 'unknown'), expert_pse=tr.baseline_pse,
+                                   sigma=tr.sigma, **tlab)) for aid, tr in g.trajectories.items()]
     curves = [tr.curves.assign(animal=aid, genotype=g.by_animal.get(aid, 'unknown'), **tlab)
               for aid, tr in g.trajectories.items()]
     return {

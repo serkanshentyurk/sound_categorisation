@@ -119,12 +119,29 @@ uninformative at this cohort's trial counts and noise levels (they are on the pe
 - **convergence** — where the session ended on a scale from 0 (yesterday's PSE) to 1 (the PSE an ideal observer
   would adopt for today's distribution).
 
-## 5. What is deliberately not shown
+## 5. The switch report (pre-opto cohorts)
+
+`<cohort>/switches/` looks at the animals that lived in each distribution for many sessions
+(Uniform → Hard-B → Hard-A → Hard-B → Hard-A). For every switch it asks how the criterion moved from its
+pre-switch value toward the value an ideal observer would adopt, on a scale where 0 = where the animal was
+and 1 = normative. Page 1 shows this three ways: the manuscript's recipe (a full 4-parameter fit on each
+50-trial bin, clipped to 0–1 — this is what Fig. 5C does, and the clipping pushes noisy bins upward), the
+same bins with only the criterion fitted (steadier, not clipped), and running windows of the latter.
+Page 2 gives the numbers per switch — τ (how many trials the shift takes), trials to 80 %, the plateau,
+gradual-vs-step — split by whether the switch was the first ever, to a new distribution, or back to a
+familiar one; plus how much of a day's adaptation is lost overnight, and how the criterion keeps drifting
+session by session within a block. Page 3 is the cohort QC: every animal's sessions in order, with accuracy,
+|PSE| and lapses, and a flag on sessions where the psychometric has collapsed; an animal whose Hard sessions are
+mostly flagged with the same bias on A and B days is marked BIASED. Pages 4–5 are the psychometrics by phase
+(Uniform, each Hard block in order, all A, all B) — one curve per mouse and the mean, plus the paired PSE per
+mouse for each A/B block pair — first without the biased animals, then with everyone.
+
+## 6. What is deliberately not shown
 
 The summary pages leave out post-laser contrasts for Hard, the delta of deltas, the update matrices and the
 psychometric curves themselves. All are in the per-animal and group PDFs and in the CSVs.
 
-## 6. Regenerating
+## 7. Regenerating
 
 `bash run_reports.sh` rebuilds everything from the snapshot (a few hours). Single pieces:
 `python -m sound_categorisation.reports group --with-animals --distribution Hard-A --toi opto`,

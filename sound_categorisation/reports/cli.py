@@ -4,6 +4,7 @@ Report CLI.
     python -m sound_categorisation.reports animal   --distribution Hard-A --toi opto [--design alm --site uni] [--animals SS15 SS16]
     python -m sound_categorisation.reports group    --distribution Hard-A --toi opto [--design alm --site uni]
     python -m sound_categorisation.reports all      [--fast] [--limit N]
+    python -m sound_categorisation.reports switches --cohort behaviour1-cohort
     python -m sound_categorisation.reports summary  [--out DIR] [--cohort NAME]
     python -m sound_categorisation.reports selftest [--out DIR]
 
@@ -128,6 +129,14 @@ def cmd_all(a):
         sys.exit(1)
 
 
+def cmd_switches(a):
+    experiment = load_experiment_any(a.config, a.snapshot)
+    cohorts = load_cohorts(a.config or REPO_ROOT / 'config.yaml')
+    ids = _animals(experiment, cohorts, a)
+    from sound_categorisation.reports.switches import run_switches
+    run_switches(experiment, ids, Path(a.out), a.cohort, meta=_meta(a))
+
+
 def cmd_summary(a):
     from sound_categorisation.reports.summary import write_summary
     print('summary ->', write_summary(Path(a.out), a.cohort))
@@ -168,6 +177,9 @@ def build_parser() -> argparse.ArgumentParser:
     sl = sub.add_parser('all', help='the full battery')
     common(sl, needs_target=False)
     sl.set_defaults(fn=cmd_all)
+    sw = sub.add_parser('switches', help='blocked-switch adaptation (pre-opto cohorts)')
+    common(sw, needs_target=False)
+    sw.set_defaults(fn=cmd_switches)
     ss = sub.add_parser('summary', help='one-page summary figure from the written tables')
     ss.add_argument('--cohort', default=DEFAULT_COHORT)
     ss.add_argument('--out', type=Path, default=REPO_ROOT / 'results' / 'reports')

@@ -216,3 +216,29 @@ class TestResolveSessionType:
         sess = _make_session(0, date(2026, 1, 1), trials,
                              masking=True, washout=True)
         assert SessionFilter._resolve_session_type(sess) == 'washout'
+
+
+class TestBlocksAndSwitches:
+    def _seq(self, spec):
+        from types import SimpleNamespace as N
+        return [N(distribution=d, session_idx=i, trials=N(choice=np.zeros(n))) for i, (d, n) in enumerate(spec)]
+
+    def test_blocks_and_switches(self):
+        from behav_utils.data import block_after, block_before, find_blocks, find_switches
+        seq = self._seq([('U', 3000), ('U', 3000), ('B', 2000), ('B', 2500), ('A', 3700)])
+        blocks = find_blocks(seq)
+        assert [(b.distribution, b.n_sessions, b.n_trials) for b in blocks] == [('U', 2, 6000), ('B', 2, 4500), ('A', 1, 3700)]
+        sw = find_switches(seq)
+        assert [(s['from_distribution'], s['to_distribution'], s['trial_index']) for s in sw] == [('U', 'B', 6000), ('B', 'A', 10500)]
+        assert [s.session_idx for s in block_after(seq, sw[0])] == [2, 3]
+        assert [s.session_idx for s in block_before(seq, sw[0])] == [0, 1]
+
+    def test_short_excursion_is_absorbed(self):
+        from behav_utils.data import find_blocks, find_switches
+        seq = self._seq([('U', 8000), ('B', 600), ('U', 300), ('B', 2000), ('B', 2500), ('A', 3700)])
+        assert len(find_switches(seq)) == 4                                # raw: every change counts
+        blocks = find_blocks(seq, min_block_trials=1000)
+        assert [(b.distribution, b.n_trials) for b in blocks] == [('U', 8900), ('B', 4500), ('A', 3700)]
+        sw = find_switches(seq, min_block_trials=1000)
+        assert [(s['from_distribution'], s['to_distribution']) for s in sw] == [('U', 'B'), ('B', 'A')]
+        assert sw[0]['n_trials_after'] == 4500 and sw[0]['n_sessions_after'] == 2
