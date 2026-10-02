@@ -2,7 +2,8 @@
 
 Read this first if you are an AI assistant (or a new person) working on this repository. It is the
 orientation the code cannot give you: what the science is, how the code is layered, the rules that hold,
-and where the traps are. The library has its own file: `behav_utils/LLM_CONTEXT.md`.
+and where the traps are. The library lives in its own repository (github.com/serkanshentyurk/behav_utils) and
+has its own LLM_CONTEXT.md there.
 
 ## The science in six lines
 Head-fixed mice categorise sounds (2-AFC). The stimulus distribution is switched (Uniform → Hard-A ↔
@@ -23,7 +24,8 @@ model (grid search + simulation-based inference); silence PPC in expert and post
 
 ## Repository shape
 Two packages, imports one way: `sound_categorisation` (project) → `behav_utils` (library). Both are pip
-installed (`pip install -e behav_utils/ && pip install -e .`); nothing manipulates `sys.path`. Layout and
+installed (`pip install -e .`, which pulls `behav_utils` from its tagged release), which also installs the `sc-*` commands;
+nothing in the packages manipulates `sys.path`. Layout and
 module roles: `README.md`, `ARCHITECTURE.md`. Environments, data, cluster: `SETUP.md`.
 
 ## Rules that hold
@@ -34,23 +36,24 @@ module roles: `README.md`, `ARCHITECTURE.md`. Environments, data, cluster: `SETU
 3. Every compute returns a typed result (Series/DataFrame or a frozen dataclass with `to_rows()`).
    Contrasts are `DeltaStats` / `Interaction`; the project wraps them in `OptoContrasts`.
 4. Reports are a pipeline: scripts compute from the snapshot and write tidy tables + `meta.json`; figures
-   and summary pages read results/tables; notebooks read `results/reports/`. Do not put a bootstrap in a
+   and summary pages read results/tables; notebooks read a run's tables (`paths.resolve_run`). Do not put a bootstrap in a
    notebook, and do not draw a page from anything but a result or a table.
-5. Numbers are pinned: `tests/reference/selftest_contrasts.csv`. A change that moves a number must
-   regenerate it deliberately and say so in the commit.
+5. Numbers are pinned: `tests/e2e/reference/e2e_contrasts.csv`. A change that moves a number must
+   regenerate it deliberately (`pytest tests/e2e --regen-reference`) and say so in the commit.
 6. Statistics honesty: permutation p only for within-session contrasts (label randomised per trial);
    session-level contrasts get session-bootstrap intervals and no p; genotype rank tests have a floor
    (`min_achievable_p`) — per-animal consistency is the evidence.
 7. Working style: agree the design before code for anything above a bug fix; deliver complete files;
-   run `ruff check .`, `pytest behav_utils/tests -q`, `pytest tests -q`, and the report selftest; British
+   run `ruff check .`, `pytest tests/unit tests/e2e -q`; British
    English; say what a change costs and what could go wrong.
 
 ## Where to look for
-- which sessions an animal has of each type → `cohort.collect_sessions_ppc / _alm`; `config.yaml: session_types`
-- what a contrast is → `contrasts.py` docstring; `docs/results_guide.md` in words
-- the numbers behind any page → `results/reports/<cohort>/<dist>/<design>_<toi>/<animal>/contrasts.csv`
-- per-session adaptation → `adaptation.py` (`Trajectory`); columns explained in the generated results README
-- SLURM job counts → `tasks.py`; never hard-code an `--array`
+- which sessions an animal has of each type → `data/cohort.py: collect_sessions_ppc / _alm`; `config.yaml: session_types`
+- what a contrast is → `behaviour/contrasts.py` docstring; `docs/results_guide.md` in words
+- the numbers behind any page → `results/opto_contrasts/<cohort>/latest/<dist>/<design>_<trial_class>/<animal>/contrasts.csv`
+- which command writes what, and where → `docs/runs.md`
+- per-session adaptation → `behaviour/adaptation.py` (`Trajectory`); columns explained in the generated results README
+- SLURM job counts → `inference/tasks.py`; never hard-code an `--array`
 - run provenance → `meta.json` in every results folder (snapshot, config, settings, versions, git SHA)
 
 ## Traps
@@ -59,14 +62,13 @@ module roles: `README.md`, `ARCHITECTURE.md`. Environments, data, cluster: `SETU
 - Each Hard session is one switch; there is no multi-session block after a switch. Do not analyse
   "trials since switch across sessions".
 - `expert_uniform` and other presets exist only after a config/snapshot is loaded; for in-memory data
-  call `sound_categorisation.cohort.ensure_presets()`.
+  call `sound_categorisation.data.cohort.ensure_presets()`.
 - `filter_trials(trial_type='all')` keeps laser trials (and drops aborts, like every trial type).
 - Per-session PSE at this cohort's sigma has SE ≈ 0.1; `pse_fixed` (only the criterion free) is steadier.
   `pse_dynamics` τ is not identifiable at ~500 trials; it is in the tables and per-animal PDFs, not on the
   summary pages, for that reason.
 - SS12 has no data; SS17 and SS22 have no Hard sessions; SS20 has no Uniform laser sessions.
-- The `sound_categorisation.egg-info` / `behav_utils/src/behav_utils.egg-info` folders are build
-  artefacts; they must not be tracked.
+- `*.egg-info`, `build/`, `__pycache__` are build artefacts; they must not be tracked.
 
 ## Open work
 Notebooks (stage 3) await the agreed chapter story; Aim 1 real-data consensus run; next-cohort design

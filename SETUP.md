@@ -8,18 +8,26 @@ you like.
 ```bash
 conda create -n sound_cat python=3.11 && conda activate sound_cat
 cd <repo root>                      # the folder with pyproject.toml
-pip install -e behav_utils/         # the library, from src/ layout
-pip install -e ".[dev]"             # the project + pytest + ruff
+pip install -e ".[dev]"             # the project + pytest + ruff; pulls behav_utils from its tagged git release
 pip install -e ".[fit]"             # torch, sbi, ssm, hmmlearn — only needed for model fitting
 ```
 
-Both packages must be installed; nothing in the repo puts folders on `sys.path`. Check:
+`pip install -e .` installs the `sc-*` commands (`sc-reports`, `sc-export-snapshot`, `sc-sbi-train`,
+`sc-sbi-condition`, `sc-grid-search`, `sc-consensus`) and the library `behav_utils` at the tag pinned in
+`pyproject.toml` (its own repository: https://github.com/serkanshentyurk/behav_utils). Check:
 
 ```bash
-python -c "import behav_utils, sound_categorisation; print(behav_utils.__version__, behav_utils.__file__)"
+python -c "import behav_utils, sound_categorisation; print(behav_utils.__version__, sound_categorisation.__version__)"
 ```
 
-The path must end in `behav_utils/src/behav_utils/__init__.py`.
+To work on the library and the project at the same time, install your local checkout on top — editable
+installs win over the pinned one in the same env:
+
+```bash
+pip install -e /path/to/behav_utils          # e.g. /Users/Serkan/Desktop/pro/code/behav_utils
+```
+
+When a library change is needed by the project: tag a release there, bump the tag in `pyproject.toml` here.
 
 ## 2. Data
 
@@ -40,8 +48,8 @@ if present, overrides paths.
 Everything analysis-side loads a pickled snapshot of the experiment rather than the CSVs:
 
 ```bash
-python -m scripts.export_snapshot            # writes <data root>/behaviour/snapshots/sound_cat_snapshot.pkl
-python -m scripts.export_snapshot --check-only
+sc-export-snapshot            # writes <data root>/behaviour/snapshots/sound_cat_snapshot.pkl
+sc-export-snapshot --check-only
 ```
 
 Re-export when sessions are added or when column mappings in `config.yaml` change. Session types and
@@ -54,51 +62,66 @@ as `unknown` and excluded from genotype tests.
 ## 4. Verify
 
 ```bash
-pytest behav_utils/tests -q           # library, no data needed
-pytest tests -q                       # project (torch-only files skip without torch)
+pytest tests/unit -q                  # project, fast
+pytest tests/e2e -q                   # the report pipeline on synthetic data + pinned numbers, minutes
+pytest tests/fit -q                   # torch + sbi; skips itself where they are missing
 ruff check .
-python -m sound_categorisation.reports selftest     # synthetic end-to-end, ~30 s
 ```
 
-## 5. Reports
+Tests never touch a results root; everything goes to pytest's `tmp_path`. To keep the e2e outputs for a
+look: `pytest tests/e2e -q --basetemp=/tmp/sc_e2e`. If a deliberate change moves the pinned numbers:
+`pytest tests/e2e -q --regen-reference`, then commit `tests/e2e/reference/e2e_contrasts.csv` and say so.
+
+## 5. Runs and results
+
+Every analysis run writes under one root as `<report>/<cohort>/<run_id>/` and points `latest` at
+itself. The root is `<repo>/results` locally and `<data root>/results` on the cluster; `SC_RESULTS_ROOT`
+overrides it (and `SC_DATA_ROOT` the data root). Nothing under it is versioned — provenance is the
+`meta.json` in every folder (run id, command line, snapshot, settings, versions, git sha + dirty flag).
 
 ```bash
-bash run_reports.sh                   # selftest → fast structure check on real data → full battery → summary
-python -m sound_categorisation.reports group --with-animals --distribution Hard-A --toi opto   # one job
-python -m sound_categorisation.reports summary
+sc-reports battery                                         # check → opto-contrasts --all → light-artefact → summary
+sc-reports opto-contrasts --distribution Hard-A --trial-class opto           # one condition, a new run
+sc-reports opto-contrasts --distribution Hard-A --run-id <id>        # into an existing run
+sc-reports switch-adaptation --cohort behaviour1-cohort             # the switch-adaptation report
+sc-reports summary [--run <id>]                            # pages from the latest (or named) opto run
 ```
 
-Outputs: `results/reports/<cohort>/…` (git-ignored). See `docs/results_guide.md`.
+`docs/runs.md` lists every command, what it computes, inputs, outputs and rough duration;
+`docs/results_guide.md` explains how to read an opto run.
 
 ## 6. Cluster (SWC HPC)
 
 ```bash
 ssh <user>@ssh.swc.ucl.ac.uk
 module load miniconda && conda activate sound_cat
-cd <repo>
-bash slurm/submit.sh train                                         # 18 SBI networks
-bash slurm/submit.sh condition --source real --distribution uniform --run expert
-bash slurm/submit.sh gs --source real --fit-target update_matrix --distribution uniform
-python -m scripts.run_gs --gather --source real --distribution uniform --fit-target update_matrix
-python -m scripts.consensus --run expert --cohort real
+cd <repo> && pip install -e .                                      # once per checkout: provides the sc-* commands and behav_utils
+bash slurm/submit.sh sbi-train                                                     # 18 SBI networks → data root
+RUN=$(sc-new-run --report model_identification --cohort opto1-cohort)                  # one run id for the chain
+bash slurm/submit.sh grid-search        --cohort opto1-cohort --distribution uniform --fit-target update_matrix --run-id $RUN
+bash slurm/submit.sh sbi-condition --cohort opto1-cohort --distribution uniform --run-id $RUN
+sc-grid-search --cohort opto1-cohort --distribution uniform --fit-target update_matrix --run-id $RUN --gather
+sc-consensus --cohort opto1-cohort --distribution uniform --run-id $RUN
 ```
 
-`submit.sh` asks each script for its array range (`--print-array`) so the job count always matches the
-task grid in `sound_categorisation/tasks.py`. Logs go to `results/logs/`. Smoke first:
-`sbatch --array=0 slurm/train_sbi.sh --smoke-test`.
+`submit.sh` asks each command for its array range (`--print-array`) so the job count always matches the
+task grid in `sound_categorisation/inference/tasks.py`, and sends the Slurm logs to `<run>/logs/`. Check
+the pipeline first with `--fast` (tiny grids, few repeats; the run id gets a `_fast` suffix).
 
 ## 7. Notebooks
 
-`notebooks/shared_setup.py` gives `load_data()` (snapshot or CSV), paths and cohorts. Analysis imports go
-in the cell that uses them. The notebooks are being rewritten to read `results/reports/` tables rather
-than recompute (see ARCHITECTURE.md, "Notebooks").
+See `notebooks/README.md` — each notebook names the command that produced its tables and reads the latest
+run; `SC_NB_SYNTHETIC=1` after `sc-make-synthetic-run` runs them without data.
+
+`notebooks/nb_setup.py` gives `open_run`, the table loaders and `load_experiment()`. Analysis imports go
+in the cell that uses them; nothing in a notebook touches `sys.path`.
 
 ## Troubleshooting
 
 | symptom                               | cause / fix                                                                                                                                                    |
 | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ModuleNotFoundError: behav_utils`  | not installed in this env →`pip install -e behav_utils/`                                                                                                    |
-| `KeyError: preset 'expert_uniform'` | presets come from the config; load an experiment/snapshot first, or call`sound_categorisation.cohort.ensure_presets()`                                       |
+| `ModuleNotFoundError: behav_utils`  | not installed in this env → `pip install -e .` (or your local checkout, editable)                                                                                                    |
+| `KeyError: preset 'expert_uniform'` | presets come from the config; load an experiment/snapshot first, or call`sound_categorisation.data.cohort.ensure_presets()`                                       |
 | snapshot "config has changed" warning | column mappings changed → re-export; session-type/preset edits alone are fine                                                                                 |
 | `compare_groups: need two groups`   | only one genotype in the selection (e.g.`--limit 1`); rows are still written, tests skipped                                                                  |
 | CI passes locally but not on GitHub   | a file under`sound_categorisation/reports/` not committed (check `git status`), or ruff run only on part of the tree — run `ruff check .` from the root |

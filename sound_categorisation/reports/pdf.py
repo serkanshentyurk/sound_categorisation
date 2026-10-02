@@ -14,8 +14,8 @@ from sound_categorisation.reports.compute import BETWEEN_KEY, PHASES, AnimalResu
 __all__ = ['animal_pdf', 'group_pdf']
 
 _TITLES = {
-    'within': 'within-phase · {a} sessions ({toi} vs non_opto)',
-    'within_masking': 'within-phase · MASKING sessions ({toi} vs non_opto)',
+    'within': 'within-phase · {a} sessions ({trial_class} vs non_opto)',
+    'within_masking': 'within-phase · MASKING sessions ({trial_class} vs non_opto)',
     'between': 'between-phase ({between}, all trials)',
     'compensation': 'laser-OFF trials of {a} sessions vs masking sessions, all trials (compensation)',
     'dod': 'delta-of-deltas (silencing beyond artefact)',
@@ -25,7 +25,7 @@ _TITLES = {
 
 def _title(kind: str, r_or_g) -> str:
     design = r_or_g.design
-    return _TITLES[kind].format(a='OPTO' if design == 'ppc' else 'ALM', toi=r_or_g.toi,
+    return _TITLES[kind].format(a='OPTO' if design == 'ppc' else 'ALM', trial_class=r_or_g.trial_class,
                                 between=BETWEEN_KEY[design].replace('_', ' '))
 
 
@@ -69,7 +69,7 @@ def group_pdf(g: GroupResult, per_animal: Dict[str, AnimalResult], out_path, set
         if per_animal and any(r.readouts for r in per_animal.values()):
             _save(pdf, F.group_psychometric_page(per_animal, f'{prefix} · group psychometric (WT vs HET)'))
             for phase in PHASES[g.design]:
-                _save(pdf, F.group_update_matrix_page(per_animal, phase, g.toi,
+                _save(pdf, F.group_update_matrix_page(per_animal, phase, g.trial_class,
                                                       f'{prefix} · {phase} · genotype-mean UM'))
         if g.trajectories:
             _save(pdf, F.group_trajectory_page(g, f'{prefix} · session trajectories (WT vs HET)'))

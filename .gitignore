@@ -1,12 +1,10 @@
-sbi-logs/
-logs/
+
 __pycache__/
 .pytest_cache/
 .idea/
 .vscode/
 .DS_Store
 /results/
-logs/
 *.pkl
 fitter_errors.log
 .ipynb_checkpoints/
@@ -17,3 +15,6 @@ figures/
 arpit/
 *.egg-info/
 .ruff_cache/
+build/
+sbi-logs/
+behav_utils/

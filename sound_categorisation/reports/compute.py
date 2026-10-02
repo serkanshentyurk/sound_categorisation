@@ -9,7 +9,7 @@ readouts, and the adaptation results; ``tables.to_tables`` flattens it to tidy
 frames and ``tables.write_result`` persists them with metadata.
 
 Design-level settings live in :class:`Settings`; ``Settings.fast()`` is the
-seconds-long structural check used by ``--fast`` and the selftest.
+seconds-long structural check used by ``--fast`` and the e2e tests.
 """
 
 from __future__ import annotations
@@ -29,9 +29,8 @@ from behav_utils.readouts import (
     compute_update_matrix,
 )
 
-from sound_categorisation.adaptation import Trajectory, compute_trajectory
-from sound_categorisation.cohort import collect_sessions_alm, collect_sessions_ppc, gather_genotypes
-from sound_categorisation.contrasts import (
+from sound_categorisation.behaviour.adaptation import Trajectory, compute_trajectory
+from sound_categorisation.behaviour.contrasts import (
     BIAS,
     DUAL_UNITS,
     N_BOOT,
@@ -44,6 +43,7 @@ from sound_categorisation.contrasts import (
     dod_point,
     ppc_contrasts,
 )
+from sound_categorisation.data.cohort import collect_sessions_alm, collect_sessions_ppc, gather_genotypes
 
 __all__ = ['Settings', 'AnimalResult', 'GroupResult', 'compute_animal', 'compute_group', 'DESIGNS',
            'trajectory_distributions']
@@ -100,7 +100,7 @@ class AnimalResult:
     distribution: str
     design: str
     site: str | None
-    toi: str
+    trial_class: str
     contrasts: OptoContrasts
     readouts: Dict[Tuple[str, str], ConditionReadouts] = field(default_factory=dict)   # (phase, trial_type)
     trajectory: Trajectory | None = None                                            # per-session, in order
@@ -112,7 +112,7 @@ class AnimalResult:
         return f'{self.animal} · {self.genotype} · {self.distribution}{site}'
 
     def __repr__(self) -> str:
-        return (f'AnimalResult({self.animal!r}, {self.distribution!r}, {self.design}, toi={self.toi!r}, '
+        return (f'AnimalResult({self.animal!r}, {self.distribution!r}, {self.design}, trial_class={self.trial_class!r}, '
                 f'contrasts={[k for k in ("within", "within_masking", "between", "compensation", "dod", "vs_ppc") if k in self.contrasts]})')
 
 
@@ -122,7 +122,7 @@ class GroupResult:
     distribution: str
     design: str
     site: str | None
-    toi: str
+    trial_class: str
     rows: pd.DataFrame            # animal, group, kind, stat, value   (per-animal point differences)
     tests: pd.DataFrame           # kind, stat, p, statistic, n_wt, n_het, …  (WT vs HET rank tests)
     animals: Tuple[str, ...]
@@ -130,7 +130,7 @@ class GroupResult:
     trajectories: Dict[str, Trajectory] = field(default_factory=dict)                  # animal → trajectory
 
     def __repr__(self) -> str:
-        return (f'GroupResult({self.distribution!r}, {self.design}, toi={self.toi!r}, '
+        return (f'GroupResult({self.distribution!r}, {self.design}, trial_class={self.trial_class!r}, '
                 f'n_animals={len(self.animals)}, kinds={sorted(self.rows["kind"].unique()) if len(self.rows) else []})')
 
 
@@ -159,10 +159,10 @@ def _sessions_for(experiment, aid: str, distribution: str, design: str, site: st
     return animal, collect_sessions_alm(animal, distribution, site)
 
 
-def _readouts(sessions, toi: str, s: Settings) -> Dict[Tuple[str, str], ConditionReadouts]:
+def _readouts(sessions, trial_class: str, s: Settings) -> Dict[Tuple[str, str], ConditionReadouts]:
     out = {}
     for phase, sess in sessions.items():
-        for tt in ('non_opto', toi, 'all'):
+        for tt in ('non_opto', trial_class, 'all'):
             cond = filter_trials(sess, trial_type=tt)
             if not cond:
                 continue
@@ -173,10 +173,10 @@ def _readouts(sessions, toi: str, s: Settings) -> Dict[Tuple[str, str], Conditio
     return out
 
 
-def compute_animal(experiment, aid: str, distribution: str, toi: str, *, design: str = 'ppc',
+def compute_animal(experiment, aid: str, distribution: str, trial_class: str, *, design: str = 'ppc',
                    site: str | None = None, cohort: str = '', settings: Settings = Settings(),
                    genotype: str | None = None) -> AnimalResult:
-    """Everything the per-animal report needs, for one animal × distribution × toi."""
+    """Everything the per-animal report needs, for one animal × distribution × trial_class."""
     if design not in DESIGNS:
         raise ValueError(f'design must be in {DESIGNS}, got {design!r}')
     if design == 'alm' and site is None:
@@ -186,14 +186,14 @@ def compute_animal(experiment, aid: str, distribution: str, toi: str, *, design:
         genotype = gather_genotypes(experiment)[0].get(aid, 'unknown')
     names = settings.names(design)
     if design == 'ppc':
-        con = ppc_contrasts(sessions['opto'], sessions['masking'], toi, names,
+        con = ppc_contrasts(sessions['opto'], sessions['masking'], trial_class, names,
                             n_boot=settings.n_boot, n_perm=settings.n_perm, units=settings.units)
     else:
-        con = alm_contrasts(sessions['alm'], sessions['masking'], sessions['opto'], toi, names,
+        con = alm_contrasts(sessions['alm'], sessions['masking'], sessions['opto'], trial_class, names,
                             n_boot=settings.n_boot, n_perm=settings.n_perm, units=settings.units)
-    readouts = _readouts(sessions, toi, settings) if settings.readouts else {}
+    readouts = _readouts(sessions, trial_class, settings) if settings.readouts else {}
     trajectory = _trajectory(animal, distribution, settings) if design == 'ppc' else None
-    return AnimalResult(cohort, aid, genotype, distribution, design, site, toi, con, readouts, trajectory,
+    return AnimalResult(cohort, aid, genotype, distribution, design, site, trial_class, con, readouts, trajectory,
                         {k: len(v) for k, v in sessions.items()})
 
 
@@ -220,7 +220,7 @@ def _point_rows(con: OptoContrasts, design: str, aid: str, group: str) -> List[d
     return rows
 
 
-def compute_group(experiment, animals: Sequence[str], distribution: str, toi: str, *, design: str = 'ppc',
+def compute_group(experiment, animals: Sequence[str], distribution: str, trial_class: str, *, design: str = 'ppc',
                   site: str | None = None, cohort: str = '', settings: Settings = Settings()) -> GroupResult:
     """WT-vs-HET fold: per-animal point differences per contrast kind, rank-tested across genotype.
 
@@ -237,9 +237,9 @@ def compute_group(experiment, animals: Sequence[str], distribution: str, toi: st
     for aid in animals:
         animal, sessions = _sessions_for(experiment, aid, distribution, design, site)
         if design == 'ppc':
-            con = ppc_contrasts(sessions['opto'], sessions['masking'], toi, names, n_boot=0, n_perm=0)
+            con = ppc_contrasts(sessions['opto'], sessions['masking'], trial_class, names, n_boot=0, n_perm=0)
         else:
-            con = alm_contrasts(sessions['alm'], sessions['masking'], sessions['opto'], toi, names, n_boot=0, n_perm=0)
+            con = alm_contrasts(sessions['alm'], sessions['masking'], sessions['opto'], trial_class, names, n_boot=0, n_perm=0)
         rows += _point_rows(con, design, aid, by_animal.get(aid, 'unknown'))
         if design == 'ppc':
             tr = _trajectory(animal, distribution, settings)
@@ -250,8 +250,8 @@ def compute_group(experiment, animals: Sequence[str], distribution: str, toi: st
     for kind, sub in df.groupby('kind', sort=False):
         if sub['group'].nunique() < 2:       # one genotype present (e.g. --limit 1): rows only, no test
             continue
-        res = compare_groups(sub, group_col='group')
+        res = compare_groups(sub, group_col='group', groups=('wt', 'het'))   # WT is the reference
         for stat, r in res.items():
             tests.append({'kind': kind, 'stat': stat, **{k: v for k, v in r.items() if np.isscalar(v)}})
     tests_df = pd.DataFrame(tests, columns=['kind', 'stat', 'p'] if not tests else None)
-    return GroupResult(cohort, distribution, design, site, toi, df, tests_df, tuple(animals), by_animal, trajectories)
+    return GroupResult(cohort, distribution, design, site, trial_class, df, tests_df, tuple(animals), by_animal, trajectories)

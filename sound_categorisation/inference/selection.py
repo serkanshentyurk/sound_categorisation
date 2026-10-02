@@ -42,7 +42,7 @@ from behav_utils.analysis.update_matrix import fit_update_matrix, matrix_error
 from behav_utils.data.ops.filtering import pool_arrays
 from behav_utils.data.synthetic import session_from_arrays
 
-from sound_categorisation.fold_utils import split_folds_by_block
+from sound_categorisation.inference.fold_utils import split_folds_by_block
 from sound_categorisation.inference.types import ModelType
 from sound_categorisation.models.simulate import simulate_choices
 
