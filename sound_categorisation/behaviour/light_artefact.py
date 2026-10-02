@@ -64,14 +64,16 @@ def _bin_rows(on: TrialArrays, off: TrialArrays, name: str, n_boot: int, rng, n_
     """P(B) per stimulus bin for on and off trials, with a percentile CI on the per-bin difference from
     resampling trials within each bin (valid: light was randomised per trial)."""
     c_on = compute_binned_curve(on, n_bins=n_bins)
-    c_off = compute_binned_curve(off, n_bins=n_bins)
     v_on, v_off = on.valid(), off.valid()
     edges = np.quantile(np.concatenate([v_on.stimulus, v_off.stimulus]), np.linspace(0, 1, n_bins + 1))
+
+    def in_bin(v, lo, hi, last):
+        return (v.stimulus >= lo) & ((v.stimulus <= hi) if last else (v.stimulus < hi))
+
     rows = []
     for b in range(n_bins):
-        lo, hi = edges[b], edges[b + 1]
-        sel = (lambda v: (v.stimulus >= lo) & ((v.stimulus < hi) if b < n_bins - 1 else (v.stimulus <= hi)))
-        ch_on, ch_off = v_on.choice[sel(v_on)], v_off.choice[sel(v_off)]
+        lo, hi, last = edges[b], edges[b + 1], b == n_bins - 1
+        ch_on, ch_off = v_on.choice[in_bin(v_on, lo, hi, last)], v_off.choice[in_bin(v_off, lo, hi, last)]
         diff = float(ch_on.mean() - ch_off.mean()) if len(ch_on) and len(ch_off) else np.nan
         ci_lo = ci_hi = np.nan
         if n_boot and len(ch_on) >= 5 and len(ch_off) >= 5:

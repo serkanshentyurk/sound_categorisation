@@ -15,8 +15,9 @@
 - CLIs echo the options on a wrong input: unknown cohort → the cohorts in `config.yaml` (and synthetic
   cohorts on disk), unknown animal → the animals in the experiment, unknown run id → the runs under that
   cohort, missing report → the cohorts that have runs.
-- `behav_utils` packaging metadata (classifiers, URLs, keywords), a `behav_utils-v*` tag → release
-  workflow that builds, checks and tests the wheel; installable from git with `#subdirectory=behav_utils`.
+- `behav_utils` packaging metadata (classifiers, URLs, keywords) and, inside `behav_utils/`, its own
+  `.github/workflows/{ci,release}.yml` and `.gitignore` so the folder is a complete repository when copied
+  out; a `v*` tag there builds, checks and tests the wheel and attaches it to a GitHub release.
 
 ## 0.4.1 — 2026-10 (naming pass + levels)
 - Names say what they are: `sc-reports opto-contrasts | switch-adaptation | summary | battery` (subcommands =

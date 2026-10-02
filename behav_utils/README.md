@@ -10,9 +10,8 @@ come from the config you give it.
 ## Install
 
 ```bash
-pip install -e path/to/behav_utils            # editable, for development
-pip install "behav_utils @ git+https://github.com/<org>/sound_categorisation.git#subdirectory=behav_utils"
-pip install "behav_utils @ git+https://github.com/<org>/sound_categorisation.git@behav_utils-v0.6.0#subdirectory=behav_utils"   # pinned to a release tag
+pip install "behav_utils @ git+https://github.com/serkanshentyurk/behav_utils.git@v0.6.0"   # from its own repo, pinned
+pip install -e path/to/behav_utils                                                # editable, for development
 ```
 
 Requires Python ≥ 3.10; numpy, pandas, scipy, matplotlib, pyyaml.

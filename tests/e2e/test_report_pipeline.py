@@ -15,8 +15,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-
-pytestmark = pytest.mark.e2e
 from sound_categorisation.data.synthetic import synthetic_experiment
 from sound_categorisation.reports import (
     CONTRAST_COLUMNS,
@@ -29,6 +27,8 @@ from sound_categorisation.reports import (
     to_tables,
     write_result,
 )
+
+pytestmark = pytest.mark.e2e
 
 REFERENCE = Path(__file__).parent / 'reference' / 'e2e_contrasts.csv'
 

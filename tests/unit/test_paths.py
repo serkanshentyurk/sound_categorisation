@@ -73,7 +73,8 @@ def test_latest_falls_back_to_txt_then_newest_dir(tmp_path):
     (a.parent / 'not_a_run').mkdir()
     assert latest_run('switch_adaptation', 'coh', root=tmp_path) == b
     start_run('switch_adaptation', 'coh', '2026-01-04_0915_0000000', root=tmp_path)   # the timed form sorts after
-    (a.parent / 'latest').unlink(missing_ok=True); (a.parent / 'latest.txt').unlink()
+    (a.parent / 'latest').unlink(missing_ok=True)
+    (a.parent / 'latest.txt').unlink()
     assert latest_run('switch_adaptation', 'coh', root=tmp_path).name == '2026-01-04_0915_0000000'
 
 

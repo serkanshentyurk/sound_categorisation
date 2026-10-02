@@ -31,8 +31,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/ORG/sound_categorisation/tree/main/behav_utils"
-Changelog = "https://github.com/ORG/sound_categorisation/blob/main/behav_utils/CHANGELOG.md"
+Homepage = "https://github.com/serkanshentyurk/behav_utils"
+Changelog = "https://github.com/serkanshentyurk/behav_utils/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "ruff", "build", "twine"]
