@@ -2,7 +2,7 @@
 Create a run directory and print its id — for job submission, where every array task must write
 into the same run.
 
-    RUN=$(sc-new-run --report model_identification --cohort real)
+    RUN=$(sc-new-run --report model_identification --cohort opto1-cohort)
     RUN=$(sc-new-run --report opto_contrasts --cohort opto1-cohort --fast)
 
 Creates ``<results root>/<report>/<cohort>/<run_id>/logs/`` and points ``latest`` at it. Prints the

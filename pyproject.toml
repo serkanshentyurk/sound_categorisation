@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sound-categorisation"
-version = "0.4.0"
+version = "0.4.1"
 description = "PPC causal role in auditory categorisation — project code on top of behav_utils"
 requires-python = ">=3.10"
 dependencies = ["numpy", "pandas", "scipy", "matplotlib", "pyyaml", "joblib", "behav_utils>=0.5"]
@@ -19,9 +19,9 @@ sc-export-snapshot = "sound_categorisation.cli.export_snapshot:main"
 sc-make-synthetic-cohort = "sound_categorisation.cli.make_synthetic_cohort:main"
 sc-new-run         = "sound_categorisation.cli.new_run:main"
 sc-make-synthetic-run = "sound_categorisation.cli.make_synthetic_run:main"
-sc-train-sbi       = "sound_categorisation.cli.train_sbi:main"
-sc-run-sbi         = "sound_categorisation.cli.run_sbi:main"
-sc-run-gs          = "sound_categorisation.cli.run_gs:main"
+sc-sbi-train       = "sound_categorisation.cli.sbi_train:main"
+sc-sbi-condition   = "sound_categorisation.cli.sbi_condition:main"
+sc-grid-search     = "sound_categorisation.cli.grid_search:main"
 sc-consensus       = "sound_categorisation.cli.consensus:main"
 
 [tool.setuptools.packages.find]

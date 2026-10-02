@@ -29,7 +29,7 @@ jobs:
       - name: Library tests
         run: pytest behav_utils/tests -q
       - name: Entry points resolve
-        run: sc-reports --help >/dev/null && sc-run-gs --help >/dev/null && sc-consensus --help >/dev/null
+        run: sc-reports --help >/dev/null && sc-grid-search --help >/dev/null && sc-consensus --help >/dev/null
       - name: Project unit tests
         run: pytest tests/unit -q
       - name: Project end-to-end (report pipeline on synthetic data, pinned reference)

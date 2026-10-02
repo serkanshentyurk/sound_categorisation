@@ -1,17 +1,30 @@
 # Changelog — sound_categorisation
 
+## 0.4.1 — 2026-10 (naming pass + levels)
+- Names say what they are: `sc-reports opto-contrasts | switch-adaptation | summary | battery` (subcommands =
+  report folders); `--trial-class opto|post_opto` (was `--toi`); one `--site ppc|alm_uni|alm_bi` (was
+  `--design` + `--site`) and one `site` column in every table (`reports.tables.normalise_site` reads older
+  runs); `sc-grid-search`, `sc-sbi-condition`, `sc-sbi-train` (were `sc-run-gs`, `sc-run-sbi`,
+  `sc-train-sbi`); `slurm/submit.sh grid-search|sbi-condition|sbi-train`; the model-identification runners
+  take `--cohort` only (a synthetic cohort or a config cohort, detected from the name; `--source`/`--label`
+  gone) and restrict real runs to the cohort's animals; the synthetic cohort is `synthetic` (was `selftest`).
+- `levels.csv` per animal in opto-contrasts runs: the observed value of every stat in every condition the
+  contrasts were built from.
+- Notebooks: `10` reads levels; `11` classifies each switch as toward / none / reverse and lists the odd
+  adapters.
+
 ## 0.4.0 — 2026-10 (the cleanup pass)
 - Package laid out by aims: `settings.py`, `data/`, `behaviour/`, `models/`, `inference/`, `features/`,
   `reports/`, `plotting/`, `cli/`. `paths.py` split into locations (`data/paths.py`) and constants
   (`settings.py`). `BE_core`/`SC_core` → `be_core`/`sc_core`.
 - Entry points replace `scripts/`: `sc-reports`, `sc-export-snapshot`, `sc-make-synthetic-cohort`,
-  `sc-new-run`, `sc-train-sbi`, `sc-run-sbi`, `sc-run-gs`, `sc-consensus`.
+  `sc-new-run`, `sc-sbi-train`, `sc-sbi-condition`, `sc-grid-search`, `sc-consensus`.
 - Results: one root (`paths.results_root()`), one layout `<report>/<cohort>/<run_id>/`, run id =
   date + git sha (+ `_fast`), `latest` symlink + `latest.txt`, `meta.json` stamped with run id, argv and
   git state. `run_reports.sh` replaced by `sc-reports battery`. `slurm/submit.sh` creates and shares the
   run id across array tasks and sends logs to `<run>/logs/`.
 - `sc-reports` subcommands are report types (`opto`, `switches`, `summary`, `battery`); `--level`
-  replaces `animal`/`group`; `selftest` removed in favour of `pytest tests/e2e`.
+  replaces `animal`/`group`; `synthetic` removed in favour of `pytest tests/e2e`.
 - Model identification writes `grid_search/`, `sbi/` and `consensus/` into one run; fixes the
   consensus reading a path the runners never wrote (missing distribution level). `--run quick|full`
   and `--smoke-test` → `--fast` / `--coarse`; `SMOKE_*` → `FAST_*`.

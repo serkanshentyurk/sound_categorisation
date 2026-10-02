@@ -49,7 +49,7 @@ module roles: `README.md`, `ARCHITECTURE.md`. Environments, data, cluster: `SETU
 ## Where to look for
 - which sessions an animal has of each type → `data/cohort.py: collect_sessions_ppc / _alm`; `config.yaml: session_types`
 - what a contrast is → `behaviour/contrasts.py` docstring; `docs/results_guide.md` in words
-- the numbers behind any page → `results/opto_contrasts/<cohort>/latest/<dist>/<design>_<toi>/<animal>/contrasts.csv`
+- the numbers behind any page → `results/opto_contrasts/<cohort>/latest/<dist>/<design>_<trial_class>/<animal>/contrasts.csv`
 - which command writes what, and where → `docs/runs.md`
 - per-session adaptation → `behaviour/adaptation.py` (`Trajectory`); columns explained in the generated results README
 - SLURM job counts → `inference/tasks.py`; never hard-code an `--array`

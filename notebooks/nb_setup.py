@@ -27,14 +27,15 @@ import pandas as pd
 
 from behav_utils.plotting.styles import COLOURS, PALETTE, apply_style
 from sound_categorisation.data.paths import REPO_ROOT, data_root, resolve_run, results_root
+from sound_categorisation.reports.tables import normalise_site
 
 SYNTHETIC = os.environ.get('SC_NB_SYNTHETIC', '') not in ('', '0')
 RUN = os.environ.get('SC_NB_RUN', 'latest')
 
 if SYNTHETIC:
-    OPTO_COHORT, SWITCH_COHORT, MODEL_COHORT = 'selftest', 'selftest', 'synthetic_uniform'
+    OPTO_COHORT, SWITCH_COHORT, MODEL_COHORT = 'synthetic', 'synthetic', 'synthetic_uniform'
 else:
-    OPTO_COHORT, SWITCH_COHORT, MODEL_COHORT = 'opto1-cohort', 'behaviour1-cohort', 'real'
+    OPTO_COHORT, SWITCH_COHORT, MODEL_COHORT = 'opto1-cohort', 'behaviour1-cohort', 'opto1-cohort'
 
 apply_style()
 pd.set_option('display.width', 160)
@@ -56,9 +57,9 @@ def open_run(report: str, cohort: str, run: str = RUN) -> Path:
     try:
         path = resolve_run(report, cohort, run)
     except FileNotFoundError as e:
-        hint = {'opto_contrasts': f'sc-reports opto --all --cohort {cohort}   (or sc-reports battery)',
-                'switch_adaptation': f'sc-reports switches --cohort {cohort}',
-                'model_identification': 'slurm/submit.sh gs / condition, then sc-consensus (see docs/runs.md)'}[report]
+        hint = {'opto_contrasts': f'sc-reports opto-contrasts --all --cohort {cohort}   (or sc-reports battery)',
+                'switch_adaptation': f'sc-reports switch-adaptation --cohort {cohort}',
+                'model_identification': 'slurm/submit.sh grid-search / condition, then sc-consensus (see docs/runs.md)'}[report]
         raise FileNotFoundError(f'{e}\nNo {report} run for cohort {cohort!r}. Create one with:\n    {hint}'
                                 + ('\n(or set SC_NB_SYNTHETIC=1 after sc-make-synthetic-run)' if not SYNTHETIC else ''))
     print(f'{report}/{cohort}/{path.name}')
@@ -69,45 +70,46 @@ def _read_all(run: Path, name: str, exclude_group: bool = True) -> pd.DataFrame:
     files = sorted(glob.glob(str(run / '**' / f'{name}.csv'), recursive=True))
     if exclude_group:
         files = [f for f in files if '/group/' not in f]
-    return pd.concat([pd.read_csv(f) for f in files], ignore_index=True) if files else pd.DataFrame()
+    if not files:
+        return pd.DataFrame()
+    df = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
+    return normalise_site(df) if name in ('contrasts', 'levels', 'group_rows', 'group_tests', 'trajectory') else df
 
 
 def load_contrasts(run: Path) -> pd.DataFrame:
-    """Every per-animal contrasts.csv of an opto run, one frame (columns include distribution, design,
-    site, toi, kind, unit, stat, diff, ci_lo, ci_hi, boot_p, perm_p)."""
-    df = _read_all(run, 'contrasts')
-    if 'site' in df:
-        df['site'] = df['site'].fillna('')
-    return df
+    """Every per-animal contrasts.csv of an opto-contrasts run, one frame (columns include distribution,
+    site (ppc | alm_uni | alm_bi), trial_class, kind, unit, stat, diff, ci_lo, ci_hi, boot_p, perm_p)."""
+    return _read_all(run, 'contrasts')
+
+
+def load_levels(run: Path) -> pd.DataFrame:
+    """Every per-animal levels.csv: the observed value of each stat in each condition the contrasts were
+    built from — (kind, phase) names the condition, e.g. within/non_opto = laser-off trials of opto sessions."""
+    return _read_all(run, 'levels')
 
 
 def load_group(run: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
     """(group_rows, group_tests) across every condition of an opto run."""
-    rows = _read_all(run, 'group_rows', exclude_group=False)
-    tests = _read_all(run, 'group_tests', exclude_group=False)
-    for df in (rows, tests):
-        if 'site' in df:
-            df['site'] = df['site'].fillna('')
-    return rows, tests
+    return _read_all(run, 'group_rows', exclude_group=False), _read_all(run, 'group_tests', exclude_group=False)
 
 
 def load_trajectory(run: Path) -> pd.DataFrame:
     """Per-session trajectory rows of an opto run (one copy per session)."""
     t = _read_all(run, 'trajectory')
     if len(t):
-        t = t.drop_duplicates(subset=['animal', 'session_idx', 'toi'])
+        t = t.drop_duplicates(subset=['animal', 'session_idx', 'trial_class'])
     return t
 
 
-def condition_dir(run: Path, distribution: str, design: str = 'ppc', toi: str = 'opto', site: str | None = None) -> Path:
-    return run / distribution / (f'{design}_{site}_{toi}' if site else f'{design}_{toi}')
+def condition_dir(run: Path, distribution: str, site: str = 'ppc', trial_class: str = 'opto') -> Path:
+    """<run>/<distribution>/<site>_<trial_class>, site in ppc | alm_uni | alm_bi."""
+    return run / distribution / f'{site}_{trial_class}'
 
 
-def load_readouts(run: Path, animal: str, distribution: str, design: str = 'ppc', toi: str = 'opto',
-                  site: str | None = None) -> dict:
+def load_readouts(run: Path, animal: str, distribution: str, site: str = 'ppc', trial_class: str = 'opto') -> dict:
     """The readouts.npz of one animal/condition as a dict of arrays (keys like
     'opto__non_opto__curve_x', 'masking__opto__um'); empty if the run was --fast."""
-    f = condition_dir(run, distribution, design, toi, site) / animal / 'readouts.npz'
+    f = condition_dir(run, distribution, site, trial_class) / animal / 'readouts.npz'
     if not f.exists():
         return {}
     z = np.load(f, allow_pickle=True)
@@ -147,5 +149,5 @@ def first_animal(df: pd.DataFrame, genotype: str | None = None) -> str:
 
 __all__ = ['SYNTHETIC', 'RUN', 'OPTO_COHORT', 'SWITCH_COHORT', 'MODEL_COHORT', 'REPO_ROOT',
            'GENOTYPE_COLOUR', 'COLOURS', 'PALETTE', 'np', 'pd', 'plt', 'Path',
-           'banner', 'open_run', 'load_contrasts', 'load_group', 'load_trajectory', 'condition_dir',
+           'banner', 'open_run', 'load_contrasts', 'load_levels', 'load_group', 'load_trajectory', 'condition_dir',
            'load_readouts', 'load_switches', 'load_consensus', 'load_experiment', 'first_animal']

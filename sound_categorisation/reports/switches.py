@@ -1,7 +1,7 @@
 """
 Switch report (pre-opto cohorts): adaptation across whole blocks after a distribution switch.
 
-    sc-reports switches --cohort behaviour1-cohort
+    sc-reports switch-adaptation --cohort behaviour1-cohort
 
 Per animal: every qualifying switch (blocks ≥ 1000 trials) → SwitchResult; per cohort:
 tables (switches.csv, convergence.csv, sessions.csv, overnight.csv), a per-animal PDF, and

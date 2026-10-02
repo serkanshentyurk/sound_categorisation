@@ -13,7 +13,7 @@ Output: <results root>/model_identification/<cohort>/<run_id>/grid_search/<fit_t
 (``paths.model_id_dir``; run_sbi writes ``sbi/...`` into the same run, consensus reads both).
   finals:   {animal}_{model}.pkl
   partials: partials/{animal}_{model}_seed{seed}.pkl
-<cohort> is the synthetic cohort name, or --label for real data (default 'real').
+<cohort> is a synthetic cohort or a config.yaml cohort; the kind is detected from the name.
 All finals are written via save_cv_result (neutral cross-method schema), so
 load_cv_results reads quick, full, synthetic and real identically. Each result's
 metadata stamps model, distribution and fit_target.
@@ -23,14 +23,14 @@ subdir). For real data the sessions default to expert_<distribution> unless
 --preset is given; for synthetic the --cohort name should encode the phase.
 
 Cluster usage (real, one phase; repeat for hard_a and hard_b). The run id is created once and
-shared by every array task — ``slurm/submit.sh gs ...`` does all of this:
-    RUN=$(sc-new-run --report model_identification --cohort real)
-    bash slurm/submit.sh gs --source real --distribution uniform --fit-target update_matrix --run-id $RUN
-    sc-run-gs --source real --distribution uniform --fit-target update_matrix --run-id $RUN --gather
+shared by every array task — ``slurm/submit.sh grid-search ...`` does all of this:
+    RUN=$(sc-new-run --report model_identification --cohort opto1-cohort)
+    bash slurm/submit.sh grid-search --cohort opto1-cohort --distribution uniform --fit-target update_matrix --run-id $RUN
+    sc-grid-search --cohort opto1-cohort --distribution uniform --fit-target update_matrix --run-id $RUN --gather
 
 Locally: omit --run-id (a new run is created) and --task-id (all seeds run in-process).
 --fast: the tiny grid and FAST_GS_N_SEEDS, run id suffixed _fast. --coarse: the coarse grid.
-Synthetic: --source synthetic --cohort <name> (name should encode the phase).
+Synthetic cohorts: --cohort <name> (name should encode the phase).
 """
 
 import argparse
@@ -175,9 +175,8 @@ def _decode_task(task_id, n_animals, n_seeds):
 
 def main(argv=None):
     p = argparse.ArgumentParser(description='GS model identification (synthetic or real)')
-    p.add_argument('--source', required=True, choices=['synthetic', 'real'])
-    p.add_argument('--cohort', default=None, help='synthetic: cohort name')
-    p.add_argument('--label', default=None, help='real: dataset label for the output dir')
+    p.add_argument('--cohort', required=True,
+                   help='a synthetic cohort (sc-make-synthetic-cohort) or a cohort name from config.yaml')
     p.add_argument('--distribution', default=None, choices=list(DISTRIBUTIONS),
                    help='Phase to fit (required). Selects the sessions (real: '
                         'expert_<distribution> unless --preset) and the output '
@@ -203,7 +202,7 @@ def main(argv=None):
                 'fit one phase per launch.')
     preset = args.preset or f'expert_{args.distribution}'
 
-    label = args.cohort if args.source == 'synthetic' else (args.label or 'real')
+    label = args.cohort
     if args.task_id is not None and not args.run_id:
         p.error('--task-id needs --run-id (every array task must write into the same run)')
     n_seeds = args.n_seeds or (FAST_GS_N_SEEDS if args.fast else SYNTH_GS_N_SEEDS)
@@ -216,8 +215,7 @@ def main(argv=None):
         gather_results(model_id_dir(run, 'grid_search', args.fit_target, args.distribution), args.distribution)
         return
 
-    records = load_animals(args.source, cohort=args.cohort,
-                           config_path=args.config, preset=preset)
+    records = load_animals(args.cohort, config_path=args.config, preset=preset)
 
     if args.count:
         print(len(records) * len(MODELS) * n_seeds)
@@ -235,7 +233,7 @@ def main(argv=None):
           len(grid_set['BE'].A_repulsion_values) *
           len(grid_set['BE'].model_param1_values) *
           len(grid_set['BE'].model_param2_values))
-    print(f'=== GS [{run.name}] {args.source}/{label} phase={args.distribution} preset={preset} '
+    print(f'=== GS [{run.name}] {label} phase={args.distribution} preset={preset} '
           f'/ {args.fit_target} | grid={ng} pts x {n_seeds} seeds ===')
     print(f'  {len(records)} animals x {len(MODELS)} models x {n_seeds} seeds, '
           f'grid={"fast" if args.fast else ("coarse" if coarse else "full")}')

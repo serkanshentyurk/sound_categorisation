@@ -5,9 +5,9 @@ Tidy tables from report results, and their persistence.
     write_result(out_dir, tables, readouts, meta)  # tables/*.csv, readouts.npz, meta.json
     tables, readouts, meta = read_result(out_dir)
 
-One schema for every contrast row, whatever the design:
+One schema for every contrast row, whatever the site:
 
-    cohort, animal, genotype, distribution, design, site, toi, kind, contrast, unit,
+    cohort, animal, genotype, distribution, site, trial_class, kind, contrast, unit,
     stat, diff, ci_lo, ci_hi, boot_p, perm_p, n_a, n_b, n_sessions_a, n_sessions_b
 
 ``kind`` ∈ within, within_masking, between, compensation, dod, vs_ppc. Group tables add
@@ -25,11 +25,15 @@ from typing import Dict, Tuple
 import numpy as np
 import pandas as pd
 
+from sound_categorisation.data.cohort import site_label
 from sound_categorisation.reports.compute import AnimalResult, GroupResult
 
 __all__ = ['to_tables', 'group_tables', 'readout_arrays', 'write_result', 'read_result', 'CONTRAST_COLUMNS']
 
-CONTRAST_COLUMNS = ['cohort', 'animal', 'genotype', 'distribution', 'design', 'site', 'toi', 'kind', 'contrast',
+LEVEL_COLUMNS = ['cohort', 'animal', 'genotype', 'distribution', 'site', 'trial_class', 'kind', 'phase',
+                 'n_trials', 'n_sessions', 'stat', 'value']
+
+CONTRAST_COLUMNS = ['cohort', 'animal', 'genotype', 'distribution', 'site', 'trial_class', 'kind', 'contrast',
                     'unit', 'stat', 'diff', 'ci_lo', 'ci_hi', 'boot_p', 'perm_p',
                     'n_a', 'n_b', 'n_sessions_a', 'n_sessions_b']
 
@@ -51,7 +55,7 @@ def _qc(sessions: pd.DataFrame) -> pd.DataFrame:
 
 def _labels(r: AnimalResult) -> dict:
     return {'cohort': r.cohort, 'animal': r.animal, 'genotype': r.genotype, 'distribution': r.distribution,
-            'design': r.design, 'site': r.site or '', 'toi': r.toi}
+            'site': site_label(r.design, r.site), 'trial_class': r.trial_class}
 
 
 def to_tables(r: AnimalResult) -> Dict[str, pd.DataFrame]:
@@ -80,11 +84,26 @@ def to_tables(r: AnimalResult) -> Dict[str, pd.DataFrame]:
     contrasts = (pd.concat(frames, ignore_index=True)[CONTRAST_COLUMNS] if frames
                  else pd.DataFrame(columns=CONTRAST_COLUMNS))
 
+    # levels: the observed value of every stat in every condition the contrasts were built from —
+    # (kind, phase) is unambiguous: within/opto = laser-on trials of opto sessions, within/non_opto = laser-off
+    # trials of opto sessions, within_masking/* = the same on sham sessions, between/* = all trials of each
+    # session set, compensation/laser_off = laser-off trials of opto sessions.
+    lrows = []
+    for kind in ('within', 'within_masking', 'between', 'compensation', 'vs_ppc'):
+        if kind not in r.contrasts:
+            continue
+        for label, ph in r.contrasts[kind].phases.items():
+            for stat, value in ph.stats.items():
+                lrows.append({'kind': kind, 'phase': label, 'n_trials': ph.n_trials, 'n_sessions': ph.n_sessions,
+                              'stat': stat, 'value': float(value), **lab})
+    levels = pd.DataFrame(lrows, columns=LEVEL_COLUMNS) if lrows else pd.DataFrame(columns=LEVEL_COLUMNS)
+
     tr = r.trajectory
     # trajectory rows keep their own per-session `distribution`; the page's distribution is `phase`
     tlab = {k: v for k, v in lab.items() if k != 'distribution'} | {'phase': r.distribution}
     return {
         'contrasts': contrasts,
+        'levels': levels,
         'trajectory': (_qc(tr.sessions.assign(expert_pse=tr.baseline_pse, sigma=tr.sigma, **tlab))
                        if tr is not None else pd.DataFrame()),
         'trajectory_curves': tr.curves.assign(**tlab) if tr is not None else pd.DataFrame(),
@@ -92,7 +111,7 @@ def to_tables(r: AnimalResult) -> Dict[str, pd.DataFrame]:
 
 
 def group_tables(g: GroupResult) -> Dict[str, pd.DataFrame]:
-    lab = {'cohort': g.cohort, 'distribution': g.distribution, 'design': g.design, 'site': g.site or '', 'toi': g.toi}
+    lab = {'cohort': g.cohort, 'distribution': g.distribution, 'site': site_label(g.design, g.site), 'trial_class': g.trial_class}
     tlab = {k: v for k, v in lab.items() if k != 'distribution'} | {'phase': g.distribution}
     sess = [_qc(tr.sessions.assign(animal=aid, genotype=g.by_animal.get(aid, 'unknown'), expert_pse=tr.baseline_pse,
                                    sigma=tr.sigma, **tlab)) for aid, tr in g.trajectories.items()]
@@ -139,6 +158,24 @@ def _versions() -> dict:
     except Exception:
         v['git_sha'] = None
     return v
+
+
+def normalise_site(df: pd.DataFrame) -> pd.DataFrame:
+    """Readers' compatibility shim for tables written before the single `site` column: a missing or empty
+    `site` means PPC, and an old (`design`, `site`) pair becomes `ppc` / `alm_uni` / `alm_bi`. Writers never
+    produce the old form. Returns the frame with `site` in {ppc, alm_uni, alm_bi} and no `design` column."""
+    if not len(df):
+        return df
+    df = df.copy()
+    if 'design' in df:
+        sub = df['site'].fillna('').astype(str) if 'site' in df else ''
+        df['site'] = np.where(df['design'].astype(str) == 'alm', 'alm_' + sub, 'ppc')
+        df = df.drop(columns=['design'])
+    elif 'site' in df:
+        df['site'] = df['site'].fillna('').astype(str).replace({'': 'ppc', 'nan': 'ppc'})
+    else:
+        df['site'] = 'ppc'
+    return df
 
 
 def write_result(out_dir, tables: Dict[str, pd.DataFrame], readouts: Dict[str, np.ndarray] | None = None,

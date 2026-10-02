@@ -4,7 +4,7 @@ Build synthetic runs for the notebooks and CI — no data, no cluster, a few min
     sc-make-synthetic-run --results /tmp/sc_results --data /tmp/sc_data [--no-model-id]
     SC_NB_SYNTHETIC=1 SC_RESULTS_ROOT=/tmp/sc_results SC_DATA_ROOT=/tmp/sc_data jupyter lab notebooks/
 
-Writes ``opto_contrasts/selftest``, ``switch_adaptation/selftest`` and (unless --no-model-id)
+Writes ``opto_contrasts/synthetic``, ``switch_adaptation/synthetic`` and (unless --no-model-id)
 ``model_identification/synthetic_uniform`` under --results, in exactly the layout real runs use.
 """
 

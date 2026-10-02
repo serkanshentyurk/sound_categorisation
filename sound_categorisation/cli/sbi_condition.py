@@ -23,14 +23,14 @@ cross-method consensus from ``analysis.consensus``.
 
 Local (all six (rep, model) on a synthetic uniform cohort; a new run is created)::
 
-    sc-run-sbi --source synthetic --cohort synthetic_uniform \
+    sc-sbi-condition --cohort synthetic_uniform \
         --distribution uniform --fit-target update_matrix
 
 Cluster (SLURM array, one (rep, model) per task; one phase per submit; the run id is shared)::
 
-    RUN=$(sc-new-run --report model_identification --cohort real)
-    bash slurm/submit.sh condition --source real --distribution uniform --run-id $RUN
-    bash slurm/submit.sh condition --source real --distribution hard_a  --run-id $RUN
+    RUN=$(sc-new-run --report model_identification --cohort opto1-cohort)
+    bash slurm/submit.sh sbi-condition --cohort opto1-cohort --distribution uniform --run-id $RUN
+    bash slurm/submit.sh sbi-condition --cohort opto1-cohort --distribution hard_a  --run-id $RUN
 
 --fast: FAST_N_REPEATS repeats to check the pipeline; run id suffixed _fast.
 """
@@ -124,10 +124,8 @@ def condition_cohort(records, rep, model, distribution, out_dir, fit_target,
 def main(argv=None):
     p = argparse.ArgumentParser(
         description='Condition SBI nets on a cohort -> held-out MSE results.')
-    p.add_argument('--source', default='synthetic',
-                   choices=('synthetic', 'real'))
-    p.add_argument('--cohort', default=None,
-                   help='Cohort name (required for synthetic).')
+    p.add_argument('--cohort', required=True,
+                   help='a synthetic cohort (sc-make-synthetic-cohort) or a cohort name from config.yaml')
     p.add_argument('--run-id', default=None, help='existing run id to write into (required with --task-id)')
     p.add_argument('--fit-target', default='update_matrix', choices=FIT_TARGETS)
     p.add_argument('--rep', default='all', choices=(*REPRESENTATIONS, 'all'))
@@ -165,8 +163,6 @@ def main(argv=None):
         p.error('--distribution is required (uniform / hard_a / hard_b) — '
                 'condition one phase per launch.')
 
-    if args.source == 'synthetic' and not args.cohort:
-        p.error("--source synthetic requires --cohort")
 
     if args.task_id is not None and not args.run_id:
         p.error('--task-id needs --run-id (every array task must write into the same run)')
@@ -185,11 +181,9 @@ def main(argv=None):
     # Real sessions default to the phase-matched preset; synthetic uses --cohort
     # (whose name should encode the phase). --preset overrides for real.
     preset = args.preset or f'expert_{args.distribution}'
-    cohort_label = args.cohort or 'real'
-    records = load_animals(args.source, cohort=args.cohort,
-                           config_path=args.config, preset=preset)
-    print(f'[sbi] {len(records)} animals | source={args.source} '
-          f'cohort={cohort_label} phase={args.distribution} preset={preset} '
+    cohort_label = args.cohort
+    records = load_animals(args.cohort, config_path=args.config, preset=preset)
+    print(f'[sbi] {len(records)} animals | cohort={cohort_label} phase={args.distribution} preset={preset} '
           f'| jobs={jobs} | n_repeats={n_repeats}')
 
     run = start_run('model_identification', cohort_label, args.run_id, fast=args.fast)

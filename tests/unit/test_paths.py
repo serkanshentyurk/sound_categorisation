@@ -102,3 +102,14 @@ def test_data_root_env_override(tmp_path, monkeypatch):
     assert paths.data_root() == tmp_path
     assert paths.cohort_path('c') == tmp_path / 'synthetic_cohorts' / 'c.pkl'
     assert os.path.commonpath([paths.snpe_networks_dir(), tmp_path]) == str(tmp_path)
+
+
+def test_normalise_site_reads_old_and_new_tables():
+    import numpy as np
+    import pandas as pd
+    from sound_categorisation.reports.tables import normalise_site
+    old = pd.DataFrame({'design': ['ppc', 'alm', 'alm'], 'site': [np.nan, 'uni', 'bi'], 'x': [1, 2, 3]})
+    assert normalise_site(old)['site'].tolist() == ['ppc', 'alm_uni', 'alm_bi'] and 'design' not in normalise_site(old)
+    mid = pd.DataFrame({'site': [np.nan, '', 'alm_bi', 'ppc']})
+    assert normalise_site(mid)['site'].tolist() == ['ppc', 'ppc', 'alm_bi', 'ppc']
+    assert normalise_site(pd.DataFrame({'x': [1]}))['site'].tolist() == ['ppc']

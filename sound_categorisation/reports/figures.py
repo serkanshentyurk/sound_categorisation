@@ -66,11 +66,11 @@ def interaction_grid(interaction, stats: Sequence[str], units: Sequence[str], ti
 
 
 def psychometric_page(r: AnimalResult, title: str):
-    """One panel per phase: all trials (green), non_opto (grey), toi (blue)."""
+    """One panel per phase: all trials (green), non_opto (grey), trial_class (blue)."""
     phases = PHASES[r.design]
     fig, axes = plt.subplots(1, len(phases), figsize=(4.7 * len(phases), 4.0), squeeze=False)
     for ax, phase in zip(axes[0], phases):
-        for tt, colour, label in (('all', ALL, 'all trials'), ('non_opto', OFF, 'non_opto'), (r.toi, ON, r.toi)):
+        for tt, colour, label in (('all', ALL, 'all trials'), ('non_opto', OFF, 'non_opto'), (r.trial_class, ON, r.trial_class)):
             ro = r.readouts.get((phase, tt))
             if ro is not None and ro.curve is not None:
                 plot_psychometric_curve(ro.curve, ax=ax, color=colour, label=label)
@@ -87,7 +87,7 @@ def update_matrix_page(r: AnimalResult, title: str):
     with warnings.catch_warnings():
         warnings.simplefilter('ignore', RuntimeWarning)
         for row, phase in enumerate(phases):
-            for col, tt in enumerate(('non_opto', r.toi)):
+            for col, tt in enumerate(('non_opto', r.trial_class)):
                 ro = r.readouts.get((phase, tt))
                 if ro is not None and ro.update_matrix is not None:
                     plot_update_matrix(ro.update_matrix, ax=axes[row, col])
@@ -131,13 +131,13 @@ def group_psychometric_page(results: Dict[str, AnimalResult], title: str):
     return fig
 
 
-def group_update_matrix_page(results: Dict[str, AnimalResult], phase: str, toi: str, title: str):
-    """Genotype-mean UM: rows het/wt, cols non_opto/toi."""
+def group_update_matrix_page(results: Dict[str, AnimalResult], phase: str, trial_class: str, title: str):
+    """Genotype-mean UM: rows het/wt, cols non_opto/trial_class."""
     fig, axes = plt.subplots(2, 2, figsize=(8, 8), squeeze=False)
     with warnings.catch_warnings():
         warnings.simplefilter('ignore', RuntimeWarning)
         for row, g in enumerate(('het', 'wt')):
-            for col, tt in enumerate(('non_opto', toi)):
+            for col, tt in enumerate(('non_opto', trial_class)):
                 ums = [r.readouts[(phase, tt)].update_matrix for r in results.values()
                        if r.genotype == g and (phase, tt) in r.readouts
                        and r.readouts[(phase, tt)].update_matrix is not None]

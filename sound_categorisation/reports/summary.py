@@ -28,6 +28,8 @@ import numpy as np
 import pandas as pd
 from matplotlib.backends.backend_pdf import PdfPages
 
+from sound_categorisation.reports.tables import normalise_site
+
 __all__ = ['load_tables', 'uniform_page', 'hard_page', 'overall_page', 'write_summary']
 
 GENO_COL = {'wt': '#2ca02c', 'het': '#d62728'}
@@ -42,10 +44,7 @@ def _read_all(root: Path, name: str) -> pd.DataFrame:
     files = [f for f in glob.glob(str(root / '**' / f'{name}.csv'), recursive=True) if '/group/' not in f]
     if not files:
         return pd.DataFrame()
-    df = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
-    if 'site' in df:
-        df['site'] = df['site'].fillna('')
-    return df
+    return normalise_site(pd.concat([pd.read_csv(f) for f in files], ignore_index=True))
 
 
 def load_tables(root: Path) -> dict:
@@ -56,19 +55,19 @@ def load_tables(root: Path) -> dict:
     gfiles = glob.glob(str(root / '**' / 'group_tests.csv'), recursive=True)
     traj = _read_all(root, 'trajectory')
     if len(traj):   # the same sessions are written under every phase folder they belong to: keep one copy
-        traj = traj.drop_duplicates(subset=['animal', 'session_idx', 'toi']).query("toi == 'opto'")
+        traj = traj.drop_duplicates(subset=['animal', 'session_idx', 'trial_class']).query("trial_class == 'opto'")
     return {
         'contrasts': contrasts,
         'trajectory': traj,
-        'group_tests': pd.concat([pd.read_csv(f) for f in gfiles], ignore_index=True) if gfiles else pd.DataFrame(),
+        'group_tests': normalise_site(pd.concat([pd.read_csv(f) for f in gfiles], ignore_index=True)) if gfiles else pd.DataFrame(),
     }
 
 
 # ── primitives ──────────────────────────────────────────────────────────────
 
-def _sel(df, *, design='ppc', site='', distribution, toi='opto', kind='within', unit=None, stat):
+def _sel(df, *, site='ppc', distribution, trial_class='opto', kind='within', unit=None, stat):
     unit = unit or ('trials' if kind in ('within', 'within_masking') else 'sessions')
-    d = df[(df.design == design) & (df.site == site) & (df.distribution == distribution) & (df.toi == toi)
+    d = df[(df.site == site) & (df.distribution == distribution) & (df.trial_class == trial_class)
            & (df.kind == kind) & (df.unit == unit) & (df.stat == stat)]
     return d.sort_values(['genotype', 'animal'], ascending=[False, True])
 
@@ -106,8 +105,6 @@ def _group_p(gt: pd.DataFrame, **key) -> float | None:
     if gt is None or not len(gt):
         return None
     d = gt.copy()
-    if 'site' in d:
-        d['site'] = d['site'].fillna('')
     for k, v in key.items():
         d = d[d[k] == v]
     return float(d['p'].iloc[0]) if len(d) and 'p' in d else None
@@ -118,13 +115,13 @@ def _ptxt(ax, p):
         ax.text(0.98, 0.98, f'WT vs HET p = {p:.3f}', transform=ax.transAxes, ha='right', va='top', fontsize=8)
 
 
-def _stat_row(fig, gs, row, df, gt, *, distribution, kind, stats, title, toi='opto'):
+def _stat_row(fig, gs, row, df, gt, *, distribution, kind, stats, title, trial_class='opto'):
     """One row of panels: one stat each, for one contrast kind."""
     axes = []
     for k, (stat, lab) in enumerate(stats):
         ax = fig.add_subplot(gs[row, k])
-        _dots(ax, _sel(df, distribution=distribution, kind=kind, stat=stat, toi=toi), ylabel=lab, label_animals=(k == 0))
-        _ptxt(ax, _group_p(gt, design='ppc', distribution=distribution, toi=toi, kind=kind, stat=stat))
+        _dots(ax, _sel(df, distribution=distribution, kind=kind, stat=stat, trial_class=trial_class), ylabel=lab, label_animals=(k == 0))
+        _ptxt(ax, _group_p(gt, site='ppc', distribution=distribution, trial_class=trial_class, kind=kind, stat=stat))
         if k == 0:
             ax.set_title(title, fontsize=10, loc='left')
         axes.append(ax)
@@ -198,7 +195,7 @@ def uniform_page(T: dict, cohort: str):
     _dots(ax, _sel(df, distribution='Uniform', kind='within_masking', stat='mu'), ylabel='Δ μ', label_animals=False)
     ax.set_title('4  ONLY MASKING SESSIONS:\nopto-flagged (laser at 0) − non-opto trials', fontsize=8.5, loc='left')
     ax = fig.add_subplot(gs[3, 1])
-    _dots(ax, _sel(df, distribution='Uniform', toi='post_opto', kind='within', stat='mu'), ylabel='Δ μ', label_animals=False)
+    _dots(ax, _sel(df, distribution='Uniform', trial_class='post_opto', kind='within', stat='mu'), ylabel='Δ μ', label_animals=False)
     ax.set_title('5  ONLY OPTO SESSIONS:\ntrial after a laser-on trial − laser-off trials', fontsize=8.5, loc='left')
     # session-order strip
     ax = fig.add_subplot(gs[3, 2:])
@@ -265,16 +262,16 @@ def overall_page(T: dict, cohort: str):
         ax = fig.add_subplot(gs[0, k])
         _dots(ax, _sel(df, distribution=dist, kind='within', stat='mu'), ylabel='Δ μ, laser − no-laser trials' if k == 0 else '')
         ax.set_title(f'{dist}: opto sessions, laser-on − laser-off trials', fontsize=10, loc='left')
-        _ptxt(ax, _group_p(gt, design='ppc', distribution=dist, toi='opto', kind='within', stat='mu'))
+        _ptxt(ax, _group_p(gt, site='ppc', distribution=dist, trial_class='opto', kind='within', stat='mu'))
         ax = fig.add_subplot(gs[1, k])
         _dots(ax, _sel(df, distribution=dist, kind='between', stat='mu'), ylabel='Δ μ, laser − masking sessions' if k == 0 else '')
         ax.set_title(f'{dist}: opto sessions − masking sessions (all trials)', fontsize=10, loc='left')
-        _ptxt(ax, _group_p(gt, design='ppc', distribution=dist, toi='opto', kind='between', stat='mu'))
+        _ptxt(ax, _group_p(gt, site='ppc', distribution=dist, trial_class='opto', kind='between', stat='mu'))
     ax = fig.add_subplot(gs[0, 3])
-    _dots(ax, _sel(df, design='alm', site='bi', distribution='Uniform', stat='accuracy'), ylabel='Δ accuracy', label_animals=False)
+    _dots(ax, _sel(df, site='alm_bi', distribution='Uniform', stat='accuracy'), ylabel='Δ accuracy', label_animals=False)
     ax.set_title('ALM bilateral sessions: laser-on − laser-off, accuracy', fontsize=10, loc='left')
     ax = fig.add_subplot(gs[1, 3])
-    _dots(ax, _sel(df, distribution='Uniform', toi='post_opto', kind='within', stat='mu'), ylabel='Δ μ', label_animals=False)
+    _dots(ax, _sel(df, distribution='Uniform', trial_class='post_opto', kind='within', stat='mu'), ylabel='Δ μ', label_animals=False)
     ax.set_title('Uniform opto sessions: post-laser trials − laser-off, μ', fontsize=10, loc='left')
     _legend(fig)
     fig.suptitle(f'{cohort} — overall: change in criterion μ per mouse (positive = shifted toward A).   Top row: only opto sessions, laser-on − laser-off trials.   Bottom row: opto sessions − masking sessions, no trial filtering', fontsize=11, y=0.995)

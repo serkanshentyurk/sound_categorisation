@@ -19,7 +19,7 @@ notebooks). `nb_setup.py` holds the loaders and the cohort/run switches.
 ## Running them
 
 ```bash
-sc-reports battery                        # or: sc-reports opto --all ; sc-reports switches --cohort behaviour1-cohort
+sc-reports battery                        # or: sc-reports opto-contrasts --all ; sc-reports switch-adaptation --cohort behaviour1-cohort
 jupyter lab notebooks/                    # real cohorts, latest runs
 ```
 

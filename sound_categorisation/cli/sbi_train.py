@@ -9,7 +9,7 @@ Three data representations x two models = six networks:
 
 Each network is an ``AmortisedSBI`` saved to ``snpe_networks/{rep}_{model}.pkl``.
 The saved file carries its own config (N / T / mode / stat_names), so the
-conditioning step (run_sbi.py / NB12) loads and conditions without re-specifying
+conditioning step (sc-sbi-condition) loads and conditions without re-specifying
 anything -- see ``AmortisedSBI.save``/``load``.
 
 The heavy import (``AmortisedSBI``, which pulls in torch + sbi) is deferred into
@@ -18,16 +18,16 @@ without loading torch.
 
 Local (all six, serial)::
 
-    sc-train-sbi --rep all --model all
+    sc-sbi-train --rep all --model all
 
 Cluster (SLURM array, one network per task)::
 
-    N=$(sc-train-sbi --count)        # -> 6
-    sbatch --array=0-$((N-1)) train_sbi.sh          # task_id -> (rep, model)
+    N=$(sc-sbi-train --count)        # -> 6
+    bash slurm/submit.sh sbi-train                       # task_id -> (rep, model)
 
 Smoke test (tiny n_simulations, just checks the pipeline runs end to end)::
 
-    sc-train-sbi --rep pooled --model BE --fast
+    sc-sbi-train --rep pooled --model BE --fast
 """
 
 from __future__ import annotations

@@ -18,6 +18,7 @@ from collections import namedtuple
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+from behav_utils.config.schema import load_cohorts
 from behav_utils.data.loading import load_experiment
 from behav_utils.data.ops.selection import list_presets, register_presets_from_config, select_sessions
 from behav_utils.data.synthetic import session_from_arrays
@@ -102,6 +103,24 @@ def gather_genotypes(experiment) -> Tuple[Dict[str, str], Dict[str, List[str]]]:
     return by_animal, groups
 
 
+SITES = ('ppc', 'alm_uni', 'alm_bi')      # what the CLI, folders and tables call a condition's site
+
+
+def split_site(site: str) -> Tuple[str, str | None]:
+    """'ppc' -> ('ppc', None); 'alm_uni' -> ('alm', 'uni'); 'alm_bi' -> ('alm', 'bi'). The internal
+    (design, sub-site) pair the session collectors and contrasts work with."""
+    if site == 'ppc':
+        return 'ppc', None
+    if site in ('alm_uni', 'alm_bi'):
+        return 'alm', site.split('_')[1]
+    raise ValueError(f'unknown site {site!r}; one of {SITES}')
+
+
+def site_label(design: str, site: str | None) -> str:
+    """Inverse of split_site."""
+    return design if design == 'ppc' else f'{design}_{site}'
+
+
 def collect_sessions_ppc(animal, distribution: str) -> Dict[str, list]:
     """PPC design: ``{'opto': [...], 'masking': [...]}`` at one distribution."""
     return {
@@ -146,38 +165,36 @@ def _synthetic_records(cohort):
     return records
 
 
-def _real_records(config_path=None, preset='expert_uniform', experiment=None):
+def _real_records(cohort, config_path=None, preset='expert_uniform', experiment=None):
     # config_path None -> load_project_config picks cluster vs local config.
+    config = load_project_config(config_path)
+    cohorts = load_cohorts(config_path or (REPO_ROOT / 'config.yaml'))
+    if cohort not in cohorts:
+        raise ValueError(f'{cohort!r} is neither a synthetic cohort ({cohort_path(cohort)} missing) nor a cohort in '
+                         f'config.yaml ({sorted(cohorts)})')
     if experiment is None:
-        experiment = load_experiment(load_project_config(config_path))
+        experiment = load_experiment(config)
     records = []
-    for aid in experiment.animal_ids:
+    for aid in cohorts[cohort]:
+        if aid not in experiment.animals:
+            continue
         sessions = select_sessions(experiment.get_animal(aid), preset)
         records.append(AnimalRecord(aid, sessions, None, None))
     return records
 
 
-def load_animals(source, cohort=None, config_path=None,
-                 preset='expert_uniform', experiment=None):
-    """Return a list of AnimalRecord for the given source.
+def is_synthetic_cohort(cohort: str) -> bool:
+    """A cohort is synthetic when its pickle exists under <data root>/synthetic_cohorts/."""
+    return cohort_path(cohort).exists()
 
-    Args:
-        source: 'synthetic' or 'real'.
-        cohort: cohort name (required for 'synthetic').
-        config_path: optional config.yaml path (real; default = project config).
-        preset: session-selection preset for real data (default 'expert_uniform').
-        experiment: pre-loaded ExperimentData (real; skips loading if supplied).
 
-    Returns:
-        List[AnimalRecord]. true_model/true_params are populated for synthetic
-        animals and None for real ones.
+def load_animals(cohort, config_path=None, preset='expert_uniform', experiment=None):
+    """One list of AnimalRecord for a cohort, whichever kind it is.
+
+    ``cohort`` is either a synthetic cohort (``sc-make-synthetic-cohort``; its pickle exists under the data
+    root; true_model/true_params populated) or a cohort name from ``config.yaml`` (real animals; truth None).
+    Real sessions are selected with ``preset`` (default the expert window).
     """
-    if source == 'synthetic':
-        if not cohort:
-            raise ValueError("source='synthetic' requires a cohort name")
+    if is_synthetic_cohort(cohort):
         return _synthetic_records(cohort)
-    if source == 'real':
-        return _real_records(
-            config_path=config_path, preset=preset, experiment=experiment,
-        )
-    raise ValueError(f"Unknown source '{source}' (use 'synthetic' or 'real')")
+    return _real_records(cohort, config_path=config_path, preset=preset, experiment=experiment)

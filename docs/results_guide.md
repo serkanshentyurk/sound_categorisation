@@ -145,5 +145,5 @@ psychometric curves themselves. All are in the per-animal and group PDFs and in 
 ## 7. Regenerating
 
 `sc-reports battery` rebuilds everything from the snapshot into a new run (a few hours). Single pieces:
-`sc-reports opto --distribution Hard-A --toi opto`, `sc-reports summary [--run <run_id>]`. Every command is
+`sc-reports opto-contrasts --distribution Hard-A --trial-class opto`, `sc-reports summary [--run <run_id>]`. Every command is
 in `docs/runs.md`.

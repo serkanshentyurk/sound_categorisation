@@ -13,7 +13,7 @@ pip install -e ".[dev]"             # the project + pytest + ruff
 pip install -e ".[fit]"             # torch, sbi, ssm, hmmlearn — only needed for model fitting
 ```
 
-Both packages must be installed; `pip install -e .` also installs the `sc-*` commands (`sc-reports`, `sc-export-snapshot`, `sc-train-sbi`, `sc-run-sbi`, `sc-run-gs`, `sc-consensus`). Check:
+Both packages must be installed; `pip install -e .` also installs the `sc-*` commands (`sc-reports`, `sc-export-snapshot`, `sc-sbi-train`, `sc-sbi-condition`, `sc-grid-search`, `sc-consensus`). Check:
 
 ```bash
 python -c "import behav_utils, sound_categorisation; print(behav_utils.__version__, behav_utils.__file__)"
@@ -74,9 +74,9 @@ overrides it (and `SC_DATA_ROOT` the data root). Nothing under it is versioned �
 
 ```bash
 sc-reports battery                                         # fast check → full opto battery → summary
-sc-reports opto --distribution Hard-A --toi opto           # one condition, a new run
-sc-reports opto --distribution Hard-A --run-id <id>        # into an existing run
-sc-reports switches --cohort behaviour1-cohort             # the switch-adaptation report
+sc-reports opto-contrasts --distribution Hard-A --trial-class opto           # one condition, a new run
+sc-reports opto-contrasts --distribution Hard-A --run-id <id>        # into an existing run
+sc-reports switch-adaptation --cohort behaviour1-cohort             # the switch-adaptation report
 sc-reports summary [--run <id>]                            # pages from the latest (or named) opto run
 ```
 
@@ -89,12 +89,12 @@ sc-reports summary [--run <id>]                            # pages from the late
 ssh <user>@ssh.swc.ucl.ac.uk
 module load miniconda && conda activate sound_cat
 cd <repo> && pip install -e behav_utils/ && pip install -e .     # once per checkout: provides the sc-* commands
-bash slurm/submit.sh train                                                     # 18 SBI networks → data root
-RUN=$(sc-new-run --report model_identification --cohort real)                  # one run id for the chain
-bash slurm/submit.sh gs        --source real --distribution uniform --fit-target update_matrix --run-id $RUN
-bash slurm/submit.sh condition --source real --distribution uniform --run-id $RUN
-sc-run-gs --source real --distribution uniform --fit-target update_matrix --run-id $RUN --gather
-sc-consensus --cohort real --distribution uniform --run-id $RUN
+bash slurm/submit.sh sbi-train                                                     # 18 SBI networks → data root
+RUN=$(sc-new-run --report model_identification --cohort opto1-cohort)                  # one run id for the chain
+bash slurm/submit.sh grid-search        --cohort opto1-cohort --distribution uniform --fit-target update_matrix --run-id $RUN
+bash slurm/submit.sh sbi-condition --cohort opto1-cohort --distribution uniform --run-id $RUN
+sc-grid-search --cohort opto1-cohort --distribution uniform --fit-target update_matrix --run-id $RUN --gather
+sc-consensus --cohort opto1-cohort --distribution uniform --run-id $RUN
 ```
 
 `submit.sh` asks each command for its array range (`--print-array`) so the job count always matches the

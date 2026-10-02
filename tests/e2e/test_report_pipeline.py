@@ -40,7 +40,18 @@ def exp():
 
 @pytest.fixture(scope='module')
 def fast_result(exp):
-    return compute_animal(exp, 'ST00', 'Uniform', 'opto', cohort='selftest', settings=Settings.fast())
+    return compute_animal(exp, 'ST00', 'Uniform', 'opto', cohort='synthetic', settings=Settings.fast())
+
+
+def test_levels_table(fast_result):
+    """levels.csv names every condition the contrasts were built from, with the observed stat values."""
+    lv = to_tables(fast_result)['levels']
+    assert {'kind', 'phase', 'n_trials', 'n_sessions', 'stat', 'value', 'site', 'trial_class'} <= set(lv.columns)
+    assert {('within', 'opto'), ('within', 'non_opto'), ('within_masking', 'opto'), ('between', 'masking'),
+            ('compensation', 'laser_off')} <= set(zip(lv.kind, lv.phase))
+    off = lv[(lv.kind == 'within') & (lv.phase == 'non_opto')].set_index('stat')['value']
+    assert 0 <= off['accuracy'] <= 1 and np.isfinite(off['side_bias'])     # fast settings: scalar stats only
+    assert (lv.site == 'ppc').all()
 
 
 def test_contrast_table_schema(fast_result):
@@ -51,7 +62,7 @@ def test_contrast_table_schema(fast_result):
     assert t['perm_p'].notna().sum() > 0 and t.loc[t['kind'] == 'between', 'perm_p'].isna().all()
 
 
-def test_alm_design_has_vs_ppc(exp):
+def test_alm_site_has_vs_ppc(exp):
     r = compute_animal(exp, 'ST00', 'Uniform', 'opto', design='alm', site='uni', settings=Settings.fast())
     t = to_tables(r)['contrasts']
     assert 'vs_ppc' in set(t['kind'])
@@ -67,8 +78,8 @@ def test_write_read_roundtrip(fast_result, tmp_path):
     num = ['diff', 'ci_lo', 'ci_hi', 'boot_p', 'perm_p']
     pd.testing.assert_frame_equal(back['contrasts'][num], tables['contrasts'][num], check_dtype=False)
     assert list(back['contrasts']['stat']) == list(tables['contrasts']['stat'])
-    # '' round-trips as NaN through CSV — site is empty for the PPC design
-    assert back['contrasts']['site'].isna().all()
+    assert (back['contrasts']['site'] == 'ppc').all()          # one site column: ppc | alm_uni | alm_bi
+    assert set(back) >= {'contrasts', 'levels'}            # trajectory is empty (no Hard sessions requested)
 
 
 def test_readouts_and_trajectory_present_when_enabled(exp):
@@ -120,16 +131,16 @@ def test_summary_pages_draw(exp, tmp_path):
     from sound_categorisation.reports.cli import run_animal, run_group
     from sound_categorisation.reports.summary import write_summary
     ids = list(exp.animals)
-    run = start_run('opto_contrasts', 'selftest', fast=True, root=tmp_path)
+    run = start_run('opto_contrasts', 'synthetic', fast=True, root=tmp_path)
     assert run.name.endswith('_fast') and (run / 'logs').is_dir()
-    assert latest_run('opto_contrasts', 'selftest', root=tmp_path) == run
-    a = SimpleNamespace(cohort='selftest', snapshot=None, config=None, fast=True, run_path=run, run_id=run.name)
+    assert latest_run('opto_contrasts', 'synthetic', root=tmp_path) == run
+    a = SimpleNamespace(cohort='synthetic', snapshot=None, config=None, fast=True, run_path=run, run_id=run.name)
     per = run_animal(exp, ids, 'Uniform', 'opto', 'ppc', None, a, Settings.fast())
     run_group(exp, ids, 'Uniform', 'opto', 'ppc', None, a, Settings.fast(), per)
     full = Settings(n_boot=10, n_perm=0, curve_bootstrap=0)
     per = run_animal(exp, ids[:2], 'Hard-A', 'opto', 'ppc', None, a, full)
     run_group(exp, ids[:2], 'Hard-A', 'opto', 'ppc', None, a, full, per)
-    path = write_summary(run, 'selftest')
+    path = write_summary(run, 'synthetic')
     assert path.exists() and (run / 'summary_hard_a.png').exists()
     meta = json.loads((run / 'Uniform' / 'ppc_opto' / ids[0] / 'meta.json').read_text())
     assert meta['run_id'] == run.name and 'argv' in meta and 'git_dirty' in meta
@@ -150,14 +161,14 @@ def test_switches_pipeline(exp, tmp_path):
     assert r.convergence.loc[r.convergence['method'] == 'manuscript', 'convergence_clipped'].dropna().between(0, 1).all()
     assert {'pse_tau', 'trials_to_criterion', 'plateau', 'pse_shape_daic'} <= set(r.dynamics.index)
     assert len(r.sessions) == r.n_sessions_after and len(r.overnight) == r.n_sessions_after - 1
-    g = compute_switches_cohort(exp, ['SB00', 'SB01', 'ST00'], cohort='selftest', min_block_trials=300, max_trials=800)
+    g = compute_switches_cohort(exp, ['SB00', 'SB01', 'ST00'], cohort='synthetic', min_block_trials=300, max_trials=800)
     assert g.animals == ['SB00', 'SB01']                      # ST00 has no blocks
     T = switch_tables(g)
     assert set(T) == {'switches', 'pre_post', 'convergence', 'sessions', 'overnight', 'psychometrics', 'psychometric_curves'}
     assert {'animal', 'switch_idx', 'transition', 'stat', 'value'} <= set(T['switches'].columns)
     from sound_categorisation.data.paths import start_run
-    run = start_run('switch_adaptation', 'selftest', root=tmp_path)
-    out = run_switches(exp, ['SB00', 'SB01'], run, 'selftest', min_block_trials=300, max_trials=800)
+    run = start_run('switch_adaptation', 'synthetic', root=tmp_path)
+    out = run_switches(exp, ['SB00', 'SB01'], run, 'synthetic', min_block_trials=300, max_trials=800)
     assert out == run / 'switches'
     assert (out / 'summary_switches.pdf').exists() and (out / 'pdf' / 'SB00_switches.pdf').exists()
 
@@ -185,7 +196,7 @@ def test_bias_rule_flags_distribution_independent_bias():
 
 def test_phase_psychometrics_tables(exp):
     from sound_categorisation.reports.switches import compute_switches_cohort, switch_tables
-    g = compute_switches_cohort(exp, ['SB00'], cohort='selftest', min_block_trials=300, max_trials=800)
+    g = compute_switches_cohort(exp, ['SB00'], cohort='synthetic', min_block_trials=300, max_trials=800)
     T = switch_tables(g)
     P = T['psychometrics']
     assert list(P.sort_values('order')['phase']) == ['Uniform', 'Hard-B #1', 'Hard-A #1', 'Hard-B #2', 'Hard-A #2', 'Hard-A all', 'Hard-B all']

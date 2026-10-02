@@ -47,7 +47,7 @@ reports/             compute.py  AnimalResult / GroupResult / Settings (no matpl
                      cli.py      `python -m sound_categorisation.reports` / `sc-reports`
 plotting/            project plotters (CV, opto swarms, assignment, SBI diagnostics)
 cli/                 entry points (pyproject [project.scripts]): sc-reports, sc-export-snapshot,
-                     sc-make-synthetic-cohort, sc-new-run, sc-train-sbi, sc-run-sbi, sc-run-gs, sc-consensus
+                     sc-make-synthetic-cohort, sc-new-run, sc-sbi-train, sc-sbi-condition, sc-grid-search, sc-consensus
 ```
 
 ## Runs: one root, one layout, one id
@@ -85,9 +85,9 @@ p = 0.016, so per-animal consistency carries the argument.
 ## The model-identification chain
 
 ```
-sc-train-sbi    TRAIN_GRID (18 tasks)   simulate BE/SC → train one amortised network per (rep, model, distribution)
-sc-run-sbi      CONDITION_GRID (6)      condition each animal's expert data → posterior + held-out MSE
-sc-run-gs       gs_grid(animals, seeds) grid search CV per (animal, model, seed) → partials → --gather
+sc-sbi-train    TRAIN_GRID (18 tasks)   simulate BE/SC → train one amortised network per (rep, model, distribution)
+sc-sbi-condition      CONDITION_GRID (6)      condition each animal's expert data → posterior + held-out MSE
+sc-grid-search       gs_grid(animals, seeds) grid search CV per (animal, model, seed) → partials → --gather
 sc-consensus                            GS + SBI calls → assignments.csv, summary.txt
 slurm/submit.sh {train|condition|gs}        derives --array from the grids
 ```

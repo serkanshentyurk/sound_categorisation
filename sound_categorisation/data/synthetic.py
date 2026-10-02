@@ -32,7 +32,7 @@ def synthetic_experiment(n_animals=4, seed=0, n_trials=180) -> ExperimentData:
     """WT/HET animals with expert-Uniform, opto, masking and ALM sessions on Uniform
     plus a Hard-A block (opto + masking) — enough to exercise every page."""
     rng = np.random.default_rng(seed)
-    exp = ExperimentData(metadata={'cohort': 'selftest'})
+    exp = ExperimentData(metadata={'cohort': 'synthetic'})
     for k in range(n_animals):
         geno = 'het' if k % 2 else 'wt'
         sessions, idx = [], 0
@@ -101,8 +101,8 @@ def write_synthetic_runs(results_root, data_root, *, with_model_id: bool = True)
 
     exp = synthetic_experiment()
     ids = list(exp.animals)
-    run = start_run('opto_contrasts', 'selftest', fast=True, root=results_root)
-    a = SimpleNamespace(cohort='selftest', snapshot=None, config=None, fast=True, run_path=run, run_id=run.name)
+    run = start_run('opto_contrasts', 'synthetic', fast=True, root=results_root)
+    a = SimpleNamespace(cohort='synthetic', snapshot=None, config=None, fast=True, run_path=run, run_id=run.name)
     fast = Settings.fast()
     for dist in ('Uniform', 'Hard-B'):
         per = run_animal(exp, ids, dist, 'opto', 'ppc', None, a, fast)
@@ -112,21 +112,21 @@ def write_synthetic_runs(results_root, data_root, *, with_model_id: bool = True)
     full = Settings(n_boot=20, n_perm=20, curve_bootstrap=10)   # the slow pages once, on one animal
     per = run_animal(exp, ids[:1], 'Hard-A', 'opto', 'ppc', None, a, full)
     run_group(exp, ids, 'Hard-A', 'opto', 'ppc', None, a, full, per)
-    write_summary(run, 'selftest')
-    srun = start_run('switch_adaptation', 'selftest', fast=True, root=results_root)
-    run_switches(exp, ['SB00', 'SB01'], srun, 'selftest', min_block_trials=300, max_trials=800)
+    write_summary(run, 'synthetic')
+    srun = start_run('switch_adaptation', 'synthetic', fast=True, root=results_root)
+    run_switches(exp, ['SB00', 'SB01'], srun, 'synthetic', min_block_trials=300, max_trials=800)
     out = {'opto_contrasts': run, 'switch_adaptation': srun}
 
     if with_model_id:
-        from sound_categorisation.cli import consensus, make_synthetic_cohort, run_gs
+        from sound_categorisation.cli import consensus, grid_search, make_synthetic_cohort
         make_synthetic_cohort.main(['--distribution', 'uniform', '--n-per-model', '1', '--n-sessions', '2',
                                     '--trials', '200'])
         mrun = start_run('model_identification', 'synthetic_uniform', fast=True, root=results_root)
-        base = ['--source', 'synthetic', '--cohort', 'synthetic_uniform', '--distribution', 'uniform',
+        base = ['--cohort', 'synthetic_uniform', '--distribution', 'uniform',
                 '--fit-target', 'update_matrix', '--fast', '--run-id', mrun.name]
         for t in range(8):
-            run_gs.main(base + ['--task-id', str(t)])
-        run_gs.main(base + ['--gather'])
+            grid_search.main(base + ['--task-id', str(t)])
+        grid_search.main(base + ['--gather'])
         consensus.main(['--cohort', 'synthetic_uniform', '--distribution', 'uniform', '--run-id', mrun.name])
         out['model_identification'] = mrun
     print('synthetic runs ->', results_root)

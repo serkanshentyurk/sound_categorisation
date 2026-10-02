@@ -40,7 +40,7 @@ def test_out_of_range():
 def test_scripts_use_the_grids():
     import sys
     sys.argv = ['x']
-    import sound_categorisation.cli.run_sbi as R
-    import sound_categorisation.cli.train_sbi as T
+    import sound_categorisation.cli.sbi_condition as R
+    import sound_categorisation.cli.sbi_train as T
     assert all(T.decode_task(i) == tuple(TRAIN_GRID.decode(i).values()) for i in range(TRAIN_GRID.n))
     assert all(R.decode_task(i) == tuple(CONDITION_GRID.decode(i).values()) for i in range(CONDITION_GRID.n))

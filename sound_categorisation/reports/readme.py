@@ -23,8 +23,9 @@ and git state (sha + dirty flag) that produced it.
   logs/                                  job logs, when run on the cluster
   summary.pdf, summary_<page>.png        four pages: overall, uniform, hard_a, hard_b
   README.md                              this file
-  <distribution>/<design>[_<site>]_<toi>/
+  <distribution>/<site>_<trial_class>/
     <animal>/contrasts.csv               every contrast x unit, one schema (below)
+    <animal>/levels.csv                  the observed value of every stat in every condition the contrasts use
     <animal>/trajectory.csv              one row per session of the phase, in acquisition order
     <animal>/trajectory_curves.csv       rolling PSE within each session
     <animal>/readouts.npz                psychometric curves + update matrices per (phase, trial_type)
@@ -32,13 +33,14 @@ and git state (sha + dirty flag) that produced it.
     group/group_rows.csv                 per-animal point differences per contrast kind (the fold)
     group/group_tests.csv                WT-vs-HET rank tests per kind x stat
     group/trajectory.csv, trajectory_curves.csv   all animals' trajectories, with genotype
-    pdf/<animal>_<design>_<toi>.pdf, pdf/group_<design>_<toi>.pdf
+    pdf/<animal>_<site>_<trial_class>.pdf, pdf/group_<site>_<trial_class>.pdf
 ```
 
-`distribution` in {{Uniform, Hard-A, Hard-B}}; `design` in {{ppc, alm}} (`site` uni|bi for alm);
-`toi` (trial of interest) in {{opto, post_opto}}: which trials are contrasted with the non-laser trials.
+`distribution` in {{Uniform, Hard-A, Hard-B}}; `site` in {{ppc, alm_uni, alm_bi}} (older runs: empty = ppc, plus a
+`design` column — readers normalise them with `reports.tables.normalise_site`);
+`trial_class` (trial of interest) in {{opto, post_opto}}: which trials are contrasted with the non-laser trials.
 
-## Session types and design
+## Session types and sites
 
 - `opto`: laser sessions (30 % of trials laser-on, randomised per trial). WT = VGAT-ChR2-negative: light, no silencing.
   HET = light + silencing.
@@ -51,23 +53,31 @@ and git state (sha + dirty flag) that produced it.
 
 | kind | what is compared | unit | p |
 |---|---|---|---|
-| `within` | `toi` trials vs non-laser trials, in the laser sessions | trials (and sessions) | permutation (laser randomised per trial) |
+| `within` | `trial_class` trials vs non-laser trials, in the laser sessions | trials (and sessions) | permutation (laser randomised per trial) |
 | `within_masking` | fake-opto trials vs the rest, in masking sessions (null control for the trial flag) | trials | permutation |
 | `between` | laser sessions vs masking sessions, all trials | sessions (and trials) | none: session type was not randomised; the masking sessions came later |
 | `compensation` | laser-OFF trials of the laser sessions vs masking sessions, all trials: does the baseline criterion move in a session where 30 % of trials are lasered? | sessions (and trials) | none (same reason) |
 | `dod` | `within` minus `within_masking` (masking-based delta-of-deltas) | sessions/trials | bootstrap only |
-| `vs_ppc` | ALM sessions vs PPC-laser sessions, all trials (alm design) | sessions/trials | none |
+| `vs_ppc` | ALM sessions vs PPC-laser sessions, all trials (ALM sites) | sessions/trials | none |
 
-Columns: `cohort animal genotype distribution design site toi kind contrast unit stat diff ci_lo ci_hi boot_p perm_p
+Columns: `cohort animal genotype distribution site trial_class kind contrast unit stat diff ci_lo ci_hi boot_p perm_p
 n_a n_b n_sessions_a n_sessions_b`. `diff` is a - b for the contrast named in `contrast` (e.g. `opto_vs_non_opto`).
 `unit` is the bootstrap resampling unit: `trials` (stratified by stimulus bin; assumes trials exchangeable) or
 `sessions` (whole sessions; the honest interval for anything that varies by session). `boot_p` is the two-sided
-bootstrap p against 0; `perm_p` the permutation p where the design allows one, else NaN.
+bootstrap p against 0; `perm_p` the permutation p where the randomisation allows one, else NaN.
 
 Stats: `mu` (criterion / PSE of the cumulative-Gaussian fit; positive = more evidence needed to choose B),
 `sigma` (slope), `lapse_low`, `lapse_high`, `accuracy`, `hard_accuracy`, `easy_accuracy`, `side_bias`
 (P(B) - 0.5), `recency`, `win_stay`, `lose_shift`; ALM adds `reaction_time`, `reaction_time_jitter`.
 `mu`/`sigma` are NaN where the fit was unreliable (sigma > 5 or |mu| > 0.99).
+
+## Levels (`levels.csv`)
+
+The observed value of every stat in every condition a contrast was built from, so a level can be read
+without reconstructing it from differences. `(kind, phase)` names the condition: `within/opto` = laser-on
+trials of opto sessions, `within/non_opto` = laser-off trials of opto sessions, `within_masking/*` the same
+on sham sessions, `between/opto|masking` = all trials of each session set, `compensation/laser_off` =
+laser-off trials of opto sessions. Columns: `kind phase n_trials n_sessions stat value` plus the labels.
 
 ## Trajectory (`trajectory.csv`)
 
@@ -125,7 +135,7 @@ for all animals. `pdf/<animal>_switches.pdf`: convergence per switch; psychometr
 ## Regenerating
 
 `sc-reports battery` (fast structure check, full battery, summary — each a run; `latest` ends on the full one).
-Single pieces: `sc-reports opto --distribution Hard-A --toi opto [--design alm --site uni] [--level animal|group]`,
+Single pieces: `sc-reports opto-contrasts --distribution Hard-A --trial-class opto [--site alm_uni] [--level animal|group]`,
 `sc-reports summary [--run <run_id>]`. See `docs/runs.md` for every command.
 '''
 

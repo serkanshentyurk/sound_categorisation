@@ -9,7 +9,7 @@ Each "method" is a (source, rep, fit_target) triple resolving to a results
 directory written in the neutral CV schema (save_cv_result). load_cv_results +
 compare_models turn that directory into per-animal winners + p-values, so this
 module never re-reads pickles or recomputes winners by hand — it only loads,
-joins, and votes. That keeps it in lock-step with run_gs / run_sbi via the
+joins, and votes. That keeps it in lock-step with sc-grid-search / sc-sbi-condition via the
 shared ``paths.model_id_dir`` layout and the shared on-disk schema. Everything is read from ONE
 run directory (``model_identification/<cohort>/<run_id>/``) and one distribution.
 
@@ -108,7 +108,7 @@ def load_all_assignments(
     """Load each method's BE/SC call and compute a consensus per animal.
 
     Args:
-        run: The run directory (``model_identification/<cohort>/<run_id>``) run_gs / run_sbi wrote into.
+        run: The run directory (``model_identification/<cohort>/<run_id>``) sc-grid-search / sc-sbi-condition wrote into.
         distribution: The phase ('uniform' / 'hard_a' / 'hard_b') — one consensus per phase.
         methods: (source, rep, fit_target) triples; defaults to DEFAULT_METHODS.
         experiment: If given, animals present in it but absent from results are

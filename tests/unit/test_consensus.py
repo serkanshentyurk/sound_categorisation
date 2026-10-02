@@ -86,7 +86,7 @@ class TestLoadAllAssignments:
     """load_all_assignments builds the per-animal × per-method winner table.
 
     The run directory is a tmp tree (no real results root is touched); fabricated
-    BE/SC files in the neutral schema stand in for run_gs / run_sbi output.
+    BE/SC files in the neutral schema stand in for sc-grid-search / sc-sbi-condition output.
     """
 
     DIST = 'uniform'

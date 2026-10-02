@@ -1,12 +1,12 @@
 #!/usr/bin/env python
-"""Generate a synthetic cohort (ground truth known) for validating run_gs / run_sbi.
+"""Generate a synthetic cohort (ground truth known) for validating sc-grid-search / sc-sbi-condition.
 
 A cohort is a pickle at ``cohort_path(name)`` with the shape ``_synthetic_records``
 expects: ``{'animals': [{'animal_id', 'sessions': [{stimuli, choices, categories}],
 'true_model', 'true_params'}, ...]}``. Animals are simulated from the BE and SC
 priors, so the cohort carries ground truth for the recovery / identification checks.
 
-The cohort name encodes the phase (run_gs / run_sbi fit one phase per launch); the default name
+The cohort name encodes the phase (sc-grid-search / sc-sbi-condition fit one phase per launch); the default name
 is ``synthetic_<distribution>``:
 
     sc-make-synthetic-cohort --distribution uniform            # -> synthetic_uniform
@@ -14,9 +14,9 @@ is ``synthetic_<distribution>``:
 
 Then (GS is torch-free, so it runs anywhere; SBI needs torch + trained nets):
 
-    sc-run-gs  --source synthetic --cohort synthetic_uniform --distribution uniform \
+    sc-grid-search  --cohort synthetic_uniform --distribution uniform \
         --fit-target update_matrix --fast
-    sc-run-sbi --source synthetic --cohort synthetic_uniform --distribution uniform --fast
+    sc-sbi-condition --cohort synthetic_uniform --distribution uniform --fast
     sc-consensus --cohort synthetic_uniform --distribution uniform
 
 A validation run is an analysis, not a test: its results (recovery, confusion) are reported. The
