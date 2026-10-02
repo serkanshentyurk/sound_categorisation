@@ -11,8 +11,10 @@ and points ``<report>/<cohort>/latest`` at itself.
                                 [--level animal|group|both] [--animals SS15 SS16] [--fast]
     sc-reports opto-contrasts   --all [--fast] [--limit N]    # PPC × 3 distributions × 2 trial classes + ALM uni/bi
     sc-reports switch-adaptation --cohort behaviour1-cohort
+    sc-reports light-artefact   [--distribution Uniform] [--fast]   # what the light does on its own, per site
     sc-reports summary          [--run latest|<run_id>]      # summary pages from an opto-contrasts run
-    sc-reports battery          [--limit N]                  # fast structure check → full opto-contrasts → summary
+    sc-reports battery          [--limit N] [--fast] [--skip S…] [--only S]
+                                # check → opto-contrasts --all → light-artefact → summary, one run each
 
 The synthetic end-to-end check of this pipeline is ``pytest tests/e2e -q`` (not a subcommand).
 
@@ -20,7 +22,7 @@ Common options: --cohort (default opto1-cohort), --snapshot PATH, --config PATH,
 (reuse an existing run directory), --root DIR (override the results root), --fast (few draws,
 scalar stats, no readouts; run id gets a ``_fast`` suffix).
 
-Subcommand names are the report folder names (``opto_contrasts/``, ``switch_adaptation/``). Within a run,
+Subcommand names are the report folder names (``opto_contrasts/``, ``switch_adaptation/``, ``light_artefact/``). Within a run,
 ``opto-contrasts`` writes ``<distribution>/<site>_<trial_class>/{<animal>/, group/, pdf/}``;
 ``switch-adaptation`` writes ``switches/``; ``summary`` writes ``summary.pdf`` and the generated README at the
 run root. Tables + ``meta.json`` sit next to every PDF.
@@ -62,7 +64,7 @@ DEFAULT_COHORT = 'opto1-cohort'
 def _open_run(report: str, a) -> Path:
     """Create or reopen this command's run directory and remember it on ``a``."""
     run = start_run(report, a.cohort, getattr(a, 'run_id', None), fast=getattr(a, 'fast', False),
-                    root=getattr(a, 'root', None))
+                    label=getattr(a, 'label', None), root=getattr(a, 'root', None))
     a.run_path, a.run_id = run, run.name
     return run
 
@@ -79,16 +81,22 @@ def _meta(a, **extra) -> dict:
 
 
 def _animals(experiment, cohorts: Dict[str, List[str]], a) -> List[str]:
-    ids = list(a.animals) if getattr(a, 'animals', None) else list(cohorts.get(a.cohort, []))
-    ids = [i for i in ids if i in experiment.animals]
+    if a.cohort not in cohorts:
+        sys.exit(f'unknown cohort {a.cohort!r}; cohorts in config.yaml: {sorted(cohorts)}')
+    ids = list(a.animals) if getattr(a, 'animals', None) else list(cohorts[a.cohort])
+    unknown = [i for i in ids if i not in experiment.animals]
+    if unknown:
+        sys.exit(f'animals not in the experiment: {unknown}; available: {sorted(experiment.animals)}')
     if getattr(a, 'limit', None):
         ids = ids[:a.limit]
     return ids
 
 
 def _load(a):
-    experiment = load_experiment_any(a.config, a.snapshot)
     cohorts = load_cohorts(a.config or REPO_ROOT / 'config.yaml')
+    if a.cohort not in cohorts:                       # before the (slow) snapshot load
+        sys.exit(f'unknown cohort {a.cohort!r}; cohorts in config.yaml: {sorted(cohorts)}')
+    experiment = load_experiment_any(a.config, a.snapshot)
     settings = Settings.fast() if a.fast else Settings()
     return experiment, _animals(experiment, cohorts, a), settings
 
@@ -167,25 +175,71 @@ def cmd_switch_adaptation(a):
     run_switches(experiment, ids, run, a.cohort, meta=_meta(a))
 
 
+# ── the light-artefact report ────────────────────────────────────────────────
+
+def cmd_light_artefact(a):
+    from sound_categorisation.reports.light_artefact import run_light_artefact
+    experiment, ids, _ = _load(a)
+    run = _open_run('light_artefact', a)
+    print(f'light_artefact/{a.cohort}/{a.run_id}: {len(ids)} animals -> {run}')
+    run_light_artefact(experiment, ids, run, a.cohort, a.distribution, fast=a.fast, meta=_meta(a))
+
+
 # ── summary + battery ────────────────────────────────────────────────────────
+
+def _resolve(report: str, cohort: str, run: str, root) -> Path:
+    try:
+        return resolve_run(report, cohort, run, root=root)
+    except FileNotFoundError as e:
+        sys.exit(str(e))
+
 
 def cmd_summary(a):
     from sound_categorisation.reports.summary import write_summary
-    run = resolve_run('opto_contrasts', a.cohort, a.run, root=a.root)
+    run = _resolve('opto_contrasts', a.cohort, a.run, a.root)
     print('summary ->', write_summary(run, a.cohort))
 
 
+BATTERY_STAGES = ('check', 'opto-contrasts', 'light-artefact', 'summary')
+
+
 def cmd_battery(a):
-    """The overnight sequence: a fast one-animal structure check, then the full opto battery, then
-    the summary. Each stage is its own run; the full run is what `latest` points at afterwards."""
+    """The overnight sequence, each stage its own run (so `latest` ends on the full runs):
+
+        check            opto-contrasts --all --fast --limit 1   a one-animal structure check, minutes
+        opto-contrasts   opto-contrasts --all                    every site × distribution × trial class, hours
+        light-artefact   light-artefact (Uniform)                light-on vs light-off per light-carrying set
+        summary          summary on the opto-contrasts run just written
+
+    --fast runs every stage with the fast settings (a pipe-clean of the whole sequence);
+    --skip drops stages; --only runs one. Stages are logged with their run ids so a crashed battery can
+    be resumed with --only.
+    """
+    stages = [s for s in BATTERY_STAGES if s not in (a.skip or [])]
+    if a.only:
+        stages = [a.only]
     base = dict(cohort=a.cohort, snapshot=a.snapshot, config=a.config, root=a.root, animals=None, run_id=None)
-    check = argparse.Namespace(**base, all=True, fast=True, limit=1, level='both', distribution=None,
-                               trial_class='opto', site='ppc')
-    cmd_opto_contrasts(check)
-    full = argparse.Namespace(**base, all=True, fast=False, limit=a.limit, level='both', distribution=None,
-                              trial_class='opto', site='ppc')
-    cmd_opto_contrasts(full)
-    cmd_summary(argparse.Namespace(cohort=a.cohort, run=full.run_id, root=a.root))
+    t0 = time.time()
+    opto_run_id = None
+    for stage in stages:
+        print(f'\n=== battery stage: {stage} ({time.time() - t0:.0f}s elapsed) ===')
+        if stage == 'check':
+            ns = argparse.Namespace(**base, all=True, fast=True, limit=1, level='both', distribution=None,
+                                    trial_class='opto', site='ppc', label='check')
+            cmd_opto_contrasts(ns)
+        elif stage == 'opto-contrasts':
+            ns = argparse.Namespace(**base, all=True, fast=a.fast, limit=a.limit, level='both', distribution=None,
+                                    trial_class='opto', site='ppc')
+            cmd_opto_contrasts(ns)
+            opto_run_id = ns.run_id
+        elif stage == 'light-artefact':
+            ns = argparse.Namespace(**base, fast=a.fast, limit=a.limit, distribution='Uniform')
+            cmd_light_artefact(ns)
+        elif stage == 'summary':
+            cmd_summary(argparse.Namespace(cohort=a.cohort, run=opto_run_id or 'latest', root=a.root))
+        else:
+            sys.exit(f'unknown battery stage {stage!r}; stages: {BATTERY_STAGES}')
+    print(f'\nbattery done in {time.time() - t0:.0f}s: {stages}')
 
 
 # ── parser ───────────────────────────────────────────────────────────────────
@@ -220,15 +274,23 @@ def build_parser() -> argparse.ArgumentParser:
     common(sw)
     sw.set_defaults(fn=cmd_switch_adaptation)
 
+    sl = sub.add_parser('light-artefact', help='light-on vs light-off on every light-carrying session set, per site')
+    common(sl)
+    sl.add_argument('--distribution', default='Uniform', choices=DISTRIBUTIONS)
+    sl.set_defaults(fn=cmd_light_artefact)
+
     ss = sub.add_parser('summary', help='summary pages from the tables of an opto-contrasts run')
     ss.add_argument('--cohort', default=DEFAULT_COHORT)
     ss.add_argument('--run', default='latest', help="run id, or 'latest'")
     ss.add_argument('--root', type=Path, default=None)
     ss.set_defaults(fn=cmd_summary)
 
-    sb = sub.add_parser('battery', help='fast check → full opto-contrasts battery → summary (the overnight run)')
+    sb = sub.add_parser('battery', help='check → opto-contrasts --all → light-artefact → summary (the overnight run)')
     common(sb, selection=False)
-    sb.add_argument('--limit', type=int, default=None)
+    sb.add_argument('--limit', type=int, default=None, help='first N animals only (every stage)')
+    sb.add_argument('--fast', action='store_true', help='fast settings in every stage: a pipe-clean, not results')
+    sb.add_argument('--skip', nargs='*', choices=BATTERY_STAGES, default=None, help='stages to leave out')
+    sb.add_argument('--only', choices=BATTERY_STAGES, default=None, help='run one stage')
     sb.set_defaults(fn=cmd_battery)
 
     return p

@@ -44,7 +44,7 @@ sound_categorisation/                 ← repo root (pyproject.toml, config.yaml
 pip install -e behav_utils/ && pip install -e ".[dev]"     # both packages (see SETUP.md for the data); installs the sc-* commands
 pytest behav_utils/tests -q && pytest tests/unit -q         # fast
 pytest tests/e2e -q                                          # the report pipeline end to end on synthetic data
-sc-reports battery                                           # the real opto battery (hours)
+sc-reports battery                                           # check → opto-contrasts → light-artefact → summary (hours)
 ```
 
 Every run writes under `results/<report>/<cohort>/<run_id>/` (`opto_contrasts`, `switch_adaptation`,
@@ -70,4 +70,4 @@ Aim 2, expert phase: analysed (opto1 cohort, 5 HET / 4 WT). Aim 2, post-shift: t
 did not produce measurable adaptation; a blocked design is needed. Aim 1 (BE/SC identification via grid
 search + SBI) has its pipeline in place; the real-data consensus run is pending. Aim 3 (imaging) not started.
 Code: the October cleanup (layout, entry points, run ids, tests split, notebooks reading run tables, CI
-executing them on synthetic runs) is in; the light-artefact report and SLDS state assignment are not yet written.
+executing them on synthetic runs) and the light-artefact report are in; SLDS state assignment is not yet written.

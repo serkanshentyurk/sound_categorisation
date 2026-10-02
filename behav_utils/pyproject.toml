@@ -4,12 +4,24 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "behav_utils"
-version = "0.5.0"
-description = "Behavioural analysis utilities for 2-AFC decision-making tasks"
+version = "0.6.0"
+description = "Analysis library for 2-AFC behavioural data: config-driven loading, session selection, statistics, readouts, contrasts, plotting"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [{name = "Serkan Shentyurk"}]
+keywords = ["behaviour", "psychophysics", "2AFC", "neuroscience", "psychometric"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+]
+
 dependencies = [
     "numpy>=1.24",
     "pandas>=1.5",
@@ -18,8 +30,12 @@ dependencies = [
     "pyyaml>=6.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/ORG/sound_categorisation/tree/main/behav_utils"
+Changelog = "https://github.com/ORG/sound_categorisation/blob/main/behav_utils/CHANGELOG.md"
+
 [project.optional-dependencies]
-dev = ["pytest>=7.0", "ruff"]
+dev = ["pytest>=7.0", "ruff", "build", "twine"]
 
 [tool.setuptools]
 package-dir = {"" = "src"}

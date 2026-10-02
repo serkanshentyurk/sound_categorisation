@@ -8,7 +8,7 @@ on the cluster, `SC_RESULTS_ROOT` to override) as
 <results root>/<report>/<cohort>/latest          → the newest run (symlink; latest.txt holds the id)
 ```
 
-`run_id` = `YYYY-MM-DD_<git sha7>`, plus `_fast` for reduced runs and an optional label. Every folder a
+`run_id` = `YYYY-MM-DD_HHMM_<git sha7>`, plus `_fast` for reduced runs and an optional label. Every folder a
 command writes carries a `meta.json` (run id, argv, snapshot, config, settings, package versions, git sha
 and dirty flag). Inputs that are not results — the snapshot, synthetic cohorts, trained SBI networks — live
 under `paths.data_root()` (`<repo>/../../data` locally, ceph on the cluster, `SC_DATA_ROOT` to override).
@@ -28,7 +28,8 @@ Three kinds of run, three homes:
 | `sc-reports opto-contrasts --distribution D [--trial-class opto\|post_opto] [--site ppc\|alm_uni\|alm_bi] [--level animal\|group\|both]` | the opto contrasts of one condition: per-animal `contrasts.csv`, `levels.csv` (every stat's value per condition), `trajectory*.csv`, `readouts.npz`, PDFs; the WT-vs-HET fold (`group_rows.csv`, `group_tests.csv`) | snapshot, `config.yaml` | `opto_contrasts/<cohort>/<run_id>/<D>/<design>[_<site>]_<trial_class>/{<animal>/, group/, pdf/}` | minutes per animal (full), seconds (`--fast`) |
 | `sc-reports opto-contrasts --all` | every site × distribution × trial class, into one run | as above | as above, every condition | hours |
 | `sc-reports summary [--run latest\|<id>]` | the four summary pages + generated `README.md`/`GUIDE.md` from a run's tables (no recomputation) | an opto run | `<run>/summary.pdf`, `summary_*.png`, `README.md` | seconds |
-| `sc-reports battery [--limit N]` | fast one-animal structure check (its own `_fast` run) → `opto-contrasts --all` → `summary` | snapshot | two runs; `latest` ends on the full one | hours |
+| `sc-reports battery [--limit N] [--fast] [--skip S…] [--only S]` | stages `check` (one-animal fast structure check, its own `_fast` run) → `opto-contrasts --all` → `light-artefact` (Uniform) → `summary`; `--fast` makes it a pipe-clean of the whole sequence; `--only` resumes one stage | snapshot | one run per stage; `latest` ends on the full ones | hours |
+| `sc-reports light-artefact [--distribution Uniform] [--fast]` | light-on − light-off on every light-carrying session set (`ppc_opto`, `ppc_sham`, `alm_uni`, `alm_bi`), with `criterion`/`dprime`; P(B) per stimulus bin on vs off; `ppc_sham − alm` site test; WT-vs-HET fold | snapshot | `light_artefact/<cohort>/<run_id>/<distribution>/{<animal>/, group/, pdf/}` + `README.md` | minutes |
 | `sc-reports switch-adaptation --cohort C` | block-level adaptation after each distribution switch: switches, pre/post, convergence (manuscript Fig. 5C recipe), session dynamics, psychometrics; per-animal and summary PDFs | snapshot | `switch_adaptation/<cohort>/<run_id>/switches/` | minutes |
 
 Common options: `--cohort` (default `opto1-cohort`), `--snapshot`, `--config`, `--root`, `--run-id`
@@ -41,7 +42,7 @@ Common options: `--cohort` (default `opto1-cohort`), `--snapshot`, `--config`, `
 | `sc-export-snapshot [--check-only]` | the pickled experiment every analysis loads | Bonsai CSVs via `config.yaml` | `<data root>/snapshots/sound_cat_snapshot.pkl` (`behaviour/snapshots/` on ceph) | minutes |
 | `sc-make-synthetic-cohort --distribution D [--name N] [--n-per-model K]` | a synthetic cohort with known BE/SC ground truth | — | `<data root>/synthetic_cohorts/<name>.pkl` | seconds |
 | `sc-new-run --report R --cohort C [--fast] [--label L]` | an empty run directory (+ `logs/`), prints the id | — | `<R>/<C>/<run_id>/` | instant |
-| `sc-make-synthetic-run --results DIR --data DIR [--no-model-id]` | synthetic opto, switch and model-identification runs in the real layout, for the notebooks and CI | — | `DIR/opto_contrasts/synthetic/…`, `switch_adaptation/synthetic/…`, `model_identification/synthetic_uniform/…` | minutes |
+| `sc-make-synthetic-run --results DIR --data DIR [--no-model-id]` | synthetic opto, switch and model-identification runs in the real layout, for the notebooks and CI | — | `DIR/opto_contrasts/synthetic/…`, `switch_adaptation/synthetic/…`, `light_artefact/synthetic/…`, `model_identification/synthetic_uniform/…` | minutes |
 
 ## Model identification (cluster; one phase per launch, one run id per chain)
 
@@ -69,5 +70,4 @@ run id when none is given and prints it; Slurm logs go to `<run>/logs/`. `C` is 
 
 ## Not yet here
 
-Light-artefact report (choice-by-stimulus on/off, side bias, SDT) — planned as `sc-reports artefact`.
 SLDS state assignment — planned under `sound_categorisation/slds/`.

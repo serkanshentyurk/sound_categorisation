@@ -134,7 +134,7 @@ for all animals. `pdf/<animal>_switches.pdf`: convergence per switch; psychometr
 
 ## Regenerating
 
-`sc-reports battery` (fast structure check, full battery, summary — each a run; `latest` ends on the full one).
+`sc-reports battery` (check, opto-contrasts --all, light-artefact, summary — each a run; `latest` ends on the full ones).
 Single pieces: `sc-reports opto-contrasts --distribution Hard-A --trial-class opto [--site alm_uni] [--level animal|group]`,
 `sc-reports summary [--run <run_id>]`. See `docs/runs.md` for every command.
 '''

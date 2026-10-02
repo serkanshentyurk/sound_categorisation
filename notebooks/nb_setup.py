@@ -59,6 +59,7 @@ def open_run(report: str, cohort: str, run: str = RUN) -> Path:
     except FileNotFoundError as e:
         hint = {'opto_contrasts': f'sc-reports opto-contrasts --all --cohort {cohort}   (or sc-reports battery)',
                 'switch_adaptation': f'sc-reports switch-adaptation --cohort {cohort}',
+                'light_artefact': f'sc-reports light-artefact --cohort {cohort}',
                 'model_identification': 'slurm/submit.sh grid-search / condition, then sc-consensus (see docs/runs.md)'}[report]
         raise FileNotFoundError(f'{e}\nNo {report} run for cohort {cohort!r}. Create one with:\n    {hint}'
                                 + ('\n(or set SC_NB_SYNTHETIC=1 after sc-make-synthetic-run)' if not SYNTHETIC else ''))
@@ -123,6 +124,17 @@ def load_switches(run: Path) -> dict:
     return {f.stem: pd.read_csv(f) for f in sorted(d.glob('*.csv'))}
 
 
+def load_light_artefact(run: Path, distribution: str = 'Uniform') -> dict:
+    """The light-artefact tables for one distribution: contrasts (light-on − off per set and stat, plus
+    kind='site_dod'), levels, bins (P(B) per stimulus bin on vs off), group_rows, group_tests."""
+    d = run / distribution
+    out = {'contrasts': _read_all(d, 'light_contrasts'), 'levels': _read_all(d, 'levels'),
+           'bins': _read_all(d, 'choice_by_bin')}
+    out['group_rows'] = pd.read_csv(d / 'group' / 'group_rows.csv') if (d / 'group' / 'group_rows.csv').exists() else pd.DataFrame()
+    out['group_tests'] = pd.read_csv(d / 'group' / 'group_tests.csv') if (d / 'group' / 'group_tests.csv').exists() else pd.DataFrame()
+    return out
+
+
 def load_consensus(run: Path, distribution: str = 'uniform') -> tuple[pd.DataFrame, str]:
     """(assignments, summary text) of a model-identification run for one distribution."""
     d = run / 'consensus' / distribution
@@ -150,4 +162,4 @@ def first_animal(df: pd.DataFrame, genotype: str | None = None) -> str:
 __all__ = ['SYNTHETIC', 'RUN', 'OPTO_COHORT', 'SWITCH_COHORT', 'MODEL_COHORT', 'REPO_ROOT',
            'GENOTYPE_COLOUR', 'COLOURS', 'PALETTE', 'np', 'pd', 'plt', 'Path',
            'banner', 'open_run', 'load_contrasts', 'load_levels', 'load_group', 'load_trajectory', 'condition_dir',
-           'load_readouts', 'load_switches', 'load_consensus', 'load_experiment', 'first_animal']
+           'load_readouts', 'load_switches', 'load_light_artefact', 'load_consensus', 'load_experiment', 'first_animal']

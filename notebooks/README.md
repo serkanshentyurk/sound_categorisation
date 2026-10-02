@@ -10,7 +10,7 @@ notebooks). `nb_setup.py` holds the loaders and the cohort/run switches.
 | `00_data_and_task` | what is in the snapshot; the task from the trials | the snapshot (no run) |
 | `10_expert_behaviour` | expert behaviour by phase: psychometrics, update matrices, trajectories; cohort by genotype | `opto_contrasts/<cohort>/latest` |
 | `11_switch_adaptation` | PSE shift and convergence after a distribution switch (Fig. 5C), overnight, per-phase fits | `switch_adaptation/<cohort>/latest` |
-| `20_opto_expert` | PPC inactivation in experts, the light-only control, ALM specificity, WT vs HET | `opto_contrasts/<cohort>/latest` |
+| `20_opto_expert` | PPC inactivation in experts, the light itself (light-artefact report), ALM specificity, WT vs HET | `opto_contrasts/…/latest`, `light_artefact/…/latest` |
 | `21_opto_hard` | opto on the Hard phases and the per-session trajectory (the design null) | `opto_contrasts/<cohort>/latest` |
 | `30_sbi_feature_selection` | choosing the SBI summary-statistic vector (simulates; slow; cached) | nothing |
 | `31_model_identification` | BE/SC recovery on synthetic data, consensus; real-data section pending the cluster run | `model_identification/<cohort>/latest` |

@@ -1,5 +1,23 @@
 # Changelog — sound_categorisation
 
+## 0.5.1 — 2026-10
+- Run ids carry the time (`YYYY-MM-DD_HHMM_<sha7>`): two runs of the same kind on the same day at the same
+  commit no longer collide. Older, date-only ids are still recognised.
+- `sc-reports battery` runs `check → opto-contrasts --all → light-artefact → summary`, one run per stage,
+  with `--fast` (pipe-clean), `--skip` and `--only` (resume a crashed battery).
+
+## 0.5.0 — 2026-10 (light-artefact report)
+- `sc-reports light-artefact`: light-on − light-off on every light-carrying session set (`ppc_opto`,
+  `ppc_sham`, `alm_uni`, `alm_bi`) with `side_bias accuracy mu sigma dprime criterion`, P(B) per stimulus
+  bin on vs off, the `ppc_sham − alm` site interaction, and the WT-vs-HET fold; `behaviour/light_artefact.py`
+  + `reports/light_artefact.py`; results under `light_artefact/<cohort>/<run_id>/<distribution>/`.
+  Notebook `20` §3 reads it. `behav_utils` 0.6.0 adds the `sdt` fitter (`dprime`, `criterion`).
+- CLIs echo the options on a wrong input: unknown cohort → the cohorts in `config.yaml` (and synthetic
+  cohorts on disk), unknown animal → the animals in the experiment, unknown run id → the runs under that
+  cohort, missing report → the cohorts that have runs.
+- `behav_utils` packaging metadata (classifiers, URLs, keywords), a `behav_utils-v*` tag → release
+  workflow that builds, checks and tests the wheel; installable from git with `#subdirectory=behav_utils`.
+
 ## 0.4.1 — 2026-10 (naming pass + levels)
 - Names say what they are: `sc-reports opto-contrasts | switch-adaptation | summary | battery` (subcommands =
   report folders); `--trial-class opto|post_opto` (was `--toi`); one `--site ppc|alm_uni|alm_bi` (was

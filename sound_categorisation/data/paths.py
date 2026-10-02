@@ -11,7 +11,7 @@ import os
 import platform
 import re
 import socket
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 from sound_categorisation.inference.constants import SBI_STATS
@@ -83,14 +83,14 @@ def snpe_net_path(rep: str, model: str, distribution: str) -> Path:
 #   <results_root>/<report>/<cohort>/latest      -> symlink to the newest run  (+ latest.txt)
 #
 #   report  ∈ REPORTS (the analysis, not the mechanism)
-#   run_id  = YYYY-MM-DD_<git sha7>[_fast][_<label>]
+#   run_id  = YYYY-MM-DD_HHMM_<git sha7>[_fast][_<label>]
 #
 # Every producer (reports CLI, model-identification runners) writes under a run directory and
 # stamps run_id, argv and git state into its meta.json. Consumers resolve runs through
 # resolve_run(), never by a hard-coded path.
 # =============================================================================
 
-REPORTS = ('opto_contrasts', 'switch_adaptation', 'model_identification')
+REPORTS = ('opto_contrasts', 'switch_adaptation', 'light_artefact', 'model_identification')
 
 
 def results_root() -> Path:
@@ -120,10 +120,12 @@ def git_state() -> dict:
         return {'sha': None, 'short': None, 'dirty': False}
 
 
-def new_run_id(fast: bool = False, label: str | None = None, today: date | None = None) -> str:
-    """'YYYY-MM-DD_<sha7>' plus '_fast' for reduced runs and an optional free label."""
+def new_run_id(fast: bool = False, label: str | None = None, now: datetime | None = None) -> str:
+    """'YYYY-MM-DD_HHMM_<sha7>' plus '_fast' for reduced runs and an optional free label. The time keeps two
+    runs of the same kind on the same day at the same commit apart."""
     g = git_state()
-    parts = [(today or date.today()).isoformat(), g['short'] or 'nogit']
+    now = now or datetime.now()
+    parts = [now.strftime('%Y-%m-%d_%H%M'), g['short'] or 'nogit']
     if fast:
         parts.append('fast')
     if label:
@@ -168,13 +170,26 @@ def latest_run(report: str, cohort: str, root: Path | None = None) -> Path:
     txt = parent / 'latest.txt'
     if txt.exists() and (parent / txt.read_text().strip()).is_dir():
         return parent / txt.read_text().strip()
-    runs = sorted(p for p in parent.glob('*') if p.is_dir() and _RUN_ID.match(p.name))
+    runs = sorted((p for p in parent.glob('*') if p.is_dir() and _RUN_ID.match(p.name)),
+                  key=lambda p: (p.stat().st_mtime, p.name))          # newest by time, not by name
     if runs:
         return runs[-1]
-    raise FileNotFoundError(f'no runs under {parent}')
+    raise FileNotFoundError(f'no runs under {parent}. {_available(report, root)}')
 
 
-_RUN_ID = re.compile(r'^\d{4}-\d{2}-\d{2}_[0-9a-f]{7}|nogit')
+def list_runs(report: str, cohort: str, root: Path | None = None) -> list:
+    """Run ids under <report>/<cohort>, oldest first."""
+    parent = Path(root or results_root()) / report / cohort
+    return sorted(p.name for p in parent.glob('*') if p.is_dir() and _RUN_ID.match(p.name))
+
+
+def _available(report: str, root: Path | None = None) -> str:
+    base = Path(root or results_root()) / report
+    cohorts = sorted(p.name for p in base.glob('*') if p.is_dir()) if base.exists() else []
+    return f'cohorts with {report} runs: {cohorts}' if cohorts else f'no {report} runs under {base}'
+
+
+_RUN_ID = re.compile(r'^\d{4}-\d{2}-\d{2}_(\d{4}_)?([0-9a-f]{7}|nogit)')   # time optional: older runs
 
 
 def resolve_run(report: str, cohort: str, run: str = 'latest', root: Path | None = None) -> Path:
@@ -186,7 +201,7 @@ def resolve_run(report: str, cohort: str, run: str = 'latest', root: Path | None
         return p
     d = run_dir(report, cohort, run, root)
     if not d.is_dir():
-        raise FileNotFoundError(f'no run {run!r} under {d.parent}')
+        raise FileNotFoundError(f'no run {run!r} under {d.parent}; runs there: {list_runs(report, cohort, root)}')
     return d
 
 

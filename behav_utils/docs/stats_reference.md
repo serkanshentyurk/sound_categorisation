@@ -91,6 +91,8 @@ is 1 for B. "Hard" trials are `|stimulus| < HARD_THRESHOLD` (0.3 by default).
 | `psychometric_gof` | `psychometric_gof` | psychometric | yes |
 | `reaction_time` | `reaction_time` | rt | yes |
 | `reaction_time_jitter` | `reaction_time_jitter` | rt | yes |
+| `dprime` | `sdt` | sdt | yes |
+| `criterion` | `sdt` | sdt | yes |
 
 ## Performance and bias (`stats/basic.py`)
 
@@ -222,4 +224,16 @@ Median RT (ms) after an independent U[0, RT_JITTER_MS) draw per trial.
 
 Re-drawn on every call, so under bootstrap the recording slop folds into
 the interval: a condition difference barely moves while its CI widens.
+
+## sdt (`stats/sdt.py`)
+
+### `sdt` (fitter; exchangeable: yes)
+
+Outputs: `dprime`, `criterion`
+
+Equal-variance signal-detection summary with category B as the signal and "choose B" as a yes:
+hit = P(choose B | B), false alarm = P(choose B | A), both log-linear corrected.
+``dprime`` = z(hit) − z(fa) — discriminability independent of bias; ``criterion`` c = −(z(hit) + z(fa)) / 2 —
+positive = conservative about B, i.e. biased toward A. A manipulation that moves the criterion without
+moving d′ shifts the decision rule, not the evidence.
 

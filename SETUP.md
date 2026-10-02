@@ -73,7 +73,7 @@ overrides it (and `SC_DATA_ROOT` the data root). Nothing under it is versioned �
 `meta.json` in every folder (run id, command line, snapshot, settings, versions, git sha + dirty flag).
 
 ```bash
-sc-reports battery                                         # fast check → full opto battery → summary
+sc-reports battery                                         # check → opto-contrasts --all → light-artefact → summary
 sc-reports opto-contrasts --distribution Hard-A --trial-class opto           # one condition, a new run
 sc-reports opto-contrasts --distribution Hard-A --run-id <id>        # into an existing run
 sc-reports switch-adaptation --cohort behaviour1-cohort             # the switch-adaptation report

@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.6.0 — 2026-10
+- New fitter `sdt` → `dprime`, `criterion` (B as signal, log-linear correction; exchangeable).
+
 ## 0.5.0 — 2026-10
 - `compute_stat` → `compute_phase_stats` (one name per level: `compute_stats` on arrays,
   `compute_phase_stats` on sessions). No alias.

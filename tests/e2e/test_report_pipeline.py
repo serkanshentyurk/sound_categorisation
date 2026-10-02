@@ -203,3 +203,46 @@ def test_phase_psychometrics_tables(exp):
     assert {'pse', 'sigma', 'accuracy', 'hard_accuracy', 'n_trials', 'n_sessions'} <= set(P.columns)
     assert {'flagged', 'biased_animal'} <= set(T['sessions'].columns)
     assert len(T['psychometric_curves']) == 7 * 200
+
+
+def test_light_artefact_report(exp, tmp_path):
+    """Every light-carrying set gets an on−off contrast; the site interaction is written; the fold runs."""
+    from sound_categorisation.data.paths import start_run
+    from sound_categorisation.reports.light_artefact import run_light_artefact
+    run = start_run('light_artefact', 'synthetic', fast=True, root=tmp_path)
+    out = run_light_artefact(exp, ['ST00', 'ST01', 'SB00'], run, 'synthetic', 'Uniform', fast=True)
+    c = pd.read_csv(out / 'ST00' / 'light_contrasts.csv')
+    assert {'ppc_opto', 'ppc_sham', 'alm_uni', 'alm_bi', 'site_dod'} <= set(c.kind)
+    assert {'criterion', 'dprime', 'mu', 'side_bias'} <= set(c.stat) and {'trials', 'sessions'} == set(c.unit)
+    assert not (out / 'SB00').exists()                         # no light sessions → skipped, not written empty
+    bins = pd.read_csv(out / 'ST00' / 'choice_by_bin.csv')
+    assert bins.groupby('set').size().eq(8).all()
+    assert (out / 'pdf' / 'ST00_light.pdf').exists() and (out / 'pdf' / 'group_light.pdf').exists()
+    assert (out / 'group' / 'group_rows.csv').exists() and (run / 'README.md').exists()
+
+
+def test_battery_sequence(exp, tmp_path, monkeypatch):
+    """battery --fast runs check → opto-contrasts → light-artefact → summary, each in its own run, and
+    `latest` ends on the full opto-contrasts run (the one summary read)."""
+    import argparse
+
+    from sound_categorisation.data.paths import latest_run, list_runs
+    from sound_categorisation.reports import cli
+    from sound_categorisation.reports.compute import Settings
+
+    ids = [a for a in exp.animals if a.startswith('ST')]
+    monkeypatch.setattr(cli, '_load', lambda a: (exp, ids[: a.limit] if a.limit else ids,
+                                                 Settings.fast() if a.fast else Settings()))
+    a = argparse.Namespace(cohort='synthetic', snapshot=None, config=None, root=tmp_path, run_id=None,
+                           limit=2, fast=True, skip=None, only=None)
+    cli.cmd_battery(a)
+    opto = list_runs('opto_contrasts', 'synthetic', root=tmp_path)
+    assert len(opto) == 2 and {r.rsplit('_', 1)[-1] for r in opto} == {'check', 'fast'}      # check + full (fast here)
+    full = latest_run('opto_contrasts', 'synthetic', root=tmp_path)
+    assert (full / 'summary.pdf').exists() and (full / 'README.md').exists()
+    assert (full / 'Hard-B' / 'ppc_opto' / 'group' / 'group_tests.csv').exists()   # --all covered the Hard phases
+    light = latest_run('light_artefact', 'synthetic', root=tmp_path)
+    assert (light / 'Uniform' / 'pdf' / 'group_light.pdf').exists()
+    # --only reruns a single stage without touching the others
+    cli.cmd_battery(argparse.Namespace(**{**vars(a), 'only': 'summary'}))
+    assert len(list_runs('opto_contrasts', 'synthetic', root=tmp_path)) == 2

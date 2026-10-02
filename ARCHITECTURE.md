@@ -23,6 +23,8 @@ data/
   paths.py           data/results roots (laptop vs cluster), run ids, latest resolution, build_metadata, project config
   synthetic.py       synthetic ExperimentData with the real designs' shape (the e2e tests' data)
 behaviour/
+  light_artefact.py  LightArtefact: light-on − light-off per light-carrying session set (ppc_opto, ppc_sham,
+                     alm_uni, alm_bi) with the SDT view, P(B) per bin, the ppc_sham − alm site interaction
   contrasts.py       OptoContrasts = the contrasts of the opto design, as typed library results:
                        within         opto sessions:    laser-on − laser-off trials     (permutation p valid)
                        within_masking masking sessions: flagged − unflagged trials      (null control)
@@ -43,6 +45,7 @@ reports/             compute.py  AnimalResult / GroupResult / Settings (no matpl
                      tables.py   to_tables, group_tables, readout_arrays, write_result / read_result
                      figures.py  one function per page; pdf.py  per-animal and group PDFs
                      summary.py  the four-page summary; switches.py  the switch-adaptation report
+                     light_artefact.py  the light-artefact report (tables, per-animal + group PDFs, fold)
                      readme.py   the generated results README
                      cli.py      `python -m sound_categorisation.reports` / `sc-reports`
 plotting/            project plotters (CV, opto swarms, assignment, SBI diagnostics)
@@ -56,7 +59,7 @@ cli/                 entry points (pyproject [project.scripts]): sc-reports, sc-
 <results root>/<report>/<cohort>/<run_id>/...      results_root(): <repo>/results locally, ceph on the cluster
 <results root>/<report>/<cohort>/latest            symlink (+ latest.txt) to the newest run
 ```
-`report` ∈ `opto_contrasts`, `switch_adaptation`, `model_identification`; `run_id` = `YYYY-MM-DD_<sha7>`,
+`report` ∈ `opto_contrasts`, `switch_adaptation`, `light_artefact`, `model_identification`; `run_id` = `YYYY-MM-DD_HHMM_<sha7>`,
 `_fast` for reduced runs. Every producer calls `paths.start_run` and stamps run id, argv and git state into
 its `meta.json`; every consumer (`sc-reports summary`, `sc-consensus`, the notebooks) resolves a run with
 `paths.resolve_run(report, cohort, 'latest' | run_id)`. On the cluster the run id is created once by

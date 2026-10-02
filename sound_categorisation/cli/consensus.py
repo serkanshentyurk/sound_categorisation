@@ -32,7 +32,10 @@ def main(argv=None):
                    help='list cohort animals absent from the results (real cohorts only)')
     a = p.parse_args(argv)
 
-    run = resolve_run('model_identification', a.cohort, a.run_id)
+    try:
+        run = resolve_run('model_identification', a.cohort, a.run_id)
+    except FileNotFoundError as e:
+        p.exit(2, f'{e}\n')
     experiment = None
     if a.with_experiment and not is_synthetic_cohort(a.cohort):
         from sound_categorisation.data.cohort import load_experiment_any

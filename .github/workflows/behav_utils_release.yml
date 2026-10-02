@@ -1,0 +1,26 @@
+# Builds and checks the behav_utils distribution on a `behav_utils-v*` tag and attaches it to a GitHub
+# release. Publishing to PyPI is a one-line addition (pypa/gh-action-pypi-publish with trusted publishing)
+# once the package name is registered there.
+name: behav_utils release
+on:
+  push:
+    tags: ['behav_utils-v*']
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: behav_utils } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - run: pip install build twine
+      - run: python -m build
+      - run: twine check dist/*
+      - name: Install the wheel in a clean env and run the suite
+        run: |
+          python -m venv /tmp/venv && . /tmp/venv/bin/activate
+          pip install dist/*.whl pytest
+          pytest tests -q
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: behav_utils/dist/*

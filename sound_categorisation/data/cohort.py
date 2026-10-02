@@ -170,8 +170,9 @@ def _real_records(cohort, config_path=None, preset='expert_uniform', experiment=
     config = load_project_config(config_path)
     cohorts = load_cohorts(config_path or (REPO_ROOT / 'config.yaml'))
     if cohort not in cohorts:
-        raise ValueError(f'{cohort!r} is neither a synthetic cohort ({cohort_path(cohort)} missing) nor a cohort in '
-                         f'config.yaml ({sorted(cohorts)})')
+        synthetic = sorted(p.stem for p in cohort_path(cohort).parent.glob('*.pkl')) if cohort_path(cohort).parent.exists() else []
+        raise ValueError(f'unknown cohort {cohort!r}; cohorts in config.yaml: {sorted(cohorts)}; '
+                         f'synthetic cohorts on disk: {synthetic}')
     if experiment is None:
         experiment = load_experiment(config)
     records = []

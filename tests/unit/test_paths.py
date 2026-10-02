@@ -2,7 +2,7 @@
 
 import json
 import os
-from datetime import date
+from datetime import datetime
 
 import pytest
 from sound_categorisation.data import paths
@@ -28,10 +28,12 @@ def test_results_root_env_override(tmp_path, monkeypatch):
 
 
 def test_run_id_shape():
-    rid = new_run_id(today=date(2026, 10, 1))
-    assert rid.startswith('2026-10-01_') and len(rid.split('_')[1]) == 7
-    assert new_run_id(fast=True, today=date(2026, 10, 1)).endswith('_fast')
-    assert new_run_id(label='hard a / b', today=date(2026, 10, 1)).endswith('_hard-a-b')
+    now = datetime(2026, 10, 1, 14, 32)
+    rid = new_run_id(now=now)
+    assert rid.startswith('2026-10-01_1432_') and len(rid.split('_')[2]) == 7
+    assert new_run_id(fast=True, now=now).endswith('_fast')
+    assert new_run_id(label='hard a / b', now=now).endswith('_hard-a-b')
+    assert new_run_id(now=now) != new_run_id(now=datetime(2026, 10, 1, 14, 33))   # same day, same sha: distinct
 
 
 def test_unknown_report_rejected(tmp_path):
@@ -70,6 +72,9 @@ def test_latest_falls_back_to_txt_then_newest_dir(tmp_path):
     assert latest_run('switch_adaptation', 'coh', root=tmp_path) == b        # newest run-id-shaped dir
     (a.parent / 'not_a_run').mkdir()
     assert latest_run('switch_adaptation', 'coh', root=tmp_path) == b
+    start_run('switch_adaptation', 'coh', '2026-01-04_0915_0000000', root=tmp_path)   # the timed form sorts after
+    (a.parent / 'latest').unlink(missing_ok=True); (a.parent / 'latest.txt').unlink()
+    assert latest_run('switch_adaptation', 'coh', root=tmp_path).name == '2026-01-04_0915_0000000'
 
 
 def test_latest_missing_raises(tmp_path):

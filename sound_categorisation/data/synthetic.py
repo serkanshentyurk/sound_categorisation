@@ -115,7 +115,10 @@ def write_synthetic_runs(results_root, data_root, *, with_model_id: bool = True)
     write_summary(run, 'synthetic')
     srun = start_run('switch_adaptation', 'synthetic', fast=True, root=results_root)
     run_switches(exp, ['SB00', 'SB01'], srun, 'synthetic', min_block_trials=300, max_trials=800)
-    out = {'opto_contrasts': run, 'switch_adaptation': srun}
+    from sound_categorisation.reports.light_artefact import run_light_artefact
+    lrun = start_run('light_artefact', 'synthetic', fast=True, root=results_root)
+    run_light_artefact(exp, ids, lrun, 'synthetic', 'Uniform', fast=True)
+    out = {'opto_contrasts': run, 'switch_adaptation': srun, 'light_artefact': lrun}
 
     if with_model_id:
         from sound_categorisation.cli import consensus, grid_search, make_synthetic_cohort

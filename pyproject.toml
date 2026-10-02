@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sound-categorisation"
-version = "0.4.1"
+version = "0.5.1"
 description = "PPC causal role in auditory categorisation — project code on top of behav_utils"
 requires-python = ">=3.10"
-dependencies = ["numpy", "pandas", "scipy", "matplotlib", "pyyaml", "joblib", "behav_utils>=0.5"]
+dependencies = ["numpy", "pandas", "scipy", "matplotlib", "pyyaml", "joblib", "behav_utils>=0.6"]
 
 [project.optional-dependencies]
 fit = ["torch", "sbi", "ssm", "hmmlearn"]
