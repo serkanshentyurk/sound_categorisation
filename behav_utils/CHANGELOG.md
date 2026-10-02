@@ -13,7 +13,12 @@
 - `compare_groups` no longer orders `('wt', 'het')` first; pass `groups=(a, b)` to fix the
   reference group.
 - Docstrings and docs use neutral vocabulary; `docs/data_structures_reference.md` examples
-  rewritten against the 0.3+ API.
+  rewritten against the 0.3+ API; `docs/config_guide.md` now documents `cohorts`, `session_types`,
+  `session_presets` and `sessions_to_ignore` (the removed `analysis:`/`plotting:` sections are gone);
+  `docs/stats_reference.md` is generated from the registry by `docs/gen_stats_reference.py`.
+- The shipped presets (`config_minimal.yaml`, `config_full_reference.yaml`) are experiment-neutral.
+- `generate_synthetic_animal` / `generate_synthetic_session` default `stage` is `'task'` (was a
+  project stage name); pass `stage=` explicitly if you select by stage afterwards.
 
 ## 0.4.0 — 2026-09
 - Library is task-agnostic: `session_types` and `session_presets` come from the config; hardcoded

@@ -15,20 +15,8 @@ test-local presets in `tests/conftest.py`.
 ## Before opening a PR
 - `ruff check .` is clean and `pytest tests -q` is green (CI runs both on 3.10 and 3.11).
 - New public functions have a docstring saying what they return, and a test.
-- A new statistic is registered via `@stat`/`@fit`, tested, and `docs/stats_reference.md` is regenerated:
-
-  ```bash
-  python - <<'EOF'
-  from behav_utils.stats.registry import _PRODUCERS
-  rows = ['# Statistics reference', '',
-          'Generated from the registry (`behav_utils.stats`). Every entry is a producer; multi-output producers list their scalar names. `exch` = trial-level resampling valid.', '',
-          '| producer | outputs | exch | what it is |', '|---|---|---|---|']
-  for name, e in _PRODUCERS.items():
-      doc = (e.func.__doc__ or '').strip().split('\n')[0].replace('|', '\\|')
-      rows.append(f"| `{name}` | {', '.join(f'`{o}`' for o in e.outputs)} | {'yes' if e.exchangeable else 'no'} | {doc} |")
-  open('docs/stats_reference.md', 'w').write('\n'.join(rows) + '\n')
-  EOF
-  ```
+- A new statistic is registered via `@stat`/`@fit` with a docstring (it becomes the reference entry),
+  tested, and `docs/stats_reference.md` is regenerated: `python docs/gen_stats_reference.py`.
 - Anything that changes a number (a stat definition, the resampling engine, the psychometric fit)
   bumps the minor version and is called out in `CHANGELOG.md`; projects pin results to these versions.
 

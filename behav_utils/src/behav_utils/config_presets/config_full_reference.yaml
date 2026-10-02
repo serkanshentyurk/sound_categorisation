@@ -3,14 +3,14 @@
 # Most fields have defaults — see config_minimal.yaml for the bare minimum.
 
 name: full_example
-description: "Complete config showing all options for a 2-AFC auditory categorisation task"
+description: "Complete config showing every option for a 2-AFC task"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # FILE STRUCTURE — how data files are organised on disk
 # ══════════════════════════════════════════════════════════════════════════════
 file_structure:
   data_dir: "$DATA_ROOT/my_project"    # Supports $ENV_VARS
-  animal_pattern: "SS*"                # Glob: which subdirs are animals
+  animal_pattern: "A*"                 # Glob: which subdirs are animals
   session_pattern: "*"                 # Glob: which subdirs are sessions
   behaviour_file: "behaviour.csv"      # CSV filename within session dir
   processed_subdir: "Processed"        # Optional: subfolder within session dir
@@ -97,7 +97,7 @@ session_metadata:
   distribution:
     csv_name: "Distribution"
     dtype: str
-    default: "Uniform"
+    default: "uniform"
   sound_contingency:
     csv_name: "Sound_Contingency"
     dtype: str
@@ -117,40 +117,59 @@ extra_columns:
 # ══════════════════════════════════════════════════════════════════════════════
 # SESSION FILTER PRESETS — named presets for select_sessions()
 # ══════════════════════════════════════════════════════════════════════════════
-# Fields match SessionFilter dataclass:
-#   stage, distribution, min_accuracy, max_accuracy,
-#   min_trials, max_trials, first_n, last_n, last_fraction,
-#   exclude_sessions, session_indices, date_range
-
+# Fields match the SessionFilter dataclass (see docs/config_guide.md):
+#   stage, distribution, session_type, exclude_types, min_accuracy, max_accuracy, min_trials,
+#   first_n, last_n, last_fraction, after_session_idx, before_session_idx, session_indices, exclude_opto
 session_presets:
   expert_uniform:
-    stage: "Full_Task_Cont"
-    distribution: "Uniform"
+    stage: "task"
+    distribution: "uniform"
     min_accuracy: 0.70
     last_fraction: 0.50
   all_uniform:
-    stage: "Full_Task_Cont"
-    distribution: "Uniform"
+    stage: "task"
+    distribution: "uniform"
   naive_uniform:
-    stage: "Full_Task_Cont"
-    distribution: "Uniform"
+    stage: "task"
+    distribution: "uniform"
     first_n: 5
-  all_hard_a:
-    stage: "Full_Task_Cont"
-    distribution: "Hard-A"
-  expert_hard_a:
-    stage: "Full_Task_Cont"
-    distribution: "Hard-A"
+  all_skewed:
+    stage: "task"
+    distribution: "skewed_left"
+    exclude_types: [sham, washout]
+  expert_skewed:
+    stage: "task"
+    distribution: "skewed_left"
     min_accuracy: 0.60
     last_fraction: 0.50
-  all_full_task:
-    stage: "Full_Task_Cont"
+    exclude_types: [sham, washout]
+  sham_only:
+    stage: "task"
+    session_type: sham
+  all_task:
+    stage: "task"
   all_stages: {}
 
 # ══════════════════════════════════════════════════════════════════════════════
-# MASKING SESSIONS — per-animal opto masking session dates
+# SESSION TYPES — types the data cannot derive, stamped per animal and date
 # ══════════════════════════════════════════════════════════════════════════════
-# Used by opto analysis to identify masking (sham) sessions.
-# masking_sessions:
-#   SS05: ["20250401", "20250402"]
-#   SS07: ["20250405"]
+# The library derives 'regular' and 'opto' from the trials; every other type name is yours.
+session_types:
+  sham:                                # e.g. light delivered, no effective perturbation
+    A05: ["20250401", "20250402"]
+    A07: "20250405"                    # a single date is fine
+  washout:
+    A05: ["20250410"]
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SESSIONS TO IGNORE — dropped at load time (rig faults, aborted days)
+# ══════════════════════════════════════════════════════════════════════════════
+sessions_to_ignore:
+  A03: ["20250228"]
+
+# ══════════════════════════════════════════════════════════════════════════════
+# COHORTS — named animal lists (membership only; per-animal attributes go in animal_metadata.json)
+# ══════════════════════════════════════════════════════════════════════════════
+cohorts:
+  pilot: [A01, A02, A03]
+  main:  [A04, A05, A06, A07]

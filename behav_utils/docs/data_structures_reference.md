@@ -12,7 +12,7 @@ ExperimentData                    All animals in a project
               └── TrialData        Trial-by-trial arrays
 ```
 
-Separately, `FittingData` provides a flat per-session array format for SBI inference.
+`TrialArrays` (`behav_utils.data.arrays`) is the flat, pooled view every statistic and readout computes from; `pool_arrays(sessions)` builds it.
 
 ---
 
@@ -82,7 +82,7 @@ One behavioural session — metadata + trial data.
 | `date` | datetime.date | Session date |
 | `metadata` | SessionMetadata | Task parameters |
 | `trials` | TrialData | Trial-by-trial arrays |
-| `masking` | bool | Whether this is a masking (sham) session |
+| `session_type` | str | `'regular'` / `'opto'` (derived) or a type stamped from `config.session_types` |
 | `filter_info` | dict or None | Metadata about filtering applied |
 
 ### Properties
@@ -144,7 +144,7 @@ One animal — all sessions in chronological order.
 |-------|------|-------------|
 | `animal_id` | str | Animal identifier |
 | `sessions` | list[SessionData] | Chronologically ordered sessions |
-| `metadata` | dict | Animal-level metadata (genotype, etc.) |
+| `metadata` | dict | Animal-level metadata, merged from `animal_metadata.json` (group, sex, …) |
 
 ### Properties
 
@@ -192,29 +192,8 @@ All animals in one project.
 from behav_utils.data.loading import load_experiment
 
 experiment = load_experiment('config.yaml')
-animal = experiment.get_animal('SS05')
+animal = experiment.get_animal('A05')
 all_animals = experiment.get_animals(min_sessions=10)
-```
-
----
-
-## FittingData
-
-Flat per-session arrays for SBI inference. Built from pre-filtered sessions:
-
-```python
-from behav_utils.data.ops.selection import select_sessions
-from behav_utils.data.ops.filtering import filter_trials
-from behav_utils.data.fitting_data import fitting_data_from_sessions
-
-sessions = select_sessions(animal, preset='expert_uniform')
-clean = filter_trials(sessions)
-fd = fitting_data_from_sessions(clean, animal.animal_id)
-
-# fd.stimuli       — list of arrays, one per session
-# fd.choices       — list of arrays
-# fd.n_sessions    — int
-# fd.animal_id     — str
 ```
 
 ---
@@ -257,31 +236,30 @@ plot_trajectory(traj, 'accuracy', ax=axes[2])
 ### Comparing two conditions
 
 ```python
-from behav_utils.data.ops.filtering import filter_session, opto_mask
-from behav_utils.analysis.comparison import compute_comparison
-from behav_utils.plotting.comparison import plot_comparison
+from behav_utils import filter_trials, compute_delta_stat, compute_interaction, PSYCHOMETRIC
+from behav_utils.plotting import plot_comparison, plot_stat_comparison, plot_interaction
 
-ctrl = [filter_session(s, opto_mask(s.trials, 'control')) for s in sessions]
-opto = [filter_session(s, opto_mask(s.trials, 0))         for s in sessions]
+off = filter_trials(sessions, trial_type='non_opto')
+on  = filter_trials(sessions, trial_type='opto')
 
-# Full statistical comparison
-comp = compute_comparison(ctrl, opto, label_a='Control', label_b='Opto',
-                            n_bootstrap=1000, n_permutations=1000)
-plot_comparison(comp)
+d = compute_delta_stat({'off': off, 'on': on}, stats=['accuracy', *PSYCHOMETRIC], reference='off',
+                       n_bootstrap=1000, n_permutations=1000, resample_units=('trials', 'sessions'))
+plot_comparison(d)                        # psychometric curves of both conditions
+plot_stat_comparison(d, ['mu', 'sigma'])  # Δ with intervals per stat
 ```
 
-Result dict keys:
+`compute_delta_stat` returns a `DeltaStats`:
 
-| Key | Description |
-|-----|-------------|
-| `params_a`, `params_b` | Fitted psychometric params (mu, sigma, lapse_low, lapse_high) for each condition |
-| `diffs` | params_a − params_b for each key |
-| `perm_p` | Permutation p-values per param key |
-| `boot_ci` | Bootstrap CIs per param key |
-| `boot_band_a`, `boot_band_b` | Bootstrap psychometric bands: dict with `x`, `lo`, `hi`, `median` |
-| `um_rmse` | Update matrix RMSE between conditions |
+| field | what it holds |
+|---|---|
+| `phases` | `{label: PhaseSummary}` — observed `stats` (Series), `n_trials`, `n_sessions`, bootstrap `draws` per unit, optional `curve` / `update_matrix` |
+| `contrasts` | `{key: Contrast}` — one per non-reference phase: `diff` (a − b), `difference_draws` per unit, `perm_p` (trial permutation, when valid), `um_diff` / `um_rmse` / `um_corr` |
+| `reference` | the reference label |
 
-Note: bootstrap band keys are `lo` and `hi`, not `lower`/`upper`.
+`Contrast.boot(unit)` gives `ci_lo, ci_hi, p, median, n_draws` per stat; `Contrast.table(unit)` one
+tidy row per stat (`diff, ci_lo, ci_hi, boot_p, perm_p, unit`). Units: `'trials'` (valid only when the
+condition was randomised per trial) and `'sessions'` (always valid). `compute_interaction(d1, d2, key)`
+gives the delta of deltas as an `Interaction`, with `plot_interaction`.
 
 ### Group-level claims (across animals)
 
@@ -329,10 +307,10 @@ Psychometric fit parameters use math names everywhere in code:
 Plot functions automatically translate `mu`/`sigma` to `PSE`/`slope` for y-axis labels. You write `'mu'` in code; the plot shows "PSE".
 
 ```python
-# Trajectory of PSE across sessions
-traj = compute_trajectory(clean, ['accuracy', 'mu', 'sigma'])
-plot_trajectory(traj, 'mu')   # y-axis label: "PSE"
-plot_trajectory(traj, 'sigma') # y-axis label: "slope"
+# Per-session trajectory of PSE
+r = compute_phase_stats(clean, ['accuracy', 'mu', 'sigma'], per_session=True)
+plot_trajectory(r, 'mu')      # y-axis label: "PSE"
+plot_trajectory(r, 'sigma')   # y-axis label: "slope"
 ```
 
 ---

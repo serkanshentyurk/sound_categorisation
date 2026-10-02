@@ -54,7 +54,9 @@ column and page. `docs/runs.md` lists every command, what it computes and where 
 
 ## Read next
 
-- [SETUP.md](SETUP.md) — environments, data, snapshot, cluster.
+- [SETUP.md](SETUP.md) — environments, data, snapshot, runs, cluster.
+- [docs/runs.md](docs/runs.md) — every command, what it computes, where it writes.
+- [CHANGELOG.md](CHANGELOG.md) — what changed when.
 - [ARCHITECTURE.md](ARCHITECTURE.md) — how the project layer is built on the library; the analyses and
   what each contrast means; the model-identification chain.
 - [LLM_CONTEXT.md](LLM_CONTEXT.md) — orientation for an AI assistant working on this repo.
@@ -62,8 +64,10 @@ column and page. `docs/runs.md` lists every command, what it computes and where 
 - `behav_utils/` — [README](behav_utils/README.md), [ARCHITECTURE](behav_utils/ARCHITECTURE.md),
   [docs/](behav_utils/docs).
 
-## Status (September 2026)
+## Status (October 2026)
 
 Aim 2, expert phase: analysed (opto1 cohort, 5 HET / 4 WT). Aim 2, post-shift: the daily A/B alternation
 did not produce measurable adaptation; a blocked design is needed. Aim 1 (BE/SC identification via grid
 search + SBI) has its pipeline in place; the real-data consensus run is pending. Aim 3 (imaging) not started.
+Code: the October cleanup (layout, entry points, run ids, tests split) is in; the notebooks are being
+rewritten against the report tables; the light-artefact report and SLDS state assignment are not yet written.

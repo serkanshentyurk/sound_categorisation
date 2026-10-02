@@ -23,7 +23,7 @@ Usage:
 
     # Register presets (typically at startup or via config)
     register_preset('expert_uniform', SessionFilter(
-        stage='Full_Task_Cont',
+        stage='task',
         distribution='Uniform',
         min_accuracy=0.70,
         last_fraction=0.50,
@@ -36,7 +36,7 @@ Usage:
     sessions = select_sessions(animal, 'expert_uniform', min_accuracy=0.80)
 
     # Ad-hoc (no preset)
-    sessions = select_sessions(animal, stage='Full_Task_Cont', last_n=5)
+    sessions = select_sessions(animal, stage='task', last_n=5)
 
     # Convert to FittingData for SBI
     clean = filter_trials(sessions)
@@ -320,7 +320,7 @@ def select_sessions(
     Three modes:
         1. Preset only:    select_sessions(animal, 'expert_uniform')
         2. Preset + override: select_sessions(animal, 'expert_uniform', min_accuracy=0.80)
-        3. Ad-hoc:         select_sessions(animal, stage='Full_Task_Cont', last_n=5)
+        3. Ad-hoc:         select_sessions(animal, stage='task', last_n=5)
 
     Args:
         animal: AnimalData object
@@ -354,12 +354,12 @@ def register_presets_from_config(config_raw: Dict[str, Any]) -> int:
     Expected format under 'session_presets':
         session_presets:
           expert_uniform:
-            stage: "Full_Task_Cont"
-            distribution: "Uniform"
+            stage: "task"
+            distribution: "uniform"
             min_accuracy: 0.70
             last_fraction: 0.50
           post_shift_skewed:
-            stage: "Full_Task_Cont"
+            stage: "task"
             distribution: "skewed_left"
 
     Args:

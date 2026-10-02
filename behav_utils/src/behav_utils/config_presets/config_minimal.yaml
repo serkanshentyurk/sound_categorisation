@@ -61,17 +61,17 @@ session_metadata:
     csv_name: "Distribution"
     dtype: str
     optional: true
-    default: "Uniform"
+    default: "uniform"
 
 # ── Session filter presets ───────────────────────────────────────────────────
 # Named presets for select_sessions(animal, preset='expert_uniform')
 session_presets:
   expert_uniform:
-    stage: "Full_Task_Cont"
-    distribution: "Uniform"
+    stage: "task"
+    distribution: "uniform"
     min_accuracy: 0.70
     last_fraction: 0.50
   all_uniform:
-    stage: "Full_Task_Cont"
-    distribution: "Uniform"
+    stage: "task"
+    distribution: "uniform"
   all_stages: {}                       # No filters — all sessions
