@@ -8,8 +8,8 @@ dispensable once that model is adequate.
 
 This repository holds two things:
 
-- **`behav_utils/`** — a task-agnostic 2-AFC analysis library, pip-installable on its own
-  ([its README](behav_utils/README.md)).
+- **`behav_utils`** — a task-agnostic 2-AFC analysis library in its own repository,
+  [github.com/serkanshentyurk/behav_utils](https://github.com/serkanshentyurk/behav_utils), installed from a tagged release.
 - **`sound_categorisation/`** — the project package: cohorts, the opto contrasts, per-session adaptation,
   BE/SC models and inference, the report pipeline.
 
@@ -17,7 +17,6 @@ This repository holds two things:
 
 ```
 sound_categorisation/                 ← repo root (pyproject.toml, config.yaml)
-├── behav_utils/                      library: src/behav_utils, tests, docs, own pyproject
 ├── sound_categorisation/             project package
 │   ├── settings.py                   constants: distributions, model types, fit sizes, thresholds, seeds
 │   ├── data/                         cohort (experiment, genotypes, session sets, AnimalRecord),
@@ -41,8 +40,8 @@ sound_categorisation/                 ← repo root (pyproject.toml, config.yaml
 ## Quick start
 
 ```bash
-pip install -e behav_utils/ && pip install -e ".[dev]"     # both packages (see SETUP.md for the data); installs the sc-* commands
-pytest behav_utils/tests -q && pytest tests/unit -q         # fast
+pip install -e ".[dev]"                                   # installs the sc-* commands and behav_utils from its tagged release
+pytest tests/unit -q                                         # fast
 pytest tests/e2e -q                                          # the report pipeline end to end on synthetic data
 sc-reports battery                                           # check → opto-contrasts → light-artefact → summary (hours)
 ```
@@ -61,8 +60,7 @@ column and page. `docs/runs.md` lists every command, what it computes and where 
   what each contrast means; the model-identification chain.
 - [LLM_CONTEXT.md](LLM_CONTEXT.md) — orientation for an AI assistant working on this repo.
 - [docs/results_guide.md](docs/results_guide.md) — how to navigate and read a results folder.
-- `behav_utils/` — [README](behav_utils/README.md), [ARCHITECTURE](behav_utils/ARCHITECTURE.md),
-  [docs/](behav_utils/docs).
+- `behav_utils` — its own repository: [README, ARCHITECTURE, docs/](https://github.com/serkanshentyurk/behav_utils).
 
 ## Status (October 2026)
 

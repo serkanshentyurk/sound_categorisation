@@ -17,7 +17,7 @@ Three kinds of run, three homes:
 
 | kind | purpose | lives in | writes to |
 |---|---|---|---|
-| tests | prove the code works | `tests/{unit,e2e,fit}`, `behav_utils/tests/` | pytest `tmp_path` only |
+| tests | prove the code works | `tests/{unit,e2e,fit}` (the library's suite lives in its own repo) | pytest `tmp_path` only |
 | validation | prove the method works on synthetic ground truth | the same commands, on a `synthetic_*` cohort | `model_identification/synthetic_*/<run_id>/` |
 | analysis | real cohorts | `sc-*` commands, `slurm/` | `<report>/<cohort>/<run_id>/` |
 

@@ -20,14 +20,9 @@ jobs:
       - name: Install
         run: |
           python -m pip install --upgrade pip
-          pip install -e behav_utils/
-          pip install -e ".[dev]"
+          pip install -e ".[dev]"            # pulls behav_utils from its tagged git release
       - name: Lint
-        run: |
-          ruff check behav_utils/src behav_utils/tests
-          ruff check sound_categorisation tests
-      - name: Library tests
-        run: pytest behav_utils/tests -q
+        run: ruff check sound_categorisation tests
       - name: Entry points resolve
         run: sc-reports --help >/dev/null && sc-grid-search --help >/dev/null && sc-consensus --help >/dev/null
       - name: Project unit tests
@@ -43,4 +38,4 @@ jobs:
           SC_NB_SYNTHETIC: "1"
           SC_RESULTS_ROOT: /tmp/sc_results
           SC_DATA_ROOT: /tmp/sc_data
-        run: pytest --nbmake notebooks/00_*.ipynb notebooks/1*.ipynb notebooks/2*.ipynb notebooks/31_*.ipynb behav_utils/notebooks/*.ipynb -q
+        run: pytest --nbmake notebooks/00_*.ipynb notebooks/1*.ipynb notebooks/2*.ipynb notebooks/31_*.ipynb -q

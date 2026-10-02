@@ -8,18 +8,26 @@ you like.
 ```bash
 conda create -n sound_cat python=3.11 && conda activate sound_cat
 cd <repo root>                      # the folder with pyproject.toml
-pip install -e behav_utils/         # the library, from src/ layout
-pip install -e ".[dev]"             # the project + pytest + ruff
+pip install -e ".[dev]"             # the project + pytest + ruff; pulls behav_utils from its tagged git release
 pip install -e ".[fit]"             # torch, sbi, ssm, hmmlearn — only needed for model fitting
 ```
 
-Both packages must be installed; `pip install -e .` also installs the `sc-*` commands (`sc-reports`, `sc-export-snapshot`, `sc-sbi-train`, `sc-sbi-condition`, `sc-grid-search`, `sc-consensus`). Check:
+`pip install -e .` installs the `sc-*` commands (`sc-reports`, `sc-export-snapshot`, `sc-sbi-train`,
+`sc-sbi-condition`, `sc-grid-search`, `sc-consensus`) and the library `behav_utils` at the tag pinned in
+`pyproject.toml` (its own repository: https://github.com/serkanshentyurk/behav_utils). Check:
 
 ```bash
-python -c "import behav_utils, sound_categorisation; print(behav_utils.__version__, behav_utils.__file__)"
+python -c "import behav_utils, sound_categorisation; print(behav_utils.__version__, sound_categorisation.__version__)"
 ```
 
-The path must end in `behav_utils/src/behav_utils/__init__.py`.
+To work on the library and the project at the same time, install your local checkout on top — editable
+installs win over the pinned one in the same env:
+
+```bash
+pip install -e /path/to/behav_utils          # e.g. /Users/Serkan/Desktop/pro/code/behav_utils
+```
+
+When a library change is needed by the project: tag a release there, bump the tag in `pyproject.toml` here.
 
 ## 2. Data
 
@@ -54,7 +62,6 @@ as `unknown` and excluded from genotype tests.
 ## 4. Verify
 
 ```bash
-pytest behav_utils/tests -q           # library, no data needed
 pytest tests/unit -q                  # project, fast
 pytest tests/e2e -q                   # the report pipeline on synthetic data + pinned numbers, minutes
 pytest tests/fit -q                   # torch + sbi; skips itself where they are missing
@@ -88,7 +95,7 @@ sc-reports summary [--run <id>]                            # pages from the late
 ```bash
 ssh <user>@ssh.swc.ucl.ac.uk
 module load miniconda && conda activate sound_cat
-cd <repo> && pip install -e behav_utils/ && pip install -e .     # once per checkout: provides the sc-* commands
+cd <repo> && pip install -e .                                      # once per checkout: provides the sc-* commands and behav_utils
 bash slurm/submit.sh sbi-train                                                     # 18 SBI networks → data root
 RUN=$(sc-new-run --report model_identification --cohort opto1-cohort)                  # one run id for the chain
 bash slurm/submit.sh grid-search        --cohort opto1-cohort --distribution uniform --fit-target update_matrix --run-id $RUN
@@ -113,7 +120,7 @@ in the cell that uses them; nothing in a notebook touches `sys.path`.
 
 | symptom                               | cause / fix                                                                                                                                                    |
 | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ModuleNotFoundError: behav_utils`  | not installed in this env →`pip install -e behav_utils/`                                                                                                    |
+| `ModuleNotFoundError: behav_utils`  | not installed in this env → `pip install -e .` (or your local checkout, editable)                                                                                                    |
 | `KeyError: preset 'expert_uniform'` | presets come from the config; load an experiment/snapshot first, or call`sound_categorisation.data.cohort.ensure_presets()`                                       |
 | snapshot "config has changed" warning | column mappings changed → re-export; session-type/preset edits alone are fine                                                                                 |
 | `compare_groups: need two groups`   | only one genotype in the selection (e.g.`--limit 1`); rows are still written, tests skipped                                                                  |

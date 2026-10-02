@@ -2,7 +2,8 @@
 
 Read this first if you are an AI assistant (or a new person) working on this repository. It is the
 orientation the code cannot give you: what the science is, how the code is layered, the rules that hold,
-and where the traps are. The library has its own file: `behav_utils/LLM_CONTEXT.md`.
+and where the traps are. The library lives in its own repository (github.com/serkanshentyurk/behav_utils) and
+has its own LLM_CONTEXT.md there.
 
 ## The science in six lines
 Head-fixed mice categorise sounds (2-AFC). The stimulus distribution is switched (Uniform → Hard-A ↔
@@ -23,7 +24,7 @@ model (grid search + simulation-based inference); silence PPC in expert and post
 
 ## Repository shape
 Two packages, imports one way: `sound_categorisation` (project) → `behav_utils` (library). Both are pip
-installed (`pip install -e behav_utils/ && pip install -e .`), which also installs the `sc-*` commands;
+installed (`pip install -e .`, which pulls `behav_utils` from its tagged release), which also installs the `sc-*` commands;
 nothing in the packages manipulates `sys.path`. Layout and
 module roles: `README.md`, `ARCHITECTURE.md`. Environments, data, cluster: `SETUP.md`.
 
@@ -43,7 +44,7 @@ module roles: `README.md`, `ARCHITECTURE.md`. Environments, data, cluster: `SETU
    session-level contrasts get session-bootstrap intervals and no p; genotype rank tests have a floor
    (`min_achievable_p`) — per-animal consistency is the evidence.
 7. Working style: agree the design before code for anything above a bug fix; deliver complete files;
-   run `ruff check .`, `pytest behav_utils/tests -q`, `pytest tests/unit tests/e2e -q`; British
+   run `ruff check .`, `pytest tests/unit tests/e2e -q`; British
    English; say what a change costs and what could go wrong.
 
 ## Where to look for

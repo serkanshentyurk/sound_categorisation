@@ -113,7 +113,7 @@ future `40` would cross opto effects with the BE/SC calls once the real consensu
 ## Conventions
 - Verbs: `load_`, `select_`, `filter_`, `compute_`, `plot_`; results are typed; plotters draw only.
 - CSV/JSON on disk for anything a human or notebook reads; pickle only for the snapshot and networks.
-- British English; line length 110; `ruff` clean; CI runs the library suite, `tests/unit`, `tests/e2e`, `tests/fit`,
-  and the notebooks on synthetic runs.
+- British English; line length 110; `ruff` clean; CI runs `tests/unit`, `tests/e2e`, `tests/fit` and the notebooks
+  on synthetic runs; the library's own CI runs in its repository.
 - Tests live in `tests/{unit,e2e,fit}` and write only to `tmp_path`; validation runs (synthetic cohorts,
   recovery) are analyses and go through the same `sc-*` commands as real data.
