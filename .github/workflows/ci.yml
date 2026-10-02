@@ -29,8 +29,8 @@ jobs:
         run: pytest tests/unit -q
       - name: Project end-to-end (report pipeline on synthetic data, pinned reference)
         run: pytest tests/e2e -q
-      - name: Project fit tests (skip without torch; they skip themselves)
-        run: pytest tests/fit -q
+      - name: Project fit tests (skip without torch; exit 5 = nothing collected is fine)
+        run: pytest tests/fit -q || [ $? -eq 5 ]
       - name: Synthetic runs for the notebooks
         run: sc-make-synthetic-run --results /tmp/sc_results --data /tmp/sc_data
       - name: Notebooks execute against the synthetic runs

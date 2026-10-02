@@ -31,16 +31,16 @@ Reuses (no metric reimplemented):
     utils.fold_utils.split_folds_by_block            block-level CV folds
     behav_utils.data.ops.filtering.pool_arrays       block-aware pooling
     behav_utils.data.synthetic.session_from_arrays   half-session construction
-    behav_utils.analysis.update_matrix.fit_update_matrix, matrix_error
+    behav_utils.readouts.fit.fit_update_matrix, matrix_error
     models.simulate.simulate_choices                 params -> choices
 """
 
 from typing import Any, Dict, List
 
 import numpy as np
-from behav_utils.analysis.update_matrix import fit_update_matrix, matrix_error
 from behav_utils.data.ops.filtering import pool_arrays
 from behav_utils.data.synthetic import session_from_arrays
+from behav_utils.readouts.fit import fit_update_matrix, matrix_error
 
 from sound_categorisation.inference.fold_utils import split_folds_by_block
 from sound_categorisation.inference.types import ModelType

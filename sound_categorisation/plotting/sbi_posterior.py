@@ -202,7 +202,7 @@ def plot_posterior_psychometric(
     Returns:
         Matplotlib figure.
     """
-    from behav_utils.analysis.psychometry import fit_psychometric
+    from behav_utils.readouts.fit import fit_psychometric
 
     n_sessions = len(stimuli_per_session)
 

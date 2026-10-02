@@ -16,5 +16,3 @@ arpit/
 *.egg-info/
 .ruff_cache/
 build/
-sbi-logs/
-behav_utils/

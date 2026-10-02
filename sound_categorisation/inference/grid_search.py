@@ -3,7 +3,7 @@ Grid-Search Cross-Validation (New Architecture)
 
 Reimplements the manuscript's grid-search CV procedure using:
 - models/ (BEModel, SCModel) for simulation
-- behav_utils.analysis.update_matrix for UM computation
+- behav_utils.readouts.fit for UM computation
 - np.random.default_rng for reproducible noise
 
 
@@ -38,8 +38,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, List, Tuple
 
 import numpy as np
-from behav_utils.analysis.update_matrix import fit_update_matrix, matrix_error
 from behav_utils.data.ops.filtering import pool_arrays
+from behav_utils.readouts.fit import fit_update_matrix, matrix_error
 from joblib import Parallel, delayed
 
 from sound_categorisation.inference.fold_utils import split_folds_by_block

@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sound-categorisation"
-version = "0.6.0"
+version = "0.6.1"
 description = "PPC causal role in auditory categorisation — project code on top of behav_utils"
 requires-python = ">=3.10"
 dependencies = [
     "numpy", "pandas", "scipy", "matplotlib", "pyyaml", "joblib",
-    "behav_utils @ git+https://github.com/serkanshentyurk/behav_utils.git@v0.6.0",
+    "behav_utils @ git+https://github.com/serkanshentyurk/behav_utils.git@v0.7.0",
 ]
 
 [project.optional-dependencies]

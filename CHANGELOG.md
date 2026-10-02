@@ -1,5 +1,9 @@
 # Changelog — sound_categorisation
 
+## 0.6.1 — 2026-10
+- `behav_utils` v0.7.0 (its `analysis/` reorganised; public names unchanged): the four submodule imports
+  the project made follow the new paths. CI tolerates pytest's "nothing collected" on `tests/fit`.
+
 ## 0.6.0 — 2026-10 (library externalised)
 - `behav_utils` is no longer vendored: the project depends on
   `behav_utils @ git+https://github.com/serkanshentyurk/behav_utils.git@v0.6.0`. Bump that tag when the
