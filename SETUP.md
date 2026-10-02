@@ -103,9 +103,11 @@ the pipeline first with `--fast` (tiny grids, few repeats; the run id gets a `_f
 
 ## 7. Notebooks
 
-`notebooks/shared_setup.py` gives `load_data()` (snapshot or CSV), paths and cohorts. Analysis imports go
-in the cell that uses them. The notebooks are being rewritten to read a run's tables
-(`paths.resolve_run`) rather than recompute (see ARCHITECTURE.md, "Notebooks").
+See `notebooks/README.md` — each notebook names the command that produced its tables and reads the latest
+run; `SC_NB_SYNTHETIC=1` after `sc-make-synthetic-run` runs them without data.
+
+`notebooks/nb_setup.py` gives `open_run`, the table loaders and `load_experiment()`. Analysis imports go
+in the cell that uses them; nothing in a notebook touches `sys.path`.
 
 ## Troubleshooting
 

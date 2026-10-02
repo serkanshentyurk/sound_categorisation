@@ -67,7 +67,7 @@ def make_cohort(name, distribution='uniform', n_per_model=3, n_sessions=5,
     return path
 
 
-def main():
+def main(argv=None):
     p = argparse.ArgumentParser(description='Make a synthetic cohort with known ground truth.')
     p.add_argument('--name', default=None, help='Cohort name (default synthetic_<distribution>).')
     p.add_argument('--distribution', default='uniform', choices=list(DISTRIBUTIONS),
@@ -77,7 +77,7 @@ def main():
     p.add_argument('--trials', type=int, default=500, help='Trials per session.')
     p.add_argument('--burn-in', type=int, default=1000, help='Model burn-in per session.')
     p.add_argument('--seed', type=int, default=0)
-    args = p.parse_args()
+    args = p.parse_args(argv)
 
     name = args.name or f'synthetic_{args.distribution}'
     path = make_cohort(name, distribution=args.distribution,

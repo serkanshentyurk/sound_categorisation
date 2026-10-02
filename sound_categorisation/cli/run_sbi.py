@@ -121,7 +121,7 @@ def condition_cohort(records, rep, model, distribution, out_dir, fit_target,
     print(f'[sbi] {rep}/{model}/{distribution}: wrote {written}/{len(records)} animals -> {out_dir}')
 
 
-def main():
+def main(argv=None):
     p = argparse.ArgumentParser(
         description='Condition SBI nets on a cohort -> held-out MSE results.')
     p.add_argument('--source', default='synthetic',
@@ -152,7 +152,7 @@ def main():
                    help=f'Use {FAST_N_REPEATS} repeats to check the pipeline; run id gets _fast.')
     p.add_argument('--count', action='store_true',
                    help='Print the number of array tasks and exit.')
-    args = p.parse_args()
+    args = p.parse_args(argv)
     if args.print_array:
         print(CONDITION_GRID.slurm_range())
         return

@@ -99,15 +99,18 @@ Expert Uniform: a masking block then a laser block per animal, plus ALM (uni/bi)
 six laser sessions alternating Hard-A/Hard-B daily, then six masking sessions with the same alternation.
 Each Hard session is therefore one switch, and the trajectory is per session, not per block.
 
-## Notebooks (planned numbering)
-`00` data & task · `10` expert behaviour · `11` adaptation · `20` opto Uniform (PPC + masking + ALM) ·
-`21` opto Hard (+ session trajectory) · `30` model-identification methods · `31` model-identification
-results · `40` opto × model. Each reads the report tables; one single-animal walk-through cell per
-notebook shows the library pipeline explicitly.
+## Notebooks
+`00` data & task · `10` expert behaviour · `11` switch adaptation · `20` opto experts (PPC, light-only
+control, ALM, WT vs HET) · `21` opto Hard (+ session trajectory) · `30` SBI feature selection · `31` model
+identification. Each says what produced its tables and how to run that, reads the run `latest` points at
+(`notebooks/nb_setup.py: open_run`), and walks one animal through the library pipeline before showing the
+cohort. CI executes them (`nbmake`) against `sc-make-synthetic-run` output with `SC_NB_SYNTHETIC=1`. A
+future `40` would cross opto effects with the BE/SC calls once the real consensus run exists.
 
 ## Conventions
 - Verbs: `load_`, `select_`, `filter_`, `compute_`, `plot_`; results are typed; plotters draw only.
 - CSV/JSON on disk for anything a human or notebook reads; pickle only for the snapshot and networks.
-- British English; line length 110; `ruff` clean; CI runs the library suite, `tests/unit`, `tests/e2e`, `tests/fit`.
+- British English; line length 110; `ruff` clean; CI runs the library suite, `tests/unit`, `tests/e2e`, `tests/fit`,
+  and the notebooks on synthetic runs.
 - Tests live in `tests/{unit,e2e,fit}` and write only to `tmp_path`; validation runs (synthetic cohorts,
   recovery) are analyses and go through the same `sc-*` commands as real data.

@@ -41,6 +41,7 @@ Common options: `--cohort` (default `opto1-cohort`), `--snapshot`, `--config`, `
 | `sc-export-snapshot [--check-only]` | the pickled experiment every analysis loads | Bonsai CSVs via `config.yaml` | `<data root>/snapshots/sound_cat_snapshot.pkl` (`behaviour/snapshots/` on ceph) | minutes |
 | `sc-make-synthetic-cohort --distribution D [--name N] [--n-per-model K]` | a synthetic cohort with known BE/SC ground truth | — | `<data root>/synthetic_cohorts/<name>.pkl` | seconds |
 | `sc-new-run --report R --cohort C [--fast] [--label L]` | an empty run directory (+ `logs/`), prints the id | — | `<R>/<C>/<run_id>/` | instant |
+| `sc-make-synthetic-run --results DIR --data DIR [--no-model-id]` | synthetic opto, switch and model-identification runs in the real layout, for the notebooks and CI | — | `DIR/opto_contrasts/selftest/…`, `switch_adaptation/selftest/…`, `model_identification/synthetic_uniform/…` | minutes |
 
 ## Model identification (cluster; one phase per launch, one run id per chain)
 
@@ -63,7 +64,7 @@ cohort name, or `--label` (default `real`) for real data.
 |---|---|
 | `sc-reports summary` | the opto run it is given (`latest` by default) |
 | `sc-consensus` | one `model_identification` run, one distribution |
-| notebooks (being rewritten) | a run's tables via `paths.resolve_run(report, cohort, 'latest')` |
+| notebooks | a run's tables via `nb_setup.open_run` → `paths.resolve_run(report, cohort, 'latest')`; `SC_NB_SYNTHETIC=1` reads the synthetic runs |
 | `tests/e2e/` | nothing on disk; it builds the synthetic experiment, runs the pipeline into `tmp_path` and compares against `tests/e2e/reference/` |
 
 ## Not yet here

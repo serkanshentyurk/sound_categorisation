@@ -9,7 +9,7 @@ Pipeline (fixed order):
     experiment = load_experiment('config.yaml')
     sessions   = select_sessions(animal, preset='expert')     # which sessions
     clean      = filter_trials(sessions)                       # which trials
-    arrays     = pool_arrays(clean)                            # TrialArrays
+    arrays     = TrialArrays.from_sessions(clean)              # TrialArrays
 
     s     = compute_stats(arrays, ['accuracy', *PSYCHOMETRIC]) # scalars  → pd.Series
     curve = compute_psychometric_curve(arrays)                 # readout  → PsychometricCurve

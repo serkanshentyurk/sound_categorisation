@@ -173,7 +173,7 @@ def _decode_task(task_id, n_animals, n_seeds):
     return d['animal'], d['model'], d['seed']
 
 
-def main():
+def main(argv=None):
     p = argparse.ArgumentParser(description='GS model identification (synthetic or real)')
     p.add_argument('--source', required=True, choices=['synthetic', 'real'])
     p.add_argument('--cohort', default=None, help='synthetic: cohort name')
@@ -196,7 +196,7 @@ def main():
     p.add_argument('--count', action='store_true',
                    help='print the array size (n_animals*n_models*n_seeds) and exit')
     p.add_argument('--n-seeds', type=int, default=None)
-    args = p.parse_args()
+    args = p.parse_args(argv)
 
     if not args.distribution:
         p.error('--distribution is required (uniform / hard_a / hard_b) — '

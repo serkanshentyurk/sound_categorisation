@@ -8,11 +8,12 @@ blocked animals drift toward each new distribution across a block.
 from __future__ import annotations
 
 from datetime import date, timedelta
+from pathlib import Path
 
 import numpy as np
 from behav_utils.data.structures import AnimalData, ExperimentData, SessionData, SessionMetadata, TrialData
 
-__all__ = ['synthetic_experiment']
+__all__ = ['synthetic_experiment', 'write_synthetic_runs']
 
 
 def _trials(n, rng, bias, rt_mean, p_opto=0.3):
@@ -74,3 +75,59 @@ def synthetic_experiment(n_animals=4, seed=0, n_trials=180) -> ExperimentData:
             idx += 1
         exp.add_animal(AnimalData(animal_id=f'SB{k:02d}', sessions=sessions, metadata={'genotype': 'wt'}))
     return exp
+
+
+def write_synthetic_runs(results_root, data_root, *, with_model_id: bool = True) -> dict:
+    """Build the runs the notebooks and CI read, from synthetic data only: an ``opto_contrasts`` run
+    (fast on every animal, one full condition), a ``switch_adaptation`` run, their summary, and — with
+    ``with_model_id`` — a synthetic cohort, a fast grid search and its consensus under
+    ``model_identification/synthetic_uniform``. Returns the run directories. ``sc-make-synthetic-run``
+    is the CLI; ``SC_NB_SYNTHETIC=1`` makes the notebooks read these instead of the real cohorts.
+    """
+    import os
+    from types import SimpleNamespace
+
+    results_root, data_root = Path(results_root), Path(data_root)
+    os.environ['SC_RESULTS_ROOT'] = str(results_root)
+    os.environ['SC_DATA_ROOT'] = str(data_root)
+    results_root.mkdir(parents=True, exist_ok=True)
+    data_root.mkdir(parents=True, exist_ok=True)
+
+    from sound_categorisation.data.paths import start_run
+    from sound_categorisation.reports.cli import run_animal, run_group
+    from sound_categorisation.reports.compute import Settings
+    from sound_categorisation.reports.summary import write_summary
+    from sound_categorisation.reports.switches import run_switches
+
+    exp = synthetic_experiment()
+    ids = list(exp.animals)
+    run = start_run('opto_contrasts', 'selftest', fast=True, root=results_root)
+    a = SimpleNamespace(cohort='selftest', snapshot=None, config=None, fast=True, run_path=run, run_id=run.name)
+    fast = Settings.fast()
+    for dist in ('Uniform', 'Hard-B'):
+        per = run_animal(exp, ids, dist, 'opto', 'ppc', None, a, fast)
+        run_group(exp, ids, dist, 'opto', 'ppc', None, a, fast, per)
+    per = run_animal(exp, ids[:2], 'Uniform', 'opto', 'alm', 'uni', a, fast)
+    run_group(exp, ids[:2], 'Uniform', 'opto', 'alm', 'uni', a, fast, per)
+    full = Settings(n_boot=20, n_perm=20, curve_bootstrap=10)   # the slow pages once, on one animal
+    per = run_animal(exp, ids[:1], 'Hard-A', 'opto', 'ppc', None, a, full)
+    run_group(exp, ids, 'Hard-A', 'opto', 'ppc', None, a, full, per)
+    write_summary(run, 'selftest')
+    srun = start_run('switch_adaptation', 'selftest', fast=True, root=results_root)
+    run_switches(exp, ['SB00', 'SB01'], srun, 'selftest', min_block_trials=300, max_trials=800)
+    out = {'opto_contrasts': run, 'switch_adaptation': srun}
+
+    if with_model_id:
+        from sound_categorisation.cli import consensus, make_synthetic_cohort, run_gs
+        make_synthetic_cohort.main(['--distribution', 'uniform', '--n-per-model', '1', '--n-sessions', '2',
+                                    '--trials', '200'])
+        mrun = start_run('model_identification', 'synthetic_uniform', fast=True, root=results_root)
+        base = ['--source', 'synthetic', '--cohort', 'synthetic_uniform', '--distribution', 'uniform',
+                '--fit-target', 'update_matrix', '--fast', '--run-id', mrun.name]
+        for t in range(8):
+            run_gs.main(base + ['--task-id', str(t)])
+        run_gs.main(base + ['--gather'])
+        consensus.main(['--cohort', 'synthetic_uniform', '--distribution', 'uniform', '--run-id', mrun.name])
+        out['model_identification'] = mrun
+    print('synthetic runs ->', results_root)
+    return out

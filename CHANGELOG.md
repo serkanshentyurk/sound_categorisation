@@ -22,7 +22,11 @@
   now `data/synthetic.py`).
 - Docs: `docs/runs.md` (every command, inputs, outputs), README/ARCHITECTURE/SETUP/LLM_CONTEXT
   rewritten for the layout; `behav_utils` 0.5.0 (see its CHANGELOG).
-- Notebooks `00`–`22` are known-broken against this API and are rewritten next.
+- Notebooks rewritten: `00` data/task, `10` expert behaviour, `11` switch adaptation, `20` opto experts,
+  `21` opto Hard, `31` model identification; each reads a run's tables (`notebooks/nb_setup.py`) and
+  documents the command that produced them. `sc-make-synthetic-run` builds synthetic runs so CI executes
+  the notebooks (`nbmake`, `SC_NB_SYNTHETIC=1`). `behav_utils/notebooks/example_workflow.ipynb` shows the
+  library end to end on synthetic data. `dev/` notebooks kept, not maintained.
 
 ## 0.3.0 — 2026-09
 - Report pipeline, typed contrasts, switch-adaptation report, task grids, CI.

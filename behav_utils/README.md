@@ -53,6 +53,7 @@ d.contrast('on').table()
 | `behav_utils.analysis` | phase statistics, contrasts, resampling, rolling, group tests | `compute_phase_stats`, `compute_delta_stat`, `compute_interaction`, `bootstrap_phase_stats`, `permute_phase_difference`, `compute_rolling_stats`, `collect_rows`, `compare_groups` |
 | `behav_utils.plotting` | one draw-only `plot_x` per `compute_x` | `plot_psychometric_curve`, `plot_update_matrix`, `plot_comparison`, `plot_stat_comparison`, `plot_interaction`, `plot_trajectory` |
 
+Worked example, no data needed: [notebooks/example_workflow.ipynb](notebooks/example_workflow.ipynb).
 Full details: [ARCHITECTURE.md](ARCHITECTURE.md) (design and contracts), [docs/config_guide.md](docs/config_guide.md),
 [docs/data_structures_reference.md](docs/data_structures_reference.md), [docs/stats_reference.md](docs/stats_reference.md)
 (every statistic), [LLM_CONTEXT.md](LLM_CONTEXT.md) (orientation for an AI assistant), [CONTRIBUTING.md](CONTRIBUTING.md).

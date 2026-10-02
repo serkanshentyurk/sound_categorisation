@@ -12,7 +12,7 @@ ExperimentData                    All animals in a project
               └── TrialData        Trial-by-trial arrays
 ```
 
-`TrialArrays` (`behav_utils.data.arrays`) is the flat, pooled view every statistic and readout computes from; `pool_arrays(sessions)` builds it.
+`TrialArrays` (`behav_utils.data.arrays`) is the flat, pooled view every statistic and readout computes from; `TrialArrays.from_sessions(clean)` builds it (`pool_arrays` is the raw dict underneath).
 
 ---
 
@@ -156,7 +156,7 @@ One animal — all sessions in chronological order.
 ### Working with an animal
 
 ```python
-from behav_utils import select_sessions, filter_trials, pool_arrays
+from behav_utils import select_sessions, filter_trials, TrialArrays
 from behav_utils import compute_psychometric_curve, plot_psychometric_curve, PALETTE
 
 # 1. Select sessions (presets come from your config's session_presets)
@@ -166,7 +166,7 @@ sessions = select_sessions(animal, preset='expert')
 clean = filter_trials(sessions)
 
 # 3. Compute a readout on the pooled arrays
-curve = compute_psychometric_curve(pool_arrays(clean), n_bootstrap=200)
+curve = compute_psychometric_curve(TrialArrays.from_sessions(clean), n_bootstrap=200)
 
 # 4. Draw
 fig, ax = plt.subplots()
@@ -203,7 +203,7 @@ all_animals = experiment.get_animals(min_sessions=10)
 Every analysis follows the same four steps:
 
 ```python
-from behav_utils import (load_experiment, select_sessions, filter_trials, pool_arrays,
+from behav_utils import (load_experiment, select_sessions, filter_trials, TrialArrays,
                          compute_stats, PSYCHOMETRIC,
                          compute_psychometric_curve, compute_update_matrix, compute_phase_stats,
                          plot_psychometric_curve, plot_update_matrix, plot_trajectory,
@@ -218,7 +218,7 @@ animal = experiment.get_animal('A05')
 # 2. SELECT sessions, FILTER trials
 sessions = select_sessions(animal, preset='expert')
 clean = filter_trials(sessions)
-arrays = pool_arrays(clean)
+arrays = TrialArrays.from_sessions(clean)
 
 # 3. COMPUTE — scalars, readouts, per-session trajectory
 scalars = compute_stats(arrays, ['accuracy', *PSYCHOMETRIC])          # pd.Series

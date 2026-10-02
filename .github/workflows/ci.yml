@@ -36,3 +36,11 @@ jobs:
         run: pytest tests/e2e -q
       - name: Project fit tests (skip without torch; they skip themselves)
         run: pytest tests/fit -q
+      - name: Synthetic runs for the notebooks
+        run: sc-make-synthetic-run --results /tmp/sc_results --data /tmp/sc_data
+      - name: Notebooks execute against the synthetic runs
+        env:
+          SC_NB_SYNTHETIC: "1"
+          SC_RESULTS_ROOT: /tmp/sc_results
+          SC_DATA_ROOT: /tmp/sc_data
+        run: pytest --nbmake notebooks/00_*.ipynb notebooks/1*.ipynb notebooks/2*.ipynb notebooks/31_*.ipynb behav_utils/notebooks/*.ipynb -q

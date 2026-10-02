@@ -30,7 +30,7 @@ def _resolve_config_path(explicit_path=None) -> Path:
     return DEFAULT_CONFIG
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description='Export experiment snapshot')
     parser.add_argument('--config', type=str, default=None,
                         help='Path to config YAML (auto-detects if omitted)')
@@ -38,7 +38,7 @@ def main():
                         help='Output path (default: auto per machine)')
     parser.add_argument('--check-only', action='store_true',
                         help='Compare existing snapshot against current data')
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     from sound_categorisation.data.snapshot import check_staleness, default_output_path, export_snapshot
 

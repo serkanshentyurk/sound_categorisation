@@ -101,7 +101,7 @@ def train_one(rep, model, distribution, n_simulations=None, seed=BASE_SEED,
     return out
 
 
-def main():
+def main(argv=None):
     p = argparse.ArgumentParser(
         description='Train the amortised SBI networks (3 reps x 2 models x 3 distributions = 18).')
     p.add_argument('--rep', default='all', choices=(*REPRESENTATIONS, 'all'),
@@ -123,7 +123,7 @@ def main():
     p.add_argument('--print-array', action='store_true', help='print the SLURM --array range and exit')
     p.add_argument('--count', action='store_true',
                    help='Print the number of array tasks and exit.')
-    args = p.parse_args()
+    args = p.parse_args(argv)
     if args.print_array:
         print(TRAIN_GRID.slurm_range())
         return

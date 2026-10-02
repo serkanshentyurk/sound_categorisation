@@ -32,7 +32,7 @@ sound_categorisation/                 ← repo root (pyproject.toml, config.yaml
 │   └── cli/                          entry points, installed as sc-* commands: reports, export_snapshot,
 │                                     make_synthetic_cohort, new_run, train_sbi, run_sbi, run_gs, consensus
 ├── slurm/                            job scripts + submit.sh (array size derived from tasks.py)
-├── notebooks/                        exploration; shared_setup.py (paths, load_data)
+├── notebooks/                        the story, one notebook per chapter (notebooks/README.md); nb_setup.py
 ├── tests/                            unit/ (fast) · e2e/ (report pipeline on synthetic data, pinned reference) · fit/ (torch)
 ├── docs/                             runs.md (every command and where it writes), results_guide.md
 └── config.yaml                       cohorts, column mappings, session_presets, session_types
@@ -69,5 +69,5 @@ column and page. `docs/runs.md` lists every command, what it computes and where 
 Aim 2, expert phase: analysed (opto1 cohort, 5 HET / 4 WT). Aim 2, post-shift: the daily A/B alternation
 did not produce measurable adaptation; a blocked design is needed. Aim 1 (BE/SC identification via grid
 search + SBI) has its pipeline in place; the real-data consensus run is pending. Aim 3 (imaging) not started.
-Code: the October cleanup (layout, entry points, run ids, tests split) is in; the notebooks are being
-rewritten against the report tables; the light-artefact report and SLDS state assignment are not yet written.
+Code: the October cleanup (layout, entry points, run ids, tests split, notebooks reading run tables, CI
+executing them on synthetic runs) is in; the light-artefact report and SLDS state assignment are not yet written.
