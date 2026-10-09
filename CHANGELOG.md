@@ -1,26 +1,46 @@
+
 # Changelog — sound_categorisation
 
+## Unreleased
+
+- `data/stimulus_check.py`: `check_stimulus_delivery(trial_summary_csv)` reads a run's Trial_Epochs and
+  Long_Form_Timestamps logs and says, per trial, whether the sound was sent (True / False / NA when the logs cannot
+  tell). numpy and pandas only, so the file can be shared on its own.
+- `export_snapshot` removes trials whose sound was never sent (the rig's Asym sampler fault: about 6 % of trials in
+  Asym_Left / Asym_Right sessions run before 5 Oct 2026, all on the hard side, each carrying the previous trial's
+  Stim_Relative). The trial after a removed one loses its lag-1 history; trials that cannot be checked (the
+  cut-off end of runs that ended with Bonsai being killed) are kept, with the result in
+  `trials.extra['stimulus_check']`. Counts are in the snapshot metadata under `stimulus_check`. Sessions whose
+  files do not line up with the loaded trials are left as loaded, with a warning.
+- Snapshot format version 2: version-1 snapshots still contain those trials, so `load_snapshot` refuses them.
+  Re-export (`sc-export-snapshot`) and re-run the reports; Hard-session numbers move slightly, Uniform does not,
+  and the synthetic e2e reference is unchanged.
+
 ## 0.6.1 — 2026-10
+
 - `behav_utils` v0.7.0 (its `analysis/` reorganised; public names unchanged): the four submodule imports
   the project made follow the new paths. CI tolerates pytest's "nothing collected" on `tests/fit`.
 
 ## 0.6.0 — 2026-10 (library externalised)
+
 - `behav_utils` is no longer vendored: the project depends on
   `behav_utils @ git+https://github.com/serkanshentyurk/behav_utils.git@v0.6.0`. Bump that tag when the
   project needs a newer library; for parallel development install a local checkout editable on top.
 
 ## 0.5.1 — 2026-10
+
 - Run ids carry the time (`YYYY-MM-DD_HHMM_<sha7>`): two runs of the same kind on the same day at the same
   commit no longer collide. Older, date-only ids are still recognised.
 - `sc-reports battery` runs `check → opto-contrasts --all → light-artefact → summary`, one run per stage,
   with `--fast` (pipe-clean), `--skip` and `--only` (resume a crashed battery).
 
 ## 0.5.0 — 2026-10 (light-artefact report)
+
 - `sc-reports light-artefact`: light-on − light-off on every light-carrying session set (`ppc_opto`,
   `ppc_sham`, `alm_uni`, `alm_bi`) with `side_bias accuracy mu sigma dprime criterion`, P(B) per stimulus
   bin on vs off, the `ppc_sham − alm` site interaction, and the WT-vs-HET fold; `behaviour/light_artefact.py`
   + `reports/light_artefact.py`; results under `light_artefact/<cohort>/<run_id>/<distribution>/`.
-  Notebook `20` §3 reads it. `behav_utils` 0.6.0 adds the `sdt` fitter (`dprime`, `criterion`).
+    Notebook `20` §3 reads it. `behav_utils` 0.6.0 adds the `sdt` fitter (`dprime`, `criterion`).
 - CLIs echo the options on a wrong input: unknown cohort → the cohorts in `config.yaml` (and synthetic
   cohorts on disk), unknown animal → the animals in the experiment, unknown run id → the runs under that
   cohort, missing report → the cohorts that have runs.
@@ -29,6 +49,7 @@
   out; a `v*` tag there builds, checks and tests the wheel and attaches it to a GitHub release.
 
 ## 0.4.1 — 2026-10 (naming pass + levels)
+
 - Names say what they are: `sc-reports opto-contrasts | switch-adaptation | summary | battery` (subcommands =
   report folders); `--trial-class opto|post_opto` (was `--toi`); one `--site ppc|alm_uni|alm_bi` (was
   `--design` + `--site`) and one `site` column in every table (`reports.tables.normalise_site` reads older
@@ -42,6 +63,7 @@
   adapters.
 
 ## 0.4.0 — 2026-10 (the cleanup pass)
+
 - Package laid out by aims: `settings.py`, `data/`, `behaviour/`, `models/`, `inference/`, `features/`,
   `reports/`, `plotting/`, `cli/`. `paths.py` split into locations (`data/paths.py`) and constants
   (`settings.py`). `BE_core`/`SC_core` → `be_core`/`sc_core`.
@@ -70,4 +92,5 @@
   library end to end on synthetic data. `dev/` notebooks kept, not maintained.
 
 ## 0.3.0 — 2026-09
+
 - Report pipeline, typed contrasts, switch-adaptation report, task grids, CI.

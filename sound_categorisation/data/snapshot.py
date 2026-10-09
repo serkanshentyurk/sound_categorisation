@@ -7,6 +7,8 @@ Usage (export — on cluster):
 Usage (load — in notebooks):
     from sound_categorisation.data.snapshot import load_snapshot
     experiment, meta = load_snapshot(PATH_SNAPSHOT)
+
+Export removes trials whose sound was never sent (data/stimulus_check.py); see remove_silent_trials.
 """
 
 import hashlib
@@ -17,7 +19,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Tuple, Union
 
-SNAPSHOT_FORMAT_VERSION = 1
+# 2: trials whose sound was never sent are removed at export (remove_silent_trials). Snapshots of
+# version 1 still contain them, so load_snapshot refuses them and asks for a re-export.
+SNAPSHOT_FORMAT_VERSION = 2
 SNAPSHOT_FILENAME = 'sound_cat_snapshot.pkl'
 
 # Cluster path — fixed for this project's SWC/ceph layout. Off-cluster,
@@ -68,6 +72,109 @@ def _session_summary(experiment) -> Dict[str, int]:
     }
 
 
+def _rows_as_loaded(session, config):
+    """
+    The stimulus check and the stimulus column for the trial tables behind one loaded session, trimmed and
+    merged the way behav_utils' loader (v0.7) does it: files in sorted order, each file's last row dropped
+    (``drop_last_row``), and, only when a session has several files, files left with fewer than
+    ``min_trials_per_file`` rows skipped.
+
+    Returns ``(checked, stimulus)``: float arrays, ``checked`` being 1 sent / 0 not sent / NaN cannot tell;
+    ``(None, None)`` if the tables cannot be read.
+    """
+    import glob
+
+    import numpy as np
+    import pandas as pd
+
+    from sound_categorisation.data.stimulus_check import check_stimulus_delivery
+
+    fs = config.file_structure
+    files = sorted(glob.glob(str(Path(session.csv_path).parent / fs.behaviour_file)))
+    stim_col = config.columns['stimulus'].csv_name
+    checked, stimulus = [], []
+    for f in files:
+        try:
+            df = pd.read_csv(f, low_memory=False)
+        except (pd.errors.ParserError, UnicodeDecodeError, OSError):
+            continue
+        if stim_col not in df.columns:
+            return None, None
+        check = check_stimulus_delivery(f, df).astype('Float64').to_numpy(dtype=float, na_value=np.nan)
+        if fs.drop_last_row and len(df) > 1:
+            df, check = df.iloc[:-1], check[:-1]
+        if len(files) > 1 and len(df) < fs.min_trials_per_file:
+            continue
+        checked.append(check)
+        stimulus.append(pd.to_numeric(df[stim_col], errors='coerce').to_numpy(dtype=float))
+    if not checked:
+        return None, None
+    return np.concatenate(checked), np.concatenate(stimulus)
+
+
+def remove_silent_trials(experiment, config, verbose: bool = True) -> Dict:
+    """
+    Remove, in place, every trial whose sound was never sent (data/stimulus_check.py).
+
+    The trial after a removed one loses its lag-1 history (``prev_has_prev`` False, prev values NaN): its
+    predecessor's Stim_Relative was left over from an earlier trial and nothing was heard. A removed trial
+    that was also an abort was never anyone's predecessor (aborts are skipped), so it changes no history.
+    Trials that cannot be checked are kept; every remaining trial carries the result in
+    ``trials.extra['stimulus_check']`` (1 sent, NaN cannot tell). A session whose files do not line up with
+    its loaded trials (same number of rows, same Stim_Relative row for row) is left as it is, with a warning.
+
+    Returns the counts export_snapshot stores in the snapshot metadata: ``removed`` and ``unchecked``
+    totals, ``per_session`` counts and the ``not_aligned`` session ids.
+    """
+    import numpy as np
+    from behav_utils.data.ops.filtering import filter_trial_data
+
+    prev_values = ('prev_stimulus', 'prev_choice', 'prev_correct', 'prev_category', 'prev_reaction_time',
+                   'prev_opto_on')
+    per_session, not_aligned = {}, []
+    for animal in experiment.animals.values():
+        for session in animal.sessions:
+            if session.csv_path is None:
+                continue
+            t = session.trials
+            checked, stimulus = _rows_as_loaded(session, config)
+            if (checked is None or len(checked) != t.n_trials
+                    or not np.allclose(stimulus, t.stimulus.astype(float), rtol=0, atol=1e-12, equal_nan=True)):
+                warnings.warn(f'{session.session_id}: trial tables do not line up with the loaded trials; '
+                              f'no trials removed', stacklevel=2)
+                not_aligned.append(session.session_id)
+                continue
+            silent = checked == 0
+            # A trial's predecessor is the latest earlier non-abort trial (behav_utils' lag-1 rule).
+            lose_history = np.zeros(t.n_trials, dtype=bool)
+            last = -1
+            for i in range(t.n_trials):
+                if t.abort[i]:
+                    continue
+                lose_history[i] = last >= 0 and silent[last]
+                last = i
+            if lose_history.any():
+                t.prev_has_prev = np.where(lose_history, False, t.prev_has_prev)
+                for name in prev_values:
+                    setattr(t, name, np.where(lose_history, np.nan, getattr(t, name)))
+            t.extra['stimulus_check'] = checked
+            if silent.any():
+                session.trials = filter_trial_data(t, ~silent, clear_flags=False)
+            per_session[session.session_id] = {'removed': int(silent.sum()),
+                                               'unchecked': int(np.isnan(checked).sum())}
+    summary = {
+        'removed': sum(c['removed'] for c in per_session.values()),
+        'unchecked': sum(c['unchecked'] for c in per_session.values()),
+        'per_session': per_session,
+        'not_aligned': not_aligned,
+    }
+    if verbose:
+        print(f"Sound check: removed {summary['removed']} trials whose sound was never sent; "
+              f"{summary['unchecked']} could not be checked (kept)"
+              + (f"; {len(not_aligned)} sessions could not be lined up (left as loaded)" if not_aligned else ''))
+    return summary
+
+
 def export_snapshot(
     config_path: Union[str, Path],
     output_path: Union[str, Path] | None = None,
@@ -91,6 +198,7 @@ def export_snapshot(
 
     config = load_config(str(config_path))
     experiment = load_experiment(config)
+    stimulus_check = remove_silent_trials(experiment, config, verbose=verbose)
 
     # Clean ALL config references
     experiment.config = None
@@ -118,6 +226,7 @@ def export_snapshot(
         'n_trials_total': total_trials,
         'session_counts': session_counts,
         'animal_ids': sorted(experiment.animals.keys()),
+        'stimulus_check': stimulus_check,
     }
 
     snapshot = {'experiment': experiment, 'metadata': meta}
