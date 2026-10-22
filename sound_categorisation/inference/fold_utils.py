@@ -70,8 +70,12 @@ def split_folds_by_block(
     """
     Split trial indices into CV folds by block grouping.
 
-    Preserves sequential trial order within each fold.
-    Uses merge_smallest_adjacent to balance fold sizes.
+    Preserves sequential trial order within each fold. Folds are contiguous runs of
+    blocks, balanced by BLOCK COUNT (sessions), not by trial count: with sessions of unequal
+    length (real animals, 250-500 valid trials) the earlier trial-balanced greedy merge could
+    leave one fold with a single session, which the moments representation (mean + variance
+    across sessions) cannot condition on. With n_folds=2 and 4+ blocks every fold holds at
+    least 2 blocks (4 -> 2/2, 5 -> 3/2, 6 -> 3/3).
 
     Args:
         block_ids: Per-trial block identifier array
@@ -84,7 +88,6 @@ def split_folds_by_block(
         ValueError: If fewer than 2 blocks available
     """
     unique_blocks = np.unique(block_ids)
-    block_sizes = [np.sum(block_ids == b) for b in unique_blocks]
 
     n_actual_folds = min(n_folds, len(unique_blocks))
     if n_actual_folds < 2:
@@ -92,9 +95,7 @@ def split_folds_by_block(
             f"Need at least 2 blocks for CV, got {len(unique_blocks)}"
         )
 
-    fold_groups = merge_smallest_adjacent(
-        block_sizes, list(unique_blocks), n_actual_folds,
-    )
+    fold_groups = [list(g) for g in np.array_split(unique_blocks, n_actual_folds)]
 
     folds = []
     for test_fold_idx in range(n_actual_folds):

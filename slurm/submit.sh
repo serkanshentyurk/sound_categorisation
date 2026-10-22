@@ -6,6 +6,10 @@
 #   bash slurm/submit.sh sbi-train    [sc-sbi-train args]                     # networks → <data root>/snpe_networks
 #   bash slurm/submit.sh grid-search  --cohort C --distribution uniform --fit-target update_matrix [--run-id ID]
 #   bash slurm/submit.sh sbi-condition --cohort C --distribution uniform [--run-id ID]
+#   bash slurm/submit.sh sbi-sbc      --cohort C --distribution uniform --run-id ID   # calibration, into the same run
+#
+# Grid-search arrays are throttled to GS_ARRAY_THROTTLE concurrent tasks (default 150):
+#   GS_ARRAY_THROTTLE=100 bash slurm/submit.sh grid-search ...
 #
 # C is a synthetic cohort or a cohort name from config.yaml (e.g. opto1-cohort). grid-search / sbi-condition:
 # without --run-id a new run is created under model_identification/<cohort> and its id is printed; pass that
@@ -14,16 +18,19 @@
 #   RUN=$(sc-new-run --report model_identification --cohort opto1-cohort)
 #   bash slurm/submit.sh grid-search   --cohort opto1-cohort --distribution uniform --fit-target update_matrix --run-id $RUN
 #   bash slurm/submit.sh sbi-condition --cohort opto1-cohort --distribution uniform --run-id $RUN
+#   bash slurm/submit.sh sbi-sbc       --cohort opto1-cohort --distribution uniform --run-id $RUN
 #   sc-grid-search --cohort opto1-cohort --distribution uniform --fit-target update_matrix --run-id $RUN --gather
 #   sc-consensus --cohort opto1-cohort --distribution uniform --run-id $RUN
 #
 # Requires the env to be installed (`pip install -e .` provides the sc-* commands).
 set -euo pipefail
 cd "$(dirname "$0")/.."
-stage="${1:?sbi-train|sbi-condition|grid-search}"; shift
+stage="${1:?sbi-train|sbi-condition|sbi-sbc|grid-search}"; shift
+export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1   # the login node caps threads
 case "$stage" in
   sbi-train)     cmd=sc-sbi-train;     sh=slurm/sbi_train.sh ;;
   sbi-condition) cmd=sc-sbi-condition; sh=slurm/sbi_condition.sh ;;
+  sbi-sbc)       cmd=sc-sbi-sbc;       sh=slurm/sbi_sbc.sh ;;
   grid-search)   cmd=sc-grid-search;   sh=slurm/grid_search.sh ;;
   *) echo "unknown stage $stage"; exit 1 ;;
 esac
@@ -54,6 +61,7 @@ PY
 fi
 
 range="$("$cmd" --print-array "$@" ${extra[@]+"${extra[@]}"})"
+if [ "$stage" = grid-search ]; then range="${range}%${GS_ARRAY_THROTTLE:-150}"; fi
 echo "sbatch --array=$range --output=$logdir/${stage}_%A_%a.out --error=$logdir/${stage}_%A_%a.err $sh $* ${extra[*]+"${extra[*]}"}"
 sbatch --array="$range" --job-name="$stage" --output="$logdir/${stage}_%A_%a.out" --error="$logdir/${stage}_%A_%a.err" \
        "$sh" "$@" ${extra[@]+"${extra[@]}"}

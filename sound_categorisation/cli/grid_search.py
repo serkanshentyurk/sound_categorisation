@@ -112,10 +112,11 @@ def run_gs_partial(record, model, seed, out_dir, grid, fit_target, distribution,
 
 
 def run_gs_cohort(records, out_dir, n_seeds, fit_target, distribution, coarse=True,
-                  grid=None, models=MODELS, base_seed=BASE_SEED, **kw):
-    """Local serial run: all seeds in-process. Writes the same per-seed partials the cluster
-    array writes (``partials/``) and then the FINAL pickle per (animal, model), so a local run
-    and a cluster run leave identical directories.
+                  grid=None, models=MODELS, base_seed=BASE_SEED, n_jobs=1, **kw):
+    """Local run: every (animal, model, seed) in-process, ``n_jobs`` of them at a time (joblib;
+    -1 = all cores; results do not depend on n_jobs). Writes the same per-seed partials the
+    cluster array writes (``partials/``) and then the FINAL pickle per (animal, model), so a
+    local run and a cluster run leave identical directories.
 
     ``distribution`` (uniform / hard_a / hard_b) is stamped into each result's
     metadata; it must match the phase the sessions were selected for. ``grid``
@@ -123,14 +124,22 @@ def run_gs_cohort(records, out_dir, n_seeds, fit_target, distribution, coarse=Tr
     ``coarse``.
     """
     grid_set = grid or (COARSE_GRID if coarse else DEFAULT_GRID)
+    jobs = [(record, model, base_seed + s)
+            for record in records for model in models for s in range(1, n_seeds + 1)]
+    if n_jobs == 1:
+        done = [_gs_seed(r, m, sd, grid_set[m], fit_target, **kw) for r, m, sd in jobs]
+    else:
+        from joblib import Parallel, delayed
+        done = Parallel(n_jobs=n_jobs)(
+            delayed(_gs_seed)(r, m, sd, grid_set[m], fit_target, **kw) for r, m, sd in jobs)
+    by_pair = {}
+    for (record, model, sd), result in zip(jobs, done):
+        _save_partial(record, model, sd, result, out_dir, fit_target, distribution)
+        by_pair.setdefault((record.animal_id, model), []).append(result)
     out_paths = []
     for record in records:
         for model in models:
-            results = []
-            for s in range(1, n_seeds + 1):
-                result = _gs_seed(record, model, base_seed + s, grid_set[model], fit_target, **kw)
-                _save_partial(record, model, base_seed + s, result, out_dir, fit_target, distribution)
-                results.append(result)
+            results = by_pair[(record.animal_id, model)]
             out_path = Path(out_dir) / f'{record.animal_id}_{model}.pkl'
             _save(out_path, record.animal_id, model, results, fit_target,
                   record.true_model, record.true_params, distribution)
@@ -203,6 +212,8 @@ def main(argv=None):
     p.add_argument('--gather', action='store_true', help='combine partials into finals')
     p.add_argument('--count', action='store_true',
                    help='print the array size (n_animals*n_models*n_seeds) and exit')
+    p.add_argument('--n-jobs', type=int, default=1,
+                   help='local run only: parallel (animal, model, seed) fits (-1 = all cores)')
     p.add_argument('--n-seeds', type=int, default=None,
                    help=f'default {GS_N_SEEDS} (real cohort) / {SYNTH_GS_N_SEEDS} (synthetic) / '
                         f'{FAST_GS_N_SEEDS} (--fast)')
@@ -270,7 +281,7 @@ def main(argv=None):
         print(f'  task {args.task_id} -> {record.animal_id}/{model}/seed{seed} -> {path.name}')
     else:
         run_gs_cohort(records, out_dir, n_seeds, args.fit_target,
-                      args.distribution, coarse=coarse, grid=grid_set)
+                      args.distribution, coarse=coarse, grid=grid_set, n_jobs=args.n_jobs)
     print(f'  Done in {time.time() - t0:.1f}s')
 
 

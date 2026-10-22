@@ -195,12 +195,14 @@ def _build_prior(model):
     )
 
 
-def wrap_for_sbi(sim_fn: Callable, base_seed: int = 0) -> Callable:
+def wrap_for_sbi(sim_fn: Callable, base_seed: int = 0, n_jobs: int = -1) -> Callable:
     """Wrap a sim_fn (theta->x, numpy) for the sbi package.
 
     The returned function accepts a torch tensor of shape (D_theta,) or
     (batch, D_theta) and returns a torch tensor of stacked observation vectors.
-    Each batch row gets a distinct seed so the simulations are independent.
+    Each batch row gets its own seed (``base_seed + i``), so the batch is simulated
+    in parallel (joblib, ``n_jobs``; -1 = every core the job has) with results that
+    do not depend on ``n_jobs``. Batches under 64 rows run in-process.
     """
     import torch
 
@@ -214,7 +216,13 @@ def wrap_for_sbi(sim_fn: Callable, base_seed: int = 0) -> Callable:
             x = sim_fn(theta_np, seed=base_seed)
             return torch.as_tensor(np.asarray(x, dtype=float), dtype=torch.float32)
 
-        xs = [sim_fn(theta_np[i], seed=base_seed + i) for i in range(len(theta_np))]
+        n = len(theta_np)
+        if n < 64 or n_jobs == 1:
+            xs = [sim_fn(theta_np[i], seed=base_seed + i) for i in range(n)]
+        else:
+            from joblib import Parallel, delayed
+            xs = Parallel(n_jobs=n_jobs, batch_size=64)(
+                delayed(sim_fn)(theta_np[i], seed=base_seed + i) for i in range(n))
         return torch.as_tensor(np.stack(xs).astype(float), dtype=torch.float32)
 
     return sbi_simulator

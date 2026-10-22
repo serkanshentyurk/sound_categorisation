@@ -14,6 +14,12 @@
   differs from `SBI_STATS`. `SBI_TRAIN_T` is now a per-session range `(250, 500)` matching real
   Uniform sessions (`simulate_sessions`/`draw_T`; the synthetic cohort and SBC draw from it too);
   `model_id_*` presets use `min_trials: 250`. A skipped conditioning now warns with the reason.
+  Training simulations run in parallel (`wrap_for_sbi`, joblib, per-row seeds so n_jobs does not
+  change results); the local grid-search runner takes `--n-jobs`. Slurm: `sbi_sbc.sh`, resources
+  sized for the `cpu` partition, grid-search arrays throttled (`GS_ARRAY_THROTTLE`), thread caps.
+  **Numbers change:** `split_folds_by_block` now makes contiguous folds balanced by session count
+  (4 -> 2/2, 5 -> 3/2) instead of the trial-balanced greedy merge, which could put a single
+  session in a fold and starve the moments net. Grid search and SBI share the same folds as before.
 
 ## Unreleased
 
