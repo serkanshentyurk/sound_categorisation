@@ -90,7 +90,8 @@ def snpe_net_path(rep: str, model: str, distribution: str) -> Path:
 # resolve_run(), never by a hard-coded path.
 # =============================================================================
 
-REPORTS = ('opto_contrasts', 'switch_adaptation', 'light_artefact', 'model_identification')
+REPORTS = ('opto_contrasts', 'switch_adaptation', 'light_artefact', 'model_identification',
+           'feature_selection')
 
 
 def results_root() -> Path:
@@ -213,6 +214,16 @@ def start_run(report: str, cohort: str, run_id: str | None = None, *, fast: bool
     (d / 'logs').mkdir(parents=True, exist_ok=True)
     mark_latest(d)
     return d
+
+
+def write_sessions_table(run: Path, distribution: str, table) -> Path:
+    """``<run>/sessions/<distribution>.csv`` — which sessions each animal's fits saw, and which animals
+    were left out (from ``cohort.select_animals``). Written by every model-ID runner; identical content
+    from each, so a rewrite is harmless."""
+    out = Path(run) / 'sessions' / f'{distribution}.csv'
+    out.parent.mkdir(parents=True, exist_ok=True)
+    table.to_csv(out, index=False)
+    return out
 
 
 def model_id_dir(run: Path, method: str, fit_target: str, distribution: str, rep: str | None = None) -> Path:

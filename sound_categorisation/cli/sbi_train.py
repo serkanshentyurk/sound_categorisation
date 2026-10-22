@@ -1,13 +1,16 @@
 #!/usr/bin/env python
-"""Train the amortised SBI networks for model-identification validation.
+"""Train the amortised SBI networks for model identification.
 
-Three data representations x two models = six networks:
+One specialist network per (representation, model, distribution). The job grid is
+``settings.SBI_TRAIN_REPS x MODEL_TYPES x SBI_TRAIN_DISTRIBUTIONS`` (currently pooled / moments x
+BE / SC x uniform = 4 networks); any representation or distribution in ``SBI_REPRESENTATIONS`` /
+``DISTRIBUTIONS`` can still be trained by name, it is just not in the array.
 
-    pooled    N=15 sessions merged    mode='pooled'     x-dim 13
-    moments   N=15 sessions           mode='moments'    x-dim 52
-    single    N=1  session            mode='pooled'     x-dim 13
+    pooled    N~U{4..6} sessions pooled   mode='pooled'     x-dim D
+    moments   N~U{4..6} sessions          mode='moments'    x-dim 2D (mean, variance per stat)
+    single    N=1 session                 mode='pooled'     x-dim D
 
-Each network is an ``AmortisedSBI`` saved to ``snpe_networks/{rep}_{model}.pkl``.
+Each network is an ``AmortisedSBI`` saved to ``snpe_networks/snpe_{rep}_{model}_{distribution}.pkl``.
 The saved file carries its own config (N / T / mode / stat_names), so the
 conditioning step (sc-sbi-condition) loads and conditions without re-specifying
 anything -- see ``AmortisedSBI.save``/``load``.
@@ -16,14 +19,14 @@ The heavy import (``AmortisedSBI``, which pulls in torch + sbi) is deferred into
 ``train_one`` so that ``--count`` and argument parsing run on a login node
 without loading torch.
 
-Local (all six, serial)::
+Local (the whole grid, serial)::
 
-    sc-sbi-train --rep all --model all
+    sc-sbi-train
 
 Cluster (SLURM array, one network per task)::
 
-    N=$(sc-sbi-train --count)        # -> 6
-    bash slurm/submit.sh sbi-train                       # task_id -> (rep, model)
+    N=$(sc-sbi-train --count)        # -> 4
+    bash slurm/submit.sh sbi-train                       # task_id -> (rep, model, distribution)
 
 Smoke test (tiny n_simulations, just checks the pipeline runs end to end)::
 
@@ -45,11 +48,12 @@ from sound_categorisation.settings import (
     SBI_BURN_IN,
     SBI_REPRESENTATIONS,
     SBI_TRAIN_DISTRIBUTIONS,
+    SBI_TRAIN_REPS,
 )
 
-REPRESENTATIONS = tuple(SBI_REPRESENTATIONS)
-TRAIN_DISTRIBUTIONS = tuple(SBI_TRAIN_DISTRIBUTIONS)   # per-distribution specialists
-N_TASKS = TRAIN_GRID.n                                  # 3 reps × 2 models × 3 distributions = 18
+REPRESENTATIONS = tuple(SBI_REPRESENTATIONS)            # everything trainable by name
+TRAIN_DISTRIBUTIONS = tuple(SBI_TRAIN_DISTRIBUTIONS)   # the array's distributions
+N_TASKS = TRAIN_GRID.n                                  # SBI_TRAIN_REPS × models × SBI_TRAIN_DISTRIBUTIONS
 
 
 def decode_task(task_id):
@@ -103,13 +107,13 @@ def train_one(rep, model, distribution, n_simulations=None, seed=BASE_SEED,
 
 def main(argv=None):
     p = argparse.ArgumentParser(
-        description='Train the amortised SBI networks (3 reps x 2 models x 3 distributions = 18).')
+        description=f'Train the amortised SBI networks ({TRAIN_GRID.describe()}).')
     p.add_argument('--rep', default='all', choices=(*REPRESENTATIONS, 'all'),
-                   help="Representation to train, or 'all'.")
+                   help=f"Representation to train, or 'all' (= {SBI_TRAIN_REPS}).")
     p.add_argument('--model', default='all', choices=(*MODEL_TYPES, 'all'),
                    help="Model to train, or 'all'.")
     p.add_argument('--distribution', default='all', choices=(*DISTRIBUTIONS, 'all'),
-                   help="Distribution/curriculum to train, or 'all'.")
+                   help=f"Distribution/curriculum to train, or 'all' (= {TRAIN_DISTRIBUTIONS}).")
     p.add_argument('--task-id', type=int, default=None,
                    help=f'SLURM array index 0-{N_TASKS - 1}; '
                         'overrides --rep/--model/--distribution.')
@@ -141,9 +145,9 @@ def main(argv=None):
     if args.task_id is not None:
         jobs = [decode_task(args.task_id)]
     else:
-        reps = REPRESENTATIONS if args.rep == 'all' else (args.rep,)
+        reps = tuple(SBI_TRAIN_REPS) if args.rep == 'all' else (args.rep,)
         models = MODEL_TYPES if args.model == 'all' else (args.model,)
-        dists = DISTRIBUTIONS if args.distribution == 'all' else (args.distribution,)
+        dists = TRAIN_DISTRIBUTIONS if args.distribution == 'all' else (args.distribution,)
         jobs = [(r, m, d) for r in reps for m in models for d in dists]
 
     print(f'[train] {len(jobs)} network(s): {jobs}')

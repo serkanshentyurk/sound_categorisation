@@ -3,7 +3,10 @@
 ``condition_sbi(sessions, net, model)`` produces ONE model's held-out MSE
 results -- a list of per-rep ``{rep, test_error, best_params[, n_valid]}`` entries
 -- ready for ``utils.cv_utils.save_cv_result``. It conditions a pre-trained net
-and scores held-out matrices; it never trains and never picks a winner. The
+and scores held-out matrices; it never trains and never picks a winner.
+``condition_posterior(sessions, net)`` is the one all-session conditioning whose
+samples are SAVED (intervals, narrowing, the example posterior); its median is
+also the ``best_params`` every CV rep carries. The
 BE-vs-SC decision is ``utils.cv_utils.compare_models`` (method-agnostic, shared
 with grid_search); the cross-method consensus is ``analysis.consensus``.
 
@@ -14,8 +17,9 @@ Two rep paths, chosen by the net's session count:
       grid_search uses). Condition on the train fold, simulate on the test fold,
       score the held-out update-matrix (or conditional-psychometric) MSE.
       rep-axis = repeats (posterior resampling + simulation seed -> the spread
-      the Wilcoxon consumes). ``best_params`` is one all-session conditioning
-      (stable, for the recovery plot), identical across reps.
+      the Wilcoxon consumes). ``best_params`` is the median of the one
+      all-session conditioning (``condition_posterior``; stable, for the
+      recovery plot), identical across reps.
 
   single-session (``net.N == 1``):
       Per session, a within-session first/second-half TRIAL split: condition on
@@ -91,20 +95,51 @@ def _safe_condition(net, sessions: List, n_posterior_samples: int
     """Condition; return the point-estimate dict, or None if the obs is
     degenerate (``condition`` raises on non-finite stats) or theta is non-finite.
     """
+    cond = _safe_condition_full(net, sessions, n_posterior_samples)
+    return None if cond is None else cond['point_estimate']
+
+
+def _safe_condition_full(net, sessions: List, n_posterior_samples: int) -> Dict[str, Any] | None:
+    import warnings
     try:
         cond = net.condition(sessions, n_samples=n_posterior_samples)
-    except ValueError:
+    except ValueError as e:
+        warnings.warn(f'conditioning skipped ({len(sessions)} sessions): {e}', stacklevel=3)
         return None
     theta = cond['point_estimate']
     if not all(np.isfinite(v) for v in theta.values()):
+        warnings.warn(f'conditioning skipped ({len(sessions)} sessions): non-finite point estimate',
+                      stacklevel=3)
         return None
-    return theta
+    return cond
+
+
+def condition_posterior(sessions: List, net, n_samples: int = 1000) -> Dict[str, Any] | None:
+    """The one all-session conditioning that is saved per animal.
+
+    Returns ``{'posterior_samples': (n_samples, n_params), 'param_names',
+    'point_estimate', 'prior_bounds': {name: (lo, hi)}}``, or None when the
+    observation is degenerate. ``posterior_samples`` is None for a net whose
+    ``condition`` does not return samples (test stubs).
+    """
+    cond = _safe_condition_full(net, sessions, n_samples)
+    if cond is None:
+        return None
+    from sound_categorisation.inference.simulator import get_bounds_arrays
+    lo, hi = get_bounds_arrays(net.model)
+    names = list(cond['param_names'])
+    return {
+        'posterior_samples': cond.get('posterior_samples'),
+        'param_names': names,
+        'point_estimate': dict(cond['point_estimate']),
+        'prior_bounds': {n: (float(lo[i]), float(hi[i])) for i, n in enumerate(names)},
+    }
 
 
 # ── multi-session path (pooled / moments) ────────────────────────────────────
 
 def _condition_multi(sessions, net, model, fit_target, n_folds,
-                     n_repeats, n_posterior_samples, n_bins, seed):
+                     n_repeats, n_posterior_samples, n_bins, seed, best=None):
     if len(sessions) < 2:
         raise ValueError(f'Need >= 2 sessions for CV, got {len(sessions)}')
 
@@ -122,8 +157,10 @@ def _condition_multi(sessions, net, model, fit_target, n_folds,
         emp = _empirical_target(test_pooled, fit_target, n_bins)
         fold_data.append((train_sessions, test_pooled, emp))
 
-    # One all-session conditioning -> stable recovered params (recovery plot).
-    best = _safe_condition(net, sessions, n_posterior_samples)
+    # One all-session conditioning -> stable recovered params (recovery plot). The caller
+    # passes the saved posterior's median (condition_posterior) so the two agree.
+    if best is None:
+        best = _safe_condition(net, sessions, n_posterior_samples)
 
     results = []
     for rep in range(n_repeats):
@@ -208,6 +245,7 @@ def condition_sbi(
     n_posterior_samples: int = 50,
     n_bins: int = 8,
     seed: int = 42,
+    best_params: Dict[str, float] | None = None,
 ) -> List[Dict[str, Any]]:
     """Produce one model's held-out MSE results for the BE-vs-SC comparison.
 
@@ -223,6 +261,10 @@ def condition_sbi(
         n_posterior_samples: Samples per conditioning (median = point estimate).
         n_bins: Update-matrix bins.
         seed: Base seed (BE and SC must share it so the comparison pairs).
+        best_params: Point estimate to stamp on every rep (multi-session path);
+            the caller passes ``condition_posterior(...)['point_estimate']`` so
+            the saved posterior and the recovery value agree. Default: one
+            extra all-session conditioning at ``n_posterior_samples``.
 
     Returns:
         List of ``{rep, test_error, best_params[, n_valid]}`` -- the ``results``
@@ -237,4 +279,4 @@ def condition_sbi(
         return _condition_single(sessions, net, model, fit_target,
                                  n_posterior_samples, n_bins, seed)
     return _condition_multi(sessions, net, model, fit_target, n_folds,
-                            n_repeats, n_posterior_samples, n_bins, seed)
+                            n_repeats, n_posterior_samples, n_bins, seed, best=best_params)

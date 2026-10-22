@@ -44,17 +44,31 @@ Common options: `--cohort` (default `opto1-cohort`), `--snapshot`, `--config`, `
 | `sc-new-run --report R --cohort C [--fast] [--label L]` | an empty run directory (+ `logs/`), prints the id | — | `<R>/<C>/<run_id>/` | instant |
 | `sc-make-synthetic-run --results DIR --data DIR [--no-model-id]` | synthetic opto, switch and model-identification runs in the real layout, for the notebooks and CI | — | `DIR/opto_contrasts/synthetic/…`, `switch_adaptation/synthetic/…`, `light_artefact/synthetic/…`, `model_identification/synthetic_uniform/…` | minutes |
 
+## Feature selection (laptop; `sc-feature-selection`)
+
+| command | computes | inputs | writes | time |
+|---|---|---|---|---|
+| `sc-feature-selection [--distribution uniform] [--stats …] [--n-sims N] [--n-trials T] [--scorer hgb] [--fast]` | which summary stats the SBI networks should see: per-stat BE-vs-SC CV AUC, per-stat per-parameter CV R², stat–stat correlations, a forward-selection curve and a proposed set; the simulated cohort is saved so every table and plot can be remade | the models (prior draws, one long session per simulated animal) | `feature_selection/<distribution>/<run_id>/{identity_auc, recovery_r2*, stat_correlation_*, forward_selection}.{csv,png}`, `proposed_stats.txt`, `cohort.pkl`, `meta.json` | ~15–30 min (full), ~2 min (`--fast`) |
+
+`SBI_STATS` (`inference/constants.py`) is set by hand from these outputs; the networks are trained on that vector.
+
 ## Model identification (cluster; one phase per launch, one run id per chain)
 
 | command | computes | inputs | writes | time |
 |---|---|---|---|---|
-| `sc-sbi-train` / `slurm/submit.sh sbi-train` | one amortised network per (rep, model, distribution): `TRAIN_GRID`, 18 tasks | the models | `<data root>/snpe_networks/snpe_<rep>_<model>_<dist>.pkl` (+ `logs/`) | hours per task (GPU-free) |
+| `sc-sbi-train` / `slurm/submit.sh sbi-train` | one amortised network per (rep, model, distribution): `TRAIN_GRID` = `SBI_TRAIN_REPS` × models × `SBI_TRAIN_DISTRIBUTIONS` (now pooled/moments × BE/SC × uniform = 4 tasks; widen the settings tuples for more) | the models, `SBI_STATS` | `<data root>/snpe_networks/snpe_<rep>_<model>_<dist>.pkl` (+ `logs/`) | hours per task (GPU-free) |
 | `sc-grid-search --cohort C --distribution D --fit-target T --run-id ID [--task-id i]` / `submit.sh grid-search` | grid-search CV per (animal, model, seed) → partials | snapshot or cohort | `model_identification/<cohort>/<ID>/grid_search/<T>/<D>/partials/` | minutes–hours per task |
 | `sc-grid-search ... --run-id ID --gather` | partials → one final per (animal, model) | the partials | `.../grid_search/<T>/<D>/<animal>_<model>.pkl` | seconds |
-| `sc-sbi-condition --cohort C --distribution D --run-id ID [--task-id i]` / `submit.sh sbi-condition` | condition the phase-matched networks on every animal → posterior + held-out MSE, `CONDITION_GRID` (6 tasks) | networks, snapshot or cohort | `model_identification/<cohort>/<ID>/sbi/<T>/<D>/<rep>/<animal>_<model>.pkl` | minutes per task |
-| `sc-consensus --cohort C --distribution D [--run-id ID\|latest]` | GS + SBI calls → one BE/SC call per animal | the finals of one run | `model_identification/<cohort>/<ID>/consensus/<D>/{assignments.csv, summary.txt, meta.json}` | seconds |
+| `sc-sbi-condition --cohort C --distribution D --run-id ID [--task-id i]` / `submit.sh sbi-condition` | condition the phase-matched networks on every animal → held-out MSE per CV repeat plus the saved all-session posterior (`SBI_N_POSTERIOR_SAMPLES_SAVED` samples, key `posterior`), `CONDITION_GRID` (4 tasks) | networks, snapshot or cohort | `model_identification/<cohort>/<ID>/sbi/<T>/<D>/<rep>/<animal>_<model>.pkl` | minutes per task |
+| `sc-sbi-sbc --cohort C --distribution D --run-id ID [--task-id i] [--n-draws N]` | calibration of each network: `SBC_N_DRAWS` fresh prior draws × `SBC_N_SESSIONS` sessions, conditioned like animals → SBC ranks, KS p-values, empirical vs nominal coverage at 50/80/90/95 % (`CONDITION_GRID`, 4 tasks) | networks | `<run>/sbc/<D>/<rep>/<model>.pkl`, `<model>_coverage.csv` | minutes per task |
+| `sc-consensus --cohort C --distribution D [--run-id ID\|latest]` | GS-UM + SBI-pooled-UM + SBI-moments-UM calls → one BE/SC call per animal | the finals of one run | `model_identification/<cohort>/<ID>/consensus/<D>/{assignments.csv, summary.txt, meta.json}` | seconds |
 
-`--fast` on `sc-grid-search` / `sc-sbi-condition` / `sc-sbi-train` uses the tiny grid / few repeats / few simulations and
+Real cohorts: sessions come from the `model_id_<D>` preset (`config.yaml`: regular sessions only, the last 5 that pass
+accuracy > 0.7 and ≥ 400 valid trials), read from the snapshot; an animal with fewer than `MODEL_ID_MIN_SESSIONS` (4) is
+left out. Every runner writes `<run>/sessions/<D>.csv` listing each animal's sessions (kept and dropped). Grid-search
+seeds default to `GS_N_SEEDS` (32) for a real cohort and `SYNTH_GS_N_SEEDS` (8) for a synthetic one.
+
+`--fast` on `sc-grid-search` / `sc-sbi-condition` / `sc-sbi-train` / `sc-sbi-sbc` uses the tiny grid / few repeats / few simulations / few draws and
 suffixes the run id with `_fast`. `--coarse` on `sc-grid-search` selects the coarse grid. `submit.sh` creates the
 run id when none is given and prints it; Slurm logs go to `<run>/logs/`. `C` is a synthetic cohort
 (`sc-make-synthetic-cohort`) or a cohort name from `config.yaml`; the kind is detected from the name.

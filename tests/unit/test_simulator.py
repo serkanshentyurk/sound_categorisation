@@ -116,3 +116,19 @@ class TestBuildSimulator:
     def test_bad_schedule_length_raises(self):
         with pytest.raises(ValueError):
             build_simulator(ModelType.BE, ['uniform', 'hard_a'], N=5)
+
+
+def test_T_range_is_drawn_per_session():
+    """T=(lo, hi) draws a length per session inside the range; an int keeps it fixed."""
+    import numpy as np
+    from sound_categorisation.inference.simulator import draw_T, simulate_sessions
+    rng = np.random.default_rng(0)
+    ts = [draw_T((250, 500), rng) for _ in range(200)]
+    assert min(ts) >= 250 and max(ts) <= 500 and len(set(ts)) > 50
+    assert draw_T(300, rng) == 300
+    params = {'sigma_percep': 0.15, 'A_repulsion': 0.2, 'eta_learning': 0.5, 'eta_relax': 0.2}
+    ss = simulate_sessions('be', params, ['uniform'] * 4, (100, 200), 20, np.random.default_rng(1))
+    lens = [len(s.trials.choice) for s in ss]
+    assert all(100 <= n <= 200 for n in lens) and len(set(lens)) > 1
+    ss = simulate_sessions('be', params, ['uniform'] * 2, 150, 20, np.random.default_rng(1))
+    assert [len(s.trials.choice) for s in ss] == [150, 150]

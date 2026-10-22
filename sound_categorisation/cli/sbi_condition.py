@@ -10,11 +10,15 @@ phase's results directory:
 (``paths.model_id_dir``; run_gs writes ``grid_search/...`` into the same run, consensus reads both).
 
 Each result stamps which network produced it (rep, model, distribution, the net's
-filename and its own stat vector) into the metadata, so a file is self-identifying.
+filename and its own stat vector) into the metadata, so a file is self-identifying, and
+carries ``posterior``: SBI_N_POSTERIOR_SAMPLES_SAVED samples of the one all-session
+conditioning (intervals, narrowing, the example posterior), whose median is the
+``best_params`` on every CV rep.
 
 --distribution is required: condition ONE phase per launch (its networks + its
-sessions). For real data the sessions default to expert_<distribution> unless
---preset is given; for synthetic the --cohort name should encode the phase.
+sessions). For real data the sessions default to the model_id_<distribution> preset unless
+--preset is given; for synthetic the --cohort name should encode the phase. The sessions each
+fit saw are listed in <run>/sessions/<distribution>.csv.
 
 Conditioning is cheap (forward passes + held-out simulation), so this runs
 serially -- no partials/gather. The BE-vs-SC winner and recovery come afterwards
@@ -40,11 +44,17 @@ from __future__ import annotations
 import argparse
 import time
 
-from sound_categorisation.data.cohort import load_animals
-from sound_categorisation.data.paths import build_metadata, model_id_dir, snpe_net_path, start_run
+from sound_categorisation.data.cohort import select_animals
+from sound_categorisation.data.paths import (
+    build_metadata,
+    model_id_dir,
+    snpe_net_path,
+    start_run,
+    write_sessions_table,
+)
 from sound_categorisation.inference.amortised import AmortisedSBI
 from sound_categorisation.inference.cv_utils import save_cv_result
-from sound_categorisation.inference.selection import condition_sbi
+from sound_categorisation.inference.selection import condition_posterior, condition_sbi
 from sound_categorisation.inference.tasks import CONDITION_GRID
 from sound_categorisation.settings import (
     BASE_SEED,
@@ -55,7 +65,9 @@ from sound_categorisation.settings import (
     MODEL_TYPES,
     SBI_N_CV_REPEATS,
     SBI_N_POSTERIOR_SAMPLES,
+    SBI_N_POSTERIOR_SAMPLES_SAVED,
     SBI_REPRESENTATIONS,
+    SBI_TRAIN_REPS,
 )
 
 # A net trained by TRAIN_GRID task (rep, model, *) is conditioned by CONDITION_GRID task (rep, model).
@@ -73,6 +85,7 @@ def decode_task(task_id):
 def condition_cohort(records, rep, model, distribution, out_dir, fit_target,
                      n_repeats=SBI_N_CV_REPEATS,
                      n_posterior_samples=SBI_N_POSTERIOR_SAMPLES,
+                     n_posterior_samples_saved=SBI_N_POSTERIOR_SAMPLES_SAVED,
                      n_folds=GS_N_FOLDS, n_bins=GS_N_BINS, seed=BASE_SEED,
                      metadata=None):
     """Load the (rep, model, distribution) net and condition every animal; one pkl each.
@@ -102,12 +115,14 @@ def condition_cohort(records, rep, model, distribution, out_dir, fit_target,
 
     written = 0
     for record in records:
+        posterior = condition_posterior(record.sessions, net, n_samples=n_posterior_samples_saved)
+        best = posterior['point_estimate'] if posterior else None
         try:
             results = condition_sbi(
                 record.sessions, net, model, fit_target=fit_target,
                 n_folds=n_folds, n_repeats=n_repeats,
                 n_posterior_samples=n_posterior_samples,
-                n_bins=n_bins, seed=seed)
+                n_bins=n_bins, seed=seed, best_params=best)
         except ValueError as e:
             print(f'[sbi] {rep}/{model}/{distribution}: SKIP {record.animal_id} ({e})')
             continue
@@ -115,7 +130,7 @@ def condition_cohort(records, rep, model, distribution, out_dir, fit_target,
             out_dir / f'{record.animal_id}_{model}.pkl',
             record.animal_id, model, results, fit_target,
             true_model=record.true_model, true_params=record.true_params,
-            metadata=net_meta)
+            metadata=net_meta, posterior=posterior)
         written += 1
         print(f'[sbi] {rep}/{model}/{distribution}: {record.animal_id} -> {len(results)} reps')
     print(f'[sbi] {rep}/{model}/{distribution}: wrote {written}/{len(records)} animals -> {out_dir}')
@@ -128,13 +143,14 @@ def main(argv=None):
                    help='a synthetic cohort (sc-make-synthetic-cohort) or a cohort name from config.yaml')
     p.add_argument('--run-id', default=None, help='existing run id to write into (required with --task-id)')
     p.add_argument('--fit-target', default='update_matrix', choices=FIT_TARGETS)
-    p.add_argument('--rep', default='all', choices=(*REPRESENTATIONS, 'all'))
+    p.add_argument('--rep', default='all', choices=(*REPRESENTATIONS, 'all'),
+                   help=f"representation, or 'all' = the trained ones {SBI_TRAIN_REPS}")
     p.add_argument('--model', default='all', choices=(*MODEL_TYPES, 'all'))
     p.add_argument('--distribution', default=None, choices=DISTRIBUTIONS,
                    help='Phase to condition. Selects the matching networks '
                         '(snpe_{rep}_{model}_{distribution}.pkl) and, for real '
                         'data unless --preset is given, the matching sessions '
-                        "(expert_<distribution>). Condition one phase per launch.")
+                        "(model_id_<distribution>). Condition one phase per launch.")
     p.add_argument('--print-array', action='store_true', help='print the SLURM --array range and exit')
     p.add_argument('--task-id', type=int, default=None,
                    help=f'SLURM array index 0-{N_TASKS - 1}; '
@@ -142,7 +158,7 @@ def main(argv=None):
     p.add_argument('--config', default=None, help='config.yaml path (real).')
     p.add_argument('--preset', default=None,
                    help='Session-selection preset (real). '
-                        'Default: expert_<distribution>.')
+                        'Default: model_id_<distribution>.')
     p.add_argument('--n-repeats', type=int, default=None,
                    help='Override repeats (multi-session path).')
     p.add_argument('--seed', type=int, default=BASE_SEED)
@@ -174,19 +190,20 @@ def main(argv=None):
     if args.task_id is not None:
         jobs = [decode_task(args.task_id)]
     else:
-        reps = REPRESENTATIONS if args.rep == 'all' else (args.rep,)
+        reps = tuple(SBI_TRAIN_REPS) if args.rep == 'all' else (args.rep,)
         models = MODEL_TYPES if args.model == 'all' else (args.model,)
         jobs = [(r, m) for r in reps for m in models]
 
     # Real sessions default to the phase-matched preset; synthetic uses --cohort
     # (whose name should encode the phase). --preset overrides for real.
-    preset = args.preset or f'expert_{args.distribution}'
+    preset = args.preset or f'model_id_{args.distribution}'
     cohort_label = args.cohort
-    records = load_animals(args.cohort, config_path=args.config, preset=preset)
+    records, sessions_table = select_animals(args.cohort, config_path=args.config, preset=preset)
     print(f'[sbi] {len(records)} animals | cohort={cohort_label} phase={args.distribution} preset={preset} '
           f'| jobs={jobs} | n_repeats={n_repeats}')
 
     run = start_run('model_identification', cohort_label, args.run_id, fast=args.fast)
+    write_sessions_table(run, args.distribution, sessions_table)
     meta = build_metadata('run_sbi', vars(args), run_id=run.name)
     t0 = time.time()
     for rep, model in jobs:

@@ -3,8 +3,8 @@
 Grid-search model identification — synthetic or real data, one file.
 
 Three entry points share the per-seed unit (_gs_seed):
-  - run_gs_cohort(): serial, all seeds in-process, writes FINAL pickles.
-                     Used by the notebook QUICK run.
+  - run_gs_cohort(): serial, all seeds in-process, writes PARTIALS and FINAL pickles
+                     (the local run; same layout as a cluster run).
   - main() --task-id: one (animal, model, seed) per SLURM array task, writes a
                       PARTIAL. The full cluster run.
   - main() --gather:  concatenate partials into the FINAL neutral pickle.
@@ -19,8 +19,9 @@ load_cv_results reads quick, full, synthetic and real identically. Each result's
 metadata stamps model, distribution and fit_target.
 
 --distribution is required: fit ONE phase per launch (its sessions + its output
-subdir). For real data the sessions default to expert_<distribution> unless
---preset is given; for synthetic the --cohort name should encode the phase.
+subdir). For real data the sessions default to the model_id_<distribution> preset
+(config.yaml) unless --preset is given; for synthetic the --cohort name should encode the phase.
+Either way the sessions each fit saw are listed in <run>/sessions/<distribution>.csv.
 
 Cluster usage (real, one phase; repeat for hard_a and hard_b). The run id is created once and
 shared by every array task — ``slurm/submit.sh grid-search ...`` does all of this:
@@ -41,8 +42,8 @@ from pathlib import Path
 
 import numpy as np
 
-from sound_categorisation.data.cohort import load_animals
-from sound_categorisation.data.paths import build_metadata, model_id_dir, start_run
+from sound_categorisation.data.cohort import is_synthetic_cohort, select_animals
+from sound_categorisation.data.paths import build_metadata, model_id_dir, start_run, write_sessions_table
 from sound_categorisation.inference.cv_utils import save_cv_result
 from sound_categorisation.inference.grid_search import (
     COARSE_GRID,
@@ -58,6 +59,7 @@ from sound_categorisation.settings import (
     GS_BURN_IN,
     GS_N_BINS,
     GS_N_FOLDS,
+    GS_N_SEEDS,
     SYNTH_GS_N_SEEDS,
 )
 
@@ -96,18 +98,24 @@ def _save(out_path, animal_id, model, results, fit_target, true_model,
     )
 
 
-def run_gs_partial(record, model, seed, out_dir, grid, fit_target, distribution, **kw):
-    """Cluster array task: one seed -> a partial pickle under partials/."""
-    result = _gs_seed(record, model, seed, grid, fit_target, **kw)
+def _save_partial(record, model, seed, result, out_dir, fit_target, distribution):
     out_path = Path(out_dir) / 'partials' / f'{record.animal_id}_{model}_seed{seed}.pkl'
     _save(out_path, record.animal_id, model, [result], fit_target,
           record.true_model, record.true_params, distribution)
     return out_path
 
 
+def run_gs_partial(record, model, seed, out_dir, grid, fit_target, distribution, **kw):
+    """Cluster array task: one seed -> a partial pickle under partials/."""
+    result = _gs_seed(record, model, seed, grid, fit_target, **kw)
+    return _save_partial(record, model, seed, result, out_dir, fit_target, distribution)
+
+
 def run_gs_cohort(records, out_dir, n_seeds, fit_target, distribution, coarse=True,
                   grid=None, models=MODELS, base_seed=BASE_SEED, **kw):
-    """Notebook QUICK run: all seeds in-process -> FINAL pickle per (animal, model).
+    """Local serial run: all seeds in-process. Writes the same per-seed partials the cluster
+    array writes (``partials/``) and then the FINAL pickle per (animal, model), so a local run
+    and a cluster run leave identical directories.
 
     ``distribution`` (uniform / hard_a / hard_b) is stamped into each result's
     metadata; it must match the phase the sessions were selected for. ``grid``
@@ -118,10 +126,11 @@ def run_gs_cohort(records, out_dir, n_seeds, fit_target, distribution, coarse=Tr
     out_paths = []
     for record in records:
         for model in models:
-            results = [
-                _gs_seed(record, model, base_seed + s, grid_set[model], fit_target, **kw)
-                for s in range(1, n_seeds + 1)
-            ]
+            results = []
+            for s in range(1, n_seeds + 1):
+                result = _gs_seed(record, model, base_seed + s, grid_set[model], fit_target, **kw)
+                _save_partial(record, model, base_seed + s, result, out_dir, fit_target, distribution)
+                results.append(result)
             out_path = Path(out_dir) / f'{record.animal_id}_{model}.pkl'
             _save(out_path, record.animal_id, model, results, fit_target,
                   record.true_model, record.true_params, distribution)
@@ -179,12 +188,12 @@ def main(argv=None):
                    help='a synthetic cohort (sc-make-synthetic-cohort) or a cohort name from config.yaml')
     p.add_argument('--distribution', default=None, choices=list(DISTRIBUTIONS),
                    help='Phase to fit (required). Selects the sessions (real: '
-                        'expert_<distribution> unless --preset) and the output '
+                        'model_id_<distribution> unless --preset) and the output '
                         'subdir, matching run_sbi. Fit one phase per launch.')
     p.add_argument('--config', default=None, help='real: config.yaml path')
     p.add_argument('--preset', default=None,
                    help='real: session-selection preset '
-                        '(default expert_<distribution>).')
+                        '(default model_id_<distribution>).')
     p.add_argument('--run-id', default=None, help='existing run id to write into (required with --task-id)')
     p.add_argument('--fast', action='store_true', help='tiny grid + FAST_GS_N_SEEDS; run id gets _fast')
     p.add_argument('--coarse', action='store_true', help='coarse grid instead of the full grid')
@@ -194,18 +203,25 @@ def main(argv=None):
     p.add_argument('--gather', action='store_true', help='combine partials into finals')
     p.add_argument('--count', action='store_true',
                    help='print the array size (n_animals*n_models*n_seeds) and exit')
-    p.add_argument('--n-seeds', type=int, default=None)
+    p.add_argument('--n-seeds', type=int, default=None,
+                   help=f'default {GS_N_SEEDS} (real cohort) / {SYNTH_GS_N_SEEDS} (synthetic) / '
+                        f'{FAST_GS_N_SEEDS} (--fast)')
     args = p.parse_args(argv)
 
     if not args.distribution:
         p.error('--distribution is required (uniform / hard_a / hard_b) — '
                 'fit one phase per launch.')
-    preset = args.preset or f'expert_{args.distribution}'
+    preset = args.preset or f'model_id_{args.distribution}'
 
     label = args.cohort
     if args.task_id is not None and not args.run_id:
         p.error('--task-id needs --run-id (every array task must write into the same run)')
-    n_seeds = args.n_seeds or (FAST_GS_N_SEEDS if args.fast else SYNTH_GS_N_SEEDS)
+    if args.n_seeds:
+        n_seeds = args.n_seeds
+    elif args.fast:
+        n_seeds = FAST_GS_N_SEEDS
+    else:
+        n_seeds = SYNTH_GS_N_SEEDS if is_synthetic_cohort(args.cohort) else GS_N_SEEDS
     coarse = args.coarse
 
     if args.gather:
@@ -215,7 +231,7 @@ def main(argv=None):
         gather_results(model_id_dir(run, 'grid_search', args.fit_target, args.distribution), args.distribution)
         return
 
-    records = load_animals(args.cohort, config_path=args.config, preset=preset)
+    records, sessions_table = select_animals(args.cohort, config_path=args.config, preset=preset)
 
     if args.count:
         print(len(records) * len(MODELS) * n_seeds)
@@ -226,6 +242,7 @@ def main(argv=None):
         return
 
     run = start_run('model_identification', label, args.run_id, fast=args.fast)
+    write_sessions_table(run, args.distribution, sessions_table)
     out_dir = model_id_dir(run, 'grid_search', args.fit_target, args.distribution)
     grid_set = (FAST_GRID if args.fast
                 else (COARSE_GRID if coarse else DEFAULT_GRID))

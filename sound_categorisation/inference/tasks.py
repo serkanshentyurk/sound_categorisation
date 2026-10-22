@@ -7,8 +7,8 @@ object decides the array size (``grid.slurm_range()``), the job's arguments
 (``grid.decode(task_id)``) and the reverse lookup (``grid.encode(**kw)``), so
 train / condition / grid-search cannot drift apart.
 
-    TRAIN_GRID.n                      # 18 networks
-    TRAIN_GRID.decode(7)              # {'rep': 'moments', 'model': 'BE', 'distribution': 'hard_b'}
+    TRAIN_GRID.n                      # 4 networks (SBI_TRAIN_REPS x models x SBI_TRAIN_DISTRIBUTIONS)
+    TRAIN_GRID.decode(3)              # {'rep': 'moments', 'model': 'SC', 'distribution': 'uniform'}
     gs_grid(animals, n_seeds=3).slurm_range()   # '0-53'
 """
 
@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Sequence, Tuple
 
-from sound_categorisation.settings import MODEL_TYPES, SBI_REPRESENTATIONS, SBI_TRAIN_DISTRIBUTIONS
+from sound_categorisation.settings import MODEL_TYPES, SBI_TRAIN_DISTRIBUTIONS, SBI_TRAIN_REPS
 
 __all__ = ['TaskGrid', 'TRAIN_GRID', 'CONDITION_GRID', 'gs_grid']
 
@@ -67,11 +67,12 @@ class TaskGrid:
         return ' × '.join(f'{k}[{len(v)}]' for k, v in self.axes) + f' = {self.n} tasks'
 
 
-# network training: one specialist network per (representation, model, distribution)
-TRAIN_GRID = TaskGrid.of(rep=SBI_REPRESENTATIONS, model=MODEL_TYPES, distribution=SBI_TRAIN_DISTRIBUTIONS)
+# network training: one specialist network per (representation, model, distribution). The axes are
+# settings.SBI_TRAIN_REPS / SBI_TRAIN_DISTRIBUTIONS -- widen those to train more networks.
+TRAIN_GRID = TaskGrid.of(rep=SBI_TRAIN_REPS, model=MODEL_TYPES, distribution=SBI_TRAIN_DISTRIBUTIONS)
 
-# conditioning: one job per (representation, model); the distribution is a run-level argument
-CONDITION_GRID = TaskGrid.of(rep=SBI_REPRESENTATIONS, model=MODEL_TYPES)
+# conditioning (and SBC): one job per (representation, model); the distribution is a run-level argument
+CONDITION_GRID = TaskGrid.of(rep=SBI_TRAIN_REPS, model=MODEL_TYPES)
 
 
 def gs_grid(animals: Sequence[str], n_seeds: int, models: Sequence[str] = ('BE', 'SC')) -> TaskGrid:

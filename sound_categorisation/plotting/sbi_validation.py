@@ -398,6 +398,7 @@ def plot_param_stat_correlations(
 #   plot_individual_identity   ← stat_individual_power    (Q2: identity AUC per stat)
 #   plot_individual_recovery   ← stat_individual_power    (Q3: per-param R² per stat)
 #   plot_selection_curve       ← select_stats            (Q4: 0→all, identity + min-R²)
+#   plot_forward_selection     ← forward_selection       (Q5: greedy over the whole pool)
 #   plot_stat_contributions    ← stat_contributions      (parked: joint importance)
 #   plot_stat_sensitivity      ← stat_parameter_sensitivity (parked: isolation)
 # =============================================================================
@@ -496,6 +497,35 @@ def plot_selection_curve(result, ax: plt.Axes | None = None) -> plt.Axes:
     ax2.tick_params(axis='y', labelcolor='darkorange')
     ax.set_title(f"Selection · {result['distribution']} · {result['method']}", fontsize=10, pad=8)
     ax.legend(fontsize=8, loc='lower right')
+    return ax
+
+
+def plot_forward_selection(result, ax: plt.Axes | None = None) -> plt.Axes:
+    """Q5 — forward-selection curve: identity AUC and min-param CV R² vs the number of stat
+    groups, phase boundary and suggested k marked, the added stat named at each step.
+    result ← forward_selection (or ``{'curve': DataFrame, 'suggested_k': int, ...}`` reloaded
+    from forward_selection.csv)."""
+    curve = result['curve']
+    if ax is None:
+        _, ax = plt.subplots(figsize=(max(6, 0.45 * len(curve)), 4))
+    ax.plot(curve['k'], curve['identity_auc'], '-s', color='darkorange', ms=4, label='identity AUC')
+    ax.plot(curve['k'], curve['r2_min'], '-o', color='steelblue', ms=4, label='min-param R²')
+    ax.plot(curve['k'], curve['r2_mean'], ':', color='steelblue', lw=1, label='mean-param R²')
+    n_id = int((curve['phase'] == 'identity').sum())
+    if 0 < n_id < len(curve):
+        ax.axvspan(0.5, n_id + 0.5, color='darkorange', alpha=0.06, lw=0)
+    k_sug = result.get('suggested_k')
+    if k_sug:
+        ax.axvline(k_sug, color='red', ls='--', lw=1, alpha=0.7, label=f'suggested (k={k_sug})')
+    ax.set_xticks(curve['k'])
+    ax.set_xticklabels([f"{k}\n{a}" for k, a in zip(curve['k'], curve['added'])],
+                       fontsize=7, rotation=90)
+    ax.set_xlabel('stat groups added (in order)')
+    ax.set_ylabel('CV score')
+    ax.set_ylim(min(0.0, float(curve['r2_min'].min()) - 0.05), 1.02)
+    ax.set_title(f"Forward selection · {result.get('distribution', '')} · "
+                 f"scorer={result.get('scorer', '')}", fontsize=10, pad=8)
+    ax.legend(fontsize=8, loc='upper left', bbox_to_anchor=(1.01, 1.0), borderaxespad=0)
     return ax
 
 

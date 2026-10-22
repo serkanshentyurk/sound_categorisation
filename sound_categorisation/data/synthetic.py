@@ -122,8 +122,8 @@ def write_synthetic_runs(results_root, data_root, *, with_model_id: bool = True)
 
     if with_model_id:
         from sound_categorisation.cli import consensus, grid_search, make_synthetic_cohort
-        make_synthetic_cohort.main(['--distribution', 'uniform', '--n-per-model', '1', '--n-sessions', '2',
-                                    '--trials', '200'])
+        make_synthetic_cohort.main(['--distribution', 'uniform', '--n-per-model', '1', '--n-sessions', '4',
+                                    '--trials', '200'])   # >= MODEL_ID_MIN_SESSIONS sessions
         mrun = start_run('model_identification', 'synthetic_uniform', fast=True, root=results_root)
         base = ['--cohort', 'synthetic_uniform', '--distribution', 'uniform',
                 '--fit-target', 'update_matrix', '--fast', '--run-id', mrun.name]

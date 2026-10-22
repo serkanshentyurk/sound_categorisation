@@ -152,6 +152,7 @@ def save_cv_result(
     true_model: str | None = None,
     true_params: dict | None = None,
     metadata: dict | None = None,
+    posterior: dict | None = None,
 ):
     """
     Write one (animal, model) CV result in the neutral cross-method schema.
@@ -169,6 +170,8 @@ def save_cv_result(
         true_model: Ground-truth generating model for synthetic data, else None.
         true_params: Ground-truth params dict for synthetic data, else None.
         metadata: Optional run metadata.
+        posterior: SBI only -- ``selection.condition_posterior`` output (saved
+            samples, param_names, point_estimate, prior_bounds); None for grid search.
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -179,6 +182,7 @@ def save_cv_result(
         'true_params': true_params,
         'fit_target': fit_target,
         'results': results,
+        'posterior': posterior,
         'metadata': metadata or {},
     }
     with open(path, 'wb') as f:

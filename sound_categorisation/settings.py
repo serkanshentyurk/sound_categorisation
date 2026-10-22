@@ -31,8 +31,8 @@ DISTRIBUTIONS = ('uniform', 'hard_a', 'hard_b')
 
 # Grid search
 GS_N_FOLDS = 2
-GS_N_SEEDS = 32
-SYNTH_GS_N_SEEDS = 8        # Synthetic validation needs fewer seeds than real data
+GS_N_SEEDS = 32             # real animals
+SYNTH_GS_N_SEEDS = 8        # synthetic cohorts (picked by cohort kind in sc-grid-search)
 GS_BURN_IN = 1000
 GS_N_BINS = 8
 
@@ -43,21 +43,27 @@ SBI_BURN_IN = 1000
 
 # SBI conditioning / CV
 SBI_N_CV_REPEATS = 64
-SBI_N_POSTERIOR_SAMPLES = 50
-SBI_N_STOCHASTIC_REPS = 10
+SBI_N_POSTERIOR_SAMPLES = 50        # samples per conditioning INSIDE the CV repeats (median = point estimate)
+SBI_N_POSTERIOR_SAMPLES_SAVED = 1000  # samples of the one all-session conditioning saved per animal
+                                      # (intervals, narrowing, the example posterior)
 
-# Synthetic validation cohorts
-SYNTH_N_PER_MODEL = 20
-SYNTH_N_SESSIONS = 15
-SYNTH_TRIALS_PER_SESSION = 600   # cohort/validation session length (~ real expert sessions)
+# SBC calibration (sc-sbi-sbc): fresh prior draws per network, each processed like an animal
+SBC_N_DRAWS = 300
+SBC_N_SESSIONS = 5
+SBC_COVERAGE_LEVELS = (0.50, 0.80, 0.90, 0.95)
+
+# Model identification: an animal needs this many selected sessions (the networks saw 4-6)
+MODEL_ID_MIN_SESSIONS = 4
 
 # SBI representations: 3 networks x 2 models = 6. N/mode flow into AmortisedSBI;
 # n_simulations is per-rep (moments is 2*D-dim, so it needs more than the D-dim reps).
 SBI_SESSIONS_RANGE = (4, 6)   # multi-session reps draw N ~ uniform{4,5,6} per simulation,
                               # matching the 4-6 sessions a real animal typically has.
-SBI_TRAIN_T = 500   # trials per session for ALL reps -- matches one real session, so the
-                    # single net conditions in-distribution and its midpoint CV folds land
-                    # at ~250 trials (accepted: noisier held-out UM, honest to real data).
+SBI_TRAIN_T = (250, 500)   # trials per session for ALL reps: T ~ uniform{250..500} per session,
+                           # the range of valid trials a real Uniform session has (median ~300,
+                           # 250 is the model_id preset's min_trials; a few animals reach ~500).
+                           # Drawn like N, so no animal's session length is out of distribution.
+                           # An int fixes T instead.
 SBI_REPRESENTATIONS = {
     'pooled':  {'N': SBI_SESSIONS_RANGE, 'T': SBI_TRAIN_T, 'mode': 'pooled',  'n_simulations':  50_000},
     'moments': {'N': SBI_SESSIONS_RANGE, 'T': SBI_TRAIN_T, 'mode': 'moments', 'n_simulations': 100_000},
@@ -68,14 +74,18 @@ SBI_REPRESENTATIONS = {
 # one network marginalising over phase (which you'd never need, since the phase is
 # always supplied). 3 reps x 2 models x 3 dists = 18 networks; conditioning routes
 # to the matching network automatically via snpe_net_path's filename.
-SBI_TRAIN_DISTRIBUTIONS = DISTRIBUTIONS
+SBI_TRAIN_DISTRIBUTIONS = ('uniform',)
+# Which representations / distributions the training and conditioning arrays cover NOW. The
+# others stay available by name (sc-sbi-train --rep single --distribution hard_a) but are not in
+# the job grids. Widen these tuples to bring them back.
+SBI_TRAIN_REPS = ('pooled', 'moments')
 
 # Fast runs: used when --fast is passed on the command line (same code path, fewer draws)
 FAST_GS_N_SEEDS = 2
 FAST_SBI_N_SIMULATIONS = 500
 FAST_SBI_N_GENERIC_TRIALS = 200
 FAST_N_ANIMALS_LIMIT = 2
-FAST_SYNTH_N_PER_MODEL = 2
+FAST_SBC_N_DRAWS = 10
 
 
 # =============================================================================

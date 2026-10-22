@@ -223,52 +223,63 @@ def _reference_array(Params, ref: np.ndarray | None) -> np.ndarray:
     return np.array([(b[n][0] + b[n][1]) / 2.0 for n in Params.get_param_names()], float)
 
 
-def _simulate_cohort(model_type, distribution, n_sims, n_trials, stat_names, vary='all',
-                     ref=None, vary_noise=True, seed=0, finite_idx=None):
-    """Simulate; return (theta, X, param_names, expanded). A draw is kept when the columns in
-    finite_idx are all finite (default: all columns). vary='all' draws the prior each step;
-    vary=<name> sweeps one parameter (others at ref). vary_noise toggles per-draw stimulus +
-    choice noise vs a frozen sequence/seed."""
+def _simulate_one(model_type, arr, i, distribution, n_trials, stat_names, vary_noise, seed,
+                  stim0, cat0):
+    """One draw: params -> one simulated session -> stat vector (module-level for joblib)."""
     Model, Params, init = _MODELS[model_type]
-    pnames = Params.get_param_names()
-
-    stim0, cat0 = sample_distribution(n_trials, distribution, rng=np.random.default_rng(seed))
+    params = Params.from_array(np.asarray(arr, float))
     no_resp = np.zeros(n_trials, dtype=bool)
     not_bs = np.ones(n_trials, dtype=bool)
     not_bs[0] = False
+    if vary_noise:
+        stimuli, categories = sample_distribution(
+            n_trials, distribution, rng=np.random.default_rng(seed + 10_000 + i))
+        choice_rng = np.random.default_rng(seed + 20_000 + i)
+    else:
+        stimuli, categories = stim0, cat0
+        choice_rng = np.random.default_rng(seed + 2)
+    choices, *_ = Model.simulate_session(
+        stimuli=stimuli, categories=categories, params=params,
+        initial_state=init(), rng=choice_rng, no_response=no_resp, not_blockstart=not_bs)
+    return _stat_vector(choices, stimuli, categories, stat_names)
+
+
+def _simulate_cohort(model_type, distribution, n_sims, n_trials, stat_names, vary='all',
+                     ref=None, vary_noise=True, seed=0, finite_idx=None, n_jobs=-1):
+    """Simulate; return (theta, X, param_names, expanded). A draw is kept when the columns in
+    finite_idx are all finite (default: all columns). vary='all' draws the prior each step;
+    vary=<n> sweeps one parameter (others at ref). vary_noise toggles per-draw stimulus +
+    choice noise vs a frozen sequence/seed. Draws run in parallel (joblib, n_jobs); the
+    per-draw seeds are indexed, so the result does not depend on n_jobs."""
+    from joblib import Parallel, delayed
+
+    _, Params, _ = _MODELS[model_type]
+    pnames = Params.get_param_names()
+
+    stim0, cat0 = sample_distribution(n_trials, distribution, rng=np.random.default_rng(seed))
 
     if vary == 'all':
-        theta_iter = (Params.sample_prior(rng=np.random.default_rng(seed + 1 + i)).to_array()
-                      for i in range(n_sims))
+        thetas = [Params.sample_prior(rng=np.random.default_rng(seed + 1 + i)).to_array()
+                  for i in range(n_sims)]
     else:
         if vary not in pnames:
             raise ValueError(f"vary={vary!r} not a parameter of {model_type}: {pnames}")
         pidx = pnames.index(vary)
         lo, hi = Params.get_bounds()[vary]
         ref_arr = _reference_array(Params, ref)
-        sweep = np.linspace(lo, hi, n_sims)
+        thetas = []
+        for v in np.linspace(lo, hi, n_sims):
+            a = ref_arr.copy()
+            a[pidx] = v
+            thetas.append(a)
 
-        def _gen():
-            for v in sweep:
-                a = ref_arr.copy()
-                a[pidx] = v
-                yield a
-        theta_iter = _gen()
+    stats_all = Parallel(n_jobs=n_jobs)(
+        delayed(_simulate_one)(model_type, arr, i, distribution, n_trials, stat_names,
+                               vary_noise, seed, stim0, cat0)
+        for i, arr in enumerate(thetas))
 
     theta, X = [], []
-    for i, arr in enumerate(theta_iter):
-        params = Params.from_array(np.asarray(arr, float))
-        if vary_noise:
-            stimuli, categories = sample_distribution(
-                n_trials, distribution, rng=np.random.default_rng(seed + 10_000 + i))
-            choice_rng = np.random.default_rng(seed + 20_000 + i)
-        else:
-            stimuli, categories = stim0, cat0
-            choice_rng = np.random.default_rng(seed + 2)
-        choices, *_ = Model.simulate_session(
-            stimuli=stimuli, categories=categories, params=params,
-            initial_state=init(), rng=choice_rng, no_response=no_resp, not_blockstart=not_bs)
-        stats = _stat_vector(choices, stimuli, categories, stat_names)
+    for arr, stats in zip(thetas, stats_all):
         keep = np.isfinite(stats if finite_idx is None else stats[finite_idx])
         if np.all(keep):
             theta.append(np.asarray(arr, float))
@@ -331,9 +342,15 @@ def simulate_selection_cohort(distribution: str = 'uniform', n_sims: int = 4000,
 # Surrogate estimators + scoring
 # ----------------------------------------------------------------------------
 def _make_estimator(scorer: str, task: str, seed: int = 0):
-    """task in {'clf','reg','multireg'}. multireg always RF (GBR has no multi-output)."""
+    """task in {'clf','reg','multireg'}. multireg always RF (GBR has no multi-output).
+    scorer: 'hgb' (histogram gradient boosting; ~10x faster than 'gbm' at this size, same
+    non-linear capacity -- the forward search's default), 'gbm', 'rf', 'ridge'."""
     if task == 'multireg':
         return RandomForestRegressor(n_estimators=200, random_state=seed, n_jobs=-1)
+    if scorer == 'hgb':
+        from sklearn.ensemble import HistGradientBoostingClassifier, HistGradientBoostingRegressor
+        return (HistGradientBoostingClassifier(random_state=seed) if task == 'clf'
+                else HistGradientBoostingRegressor(random_state=seed))
     if scorer == 'gbm':
         return (GradientBoostingClassifier(random_state=seed) if task == 'clf'
                 else GradientBoostingRegressor(random_state=seed))
@@ -478,6 +495,69 @@ def select_stats(cohort: SelectionCohort, shortlist: Sequence[str], scorer: str 
             'selected_r2_min': float(selected['r2_min']),
             'selected_identity_auc': float(selected['identity_auc']),
             'per_subset': pd.DataFrame(rows) if rows else None}
+
+
+# ----------------------------------------------------------------------------
+# Q5: forward selection over the whole pool (identity first, then recovery)
+# ----------------------------------------------------------------------------
+def forward_selection(cohort: SelectionCohort, pool: Sequence[str] | None = None,
+                      scorer: str = 'hgb', n_splits: int = 5, auc_eps: float = 0.005,
+                      seed: int = 0, n_jobs: int = -1) -> dict:
+    """Add one stat group at a time and record the curve.
+
+    Phase 'identity': at each step add the group giving the largest BE-vs-SC CV AUC; stop
+    adding by AUC once the best available gain is below ``auc_eps`` (identity is the primary
+    target, so it is served first). Phase 'recovery': continue adding the group that most
+    raises the min-across-parameters CV R² (both models pooled, min so one weak parameter
+    cannot hide) until the pool is exhausted. Every step records AUC, r2_min and r2_mean, so
+    the two curves can be read against k whatever the phase.
+
+    'suggested' is the smallest k whose AUC is within 0.01 of the curve's best AUC and whose
+    r2_min is within 0.02 of the curve's best r2_min -- a starting point to argue with, not a
+    decision; SBI_STATS is set by hand. Candidates at each step are scored in parallel (joblib).
+    """
+    pool = [g for g in (pool or list(cohort.pred_groups)) if g in cohort.pred_groups]
+    groups = cohort.pred_groups
+    Xid_full = np.vstack([cohort.X['be'], cohort.X['sc']])
+    yid = np.concatenate([np.zeros(cohort.n_valid['be']), np.ones(cohort.n_valid['sc'])])
+
+    def cols_of(sub):
+        return sorted({c for g in sub for c in groups[g]})
+
+    def score(sub):
+        cols = cols_of(sub)
+        auc = _cv_auc(scorer, Xid_full[:, cols], yid, n_splits, seed)
+        r2 = []
+        for m in ('be', 'sc'):
+            th, Xm = cohort.theta[m], cohort.X[m][:, cols]
+            r2 += [_cv_r2(scorer, Xm, th[:, j], n_splits, seed) for j in range(th.shape[1])]
+        return auc, float(np.min(r2)), float(np.mean(r2))
+
+    from joblib import Parallel, delayed
+
+    chosen, remaining, rows, phase, last_auc = [], list(pool), [], 'identity', 0.5
+    while remaining:
+        scores = Parallel(n_jobs=n_jobs)(delayed(score)(chosen + [g]) for g in remaining)
+        scored = list(zip(scores, remaining))
+        if phase == 'identity':
+            (auc, r2min, r2mean), g = max(scored, key=lambda t: t[0][0])
+            if auc - last_auc < auc_eps:
+                phase = 'recovery'
+                (auc, r2min, r2mean), g = max(scored, key=lambda t: t[0][1])
+        else:
+            (auc, r2min, r2mean), g = max(scored, key=lambda t: t[0][1])
+        chosen.append(g)
+        remaining.remove(g)
+        last_auc = max(last_auc, auc)
+        rows.append({'k': len(chosen), 'added': g, 'phase': phase, 'identity_auc': auc,
+                     'r2_min': r2min, 'r2_mean': r2mean, 'stats': ' '.join(chosen)})
+
+    curve = pd.DataFrame(rows)
+    ok = curve[(curve['identity_auc'] >= curve['identity_auc'].max() - 0.01)
+               & (curve['r2_min'] >= curve['r2_min'].max() - 0.02)]
+    k_sug = int(ok['k'].iloc[0]) if len(ok) else int(curve['k'].iloc[-1])
+    return {'distribution': cohort.distribution, 'scorer': scorer, 'curve': curve,
+            'suggested': list(curve['stats'].iloc[k_sug - 1].split()), 'suggested_k': k_sug}
 
 
 # ----------------------------------------------------------------------------

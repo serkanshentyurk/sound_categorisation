@@ -1,5 +1,19 @@
-
 # Changelog — sound_categorisation
+
+## 0.7.0 — 2026-10
+- Model identification for the talk run. `sc-feature-selection` (tables, plots, forward-selection
+  curve, saved cohort). Training/conditioning grids come from `settings.SBI_TRAIN_REPS` /
+  `SBI_TRAIN_DISTRIBUTIONS` (4 networks now). Real animals: the snapshot, the `model_id_<dist>`
+  presets (`last_n_qualifying`, `behav_utils` 0.7.1), `MODEL_ID_MIN_SESSIONS`, a `sessions/<dist>.csv`
+  per run. `sc-sbi-condition` saves 1,000 posterior samples per animal (`posterior`); its CV
+  `best_params` is that posterior's median. New `sc-sbi-sbc` + `inference/calibration.py`
+  (`compute_sbc_ranks`, coverage). Consensus voters: GS-UM, SBI-pooled-UM, SBI-moments-UM.
+  Local `sc-grid-search` writes partials as the cluster does; seeds by cohort kind. Synthetic
+  cohort default 10 + 10; parameter truths drawn from one stream per model. `simulate_sessions`
+  factored out of the simulator (bit-exact). Stale-network warning when a net's stat vector
+  differs from `SBI_STATS`. `SBI_TRAIN_T` is now a per-session range `(250, 500)` matching real
+  Uniform sessions (`simulate_sessions`/`draw_T`; the synthetic cohort and SBC draw from it too);
+  `model_id_*` presets use `min_trials: 250`. A skipped conditioning now warns with the reason.
 
 ## Unreleased
 

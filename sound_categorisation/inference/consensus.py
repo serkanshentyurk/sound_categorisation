@@ -17,9 +17,8 @@ Methods (configurable):
     ('grid_search', None, ft) -> GS-UM / GS-CP      dir: <run>/grid_search/<ft>/<distribution>
     ('sbi', rep, ft)          -> SBI-{rep}-UM / -CP  dir: <run>/sbi/<ft>/<distribution>/<rep>
 
-DEFAULT_METHODS mirrors the old four-method scheme (GS + SBI `pooled`, both fit
-targets); add 'moments'/'single' once NB12 shows a rep is trustworthy enough to
-vote.
+DEFAULT_METHODS is the current run: update matrix only (the conditional-psychometric
+target is not fitted now), grid search plus the two trained SBI representations.
 
 Consensus rule (configurable):
     1. Collect significant (p < alpha) BE/SC votes across methods.
@@ -49,9 +48,8 @@ Method = Tuple[str, str | None, str]
 
 DEFAULT_METHODS: List[Method] = [
     ('grid_search', None, 'update_matrix'),
-    ('grid_search', None, 'conditional_psych'),
     ('sbi', 'pooled', 'update_matrix'),
-    ('sbi', 'pooled', 'conditional_psych'),
+    ('sbi', 'moments', 'update_matrix'),
 ]
 
 

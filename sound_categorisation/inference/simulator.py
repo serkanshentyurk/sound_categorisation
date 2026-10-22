@@ -91,11 +91,34 @@ def _expand_schedule(dist_schedule: Union[str, Sequence[str]], N: int) -> List[s
 # SIMULATOR
 # =============================================================================
 
+def draw_T(T, rng: np.random.Generator) -> int:
+    """Trials for one session: ``T`` fixed (int) or drawn uniformly from ``(lo, hi)``."""
+    if isinstance(T, (tuple, list)):
+        return int(rng.integers(int(T[0]), int(T[1]) + 1))
+    return int(T)
+
+
+def simulate_sessions(model, params: Dict[str, float], schedule: Sequence[str], T,
+                      burn_in: int, rng: np.random.Generator) -> List:
+    """One simulated animal: a SessionData per entry of ``schedule``, each ``draw_T(T, rng)``
+    trials from ``params`` (seeds drawn from ``rng``, decorrelated per session). The one place
+    the training simulator, the synthetic cohort and the SBC calibration draw their sessions
+    from. ``T`` is an int or a ``(lo, hi)`` range drawn per session."""
+    from sound_categorisation.data.stimuli import sample_distribution
+    sessions = []
+    for i, dist in enumerate(schedule):
+        stim, cat = sample_distribution(draw_T(T, rng), dist, rng=rng)
+        sess_seed = int(rng.integers(0, 2**31 - 1))
+        ch = simulate_choices(model, params, stim, cat, burn_in=burn_in, seed=sess_seed)
+        sessions.append(session_from_arrays(stim, ch, cat, session_idx=i, distribution=dist))
+    return sessions
+
+
 def build_simulator(
     model,
     dist_schedule: Union[str, Sequence[str]] = 'uniform',
     N: int = 1,
-    T: int = 350,
+    T=350,
     burn_in: int = 1000,
     mode: str = 'pooled',
     stat_names: Sequence[str] | None = None,
@@ -109,7 +132,8 @@ def build_simulator(
         N: Sessions per simulated animal. An int (fixed) or a ``(lo, hi)`` tuple
             (drawn uniformly over {lo..hi} per simulation, single-distribution
             schedule only). mode='moments' requires min N >= 2.
-        T: Trials per session (fixed; never a network input).
+        T: Trials per session: an int (fixed) or a ``(lo, hi)`` range drawn
+            uniformly per session (never a network input).
         burn_in: Model burn-in per session.
         mode: 'pooled' or 'moments' (forwarded to to_stat_vector).
         stat_names: Summary stats (defaults to SBI_STATS via to_stat_vector).
@@ -137,26 +161,16 @@ def build_simulator(
         stat_names = list(stat_names)
 
     def sim_fn(theta, seed: int | None = None) -> np.ndarray:
-        from sound_categorisation.data.stimuli import sample_distribution
         if seed is None:
             seed = int(np.random.randint(0, 2**31 - 1))
-        params = theta_to_params(theta, model)
         rng = np.random.default_rng(seed)
-
         if variable_N:
             n_sess = int(rng.integers(n_lo, n_hi + 1))    # uniform over {n_lo..n_hi}
             this_sched = [dist_schedule] * n_sess
         else:
             this_sched = sched
-        sessions = []
-        for i, dist in enumerate(this_sched):
-            stim, cat = sample_distribution(T, dist, rng=rng)
-            sess_seed = int(rng.integers(0, 2**31 - 1))   # decorrelated per session
-            ch = simulate_choices(
-                model, params, stim, cat, burn_in=burn_in, seed=sess_seed)
-            sessions.append(session_from_arrays(
-                stim, ch, cat, session_idx=i, distribution=dist))
-
+        sessions = simulate_sessions(model, theta_to_params(theta, model), this_sched, T,
+                                     burn_in, rng)
         return to_stat_vector(sessions, mode=mode, stat_names=stat_names)
 
     prior = _build_prior(model)

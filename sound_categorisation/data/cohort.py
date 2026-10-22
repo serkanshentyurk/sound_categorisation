@@ -23,11 +23,12 @@ from behav_utils.data.loading import load_experiment
 from behav_utils.data.ops.selection import list_presets, register_presets_from_config, select_sessions
 from behav_utils.data.synthetic import session_from_arrays
 
-from sound_categorisation.data.paths import REPO_ROOT, cohort_path, load_project_config
+from sound_categorisation.data.paths import REPO_ROOT, cohort_path
+from sound_categorisation.settings import MODEL_ID_MIN_SESSIONS
 
 __all__ = ['load_experiment_any', 'gather_genotypes', 'collect_sessions_ppc',
            'collect_sessions_alm', 'ensure_presets', 'SITE_TYPE', 'GENOTYPES', 'CONTROL_TYPES',
-           'AnimalRecord', 'load_animals']
+           'AnimalRecord', 'load_animals', 'select_animals', 'is_synthetic_cohort']
 
 GENOTYPES = ('wt', 'het')
 SITE_TYPE = {'uni': 'alm_control_uni', 'bi': 'alm_control_bi'}
@@ -141,7 +142,10 @@ def collect_sessions_alm(animal, distribution: str, site: str) -> Dict[str, list
 # ── model-identification records (real or synthetic) ───────────────────────
 # One AnimalRecord shape for both sources, so the GS and SBI runners are identical downstream.
 # Synthetic: cohort pickle -> per-session arrays -> SessionData, with ground truth populated.
-# Real: ExperimentData -> preset session selection per animal, truth None.
+# Real: the snapshot -> preset session selection per animal, truth None.
+# Either way an animal is kept only with >= min_sessions selected sessions, and ``select_animals``
+# returns a per-session table (kept and dropped animals alike) so a run can show which sessions
+# each fit saw.
 
 AnimalRecord = namedtuple('AnimalRecord',
                           ['animal_id', 'sessions', 'true_model', 'true_params'])
@@ -155,9 +159,9 @@ def _synthetic_records(cohort):
         sessions = [
             session_from_arrays(
                 s['stimuli'], s['choices'], s['categories'],
-                animal_id=a['animal_id'],
+                animal_id=a['animal_id'], session_idx=i,
             )
-            for s in a['sessions']
+            for i, s in enumerate(a['sessions'])
         ]
         records.append(AnimalRecord(
             a['animal_id'], sessions, a['true_model'], a['true_params'],
@@ -165,16 +169,18 @@ def _synthetic_records(cohort):
     return records
 
 
-def _real_records(cohort, config_path=None, preset='expert_uniform', experiment=None):
-    # config_path None -> load_project_config picks cluster vs local config.
-    config = load_project_config(config_path)
-    cohorts = load_cohorts(config_path or (REPO_ROOT / 'config.yaml'))
+def _real_records(cohort, config_path=None, preset='model_id_uniform', experiment=None):
+    cfg = Path(config_path) if config_path else REPO_ROOT / 'config.yaml'
+    cohorts = load_cohorts(cfg)
     if cohort not in cohorts:
         synthetic = sorted(p.stem for p in cohort_path(cohort).parent.glob('*.pkl')) if cohort_path(cohort).parent.exists() else []
         raise ValueError(f'unknown cohort {cohort!r}; cohorts in config.yaml: {sorted(cohorts)}; '
                          f'synthetic cohorts on disk: {synthetic}')
     if experiment is None:
-        experiment = load_experiment(config)
+        experiment = load_experiment_any(config_path=cfg)      # the snapshot (cleaned trials), else CSV
+    ensure_presets(cfg)
+    if preset not in list_presets():
+        raise ValueError(f'unknown preset {preset!r}; presets: {sorted(list_presets())}')
     records = []
     for aid in cohorts[cohort]:
         if aid not in experiment.animals:
@@ -189,13 +195,51 @@ def is_synthetic_cohort(cohort: str) -> bool:
     return cohort_path(cohort).exists()
 
 
-def load_animals(cohort, config_path=None, preset='expert_uniform', experiment=None):
-    """One list of AnimalRecord for a cohort, whichever kind it is.
+def _session_rows(record, kept: bool, reason: str):
+    rows = []
+    for s in record.sessions:
+        summ = s.summary()
+        rows.append({'animal_id': record.animal_id, 'kept': kept, 'reason': reason,
+                     'n_sessions': len(record.sessions), 'session_idx': summ['session_idx'],
+                     'date': summ['date'], 'n_valid': summ['n_valid'], 'accuracy': summ['perf'],
+                     'true_model': record.true_model})
+    if not record.sessions:
+        rows.append({'animal_id': record.animal_id, 'kept': kept, 'reason': reason, 'n_sessions': 0,
+                     'session_idx': None, 'date': None, 'n_valid': 0, 'accuracy': float('nan'),
+                     'true_model': record.true_model})
+    return rows
 
-    ``cohort`` is either a synthetic cohort (``sc-make-synthetic-cohort``; its pickle exists under the data
-    root; true_model/true_params populated) or a cohort name from ``config.yaml`` (real animals; truth None).
-    Real sessions are selected with ``preset`` (default the expert window).
+
+def select_animals(cohort, config_path=None, preset='model_id_uniform', experiment=None,
+                   min_sessions=MODEL_ID_MIN_SESSIONS):
+    """``(records, table)`` for a cohort: the AnimalRecords with at least ``min_sessions``
+    selected sessions, and a per-session DataFrame covering every animal (``kept`` says whether
+    the animal is in ``records``; ``reason`` why not). Writers put the table next to the fits.
+
+    ``cohort`` is either a synthetic cohort (``sc-make-synthetic-cohort``; truth populated) or a
+    cohort name from ``config.yaml`` (real animals, sessions selected with ``preset``).
     """
+    import pandas as pd
     if is_synthetic_cohort(cohort):
-        return _synthetic_records(cohort)
-    return _real_records(cohort, config_path=config_path, preset=preset, experiment=experiment)
+        all_records = _synthetic_records(cohort)
+    else:
+        all_records = _real_records(cohort, config_path=config_path, preset=preset, experiment=experiment)
+    kept, rows = [], []
+    for r in all_records:
+        ok = len(r.sessions) >= min_sessions
+        reason = '' if ok else f'{len(r.sessions)} sessions < {min_sessions}'
+        rows += _session_rows(r, ok, reason)
+        if ok:
+            kept.append(r)
+    dropped = [r.animal_id for r in all_records if len(r.sessions) < min_sessions]
+    if dropped:
+        print(f'[cohort] {cohort}: {len(kept)}/{len(all_records)} animals kept; dropped (< {min_sessions} '
+              f'sessions): {", ".join(f"{r.animal_id}({len(r.sessions)})" for r in all_records if r.animal_id in dropped)}')
+    return kept, pd.DataFrame(rows)
+
+
+def load_animals(cohort, config_path=None, preset='model_id_uniform', experiment=None,
+                 min_sessions=MODEL_ID_MIN_SESSIONS):
+    """One list of AnimalRecord for a cohort, whichever kind it is (see ``select_animals``)."""
+    return select_animals(cohort, config_path=config_path, preset=preset, experiment=experiment,
+                          min_sessions=min_sessions)[0]

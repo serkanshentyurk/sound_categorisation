@@ -18,12 +18,15 @@ def test_last_axis_fastest():
 
 
 def test_train_grid_shape():
+    from sound_categorisation.settings import MODEL_TYPES, SBI_TRAIN_DISTRIBUTIONS, SBI_TRAIN_REPS
     assert TRAIN_GRID.names == ('rep', 'model', 'distribution')
-    assert TRAIN_GRID.n == 18 and CONDITION_GRID.n == 6
+    assert TRAIN_GRID.n == len(SBI_TRAIN_REPS) * len(MODEL_TYPES) * len(SBI_TRAIN_DISTRIBUTIONS)
+    assert CONDITION_GRID.n == len(SBI_TRAIN_REPS) * len(MODEL_TYPES)
+    assert TRAIN_GRID.n == 4 and CONDITION_GRID.n == 4      # the current run: pooled/moments x BE/SC x uniform
 
 
 def test_condition_matches_train_prefix():
-    """The (rep, model) of CONDITION task k must equal the (rep, model) of TRAIN tasks k*3 .. k*3+2."""
+    """The (rep, model) of CONDITION task k must equal the (rep, model) of TRAIN tasks k*n_d .. k*n_d+n_d-1."""
     n_d = len(TRAIN_GRID.axes[2][1])
     for k in range(CONDITION_GRID.n):
         c = CONDITION_GRID.decode(k)

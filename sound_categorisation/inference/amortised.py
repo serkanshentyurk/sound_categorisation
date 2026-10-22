@@ -46,7 +46,7 @@ class AmortisedSBI:
             of exactly N names. Should match the curriculum of the data that
             will be conditioned on.
         N: Sessions per simulated animal (match the typical real N).
-        T: Trials per session (fixed).
+        T: Trials per session: int (fixed) or (lo, hi) range drawn per session.
         burn_in: Model burn-in per session.
         mode: 'pooled' or 'moments' (the representation; must match conditioning).
         stat_names: Summary stats (defaults to SBI_STATS).
@@ -57,7 +57,7 @@ class AmortisedSBI:
         model,
         dist_schedule: Union[str, Sequence[str]] = 'uniform',
         N: int = 1,
-        T: int = 350,
+        T=350,
         burn_in: int = 1000,
         mode: str = 'pooled',
         stat_names: Sequence[str] | None = None,
@@ -219,6 +219,14 @@ class AmortisedSBI:
         if self._trained_posterior is None:
             raise RuntimeError('No trained posterior -- call train() or load().')
         import torch as _torch
+
+        from sound_categorisation.inference.constants import SBI_STATS
+        if list(self.stat_names) != list(SBI_STATS) and not getattr(self, '_warned_stats', False):
+            import warnings
+            warnings.warn(f'network stat vector {self.stat_names} differs from the current SBI_STATS '
+                          f'{list(SBI_STATS)}: this is a stale network (retrain) unless intended.',
+                          stacklevel=2)
+            self._warned_stats = True
 
         x = to_stat_vector(sessions, mode=self.mode, stat_names=self.stat_names)
         x = np.asarray(x, dtype=float)
