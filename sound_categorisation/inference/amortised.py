@@ -238,10 +238,8 @@ class AmortisedSBI:
             from sound_categorisation.inference.representation import impute_with_medians
             x = impute_with_medians(x, self._feature_medians)
 
-        obs = _torch.as_tensor(x, dtype=_torch.float32)
-        samples = self._trained_posterior.sample(
-            (n_samples,), x=obs, show_progress_bars=False)
-        samples_np = samples.numpy()
+        obs = _torch.as_tensor(np.array(x, dtype=np.float32))
+        samples_np, acceptance = self._sample_within_prior(obs, n_samples)
 
         theta_median = np.median(samples_np, axis=0)
         point_estimate = {
@@ -252,7 +250,54 @@ class AmortisedSBI:
             'param_names': list(self.param_names),
             'point_estimate': point_estimate,
             'theta_median': theta_median,
+            'acceptance_rate': acceptance,
         }
+
+    # Budgeted rejection sampling. sbi's DirectPosterior.sample rejects flow samples that fall
+    # outside the prior box and keeps proposing until it has n -- with no budget, so an
+    # observation the flow puts ~0 mass on inside the prior (typically data from the OTHER
+    # model, which the comparison conditions on deliberately) loops for hours. Here the flow is
+    # sampled directly with a fixed proposal budget; what is accepted is resampled up to n, and
+    # if nothing is accepted the proposals are clipped to the prior box. 'acceptance_rate' is
+    # returned so a result can be flagged; a rate near 0 means "this net does not describe
+    # these data", which is itself the answer the model comparison is after.
+    LEAK_BUDGET = 400_000
+    LEAK_BATCH = 20_000
+
+    def _sample_within_prior(self, obs, n_samples: int):
+        import torch as _torch
+        from sound_categorisation.inference.simulator import get_bounds_arrays
+        lo, hi = get_bounds_arrays(self.model)
+        flow = getattr(self._trained_posterior, 'posterior_estimator', None)
+        if flow is None:
+            # unknown sbi internals: fall back to sbi's own (unbudgeted) sampler
+            samples = self._trained_posterior.sample((n_samples,), x=obs, show_progress_bars=False)
+            return samples.numpy(), float('nan')
+        cond = obs.reshape(1, -1)
+        accepted, proposed, last = [], 0, None
+        n_acc = 0
+        with _torch.no_grad():
+            while n_acc < n_samples and proposed < self.LEAK_BUDGET:
+                batch = min(self.LEAK_BATCH, self.LEAK_BUDGET - proposed)
+                theta = flow.sample((batch,), condition=cond)
+                theta = np.asarray(theta.reshape(-1, len(lo)).cpu().numpy(), dtype=float)
+                proposed += len(theta)
+                last = theta
+                ok = np.all((theta >= lo) & (theta <= hi), axis=1)
+                if ok.any():
+                    accepted.append(theta[ok])
+                    n_acc += int(ok.sum())
+        rate = n_acc / max(proposed, 1)
+        if n_acc >= n_samples:
+            return np.vstack(accepted)[:n_samples], rate
+        rng = np.random.default_rng(0)
+        if n_acc > 0:
+            pool = np.vstack(accepted)
+            return pool[rng.integers(0, len(pool), size=n_samples)], rate
+        clipped = np.clip(last[:n_samples], lo, hi)
+        if len(clipped) < n_samples:
+            clipped = clipped[rng.integers(0, len(clipped), size=n_samples)]
+        return clipped, rate
 
     # ── Accessors (for validation / plotting) ────────────────────────────────
 

@@ -1,6 +1,8 @@
+
 # Changelog — sound_categorisation
 
 ## 0.7.0 — 2026-10
+
 - Model identification for the talk run. `sc-feature-selection` (tables, plots, forward-selection
   curve, saved cohort). Training/conditioning grids come from `settings.SBI_TRAIN_REPS` /
   `SBI_TRAIN_DISTRIBUTIONS` (4 networks now). Real animals: the snapshot, the `model_id_<dist>`
@@ -17,6 +19,9 @@
   Training simulations run in parallel (`wrap_for_sbi`, joblib, per-row seeds so n_jobs does not
   change results); the local grid-search runner takes `--n-jobs`. Slurm: `sbi_sbc.sh`, resources
   sized for the `cpu` partition, grid-search arrays throttled (`GS_ARRAY_THROTTLE`), thread caps.
+  `AmortisedSBI.condition` samples the flow with a proposal budget instead of sbi's unbudgeted
+  rejection loop (an observation the net puts ~0 prior-box mass on -- typically the other
+  model's data -- used to run for hours); results carry `acceptance_rate`. Jobs run unbuffered.
   **Numbers change:** `split_folds_by_block` now makes contiguous folds balanced by session count
   (4 -> 2/2, 5 -> 3/2) instead of the trial-balanced greedy merge, which could put a single
   session in a fold and starve the moments net. Grid search and SBI share the same folds as before.

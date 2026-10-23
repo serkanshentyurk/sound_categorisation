@@ -118,8 +118,11 @@ def condition_posterior(sessions: List, net, n_samples: int = 1000) -> Dict[str,
     """The one all-session conditioning that is saved per animal.
 
     Returns ``{'posterior_samples': (n_samples, n_params), 'param_names',
-    'point_estimate', 'prior_bounds': {name: (lo, hi)}}``, or None when the
-    observation is degenerate. ``posterior_samples`` is None for a net whose
+    'point_estimate', 'prior_bounds': {name: (lo, hi)}, 'acceptance_rate'}``,
+    or None when the observation is degenerate. ``acceptance_rate`` is the
+    fraction of flow proposals inside the prior box (see
+    ``AmortisedSBI._sample_within_prior``); near 0 means the net puts almost
+    no mass on these data -- flag such animals. ``posterior_samples`` is None for a net whose
     ``condition`` does not return samples (test stubs).
     """
     cond = _safe_condition_full(net, sessions, n_samples)
@@ -133,6 +136,7 @@ def condition_posterior(sessions: List, net, n_samples: int = 1000) -> Dict[str,
         'param_names': names,
         'point_estimate': dict(cond['point_estimate']),
         'prior_bounds': {n: (float(lo[i]), float(hi[i])) for i, n in enumerate(names)},
+        'acceptance_rate': cond.get('acceptance_rate'),
     }
 
 

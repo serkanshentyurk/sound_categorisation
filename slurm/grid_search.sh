@@ -10,6 +10,8 @@
 # Submit via:  bash slurm/submit.sh grid-search --cohort C --distribution D --fit-target update_matrix --run-id ID
 set -euo pipefail
 
+export PYTHONNOUSERSITE=1     # never import from ~/.local (it shadows the env's numpy/scipy/torch)
+export PYTHONUNBUFFERED=1     # progress lines reach the .out file as they happen
 module load miniconda
 conda activate sound_cat
 cd "${SLURM_SUBMIT_DIR}"
