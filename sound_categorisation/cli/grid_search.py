@@ -151,8 +151,21 @@ def run_gs_cohort(records, out_dir, n_seeds, fit_target, distribution, coarse=Tr
     return out_paths
 
 
-def gather_results(out_dir, distribution):
-    """Concatenate partials/ into FINAL {animal}_{model}.pkl per (animal, model)."""
+def missing_task_ids(out_dir, records, n_seeds, base_seed=BASE_SEED):
+    """Array indices whose partial pickle does not exist (a task that never ran, was held, or
+    died). The index -> (animal, model, seed) mapping is gs_grid's, the same the array uses."""
+    pdir = Path(out_dir) / 'partials'
+    missing = []
+    for t in range(len(records) * len(MODELS) * n_seeds):
+        a, model, s = _decode_task(t, len(records), n_seeds)
+        if not (pdir / f'{records[a].animal_id}_{model}_seed{base_seed + s + 1}.pkl').exists():
+            missing.append(t)
+    return missing
+
+
+def gather_results(out_dir, distribution, n_seeds=None):
+    """Concatenate partials/ into FINAL {animal}_{model}.pkl per (animal, model). With
+    ``n_seeds`` given, every (animal, model) short of it is listed as a warning."""
     out_dir = Path(out_dir)
     pdir = out_dir / 'partials'
     if not pdir.exists():
@@ -181,6 +194,12 @@ def gather_results(out_dir, distribution):
         out_paths.append(out_path)
 
     print(f'Gathered {n_partials} partials -> {len(out_paths)} finals in {out_dir}')
+    if n_seeds:
+        short = {k: len(g['results']) for k, g in groups.items() if len(g['results']) < n_seeds}
+        if short:
+            print(f'WARNING: {len(short)} (animal, model) pairs have fewer than {n_seeds} seeds: '
+                  + ', '.join(f'{a}/{m}={n}' for (a, m), n in sorted(short.items())))
+            print('  -> sc-grid-search ... --print-missing lists the array indices to resubmit')
     return out_paths
 
 
@@ -210,6 +229,8 @@ def main(argv=None):
     p.add_argument('--task-id', type=int, default=None, help='SLURM array task id')
     p.add_argument('--print-array', action='store_true', help='print the SLURM --array range and exit')
     p.add_argument('--gather', action='store_true', help='combine partials into finals')
+    p.add_argument('--print-missing', action='store_true',
+                   help='print the comma-separated array indices with no partial yet (needs --run-id) and exit')
     p.add_argument('--count', action='store_true',
                    help='print the array size (n_animals*n_models*n_seeds) and exit')
     p.add_argument('--n-jobs', type=int, default=1,
@@ -239,11 +260,19 @@ def main(argv=None):
         if not args.run_id:
             p.error('--gather needs --run-id')
         run = start_run('model_identification', label, args.run_id, fast=args.fast)
-        gather_results(model_id_dir(run, 'grid_search', args.fit_target, args.distribution), args.distribution)
+        gather_results(model_id_dir(run, 'grid_search', args.fit_target, args.distribution),
+                       args.distribution, n_seeds=n_seeds)
         return
 
     records, sessions_table = select_animals(args.cohort, config_path=args.config, preset=preset)
 
+    if args.print_missing:
+        if not args.run_id:
+            p.error('--print-missing needs --run-id')
+        run = start_run('model_identification', label, args.run_id, fast=args.fast)
+        out_dir = model_id_dir(run, 'grid_search', args.fit_target, args.distribution)
+        print(','.join(str(t) for t in missing_task_ids(out_dir, records, n_seeds)))
+        return
     if args.count:
         print(len(records) * len(MODELS) * n_seeds)
         return
