@@ -266,6 +266,7 @@ class AmortisedSBI:
 
     def _sample_within_prior(self, obs, n_samples: int):
         import torch as _torch
+
         from sound_categorisation.inference.simulator import get_bounds_arrays
         lo, hi = get_bounds_arrays(self.model)
         flow = getattr(self._trained_posterior, 'posterior_estimator', None)
