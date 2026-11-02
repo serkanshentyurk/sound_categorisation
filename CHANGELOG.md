@@ -1,6 +1,38 @@
 
 # Changelog — sound_categorisation
 
+## Unreleased
+
+- `behav_utils` 0.8.0 (pin moved from 0.7.1). Call sites changed: `SessionData.summary()` is a
+  `SessionSummary` (`.accuracy`, not `['perf']`) in `data/cohort.py`; `compare_groups` returns a
+  `GroupComparison` whose `.table()` feeds `group_tests.csv` in `reports/compute.py` and
+  `reports/light_artefact.py` (same `p` / `min_p` columns; the unread `test` / `paired` columns are gone);
+  `reports/figures.py` uses `plot_stat_comparison` / `plot_interaction` (the single-panel plotters,
+  formerly `*_single`). Numbers unchanged: `tests/e2e/reference/e2e_contrasts.csv` matches to 1e-9.
+  Behaviour to know about: `load_experiment` now raises on a session it used to skip with a warning
+  (`strict=False` restores the skip); `ExperimentData.load` warns on a snapshot written by another
+  library version — re-export the snapshot rather than carry it forward; `animal.session_table` is
+  counts + accuracy only (per-session statistics come from `compute_phase_stats(per_session=True)`);
+  `TrialArrays.trial_key` is available for aligning per-trial neural data.
+- Tests: the two grid-search unit tests were vacuous (a `hasattr` guard that never held; a smoke
+  test that passed the dict of both grids, caught the resulting exception and skipped). They now
+  check `FAST < COARSE < DEFAULT` per model and run `compute_grid_search_cv` on `FAST_GRID['BE']`
+  with no try/except. `test_run_id_shape` accepts `nogit` so it passes from a tarball.
+
+
+- `data/stimulus_check.py`: `check_stimulus_delivery(trial_summary_csv)` reads a run's Trial_Epochs and
+  Long_Form_Timestamps logs and says, per trial, whether the sound was sent (True / False / NA when the logs cannot
+  tell). numpy and pandas only, so the file can be shared on its own.
+- `export_snapshot` removes trials whose sound was never sent (the rig's Asym sampler fault: about 6 % of trials in
+  Asym_Left / Asym_Right sessions run before 5 Oct 2026, all on the hard side, each carrying the previous trial's
+  Stim_Relative). The trial after a removed one loses its lag-1 history; trials that cannot be checked (the
+  cut-off end of runs that ended with Bonsai being killed) are kept, with the result in
+  `trials.extra['stimulus_check']`. Counts are in the snapshot metadata under `stimulus_check`. Sessions whose
+  files do not line up with the loaded trials are left as loaded, with a warning.
+- Snapshot format version 2: version-1 snapshots still contain those trials, so `load_snapshot` refuses them.
+  Re-export (`sc-export-snapshot`) and re-run the reports; Hard-session numbers move slightly, Uniform does not,
+  and the synthetic e2e reference is unchanged.
+
 ## 0.7.0 — 2026-10
 
 - Model identification for the talk run. `sc-feature-selection` (tables, plots, forward-selection
@@ -25,21 +57,6 @@
   **Numbers change:** `split_folds_by_block` now makes contiguous folds balanced by session count
   (4 -> 2/2, 5 -> 3/2) instead of the trial-balanced greedy merge, which could put a single
   session in a fold and starve the moments net. Grid search and SBI share the same folds as before.
-
-## Unreleased
-
-- `data/stimulus_check.py`: `check_stimulus_delivery(trial_summary_csv)` reads a run's Trial_Epochs and
-  Long_Form_Timestamps logs and says, per trial, whether the sound was sent (True / False / NA when the logs cannot
-  tell). numpy and pandas only, so the file can be shared on its own.
-- `export_snapshot` removes trials whose sound was never sent (the rig's Asym sampler fault: about 6 % of trials in
-  Asym_Left / Asym_Right sessions run before 5 Oct 2026, all on the hard side, each carrying the previous trial's
-  Stim_Relative). The trial after a removed one loses its lag-1 history; trials that cannot be checked (the
-  cut-off end of runs that ended with Bonsai being killed) are kept, with the result in
-  `trials.extra['stimulus_check']`. Counts are in the snapshot metadata under `stimulus_check`. Sessions whose
-  files do not line up with the loaded trials are left as loaded, with a warning.
-- Snapshot format version 2: version-1 snapshots still contain those trials, so `load_snapshot` refuses them.
-  Re-export (`sc-export-snapshot`) and re-run the reports; Hard-session numbers move slightly, Uniform does not,
-  and the synthetic e2e reference is unchanged.
 
 ## 0.6.1 — 2026-10
 

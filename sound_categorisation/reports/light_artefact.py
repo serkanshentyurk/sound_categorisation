@@ -180,8 +180,7 @@ def run_light_artefact(experiment, animals: Sequence[str], run: Path, cohort: st
     for kind, sub in rows_df.groupby('kind', sort=False):
         if sub['group'].nunique() < 2:
             continue
-        for stat, res in compare_groups(sub, group_col='group', groups=('wt', 'het')).items():
-            tests.append({'kind': kind, 'stat': stat, **{k: v for k, v in res.items() if np.isscalar(v)}})
+        tests += compare_groups(sub, group_col='group', groups=('wt', 'het')).table().assign(kind=kind).to_dict('records')
     tests_df = pd.DataFrame(tests)
     rows_df.assign(cohort=cohort, distribution=distribution).to_csv(out / 'group' / 'group_rows.csv', index=False)
     tests_df.assign(cohort=cohort, distribution=distribution).to_csv(out / 'group' / 'group_tests.csv', index=False)

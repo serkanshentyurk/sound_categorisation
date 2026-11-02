@@ -29,7 +29,8 @@ sound_categorisation/                 ← repo root (pyproject.toml, config.yaml
 │   ├── reports/                      compute → tables → figures → PDF → summary (+ README, CLI)
 │   ├── plotting/                     project plotters (CV, opto swarms, assignment, SBI diagnostics)
 │   └── cli/                          entry points, installed as sc-* commands: reports, export_snapshot,
-│                                     make_synthetic_cohort, new_run, train_sbi, run_sbi, run_gs, consensus
+│                                     make_synthetic_cohort, make_synthetic_run, new_run, sbi_train, sbi_condition,
+│                                     sbi_sbc, grid_search, consensus, feature_selection
 ├── slurm/                            job scripts + submit.sh (array size derived from tasks.py)
 ├── notebooks/                        the story, one notebook per chapter (notebooks/README.md); nb_setup.py
 ├── tests/                            unit/ (fast) · e2e/ (report pipeline on synthetic data, pinned reference) · fit/ (torch)

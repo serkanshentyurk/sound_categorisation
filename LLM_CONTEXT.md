@@ -64,6 +64,13 @@ module roles: `README.md`, `ARCHITECTURE.md`. Environments, data, cluster: `SETU
 - `expert_uniform` and other presets exist only after a config/snapshot is loaded; for in-memory data
   call `sound_categorisation.data.cohort.ensure_presets()`.
 - `filter_trials(trial_type='all')` keeps laser trials (and drops aborts, like every trial type).
+- `load_experiment` (behav_utils ≥ 0.8) raises on a session that fails to load instead of skipping it
+  with a warning; `strict=False` restores the skip, but look at the file first — a skipped session
+  shifts every later `session_idx`. `ExperimentData.load` warns when a snapshot was written by another
+  library version: re-export (`sc-export-snapshot`) rather than carry it forward.
+- `animal.session_table` is counts + accuracy, for picking sessions; per-session statistics come from
+  `compute_phase_stats(..., per_session=True)`. `compare_groups` returns a `GroupComparison`
+  (`.test(stat)`, `.table()`), not a dict.
 - Per-session PSE at this cohort's sigma has SE ≈ 0.1; `pse_fixed` (only the criterion free) is steadier.
   `pse_dynamics` τ is not identifiable at ~500 trials; it is in the tables and per-animal PDFs, not on the
   summary pages, for that reason.
@@ -71,5 +78,7 @@ module roles: `README.md`, `ARCHITECTURE.md`. Environments, data, cluster: `SETU
 - `*.egg-info`, `build/`, `__pycache__` are build artefacts; they must not be tracked.
 
 ## Open work
-Notebooks (stage 3) await the agreed chapter story; Aim 1 real-data consensus run; next-cohort design
+Aim 1 real-data consensus run (pipeline in place, cluster run pending); SLDS state assignment not yet
+written; `31_model_identification` real-data section waits on the consensus run; next-cohort design
 (blocked distributions, interleaved session types, opsin-negative light control at matched power).
+Neural data (Aim 3): align on `TrialArrays.trial_key`; the alignment layer is project code, not library.

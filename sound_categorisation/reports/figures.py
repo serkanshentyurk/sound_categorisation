@@ -13,9 +13,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from behav_utils.plotting import (
-    plot_interaction_single,
+    plot_interaction,
     plot_psychometric_curve,
-    plot_stat_comparison_single,
+    plot_stat_comparison,
     plot_update_matrix,
 )
 from behav_utils.readouts import UpdateMatrix
@@ -44,7 +44,7 @@ def contrast_grid(result, stats: Sequence[str], units: Sequence[str], title: str
     fig, axf = _grid(len(stats), ncols)
     units = [u for u in units if u in result.units] or None
     for ax, stat in zip(axf, stats):
-        plot_stat_comparison_single(result, stat, ax=ax, units=units)
+        plot_stat_comparison(result, stat, ax=ax, units=units)
     for ax in axf[len(stats):]:
         fig.delaxes(ax)
     fig.suptitle(title, fontsize=12)
@@ -57,7 +57,7 @@ def interaction_grid(interaction, stats: Sequence[str], units: Sequence[str], ti
     units = [u for u in units if u in interaction.units] or None
     stats = [s for s in stats if s in interaction.interaction.index]
     for ax, stat in zip(axf, stats):
-        plot_interaction_single(interaction, stat, ax=ax, units=units)
+        plot_interaction(interaction, stat, ax=ax, units=units)
     for ax in axf[len(stats):]:
         fig.delaxes(ax)
     fig.suptitle(title, fontsize=12)

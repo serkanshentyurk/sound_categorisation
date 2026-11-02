@@ -6,7 +6,6 @@ Full validation against the manuscript protocol is in NB 11/12.
 """
 
 import numpy as np
-import pytest
 
 
 class TestParameterGrid:
@@ -19,11 +18,10 @@ class TestParameterGrid:
         assert COARSE_GRID is not None
 
     def test_coarse_grid_smaller_than_default(self):
-        """COARSE_GRID exists and is fewer points than DEFAULT_GRID."""
-        from sound_categorisation.inference.grid_search import COARSE_GRID, DEFAULT_GRID
-        # Both should be ParameterGrid or expose .n_points
-        if hasattr(DEFAULT_GRID, 'n_points') and hasattr(COARSE_GRID, 'n_points'):
-            assert COARSE_GRID.n_points() < DEFAULT_GRID.n_points()
+        """Per model, COARSE_GRID has fewer points than DEFAULT_GRID (and FAST_GRID fewer still)."""
+        from sound_categorisation.inference.grid_search import COARSE_GRID, DEFAULT_GRID, FAST_GRID
+        for model in ('BE', 'SC'):
+            assert FAST_GRID[model].n_combinations < COARSE_GRID[model].n_combinations < DEFAULT_GRID[model].n_combinations
 
 
 class TestSimulateModelMatrices:
@@ -34,22 +32,19 @@ class TestSimulateModelMatrices:
         from sound_categorisation.inference.grid_search import simulate_model_matrices
 
         # Minimal call: a single param set
-        try:
-            rng = np.random.default_rng(0)
-            stimuli = rng.uniform(-1, 1, 500)
-            categories = (stimuli > 0).astype(int)
-            no_response = np.zeros(500, dtype=bool)
-            not_blockstart = np.ones(500, dtype=bool)
-            um, cm = simulate_model_matrices(
-                'be', stimuli, categories, no_response, not_blockstart,
-                sigma_percep=0.1, A_repulsion=0.1,
-                param1=0.3, param2=0.1,
-                param1_name='eta_learning', param2_name='eta_relax',
-                seed=0, burn_in=50, n_bins=8,
-            )
-            assert um is not None and cm is not None
-        except (TypeError, NotImplementedError) as e:
-            pytest.skip(f"API signature differs: {e}")
+        rng = np.random.default_rng(0)
+        stimuli = rng.uniform(-1, 1, 500)
+        categories = (stimuli > 0).astype(int)
+        no_response = np.zeros(500, dtype=bool)
+        not_blockstart = np.ones(500, dtype=bool)
+        um, cm = simulate_model_matrices(
+            'be', stimuli, categories, no_response, not_blockstart,
+            sigma_percep=0.1, A_repulsion=0.1,
+            param1=0.3, param2=0.1,
+            param1_name='eta_learning', param2_name='eta_relax',
+            seed=0, burn_in=50, n_bins=8,
+        )
+        assert um.shape == (8, 8) and cm.shape == (8, 8)
 
 
 class TestComputeGridSearchCV:
@@ -57,18 +52,15 @@ class TestComputeGridSearchCV:
 
     def test_runs_on_synthetic_animal(self, synthetic_animal):
         """Function runs without error on small synthetic data."""
-        from sound_categorisation.inference.grid_search import COARSE_GRID, compute_grid_search_cv
+        from sound_categorisation.inference.grid_search import FAST_GRID, compute_grid_search_cv
 
         clean = [s for s in synthetic_animal.sessions if s.session_type != 'masking'][:4]
 
-        # Run with the minimum effort: few seeds, COARSE_GRID
-        try:
-            result = compute_grid_search_cv(
-                clean, model_type='be', grid=COARSE_GRID,
-                n_folds=2, fit_target='update_matrix',
-            )
-            assert result is not None
-            # Should have some standard keys
-            assert isinstance(result, dict)
-        except Exception as e:
-            pytest.skip(f"compute_grid_search_cv smoke skipped: {e}")
+        # Minimum effort: the smallest grid, two folds. No try/except: a failure here is a failure.
+        result = compute_grid_search_cv(
+            clean, model_type='BE', grid=FAST_GRID['BE'],
+            n_folds=2, fit_target='update_matrix',
+        )
+        assert isinstance(result, dict)
+        assert {'best_params', 'avg_test_error', 'test_errors', 'model'} <= set(result)
+        assert len(result['test_errors']) == 2

@@ -200,8 +200,8 @@ def _session_rows(record, kept: bool, reason: str):
     for s in record.sessions:
         summ = s.summary()
         rows.append({'animal_id': record.animal_id, 'kept': kept, 'reason': reason,
-                     'n_sessions': len(record.sessions), 'session_idx': summ['session_idx'],
-                     'date': summ['date'], 'n_valid': summ['n_valid'], 'accuracy': summ['perf'],
+                     'n_sessions': len(record.sessions), 'session_idx': summ.session_idx,
+                     'date': summ.date, 'n_valid': summ.n_valid, 'accuracy': summ.accuracy,
                      'true_model': record.true_model})
     if not record.sessions:
         rows.append({'animal_id': record.animal_id, 'kept': kept, 'reason': reason, 'n_sessions': 0,

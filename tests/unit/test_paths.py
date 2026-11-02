@@ -30,7 +30,8 @@ def test_results_root_env_override(tmp_path, monkeypatch):
 def test_run_id_shape():
     now = datetime(2026, 10, 1, 14, 32)
     rid = new_run_id(now=now)
-    assert rid.startswith('2026-10-01_1432_') and len(rid.split('_')[2]) == 7
+    sha = rid.split('_')[2]
+    assert rid.startswith('2026-10-01_1432_') and (len(sha) == 7 or sha == 'nogit')   # 'nogit' from a tarball
     assert new_run_id(fast=True, now=now).endswith('_fast')
     assert new_run_id(label='hard a / b', now=now).endswith('_hard-a-b')
     assert new_run_id(now=now) != new_run_id(now=datetime(2026, 10, 1, 14, 33))   # same day, same sha: distinct

@@ -17,7 +17,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List, Sequence, Tuple
 
-import numpy as np
 import pandas as pd
 from behav_utils.analysis import collect_rows, compare_groups
 from behav_utils.data.arrays import TrialArrays
@@ -251,7 +250,6 @@ def compute_group(experiment, animals: Sequence[str], distribution: str, trial_c
         if sub['group'].nunique() < 2:       # one genotype present (e.g. --limit 1): rows only, no test
             continue
         res = compare_groups(sub, group_col='group', groups=('wt', 'het'))   # WT is the reference
-        for stat, r in res.items():
-            tests.append({'kind': kind, 'stat': stat, **{k: v for k, v in r.items() if np.isscalar(v)}})
+        tests += res.table().assign(kind=kind).to_dict('records')
     tests_df = pd.DataFrame(tests, columns=['kind', 'stat', 'p'] if not tests else None)
     return GroupResult(cohort, distribution, design, site, trial_class, df, tests_df, tuple(animals), by_animal, trajectories)
