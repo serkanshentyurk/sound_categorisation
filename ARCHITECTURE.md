@@ -28,8 +28,10 @@ behaviour/
   contrasts.py       OptoContrasts = the contrasts of the opto design, as typed library results:
                        within         opto sessions:    laser-on − laser-off trials     (permutation p valid)
                        within_masking masking sessions: flagged − unflagged trials      (null control)
+                       (post_opto: the reference leaves the post-opto trials out; they are laser-off trials)
                        between        opto sessions − masking sessions, all trials      (bootstrap only)
-                       compensation   laser-off trials of opto sessions − masking sessions (bootstrap only)
+                       compensation   laser-off trials of opto sessions − unflagged trials of masking sessions
+                                      (bootstrap only)
                        dod            within − within_masking (Interaction)
                        vs_ppc         ALM sessions − PPC opto sessions (ALM design)
                      STATS / STATS_RT / SENSITIVITY / BIAS: which statistics each design reports

@@ -6,13 +6,17 @@ For one animal at one distribution, given its session sets (``cohort.collect_ses
     within          {trial_class} vs non_opto trials, in the manipulation sessions   (permutation p valid)
     within_masking  {trial_class} vs non_opto trials, in the masking sessions        (permutation p valid)
     between         manipulation vs masking sessions, all trials             (bootstrap only)
-    compensation    laser-OFF trials of the manipulation sessions vs masking sessions, all trials
-                    (bootstrap only) — does the animal's baseline move in a session where 30 % of
+    compensation    laser-OFF trials of the manipulation sessions vs the unflagged trials of the masking
+                    sessions (bootstrap only) — does the animal's baseline move in a session where 30 % of
                     trials are lasered? In WT this is the criterion offset that compensates the light effect.
+                    Like for like: the flagged masking trials carry the masking effect, so they stay out.
     dod             within − within_masking                                   (bootstrap only)
     vs_ppc          ALM vs PPC-opto sessions, all trials (ALM design only)    (bootstrap only)
 
-``trial_class`` (trial of interest) is ``'opto'`` or ``'post_opto'``. Every entry is a
+``trial_class`` (trial of interest) is ``'opto'`` or ``'post_opto'``. The reference of ``within`` and
+``within_masking`` is the laser-off (unflagged) trials; for ``post_opto`` it leaves the post-opto trials
+out, since they are laser-off trials themselves and the two sets must not share trials (the key stays
+``post_opto_vs_non_opto``). Every entry is a
 ``DeltaStats`` (or ``Interaction`` for ``dod``) from ``behav_utils.analysis``;
 ``dod_point`` gives the per-animal delta-of-deltas as a Series for the group fold.
 
@@ -34,7 +38,7 @@ from behav_utils.analysis.comparison import (
     compute_interaction,
     contrast_key,
 )
-from behav_utils.data.ops.filtering import filter_trials
+from behav_utils.data.ops.filtering import build_mask, filter_trials, opto_mask
 from behav_utils.stats import PSYCHOMETRIC
 
 __all__ = ['OptoContrasts', 'ppc_contrasts', 'alm_contrasts', 'dod_point',
@@ -94,23 +98,34 @@ def _delta(phases, names, reference, n_perm, n_boot, units):
                               n_permutations=n_perm, n_bootstrap=n_boot, units=units)
 
 
+def _reference(sessions, laser_off, trial_class: str):
+    """The trials ``trial_class`` is compared with: the laser-off trials, minus the post-opto ones when
+    ``trial_class`` is ``post_opto`` (they are laser-off trials themselves; up to 0.7 they sat on both
+    sides of the contrast, diluting it)."""
+    if trial_class != 'post_opto':
+        return laser_off
+    return filter_trials(sessions, mask_fn=lambda s: build_mask(s.trials) & ~opto_mask(s.trials, delta=1),
+                         label='non_opto without post_opto')
+
+
 def ppc_contrasts(opto, masking, trial_class: str, names: Sequence[str] = STATS, *,
                   n_boot: int = N_BOOT, n_perm: int = N_PERM,
                   units: Sequence[str] = DUAL_UNITS) -> OptoContrasts:
     """PPC design. ``n_boot=0`` gives point differences only (the group fold) and no dod."""
     key = contrast_key(trial_class, 'non_opto')
-    o_toi, o_non = filter_trials(opto, trial_type=trial_class), filter_trials(opto, trial_type='non_opto')
-    m_toi, m_non = filter_trials(masking, trial_type=trial_class), filter_trials(masking, trial_type='non_opto')
+    o_toi, o_off = filter_trials(opto, trial_type=trial_class), filter_trials(opto, trial_type='non_opto')
+    m_toi, m_off = filter_trials(masking, trial_type=trial_class), filter_trials(masking, trial_type='non_opto')
+    o_ref, m_ref = _reference(opto, o_off, trial_class), _reference(masking, m_off, trial_class)
     o_all, m_all = filter_trials(opto, trial_type='all'), filter_trials(masking, trial_type='all')
     within = within_masking = between = compensation = dod = None
-    if o_toi and o_non:
-        within = _delta({trial_class: o_toi, 'non_opto': o_non}, names, 'non_opto', n_perm, n_boot, units)
-    if m_toi and m_non:
-        within_masking = _delta({trial_class: m_toi, 'non_opto': m_non}, names, 'non_opto', n_perm, n_boot, units)
+    if o_toi and o_ref:
+        within = _delta({trial_class: o_toi, 'non_opto': o_ref}, names, 'non_opto', n_perm, n_boot, units)
+    if m_toi and m_ref:
+        within_masking = _delta({trial_class: m_toi, 'non_opto': m_ref}, names, 'non_opto', n_perm, n_boot, units)
     if o_all and m_all:
         between = _delta({'opto': o_all, 'masking': m_all}, names, 'masking', 0, n_boot, units)
-    if o_non and m_all:
-        compensation = _delta({'laser_off': o_non, 'masking': m_all}, names, 'masking', 0, n_boot, units)
+    if o_off and m_off:
+        compensation = _delta({'laser_off': o_off, 'masking': m_off}, names, 'masking', 0, n_boot, units)
     if n_boot > 0 and within is not None and within_masking is not None:
         dod = compute_interaction(within, within_masking, key, label_a='opto', label_b='masking')
     return OptoContrasts(trial_class, key, within, within_masking, between, compensation, dod, None,
@@ -122,19 +137,20 @@ def alm_contrasts(alm, masking, opto, trial_class: str, names: Sequence[str] = S
                   units: Sequence[str] = DUAL_UNITS) -> OptoContrasts:
     """ALM design: the PPC four plus ALM vs PPC-opto (all trials)."""
     key = contrast_key(trial_class, 'non_opto')
-    a_toi, a_non = filter_trials(alm, trial_type=trial_class), filter_trials(alm, trial_type='non_opto')
-    m_toi, m_non = filter_trials(masking, trial_type=trial_class), filter_trials(masking, trial_type='non_opto')
+    a_toi, a_off = filter_trials(alm, trial_type=trial_class), filter_trials(alm, trial_type='non_opto')
+    m_toi, m_off = filter_trials(masking, trial_type=trial_class), filter_trials(masking, trial_type='non_opto')
+    a_ref, m_ref = _reference(alm, a_off, trial_class), _reference(masking, m_off, trial_class)
     a_all, m_all, o_all = (filter_trials(alm, trial_type='all'), filter_trials(masking, trial_type='all'),
                            filter_trials(opto, trial_type='all'))
     within = within_masking = between = compensation = dod = vs_ppc = None
-    if a_toi and a_non:
-        within = _delta({trial_class: a_toi, 'non_opto': a_non}, names, 'non_opto', n_perm, n_boot, units)
-    if m_toi and m_non:
-        within_masking = _delta({trial_class: m_toi, 'non_opto': m_non}, names, 'non_opto', n_perm, n_boot, units)
+    if a_toi and a_ref:
+        within = _delta({trial_class: a_toi, 'non_opto': a_ref}, names, 'non_opto', n_perm, n_boot, units)
+    if m_toi and m_ref:
+        within_masking = _delta({trial_class: m_toi, 'non_opto': m_ref}, names, 'non_opto', n_perm, n_boot, units)
     if a_all and m_all:
         between = _delta({'alm': a_all, 'masking': m_all}, names, 'masking', 0, n_boot, units)
-    if a_non and m_all:
-        compensation = _delta({'laser_off': a_non, 'masking': m_all}, names, 'masking', 0, n_boot, units)
+    if a_off and m_off:
+        compensation = _delta({'laser_off': a_off, 'masking': m_off}, names, 'masking', 0, n_boot, units)
     if n_boot > 0 and within is not None and within_masking is not None:
         dod = compute_interaction(within, within_masking, key, label_a='alm', label_b='masking')
     if a_all and o_all:

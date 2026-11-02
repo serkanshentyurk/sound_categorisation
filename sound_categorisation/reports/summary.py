@@ -189,14 +189,14 @@ def uniform_page(T: dict, cohort: str):
     _stat_row(fig, gs, 1, df, gt, distribution='Uniform', kind='between', stats=STATS4,
               title='2  OPTO SESSIONS − MASKING SESSIONS, no trial filtering (opto sessions include laser-on and laser-off trials).   Session bootstrap; filled = CI excludes 0')
     _stat_row(fig, gs, 2, df, gt, distribution='Uniform', kind='compensation', stats=STATS4,
-              title='3  LASER-OFF TRIALS OF OPTO SESSIONS − MASKING SESSIONS (all trials): does the baseline move in a lasered session? (compensation)')
+              title='3  LASER-OFF TRIALS OF OPTO SESSIONS − UNFLAGGED TRIALS OF MASKING SESSIONS: does the baseline move in a lasered session? (compensation)')
     # small: fake-opto null, post-laser
     ax = fig.add_subplot(gs[3, 0])
     _dots(ax, _sel(df, distribution='Uniform', kind='within_masking', stat='mu'), ylabel='Δ μ', label_animals=False)
     ax.set_title('4  ONLY MASKING SESSIONS:\nopto-flagged (laser at 0) − non-opto trials', fontsize=8.5, loc='left')
     ax = fig.add_subplot(gs[3, 1])
     _dots(ax, _sel(df, distribution='Uniform', trial_class='post_opto', kind='within', stat='mu'), ylabel='Δ μ', label_animals=False)
-    ax.set_title('5  ONLY OPTO SESSIONS:\ntrial after a laser-on trial − laser-off trials', fontsize=8.5, loc='left')
+    ax.set_title('5  ONLY OPTO SESSIONS:\ntrial after a laser-on trial − other laser-off trials', fontsize=8.5, loc='left')
     # session-order strip
     ax = fig.add_subplot(gs[3, 2:])
     u = tr[(tr['phase'] == 'Uniform')] if len(tr) and 'phase' in tr else pd.DataFrame()
@@ -225,7 +225,7 @@ def hard_page(T: dict, cohort: str, distribution: str):
     _stat_row(fig, gs, 1, df, gt, distribution=distribution, kind='between', stats=STATS4,
               title=f'2  {distribution}, OPTO SESSIONS − MASKING SESSIONS, no trial filtering (six vs six; masking recorded later, so drift is inside this number)')
     _stat_row(fig, gs, 2, df, gt, distribution=distribution, kind='compensation', stats=STATS4,
-              title=f'3  {distribution}, LASER-OFF TRIALS OF OPTO SESSIONS − MASKING SESSIONS (all trials): the compensation')
+              title=f'3  {distribution}, LASER-OFF TRIALS OF OPTO SESSIONS − UNFLAGGED TRIALS OF MASKING SESSIONS: the compensation')
     hard = tr[tr['phase'].isin(['Hard-A', 'Hard-B'])] if len(tr) and 'phase' in tr else pd.DataFrame()
     # trajectory: the whole A/B alternation, both distributions, one panel per genotype
     for c, geno in enumerate(('wt', 'het')):
@@ -272,7 +272,7 @@ def overall_page(T: dict, cohort: str):
     ax.set_title('ALM bilateral sessions: laser-on − laser-off, accuracy', fontsize=10, loc='left')
     ax = fig.add_subplot(gs[1, 3])
     _dots(ax, _sel(df, distribution='Uniform', trial_class='post_opto', kind='within', stat='mu'), ylabel='Δ μ', label_animals=False)
-    ax.set_title('Uniform opto sessions: post-laser trials − laser-off, μ', fontsize=10, loc='left')
+    ax.set_title('Uniform opto sessions: post-laser trials − other laser-off trials, μ', fontsize=10, loc='left')
     _legend(fig)
     fig.suptitle(f'{cohort} — overall: change in criterion μ per mouse (positive = shifted toward A).   Top row: only opto sessions, laser-on − laser-off trials.   Bottom row: opto sessions − masking sessions, no trial filtering', fontsize=11, y=0.995)
     return fig

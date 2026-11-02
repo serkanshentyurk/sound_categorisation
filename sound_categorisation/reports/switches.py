@@ -10,7 +10,7 @@ a two-page summary (Fig. 5C in three methods; speed/plateau/overnight by transit
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Dict, List, Sequence
 
@@ -21,6 +21,7 @@ import pandas as pd
 from matplotlib.backends.backend_pdf import PdfPages
 
 from sound_categorisation.behaviour.adaptation import (
+    BiasRule,
     SwitchResult,
     animal_switches,
     compute_phase_curves,
@@ -79,7 +80,8 @@ def compute_switches_cohort(experiment, animals: Sequence[str], *, cohort: str =
     return SwitchesResult(cohort, out, _cat(params), _cat(curves))
 
 
-def switch_tables(g: SwitchesResult) -> Dict[str, pd.DataFrame]:
+def switch_tables(g: SwitchesResult, bias_rule=None) -> Dict[str, pd.DataFrame]:
+    """The switch report's tables; ``bias_rule`` (adaptation.BiasRule, default BiasRule()) is the cohort QC."""
     lab = {'cohort': g.cohort}
     rows, conv, sess, over = [], [], [], []
     for aid, results in g.results.items():
@@ -92,7 +94,7 @@ def switch_tables(g: SwitchesResult) -> Dict[str, pd.DataFrame]:
             over.append(r.overnight.assign(**key))
     sessions = _cat(sess)
     if len(sessions):
-        sessions = flag_biased_sessions(sessions)
+        sessions = flag_biased_sessions(sessions, bias_rule)
     sw = _cat(rows)
     # pre/post per switch from the block-pooled 4-parameter fits (robust) + the pinned last-250-trial values
     pre_post = pd.DataFrame()
@@ -502,14 +504,16 @@ def switches_summary(T: Dict[str, pd.DataFrame], cohort: str, out_dir: Path) -> 
 
 
 def run_switches(experiment, animals: Sequence[str], run: Path, cohort: str, meta: dict | None = None,
-                 **kw) -> Path:
-    """Write the switch report into ``<run>/switches/`` (``run`` is a run directory from ``start_run``)."""
+                 bias_rule=None, **kw) -> Path:
+    """Write the switch report into ``<run>/switches/`` (``run`` is a run directory from ``start_run``).
+    ``bias_rule``: the cohort QC (adaptation.BiasRule; default BiasRule()), recorded in meta.json."""
     matplotlib.use('Agg')
     g = compute_switches_cohort(experiment, animals, cohort=cohort, **kw)
     out = Path(run) / 'switches'
     (out / 'pdf').mkdir(parents=True, exist_ok=True)
-    T = switch_tables(g)
-    write_result(out, T, None, {**(meta or {}), 'animals': g.animals, 'kind': 'switches'})
+    rule = bias_rule if bias_rule is not None else BiasRule()
+    T = switch_tables(g, rule)
+    write_result(out, T, None, {**(meta or {}), 'animals': g.animals, 'kind': 'switches', 'bias_rule': asdict(rule)})
     for aid, results in g.results.items():
         with PdfPages(out / 'pdf' / f'{aid}_switches.pdf') as pdf:
             for fig in (animal_page(results, aid),) + ((psychometrics_animal_page(T, aid),) if len(T['psychometrics']) else ()):

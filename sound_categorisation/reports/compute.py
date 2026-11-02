@@ -14,7 +14,7 @@ seconds-long structural check used by ``--fast`` and the e2e tests.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, is_dataclass
 from typing import Dict, List, Sequence, Tuple
 
 import pandas as pd
@@ -28,7 +28,7 @@ from behav_utils.readouts import (
     compute_update_matrix,
 )
 
-from sound_categorisation.behaviour.adaptation import Trajectory, compute_trajectory
+from sound_categorisation.behaviour.adaptation import BiasRule, Trajectory, compute_trajectory
 from sound_categorisation.behaviour.contrasts import (
     BIAS,
     DUAL_UNITS,
@@ -64,6 +64,10 @@ class Settings:
     trajectory: bool = True        # per-session trajectory + adaptation (pse_dynamics per session)
     curve_bootstrap: int = 200     # bootstrap draws for the psychometric-curve band
     sigma: float | None = None  # sigma for the normative PSE; None = the animal's own psychometric sigma
+    baseline_preset: str = 'expert_uniform'   # expert-Uniform baseline of the trajectory (expert_reference) ...
+    baseline_last_n: int = 5                  # ... its last N sessions ...
+    baseline_trials: str = 'non_opto'         # ... on these trials
+    bias_rule: BiasRule = BiasRule()          # cohort QC on the trajectory tables (adaptation.BiasRule)
 
     @classmethod
     def fast(cls) -> Settings:
@@ -82,7 +86,8 @@ class Settings:
         return d
 
     def to_dict(self) -> dict:
-        return {k: (list(v) if isinstance(v, tuple) else v) for k, v in self.__dict__.items()}
+        return {k: (list(v) if isinstance(v, tuple) else asdict(v) if is_dataclass(v) else v)
+                for k, v in self.__dict__.items()}
 
 
 @dataclass(frozen=True)
@@ -144,7 +149,9 @@ def _trajectory(animal, distribution: str, s: Settings) -> Trajectory | None:
     if not s.trajectory:
         return None
     try:
-        return compute_trajectory(animal, trajectory_distributions(distribution), sigma=s.sigma)
+        return compute_trajectory(animal, trajectory_distributions(distribution), sigma=s.sigma,
+                                  baseline_preset=s.baseline_preset, baseline_last_n=s.baseline_last_n,
+                                  baseline_trials=s.baseline_trials, bias_rule=s.bias_rule)
     except Exception as exc:                          # never let one animal kill the batch
         import warnings
         warnings.warn(f'{getattr(animal, "animal_id", "?")}: trajectory ({distribution}) failed: {exc}', stacklevel=2)

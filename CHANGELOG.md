@@ -3,6 +3,34 @@
 
 ## Unreleased
 
+Handover review, batch 3: report numbers change; marked ▲. Needs `behav_utils` 0.9.0.
+
+- ▲ Hard-A / Hard-B density (`data/stimuli.py`): the hard side is the rig's truncated exponential, rate
+  2.15329 (`Distribution_Exp_Rate` in `Sound_Cat_V2.bonsai`, recorded in every Hard session), mean distance
+  from the boundary 1/3 — the snapshot gives 0.328-0.334 after the stable start. It used the legacy density
+  λ·exp(-λd) + exp(-λ), λ ≈ 1.841 (mean 0.378), which this rig never played. Every `normative_pse` grows by
+  about a third (Hard-A at sigma 0.2: +0.059 → +0.078), so the switch report's and the trajectory's
+  convergence values shrink by about a quarter. Synthetic Hard sessions use the same density. `rate` is a
+  parameter of every function; sampling is exact (inverse CDF).
+- ▲ `post_opto` contrasts: the reference was every laser-off trial, post-opto ones included, so about a third
+  of the reference was the test set and the effect was diluted (and the permutation gave those trials two
+  labels; `behav_utils` 0.9.0 refuses that). The reference is now the other laser-off trials, in `within`
+  and `within_masking` of both designs, hence `dod`. The key stays `post_opto_vs_non_opto`.
+- ▲ `compensation`: laser-off trials of the laser sessions vs the masking sessions' unflagged trials (was all
+  masking trials, whose flagged ones carry the masking effect). Both designs.
+- ▲ Cohort QC (`adaptation.BiasRule`): an animal is biased only when its flagged Hard sessions lean the same
+  way on both Hard-A and Hard-B; flags confined to one distribution used to count as the same lean. The rule
+  (thresholds, majority, `both_distributions`) is a `BiasRule`, `Settings.bias_rule` in the opto report and
+  `run_switches(bias_rule=…)` in the switch report, written to meta.json.
+- ▲ Through `behav_utils` 0.9.0 (exclusions before positional selection): `expert_uniform` now takes the last
+  half of the Uniform sessions that are not masking / washout / ALM, so the trajectory baseline can differ where
+  the old order left fewer than 5 sessions. The baseline itself is unchanged in definition and is now stated in
+  the report README, including that it departs from the masking-only rule; `Settings.baseline_preset`,
+  `baseline_last_n`, `baseline_trials` change it.
+- Pin `behav_utils` v0.9.0.
+- `tests/e2e/reference/e2e_contrasts.csv` regenerated: only the four `compensation` rows moved (reference
+  n 540 → 363, the unflagged masking trials); every other pinned number is unchanged.
+
 Handover review, batch 1 (no report number changes).
 
 - `compare_models` pairs BE and SC by rep (grid-search seed / SBI repeat). It used to drop NaN errors from

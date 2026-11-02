@@ -5,6 +5,7 @@ Covers sample_distribution, compute_distribution_density, compute_normative_pse.
 """
 
 import numpy as np
+import pytest
 
 
 class TestSampleDistribution:
@@ -96,3 +97,43 @@ class TestComputeNormativePSE:
         from sound_categorisation.data.stimuli import compute_normative_pse
         pse = compute_normative_pse(distribution='uniform', sigma_percep=0.15)
         assert isinstance(pse, float) or np.isscalar(pse)
+
+
+class TestRigHardDensity:
+    """The hard side is the rig's truncated exponential (Distribution_Exp_Rate = 2.15329), not the legacy density."""
+
+    def test_hard_side_mean_distance_is_a_third(self):
+        """The rig's rate puts the mean distance from the boundary at 1/3 (the snapshot gives 0.328-0.334
+        after the stable start); the legacy density gave 0.378."""
+        from sound_categorisation.data.stimuli import sample_distribution
+        rng = np.random.default_rng(0)
+        x_a, _ = sample_distribution(200_000, 'hard_a', rng=rng)
+        x_b, _ = sample_distribution(200_000, 'hard_b', rng=rng)
+        assert abs(-x_a[x_a < 0].mean() - 1 / 3) < 0.005
+        assert abs(x_b[x_b > 0].mean() - 1 / 3) < 0.005
+        assert abs(x_a[x_a > 0].mean() - 0.5) < 0.005           # the other side stays uniform
+
+    def test_density_integrates_to_one_and_peaks_at_the_boundary(self):
+        from scipy.integrate import quad
+        from sound_categorisation.data.stimuli import (
+            HARD_EXP_RATE,
+            compute_distribution_density,
+            hard_side_density,
+        )
+        assert quad(lambda d: float(hard_side_density(d)), 0, 1)[0] == pytest.approx(1.0, abs=1e-9)
+        peak = HARD_EXP_RATE / (1 - np.exp(-HARD_EXP_RATE))
+        dens = compute_distribution_density('hard_b', np.array([0.0, 1.0, -0.5]))
+        assert dens['density_b'][0] == pytest.approx(peak)
+        assert dens['density_b'][1] == pytest.approx(peak * np.exp(-HARD_EXP_RATE))
+        assert dens['density_a'][2] == pytest.approx(1.0)
+
+    def test_normative_pse_pinned(self):
+        """Ideal-observer PSE for the rig's density (independently computed: +0.0779 at sigma 0.2; the
+        legacy density gave +0.059)."""
+        from sound_categorisation.data.stimuli import compute_normative_pse
+        assert compute_normative_pse('hard_a', 0.2) == pytest.approx(0.0779, abs=1e-3)
+        assert compute_normative_pse('hard_b', 0.2) == pytest.approx(-0.0779, abs=1e-3)
+
+    def test_rate_is_a_parameter(self):
+        from sound_categorisation.data.stimuli import compute_normative_pse
+        assert compute_normative_pse('hard_a', 0.2, rate=4.0) > compute_normative_pse('hard_a', 0.2)

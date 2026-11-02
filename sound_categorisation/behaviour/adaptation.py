@@ -28,7 +28,7 @@ amplitude of the alternation, session by session.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Sequence
 
 import numpy as np
@@ -49,7 +49,7 @@ from sound_categorisation.data.stimuli import compute_normative_pse
 
 __all__ = ['Trajectory', 'compute_trajectory', 'expert_reference', 'TRAJECTORY_STATS',
            'HARD_WINDOW', 'HARD_STEP', 'SwitchResult', 'compute_switch', 'compute_switches', 'SWITCH_METHODS',
-           'flag_biased_sessions', 'compute_phase_curves', 'animal_switches']
+           'flag_biased_sessions', 'BiasRule', 'compute_phase_curves', 'animal_switches']
 
 TRAJECTORY_STATS = ['pse', *PSYCHOMETRIC, 'accuracy', 'hard_accuracy', 'side_bias', 'recency', 'win_stay', 'lose_shift']
 CRITERION = 0.8            # convergence level defining trials_to_criterion
@@ -66,6 +66,7 @@ class Trajectory:
     curves: pd.DataFrame
     baseline_pse: float          # expert-Uniform PSE
     sigma: float                 # psychometric sigma used for the normative PSE
+    bias_rule: BiasRule = field(default_factory=lambda: BiasRule())   # the QC the report tables apply
 
     def __repr__(self) -> str:
         return (f'Trajectory({self.animal!r}, {list(self.distributions)}, n_sessions={len(self.sessions)}, '
@@ -124,6 +125,10 @@ def compute_trajectory(
     dynamics: bool = True,
     window: int | None = None,
     step: int | None = None,
+    baseline_preset: str = 'expert_uniform',
+    baseline_last_n: int = 5,
+    baseline_trials: str = 'non_opto',
+    bias_rule: BiasRule | None = None,
 ) -> Trajectory:
     """Per-session statistics and adaptation across all sessions of ``distributions``, in order.
 
@@ -135,9 +140,15 @@ def compute_trajectory(
         sigma:         psychometric sigma for the normative PSE; from the expert-Uniform fit if None.
         dynamics:      also fit ``pse_dynamics`` per session (exponential vs step).
         window, step:  rolling-PSE window; defaults depend on whether the phase is Uniform.
+        baseline_preset, baseline_last_n, baseline_trials:
+                       the expert-Uniform baseline (``expert_reference``): the last ``baseline_last_n``
+                       sessions of the preset, on these trials. With the default preset, opto-cohort
+                       baselines come mostly from laser sessions (masking is excluded); see the report README.
+        bias_rule:     the cohort QC carried with the result (``BiasRule()`` if None).
     """
     aid = getattr(animal, 'animal_id', '?')
-    base_pse, base_sigma, base_lo, base_hi = expert_reference(animal)
+    base_pse, base_sigma, base_lo, base_hi = expert_reference(animal, preset=baseline_preset,
+                                                              last_n=baseline_last_n, trials=baseline_trials)
     sigma = float(sigma) if sigma is not None else base_sigma
 
     sessions = []
@@ -188,7 +199,8 @@ def compute_trajectory(
 
     sess_df = pd.DataFrame(rows)
     curves_df = pd.concat(curves, ignore_index=True) if curves else pd.DataFrame(columns=CURVE_COLUMNS)
-    return Trajectory(aid, tuple(distributions), sess_df, curves_df, base_pse, sigma)
+    return Trajectory(aid, tuple(distributions), sess_df, curves_df, base_pse, sigma,
+                      bias_rule if bias_rule is not None else BiasRule())
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -403,30 +415,40 @@ def compute_switches(animal, *, stage: str = 'Full_Task_Cont', exclude_types=Non
 # The rule is about the shape of the per-session psychometric, not about whether the
 # animal adapts, so applying it before looking at the A/B effect is not circular.
 
-BIAS_PSE = 0.4          # a session is flagged when |pse_fixed| exceeds this …
-BIAS_LAPSE = 0.3        # … or either lapse exceeds this …
-BIAS_ACCURACY = 0.6     # … or accuracy is below this
-BIAS_MAJORITY = 0.5     # an animal is biased when more than this fraction of its Hard sessions are flagged
+@dataclass(frozen=True)
+class BiasRule:
+    """The cohort QC: drop animals that just stick to one side, unaffected by the distribution or the stimulus.
+
+    A Hard session is flagged when |pse_fixed| > ``pse``, either lapse > ``lapse``, or accuracy <
+    ``accuracy``. An animal is biased when more than ``majority`` of its Hard sessions are flagged and
+    its flagged sessions lean the same way (sign of the median ``pse_fixed``) on Hard-A and on Hard-B.
+    ``both_distributions=False`` restores the rule up to 0.7, where flags confined to one distribution
+    also counted as the same lean — that is a lean that may follow the distribution, not a side bias.
+    """
+    pse: float = 0.4
+    lapse: float = 0.3
+    accuracy: float = 0.6
+    majority: float = 0.5
+    both_distributions: bool = True
 
 
-def flag_biased_sessions(sessions: pd.DataFrame) -> pd.DataFrame:
+def flag_biased_sessions(sessions: pd.DataFrame, rule: BiasRule | None = None) -> pd.DataFrame:
     """Add ``flagged`` (per session) and ``biased_animal`` (per animal) to a sessions table.
 
     ``sessions`` needs columns animal, to_distribution, pse_fixed, lapse_low, lapse_high, accuracy
-    (the switch report's sessions.csv). An animal is ``biased_animal`` when the majority of its
-    Hard sessions are flagged AND its flagged PSEs have the same sign on Hard-A and Hard-B blocks —
-    a bias that ignores the distribution.
+    (the switch report's sessions.csv). ``rule`` defaults to ``BiasRule()``.
     """
+    r = rule if rule is not None else BiasRule()
     s = sessions.copy()
-    s['flagged'] = ((s['pse_fixed'].abs() > BIAS_PSE) | (s['lapse_low'] > BIAS_LAPSE)
-                    | (s['lapse_high'] > BIAS_LAPSE) | (s['accuracy'] < BIAS_ACCURACY)).fillna(False)
+    s['flagged'] = ((s['pse_fixed'].abs() > r.pse) | (s['lapse_low'] > r.lapse)
+                    | (s['lapse_high'] > r.lapse) | (s['accuracy'] < r.accuracy)).fillna(False)
     biased = {}
     for aid, d in s.groupby('animal'):
         frac = d['flagged'].mean()
         f = d[d['flagged'] & d['pse_fixed'].notna()]
         signs = f.groupby('to_distribution')['pse_fixed'].apply(lambda v: np.sign(v.median()))
-        same_sign = (len(signs) >= 2 and signs.nunique() == 1) or (len(signs) == 1)
-        biased[aid] = bool(frac > BIAS_MAJORITY and same_sign)
+        same_sign = len(signs) >= 1 and signs.nunique() == 1 and (len(signs) >= 2 or not r.both_distributions)
+        biased[aid] = bool(frac > r.majority and same_sign)
     s['biased_animal'] = s['animal'].map(biased)
     return s
 
