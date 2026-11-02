@@ -7,6 +7,7 @@ exercised directly here (torch-free).
 """
 
 import numpy as np
+import pytest
 
 # ── params_to_str ────────────────────────────────────────────────────────────
 
@@ -76,6 +77,32 @@ class TestCompareModels:
         long_df, comp = compare_models('A', [], [0.1])
         assert long_df is None and comp is None
 
+    def test_nan_drops_its_pair_without_shifting_the_rest(self):
+        """A NaN on one side drops that rep only. Paired by position after dropping NaNs (the old
+        behaviour) these lists give SC lower on every pair; paired by rep, BE is lower on all six."""
+        from sound_categorisation.inference.cv_utils import compare_models
+        be = [np.nan, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        sc = [0.9, 1.1, 2.2, 3.3, 4.4, 5.5, 6.6]
+        long_df, comp = compare_models('A', be, sc)
+        assert comp['n_pairs'].iloc[0] == 6
+        assert comp['winner'].iloc[0] == 'BE'
+        assert comp['p_value'].iloc[0] < 0.05
+        assert len(long_df) == 12 and 0 not in set(long_df['seed'])
+
+    def test_reps_are_matched_by_key(self):
+        """A rep missing on one side (a failed task) leaves the others paired by their own rep."""
+        from sound_categorisation.inference.cv_utils import compare_models
+        be = {s: 0.10 + 0.01 * s for s in range(1, 8)}
+        sc = {s: 0.20 + 0.01 * s for s in (1, 3, 4, 5, 6, 7)}          # seed 2 never ran for SC
+        _, comp = compare_models('A', be, sc)
+        assert comp['n_pairs'].iloc[0] == 6
+        assert comp['be_mean'].iloc[0] == pytest.approx(np.mean([0.10 + 0.01 * s for s in (1, 3, 4, 5, 6, 7)]))
+
+    def test_no_common_finite_rep_returns_none(self):
+        from sound_categorisation.inference.cv_utils import compare_models
+        assert compare_models('A', {1: 0.1}, {2: 0.2}) == (None, None)
+        assert compare_models('A', [np.nan], [0.2]) == (None, None)
+
     def test_long_df_has_seed_column(self):
         from sound_categorisation.inference.cv_utils import compare_models
         long_df, _ = compare_models('A', [0.1, 0.2], [0.3, 0.4])
@@ -105,6 +132,21 @@ class TestSaveLoadRoundtrip:
         assert cv.comparison['winner'].iloc[0] == 'BE'
         assert bool(cv.comparison['correct'].iloc[0]) is True   # winner == true_model
         assert set(cv.recovery['param']) == {'sigma_percep', 'eta_learning'}
+
+    def test_missing_seed_pairs_by_rep(self, tmp_path):
+        """load_cv_results pairs on each entry's 'rep', so a missing or failed seed does not shift the others."""
+        from sound_categorisation.inference.cv_utils import load_cv_results, save_cv_result
+        tp = {'sigma_percep': 0.2}
+        save_cv_result(tmp_path / 'A_BE.pkl', 'A', 'BE',
+                       [{'rep': s, 'test_error': 1.0 * s, 'best_params': tp} for s in range(1, 8)],
+                       'update_matrix', true_model='BE', true_params=tp)
+        save_cv_result(tmp_path / 'A_SC.pkl', 'A', 'SC',
+                       [{'rep': s, 'test_error': 1.0 * s + 0.1 * s, 'best_params': tp} for s in (1, 3, 4, 5, 6, 7)]
+                       + [{'rep': 2, 'test_error': np.nan, 'best_params': None}],
+                       'update_matrix', true_model='BE', true_params=tp)
+        comp = load_cv_results(tmp_path).comparison
+        assert comp['n_pairs'].iloc[0] == 6 and comp['winner'].iloc[0] == 'BE'
+        assert comp['p_value'].iloc[0] < 0.05
 
     def test_unpaired_animal_dropped(self, tmp_path):
         from sound_categorisation.inference.cv_utils import load_cv_results, save_cv_result

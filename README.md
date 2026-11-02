@@ -6,12 +6,12 @@ the stimulus distribution is switched between Uniform, Hard-A and Hard-B; poster
 PPC is causally necessary while the animal's statistical model of the task is being updated, and
 dispensable once that model is adequate.
 
-This repository holds two things:
+The analysis code is in two places:
 
+- **`sound_categorisation/`** (this repository) — the project package: cohorts, the opto contrasts,
+  per-session adaptation, BE/SC models and inference, the report pipeline.
 - **`behav_utils`** — a task-agnostic 2-AFC analysis library in its own repository,
   [github.com/serkanshentyurk/behav_utils](https://github.com/serkanshentyurk/behav_utils), installed from a tagged release.
-- **`sound_categorisation/`** — the project package: cohorts, the opto contrasts, per-session adaptation,
-  BE/SC models and inference, the report pipeline.
 
 ## Layout
 

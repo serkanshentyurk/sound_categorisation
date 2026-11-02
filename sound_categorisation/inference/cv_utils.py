@@ -12,16 +12,12 @@ only handles the CV-specific operations.
 
 import pickle
 from collections import namedtuple
+from collections.abc import Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict
+from typing import Dict
 
 import numpy as np
 import pandas as pd
-
-if TYPE_CHECKING:
-    pass
-
-# Re-export for convenience — callers can import from here or from selection
 
 # Tidy bundle returned by load_cv_results. Cross-method: the same loader serves
 # grid-search and SBI validation, since both write the schema via save_cv_result.
@@ -59,6 +55,8 @@ def compute_seed_errors(result_data: dict):
     Returns:
         (errors, best_params) where errors is a list of floats and best_params
         is the params dict from the lowest-error rep, or None if none valid.
+        NaN errors are dropped, so the list's positions are not reps: compare
+        models with ``errors_by_rep``, never by pairing these lists.
     """
     results = result_data.get('results', [])
     errors = [r['test_error'] for r in results
@@ -71,6 +69,22 @@ def compute_seed_errors(result_data: dict):
     return errors, best_params
 
 
+def errors_by_rep(result_data: dict) -> Dict:
+    """``{rep: test_error}`` from a CV results pickle: every entry, NaN errors kept.
+
+    ``rep`` is the entry's ``'rep'`` (the seed for grid search, the repeat index for SBI), else its
+    position. This is what ``compare_models`` pairs BE and SC on.
+    """
+    return {r.get('rep', i): float(r.get('test_error', np.nan))
+            for i, r in enumerate(result_data.get('results', []))}
+
+
+def _as_rep_dict(errors) -> Dict:
+    if isinstance(errors, Mapping):
+        return {k: float(v) for k, v in errors.items()}
+    return {i: float(e) for i, e in enumerate(errors)}
+
+
 def compare_models(
     animal_id: str,
     be_errors,
@@ -78,59 +92,62 @@ def compare_models(
 ):
     """Within-method BE-vs-SC comparison for one animal (method-agnostic).
 
-    Operates purely on stored error arrays, so it serves grid_search and every
-    SBI rep identically; the file I/O lives in load_cv_results, the cross-method
-    consensus in analysis.consensus. The rep axis is whatever produced the
-    arrays -- GS seeds, SBI posterior-resampling repeats, or (single rep)
-    sessions; it is labelled 'seed' in long_df only for plot_cv_comparison
-    compatibility. Winner is the lower mean; p_value is a paired Wilcoxon over
-    the rep axis (NaN when too few pairs or all-equal).
+    Operates purely on stored error arrays, so it serves grid_search and every SBI rep
+    identically; the file I/O lives in load_cv_results, the cross-method consensus in
+    inference.consensus.
+
+    ``be_errors`` / ``sc_errors`` are the held-out errors per rep: ``{rep: error}`` (what
+    load_cv_results passes; the rep is the grid-search seed or the SBI repeat), or sequences
+    whose position is the rep. The models are compared on the reps where both have a finite
+    error; a NaN or a missing rep on either side drops that pair and never shifts the others.
+    (Up to 0.7.0 the NaNs were dropped from each list separately and the rest paired by
+    position, so one failed seed misaligned every later pair.) Winner = the lower mean over
+    those pairs; p_value = paired Wilcoxon over them (NaN when it cannot be computed, e.g.
+    all differences zero); n_pairs = how many pairs that was.
+
+    The call follows the manuscript's model selection (Methods, "Model selection"): the
+    cross-validation is repeated over seeds and the lower-error model is called when the
+    difference is significant (p < 0.05). The manuscript used an ANOVA over 64 seeds; here it
+    is a paired Wilcoxon over the seeds (grid search) or the posterior-resampling repeats
+    (SBI). Seeds and repeats vary the simulation noise and posterior samples, not the data
+    split, so p describes how stable the call is under that noise.
 
     Args:
         animal_id: Animal identifier.
-        be_errors: Per-rep BE held-out errors.
-        sc_errors: Per-rep SC held-out errors.
+        be_errors: BE held-out errors per rep (mapping or sequence).
+        sc_errors: SC held-out errors per rep (mapping or sequence).
 
     Returns:
-        (long_df, comparison_df) or (None, None) if either list is empty.
+        (long_df, comparison_df), or (None, None) when no rep has a finite error for both.
+        long_df holds the paired reps only (column 'seed' = rep, for plot_cv_comparison).
     """
     from scipy.stats import wilcoxon
 
-    if not be_errors or not sc_errors:
+    be, sc = _as_rep_dict(be_errors), _as_rep_dict(sc_errors)
+    reps = [r for r in be if r in sc and np.isfinite(be[r]) and np.isfinite(sc[r])]
+    if not reps:
         return None, None
-
-    rows = []
-    for i, e in enumerate(be_errors):
-        if not np.isnan(e):
-            rows.append({'animal_id': animal_id, 'model': 'BE',
-                         'seed': i, 'avg_test_error': e})
-    for i, e in enumerate(sc_errors):
-        if not np.isnan(e):
-            rows.append({'animal_id': animal_id, 'model': 'SC',
-                         'seed': i, 'avg_test_error': e})
-
-    if not rows:
-        return None, None
-
-    long_df = pd.DataFrame(rows)
-    be_vals = long_df[long_df['model'] == 'BE']['avg_test_error'].values
-    sc_vals = long_df[long_df['model'] == 'SC']['avg_test_error'].values
-
-    if len(be_vals) == 0 or len(sc_vals) == 0:
-        return None, None
-
-    be_mean, sc_mean = np.mean(be_vals), np.mean(sc_vals)
-    winner = 'BE' if be_mean < sc_mean else 'SC'
-
-    n_paired = min(len(be_vals), len(sc_vals))
     try:
-        _, p_val = wilcoxon(be_vals[:n_paired], sc_vals[:n_paired])
+        reps = sorted(reps)
+    except TypeError:
+        pass
+    be_vals = np.array([be[r] for r in reps])
+    sc_vals = np.array([sc[r] for r in reps])
+
+    long_df = pd.DataFrame(
+        [{'animal_id': animal_id, 'model': 'BE', 'seed': r, 'avg_test_error': v} for r, v in zip(reps, be_vals)]
+        + [{'animal_id': animal_id, 'model': 'SC', 'seed': r, 'avg_test_error': v} for r, v in zip(reps, sc_vals)])
+
+    be_mean, sc_mean = float(np.mean(be_vals)), float(np.mean(sc_vals))
+    winner = 'BE' if be_mean < sc_mean else 'SC'
+    try:
+        p_val = float(wilcoxon(be_vals, sc_vals).pvalue)
     except ValueError:
         p_val = np.nan
 
     comparison_df = pd.DataFrame([{
         'animal_id': animal_id, 'winner': winner, 'p_value': p_val,
-        'be_mean': be_mean, 'sc_mean': sc_mean,
+        'be_mean': be_mean, 'sc_mean': sc_mean, 'n_pairs': len(reps),
     }])
     return long_df, comparison_df
 
@@ -200,8 +217,9 @@ def load_cv_results(results_dir) -> CVResults:
 
       - long:       per-rep errors, columns animal_id, model, seed, avg_test_error
                     (feeds plotting.cv.plot_cv_comparison).
-      - comparison: one row per animal — winner, p_value, be_mean, sc_mean, plus
-                    true_model and a `correct` flag (winner == true_model).
+      - comparison: one row per animal — winner, p_value, be_mean, sc_mean, n_pairs, plus
+                    true_model and a `correct` flag (winner == true_model). BE and SC are
+                    paired by rep (see compare_models).
       - recovery:   true-model params vs recovered, columns animal_id, true_model,
                     correct, param, true_value, recovered_value. Recovery uses the
                     fit of the *true* model (decoupled from identification).
@@ -228,9 +246,9 @@ def load_cv_results(results_dir) -> CVResults:
         if be is None or sc is None:
             continue
 
-        be_errors, be_best = compute_seed_errors(be)
-        sc_errors, sc_best = compute_seed_errors(sc)
-        long_df, comp_df = compare_models(aid, be_errors, sc_errors)
+        _, be_best = compute_seed_errors(be)
+        _, sc_best = compute_seed_errors(sc)
+        long_df, comp_df = compare_models(aid, errors_by_rep(be), errors_by_rep(sc))
         if long_df is None:
             continue
 

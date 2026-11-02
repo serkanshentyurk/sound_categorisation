@@ -64,9 +64,14 @@ Common options: `--cohort` (default `opto1-cohort`), `--snapshot`, `--config`, `
 | `sc-consensus --cohort C --distribution D [--run-id ID\|latest]` | GS-UM + SBI-pooled-UM + SBI-moments-UM calls → one BE/SC call per animal | the finals of one run | `model_identification/<cohort>/<ID>/consensus/<D>/{assignments.csv, summary.txt, meta.json}` | seconds |
 
 Real cohorts: sessions come from the `model_id_<D>` preset (`config.yaml`: regular sessions only, the last 5 that pass
-accuracy > 0.7 and ≥ 400 valid trials), read from the snapshot; an animal with fewer than `MODEL_ID_MIN_SESSIONS` (4) is
+accuracy > 0.7 and ≥ 250 valid trials), read from the snapshot; an animal with fewer than `MODEL_ID_MIN_SESSIONS` (4) is
 left out. Every runner writes `<run>/sessions/<D>.csv` listing each animal's sessions (kept and dropped). Grid-search
-seeds default to `GS_N_SEEDS` (32) for a real cohort and `SYNTH_GS_N_SEEDS` (8) for a synthetic one.
+seeds default to `GS_N_SEEDS` (16) for a real cohort and `SYNTH_GS_N_SEEDS` (8) for a synthetic one;
+`--n-seeds N` sets them (pass the same value to `submit.sh`, which forwards it to `--print-array`, and to
+`--gather`). Each method's BE/SC call is the manuscript's (repeated CV, p < 0.05; a paired Wilcoxon over
+seeds or SBI repeats here, an ANOVA over 64 seeds there); see ARCHITECTURE.md, *The model-identification
+chain*. With ground truth, `sc-consensus` reports how many animals were called and the accuracy among
+those; Unclear / Split are not counted as wrong.
 
 `--fast` on `sc-grid-search` / `sc-sbi-condition` / `sc-sbi-train` / `sc-sbi-sbc` uses the tiny grid / few repeats / few simulations / few draws and
 suffixes the run id with `_fast`. `--coarse` on `sc-grid-search` selects the coarse grid. `submit.sh` creates the

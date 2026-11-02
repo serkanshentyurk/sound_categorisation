@@ -27,6 +27,17 @@ def test_results_root_env_override(tmp_path, monkeypatch):
     assert results_root().name == 'results'           # <repo>/results locally, <data root>/results on the cluster
 
 
+def test_snapshot_dir_follows_the_data_root(tmp_path, monkeypatch):
+    """The snapshot lives under data_root(): SC_DATA_ROOT wins on any machine (it used to be ignored on Linux)."""
+    from sound_categorisation.data.snapshot import default_output_path, snapshot_dir
+    monkeypatch.setenv('SC_DATA_ROOT', str(tmp_path))
+    assert snapshot_dir() == tmp_path / 'behaviour' / 'snapshots'
+    assert default_output_path() == tmp_path / 'behaviour' / 'snapshots' / 'sound_cat_snapshot.pkl'
+    monkeypatch.delenv('SC_DATA_ROOT')
+    monkeypatch.setattr(paths, '_on_cluster', lambda: False)        # a non-cluster machine, whatever its OS
+    assert snapshot_dir() == paths.REPO_ROOT.parent.parent / 'data' / 'behaviour' / 'snapshots'
+
+
 def test_run_id_shape():
     now = datetime(2026, 10, 1, 14, 32)
     rid = new_run_id(now=now)

@@ -31,7 +31,7 @@ DISTRIBUTIONS = ('uniform', 'hard_a', 'hard_b')
 
 # Grid search
 GS_N_FOLDS = 2
-GS_N_SEEDS = 32             # real animals
+GS_N_SEEDS = 16             # real animals (the Oct 2026 run); sc-grid-search --n-seeds overrides
 SYNTH_GS_N_SEEDS = 8        # synthetic cohorts (picked by cohort kind in sc-grid-search)
 GS_BURN_IN = 1000
 GS_N_BINS = 8
@@ -72,8 +72,9 @@ SBI_REPRESENTATIONS = {
 # Per-distribution SBI training: conditioning is always on a single, KNOWN phase
 # (uniform / hard_a / hard_b), so a specialist network matched to each phase beats
 # one network marginalising over phase (which you'd never need, since the phase is
-# always supplied). 3 reps x 2 models x 3 dists = 18 networks; conditioning routes
-# to the matching network automatically via snpe_net_path's filename.
+# always supplied). 3 reps x 2 models x 3 dists = 18 networks are available; the job
+# grids train the SBI_TRAIN_REPS x SBI_TRAIN_DISTRIBUTIONS subset below (4 now).
+# Conditioning routes to the matching network via snpe_net_path's filename.
 SBI_TRAIN_DISTRIBUTIONS = ('uniform',)
 # Which representations / distributions the training and conditioning arrays cover NOW. The
 # others stay available by name (sc-sbi-train --rep single --distribution hard_a) but are not in

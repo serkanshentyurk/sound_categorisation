@@ -25,6 +25,16 @@ Consensus rule (configurable):
     2. Fewer than min_significant_votes significant -> 'Unclear'.
     3. Strict majority on one model -> that model.
     4. Tie / no majority -> 'Split'.
+
+Each method's vote is the manuscript's model selection (Methods, "Model selection"): repeated
+cross-validation, the lower-error model called when p < 0.05. The manuscript used an ANOVA over 64
+seeds; here it is a paired Wilcoxon over seeds (grid search) or posterior-resampling repeats (SBI),
+see ``cv_utils.compare_models``. The seeds and repeats vary simulation noise and posterior samples,
+not the data split, so a significant vote means the call is stable under that noise.
+
+With ground truth (synthetic cohorts), ``consensus_correct`` is True/False for animals that were
+called (BE or SC) and NaN for Unclear / Split, so its mean is the accuracy among called animals;
+the summary reports how many were called alongside it.
 """
 
 from collections import Counter
@@ -116,7 +126,8 @@ def load_all_assignments(
     Returns:
         One row per animal: 'id', then per method '{label}', '{label}_p',
         '{label}_be', '{label}_sc'; 'true_model' if any method carried ground
-        truth; 'Consensus'; and 'consensus_correct' when truth is known.
+        truth; 'Consensus'; and 'consensus_correct' when truth is known (NaN for an
+        animal that was not called: Unclear / Split).
     """
     methods = methods or DEFAULT_METHODS
 
@@ -159,15 +170,17 @@ def load_all_assignments(
             row, alpha=alpha, min_significant_votes=min_significant_votes)
         if has_truth:
             tm = true_model_by_animal.get(aid)
-            row['consensus_correct'] = (row['Consensus'] == tm
-                                        if tm in ('BE', 'SC') else None)
+            called = row['Consensus'] in ('BE', 'SC')
+            row['consensus_correct'] = (bool(row['Consensus'] == tm)
+                                        if called and tm in ('BE', 'SC') else np.nan)
         out_rows.append(row)
 
     return pd.DataFrame(out_rows)
 
 
 def compute_consensus_summary(assign_df: pd.DataFrame) -> str:
-    """Printable consensus summary (counts per label; accuracy if truth known)."""
+    """Printable consensus summary: counts per label; with ground truth, how many animals were
+    called (BE or SC) and the accuracy among those. Unclear / Split are not counted as wrong."""
     if 'Consensus' not in assign_df or len(assign_df) == 0:
         return 'no assignments'
     counts = assign_df['Consensus'].value_counts()
@@ -175,8 +188,10 @@ def compute_consensus_summary(assign_df: pd.DataFrame) -> str:
     for label, n in counts.items():
         lines.append(f'  {label}: {n}')
     if 'consensus_correct' in assign_df:
-        valid = assign_df['consensus_correct'].dropna()
-        if len(valid):
-            lines.append(f'consensus accuracy (vs truth): '
-                         f'{valid.mean():.2f} (n={len(valid)})')
+        with_truth = (assign_df['true_model'].isin(['BE', 'SC']) if 'true_model' in assign_df
+                      else pd.Series(True, index=assign_df.index))
+        called = assign_df.loc[with_truth, 'consensus_correct'].dropna().astype(bool)
+        lines.append(f'called (BE or SC): {len(called)}/{int(with_truth.sum())} animals with known truth')
+        if len(called):
+            lines.append(f'correct among called: {int(called.sum())}/{len(called)} ({called.mean():.2f})')
     return '\n'.join(lines)

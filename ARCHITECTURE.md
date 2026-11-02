@@ -88,14 +88,26 @@ p = 0.016, so per-animal consistency carries the argument.
 ## The model-identification chain
 
 ```
-sc-sbi-train    TRAIN_GRID (18 tasks)   simulate BE/SC → train one amortised network per (rep, model, distribution)
-sc-sbi-condition      CONDITION_GRID (6)      condition each animal's expert data → posterior + held-out MSE
+sc-sbi-train    TRAIN_GRID (4 tasks)    simulate BE/SC → train one amortised network per (rep, model, distribution)
+sc-sbi-condition      CONDITION_GRID (4)      condition each animal's expert data → posterior + held-out MSE
 sc-grid-search       gs_grid(animals, seeds) grid search CV per (animal, model, seed) → partials → --gather
 sc-consensus                            GS + SBI calls → assignments.csv, summary.txt
 slurm/submit.sh {train|condition|gs}        derives --array from the grids
 ```
 `load_animals(source)` in `data/cohort.py` gives the same `AnimalRecord` shape for real and synthetic animals,
 so the runners are identical downstream; synthetic cohorts carry ground truth for validation.
+
+The grids cover `settings.SBI_TRAIN_REPS` × models × `SBI_TRAIN_DISTRIBUTIONS`: pooled and moments × BE/SC ×
+Uniform now (4 networks). All 18 (3 representations × 2 models × 3 distributions) exist in the code: widen
+the two tuples, or train one by name (`sc-sbi-train --rep single --distribution hard_a`).
+
+Each method's BE/SC vote is the manuscript's model selection (Methods, *Model selection*), copied from
+there: the cross-validation is repeated over seeds and the lower-error model is called when p < 0.05. The
+manuscript used an ANOVA over 64 seeds; here it is a paired Wilcoxon over the grid-search seeds
+(`GS_N_SEEDS`, 16; `--n-seeds`) or the SBI repeats (`SBI_N_CV_REPEATS`, 64), pairing BE and SC by seed
+(`cv_utils.compare_models`). The seeds vary simulation noise and posterior samples, not the data split
+(the folds are the first and second half of the sessions), so a significant vote means the call is
+stable under that noise.
 
 ## Design as executed (opto1 cohort)
 Expert Uniform: a masking block then a laser block per animal, plus ALM (uni/bi) sessions. Hard phase:

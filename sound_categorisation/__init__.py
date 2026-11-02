@@ -12,8 +12,8 @@ Layered on ``behav_utils`` (the generic 2-AFC library). Subpackages follow the a
     features/    SBI feature-selection diagnostics
     reports/     compute → tables → figures → PDF → summary, and the report CLI
     plotting/    project plotters (CV, opto swarms, assignment, SBI diagnostics)
-    cli/         entry points (sc-*): reports, export_snapshot, make_synthetic_cohort, new_run, train_sbi,
-                 run_sbi, run_gs, consensus
+    cli/         entry points (sc-*, listed in pyproject.toml [project.scripts]; docs/runs.md says what
+                 each one does)
 """
 
-__version__ = '0.6.1'
+__version__ = '0.7.0'   # the one place the version is set (pyproject reads it)

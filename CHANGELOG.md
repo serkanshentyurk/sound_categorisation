@@ -3,6 +3,33 @@
 
 ## Unreleased
 
+Handover review, batch 1 (no report number changes).
+
+- `compare_models` pairs BE and SC by rep (grid-search seed / SBI repeat). It used to drop NaN errors from
+  each model's list separately and pair the rest by position, so one failed seed (a fit that raised returns
+  NaN) misaligned every later pair and could flip the call or its p. Winner, means and p now come from the
+  same pairs; `comparison` gains `n_pairs`. **Calls can change** where a run had NaN or missing reps:
+  re-run `sc-consensus` on existing runs (it only reads results). `errors_by_rep` is new; `compute_seed_errors`
+  is unchanged (its docstring now says not to pair its lists), and the usage example in `plotting/cv.py`,
+  which paired them by position, now uses `errors_by_rep`.
+- `sc-consensus` with ground truth: `consensus_correct` is NaN for Unclear / Split (was False), and the summary
+  reports how many animals were called and the accuracy among those, instead of counting Unclear as wrong.
+- The vote's provenance is written down (module docstrings, ARCHITECTURE.md, docs/runs.md): it is the
+  manuscript's model selection, with a paired Wilcoxon over seeds / SBI repeats in place of its ANOVA.
+- `snapshot_dir()` is `<data root>/behaviour/snapshots` (`paths.data_root`). It used to pick ceph whenever the
+  machine ran Linux, so on any non-cluster Linux machine it ignored `SC_DATA_ROOT`. Same paths as before on
+  a laptop and on the cluster.
+- `load_experiment_any` without a snapshot now removes the trials whose sound was never sent, as the export
+  does, so both load paths give the same trials (it used to return them).
+- `remove_silent_trials` lines the CSV up against `trials.stimulus_raw` (CSV units) rather than the normalised
+  `stimulus`; identical for this config, robust to a `stimulus_range` change.
+- `GS_N_SEEDS` 32 → 16 (what the Oct 2026 real run used); `--n-seeds` already overrides it.
+- Packaging: `ssm` dropped from `.[fit]` (nothing imports it; SLDS is not written). The version is set once,
+  in `sound_categorisation/__init__.py` (it said 0.6.1 while pyproject said 0.7.0); pyproject reads it.
+- Docs: SETUP's path to `data/paths.py`, the editable-install requirement, the full `sc-*` list; README
+  wording on where `behav_utils` lives; 4 networks by default (18 available) in SETUP / ARCHITECTURE;
+  `docs/runs.md` says ≥ 250 valid trials (the preset) and 16 seeds.
+
 - `behav_utils` 0.8.0 (pin moved from 0.7.1). Call sites changed: `SessionData.summary()` is a
   `SessionSummary` (`.accuracy`, not `['perf']`) in `data/cohort.py`; `compare_groups` returns a
   `GroupComparison` whose `.table()` feeds `group_tests.csv` in `reports/compute.py` and

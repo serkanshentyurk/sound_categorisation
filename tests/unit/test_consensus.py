@@ -165,6 +165,20 @@ class TestLoadAllAssignments:
         assert 'GS-CP' in df.columns
         assert df.loc['A', 'Consensus'] == 'BE'
 
+    def test_unclear_is_not_counted_as_wrong(self, tmp_path, monkeypatch):
+        """With truth: a called animal is True/False, an Unclear one NaN; the summary separates the two."""
+        from sound_categorisation.inference.consensus import compute_consensus_summary
+        self._patch(monkeypatch, tmp_path)
+        methods = [('grid_search', None, 'update_matrix')]
+        self._write_method('grid_search', None, 'update_matrix', 'A', 'BE', be_lo=0.10, sc_lo=0.20)
+        self._write_method('grid_search', None, 'update_matrix', 'B', 'SC', be_lo=0.10, sc_lo=0.10)   # no difference
+        df = load_all_assignments(self.RUN, self.DIST, methods=methods)
+        rows = df.set_index('id')
+        assert rows.loc['A', 'Consensus'] == 'BE' and bool(rows.loc['A', 'consensus_correct']) is True
+        assert rows.loc['B', 'Consensus'] == 'Unclear' and pd.isna(rows.loc['B', 'consensus_correct'])
+        text = compute_consensus_summary(df)
+        assert 'called (BE or SC): 1/2' in text and 'correct among called: 1/1' in text
+
     def test_no_truth_omits_correct_columns(self, tmp_path, monkeypatch):
         """Files without true_model → no true_model / consensus_correct columns."""
         self._patch(monkeypatch, tmp_path)

@@ -13,7 +13,6 @@ Export removes trials whose sound was never sent (data/stimulus_check.py); see r
 
 import hashlib
 import pickle
-import platform
 import warnings
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,28 +23,17 @@ from typing import Dict, Tuple, Union
 SNAPSHOT_FORMAT_VERSION = 2
 SNAPSHOT_FILENAME = 'sound_cat_snapshot.pkl'
 
-# Cluster path — fixed for this project's SWC/ceph layout. Off-cluster,
-# snapshot_dir() falls back to a path derived from the repo location, so
-# this constant is only ever used on Linux/cluster.
-_CLUSTER_SNAPSHOT_DIR = Path(
-    '/ceph/akrami/Serkan/Head_Fixed_Behavior/Data/Processed/behaviour/snapshots'
-)
 
 def snapshot_dir(repo_root: Path | None = None) -> Path:
     """
-    Return the snapshot directory for the current machine.
+    The snapshot directory, ``<data root>/behaviour/snapshots``.
 
-    Cluster (Linux): /ceph/akrami/.../Processed/snapshots/
-    Local (any OS):  some_folder/data/snapshots/
-                     (derived from repo at some_folder/repos/sound_categorisation/)
+    The data root is ``paths.data_root()``: ``SC_DATA_ROOT`` if set, the ceph Processed folder on the
+    cluster, else ``<repo>/../../data``. (Up to 0.7.0 this function picked ceph whenever the machine
+    ran Linux, so on any other Linux machine it ignored ``SC_DATA_ROOT``.)
     """
-    if platform.system() == 'Linux':
-        return _CLUSTER_SNAPSHOT_DIR
-    else:
-        if repo_root is None:
-            from sound_categorisation.data.paths import REPO_ROOT
-            repo_root = REPO_ROOT
-        return repo_root.parent.parent / 'data' / 'behaviour' / 'snapshots'
+    from sound_categorisation.data.paths import data_root
+    return data_root(repo_root) / 'behaviour' / 'snapshots'
 
 
 def default_output_path(repo_root: Path | None = None) -> Path:
@@ -75,7 +63,7 @@ def _session_summary(experiment) -> Dict[str, int]:
 def _rows_as_loaded(session, config):
     """
     The stimulus check and the stimulus column for the trial tables behind one loaded session, trimmed and
-    merged the way behav_utils' loader (v0.7) does it: files in sorted order, each file's last row dropped
+    merged the way behav_utils' loader does it (0.7 and 0.8): files in sorted order, each file's last row dropped
     (``drop_last_row``), and, only when a session has several files, files left with fewer than
     ``min_trials_per_file`` rows skipped.
 
@@ -121,7 +109,8 @@ def remove_silent_trials(experiment, config, verbose: bool = True) -> Dict:
     that was also an abort was never anyone's predecessor (aborts are skipped), so it changes no history.
     Trials that cannot be checked are kept; every remaining trial carries the result in
     ``trials.extra['stimulus_check']`` (1 sent, NaN cannot tell). A session whose files do not line up with
-    its loaded trials (same number of rows, same Stim_Relative row for row) is left as it is, with a warning.
+    its loaded trials (same number of rows, same Stim_Relative row for row, compared in CSV units:
+    ``trials.stimulus_raw``) is left as it is, with a warning.
 
     Returns the counts export_snapshot stores in the snapshot metadata: ``removed`` and ``unchecked``
     totals, ``per_session`` counts and the ``not_aligned`` session ids.
@@ -138,8 +127,11 @@ def remove_silent_trials(experiment, config, verbose: bool = True) -> Dict:
                 continue
             t = session.trials
             checked, stimulus = _rows_as_loaded(session, config)
+            # CSV units: since behav_utils 0.8 ``stimulus`` is normalised at load, ``stimulus_raw`` is the column
+            raw = getattr(t, 'stimulus_raw', None)
+            raw = t.stimulus if raw is None or len(raw) != t.n_trials else raw
             if (checked is None or len(checked) != t.n_trials
-                    or not np.allclose(stimulus, t.stimulus.astype(float), rtol=0, atol=1e-12, equal_nan=True)):
+                    or not np.allclose(stimulus, np.asarray(raw, dtype=float), rtol=0, atol=1e-12, equal_nan=True)):
                 warnings.warn(f'{session.session_id}: trial tables do not line up with the loaded trials; '
                               f'no trials removed', stacklevel=2)
                 not_aligned.append(session.session_id)

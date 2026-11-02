@@ -6,12 +6,13 @@ All computation (seed error extraction, dataframe building, statistical
 tests) has been moved to utils/cv_utils.py.
 
 Usage:
-    from sound_categorisation.inference.cv_utils import compute_seed_errors, compute_cv_dataframes
+    from sound_categorisation.inference.cv_utils import compare_models, errors_by_rep
     from sound_categorisation.plotting.cv import plot_cv_comparison, plot_winner_summary
 
-    errors, best = compute_seed_errors(gs_pickle)
-    long_df, comp_df = compute_cv_dataframes(animal_id, be_errors, sc_errors)
+    long_df, comp_df = compare_models(animal_id, errors_by_rep(be_pickle), errors_by_rep(sc_pickle))
     fig = plot_cv_comparison(long_df, comp_df, animal_id)
+
+    (or load_cv_results(directory), which does the same for every animal)
 """
 
 from typing import Dict, Tuple

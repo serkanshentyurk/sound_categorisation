@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sound-categorisation"
-version = "0.7.0"
+dynamic = ["version"]
 description = "PPC causal role in auditory categorisation — project code on top of behav_utils"
 requires-python = ">=3.10"
 dependencies = [
@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-fit = ["torch", "sbi", "ssm", "hmmlearn"]
+fit = ["torch", "sbi", "hmmlearn"]
 dev = ["pytest", "ruff", "nbmake", "ipykernel", "jupyterlab"]
 
 [project.scripts]
@@ -31,6 +31,9 @@ sc-feature-selection = "sound_categorisation.cli.feature_selection:main"
 
 [tool.setuptools.packages.find]
 include = ["sound_categorisation*"]
+
+[tool.setuptools.dynamic]
+version = {attr = "sound_categorisation.__version__"}
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

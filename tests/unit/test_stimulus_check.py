@@ -178,8 +178,7 @@ def test_session_that_does_not_line_up_is_left_alone(tmp_path):
     assert summary['not_aligned'] == [sess.session_id] and exp.animals['A1'].sessions[0].trials.n_trials == 7
 
 
-def test_export_removes_them_and_records_the_counts(tmp_path):
-    _write_run(tmp_path / 'data' / SESSION[0] / SESSION[1], silent=(2,))
+def _write_config(tmp_path):
     cfg = {'file_structure': {'data_dir': str(tmp_path / 'data'), 'session_pattern': 'SOUND_CAT_{animal_id}_{date}',
                               'behaviour_file': 'Trial_Summary*.csv', 'drop_last_row': True,
                               'date_regex': r'(\d{4})_(\d{1,2})_(\d{1,2})'},
@@ -189,10 +188,27 @@ def test_export_removes_them_and_records_the_counts(tmp_path):
            'task': {'inputs': ['stimulus'], 'outputs': ['choice'], 'boundary': 0.0,
                     'choice_mapping': {'type': 'identity', 'no_response_value': -1}}}
     (tmp_path / 'config.yaml').write_text(yaml.safe_dump(cfg))
+    return tmp_path / 'config.yaml'
+
+
+def test_export_removes_them_and_records_the_counts(tmp_path):
+    _write_run(tmp_path / 'data' / SESSION[0] / SESSION[1], silent=(2,))
+    config = _write_config(tmp_path)
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')
-        out = export_snapshot(tmp_path / 'config.yaml', output_path=tmp_path / 'snap.pkl', verbose=False)
+        out = export_snapshot(config, output_path=tmp_path / 'snap.pkl', verbose=False)
         exp, meta = load_snapshot(out)[:2]
     assert meta['format_version'] == SNAPSHOT_FORMAT_VERSION == 2
     assert meta['stimulus_check']['removed'] == 1 and meta['n_trials_total'] == 6
     assert exp.animals['A1'].sessions[0].trials.n_trials == 6
+
+
+def test_csv_fallback_removes_them_too(tmp_path):
+    """Without a snapshot, load_experiment_any gives the same trials the export would (silent ones removed)."""
+    from sound_categorisation.data.cohort import load_experiment_any
+    _write_run(tmp_path / 'data' / SESSION[0] / SESSION[1], silent=(2,))
+    config = _write_config(tmp_path)
+    with pytest.warns(UserWarning, match='no snapshot'):
+        exp = load_experiment_any(config_path=config, snapshot_path=tmp_path / 'missing.pkl')
+    t = exp.animals['A1'].sessions[0].trials
+    assert t.n_trials == 6 and np.all(t.extra['stimulus_check'] == 1.0)
