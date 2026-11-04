@@ -22,7 +22,7 @@
 #   sc-grid-search --cohort opto1-cohort --distribution uniform --fit-target update_matrix --run-id $RUN --gather
 #   sc-consensus --cohort opto1-cohort --distribution uniform --run-id $RUN
 #
-# Requires the env to be installed (`pip install -e .` provides the sc-* commands).
+# Run it after load-env (or `source slurm/env.sh`), from anywhere in the repo.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 stage="${1:?sbi-train|sbi-condition|sbi-sbc|grid-search}"; shift

@@ -28,6 +28,8 @@ sc-sbi-sbc         = "sound_categorisation.cli.sbi_sbc:main"
 sc-grid-search     = "sound_categorisation.cli.grid_search:main"
 sc-consensus       = "sound_categorisation.cli.consensus:main"
 sc-feature-selection = "sound_categorisation.cli.feature_selection:main"
+sc-update          = "sound_categorisation.cli.update:main"
+sc-fetch           = "sound_categorisation.cli.fetch:main"
 
 [tool.setuptools.packages.find]
 include = ["sound_categorisation*"]

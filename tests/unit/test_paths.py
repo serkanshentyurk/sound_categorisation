@@ -38,6 +38,25 @@ def test_snapshot_dir_follows_the_data_root(tmp_path, monkeypatch):
     assert snapshot_dir() == paths.REPO_ROOT.parent.parent / 'data' / 'behaviour' / 'snapshots'
 
 
+def test_cluster_paths_hang_off_behav_data_dir(tmp_path, monkeypatch):
+    """On the cluster, BEHAV_DATA_DIR is the one setting: data under <it>/Processed, results under .../results."""
+    monkeypatch.delenv('SC_DATA_ROOT', raising=False)
+    monkeypatch.delenv('SC_RESULTS_ROOT', raising=False)
+    monkeypatch.setattr(paths, '_on_cluster', lambda: True)
+    monkeypatch.setenv('BEHAV_DATA_DIR', str(tmp_path))
+    assert paths.data_root() == tmp_path / 'Processed'
+    assert results_root() == tmp_path / 'Processed' / 'results'
+
+
+def test_cluster_stops_without_behav_data_dir(monkeypatch):
+    """No fallback to someone else's folder: an unset BEHAV_DATA_DIR stops with a message."""
+    monkeypatch.delenv('SC_DATA_ROOT', raising=False)
+    monkeypatch.setattr(paths, '_on_cluster', lambda: True)
+    monkeypatch.delenv('BEHAV_DATA_DIR', raising=False)
+    with pytest.raises(RuntimeError, match='BEHAV_DATA_DIR is not set'):
+        paths.data_root()
+
+
 def test_run_id_shape():
     now = datetime(2026, 10, 1, 14, 32)
     rid = new_run_id(now=now)

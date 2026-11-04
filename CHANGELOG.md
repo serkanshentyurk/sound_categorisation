@@ -3,6 +3,19 @@
 
 ## Unreleased
 
+Everyday commands. No report numbers change.
+
+- On the cluster every path now hangs off `BEHAV_DATA_DIR` (your folder on ceph): raw data in `Raw`,
+  snapshot and networks in `Processed`, results in `Processed/results`. It stops with a message if
+  `BEHAV_DATA_DIR` is not set, instead of falling back to `/ceph/akrami/Serkan/...`.
+- One `config.yaml` on every machine: a `config_slurm.yaml` next to it on the cluster is no longer read
+  (its only job was the raw-data path, which `BEHAV_DATA_DIR` now gives).
+- `slurm/env.sh`: the cluster environment in one file (module, conda env, thread settings). The Slurm
+  jobs source it; the `load-env` alias in START_HERE.md does too.
+- `sc-update`: `git pull` + `pip install -e .`; `--no-deps` leaves an editable `behav_utils` alone.
+- `sc-fetch snapshot | networks | synthetic | results <report>/<cohort>`: copies from ceph to the same
+  place on a laptop (rsync over ssh, as `$SWC_USER`).
+
 Handover review, batch 3. Report numbers change (▲). Needs `behav_utils` 0.9.0.
 
 - ▲ Hard-A/B stimulus density now matches the rig: a truncated exponential with rate 2.15329 (mean distance

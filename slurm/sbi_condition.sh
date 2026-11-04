@@ -9,11 +9,8 @@
 # Submit via:  bash slurm/submit.sh sbi-condition --cohort C --distribution D --run-id ID
 set -euo pipefail
 
-export PYTHONNOUSERSITE=1     # never import from ~/.local (it shadows the env's numpy/scipy/torch)
-export PYTHONUNBUFFERED=1     # progress lines reach the .out file as they happen
-module load miniconda
-conda activate sound_cat
 cd "${SLURM_SUBMIT_DIR}"
+source slurm/env.sh
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK}" OPENBLAS_NUM_THREADS="${SLURM_CPUS_PER_TASK}" MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK}"
 
 echo "=== sbi_condition task ${SLURM_ARRAY_TASK_ID} on $(hostname) $(date) ==="

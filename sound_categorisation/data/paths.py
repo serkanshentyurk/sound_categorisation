@@ -1,10 +1,19 @@
 """
-Locations and run bookkeeping.
+Locations and run bookkeeping. Every path the code uses comes from here.
 
-Inputs (snapshot, synthetic cohorts, trained SBI networks) live under ``data_root()``; results live
-under ``results_root()`` as ``<report>/<cohort>/<run_id>/`` (see the RESULTS section). Every producer
-calls ``start_run`` and stamps ``build_metadata(...)`` next to what it writes; every consumer finds a
-run with ``resolve_run``. Constants are in ``sound_categorisation.settings``.
+On the cluster everything hangs off one setting, the environment variable ``BEHAV_DATA_DIR`` (your folder
+on ceph, e.g. ``/ceph/akrami/<Name>/Head_Fixed_Behavior/Data``):
+
+    $BEHAV_DATA_DIR/Raw                    raw session folders (config.yaml, file_structure.data_dir)
+    $BEHAV_DATA_DIR/Processed              data_root(): snapshot, SBI networks, synthetic cohorts
+    $BEHAV_DATA_DIR/Processed/results      results_root()
+
+On a laptop: data_root() is <repo>/../../data and results_root() is <repo>/results (override with
+SC_DATA_ROOT / SC_RESULTS_ROOT). ``sc-fetch`` copies cluster folders to the same places on the laptop.
+
+Results are ``<report>/<cohort>/<run_id>/`` (see the RESULTS section). Every producer calls ``start_run``
+and stamps ``build_metadata(...)`` next to what it writes; every consumer finds a run with ``resolve_run``.
+Constants are in ``sound_categorisation.settings``.
 """
 
 import os
@@ -37,24 +46,42 @@ from sound_categorisation.settings import (
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent   # <repo>/sound_categorisation/data/paths.py
 
-# Inputs that are not results: the snapshot, synthetic cohorts and trained SBI networks live under the
-# data root. Local: <repo>/../../data. Cluster: ceph Processed. See data/snapshot.py for the snapshot.
-_CLUSTER_DATA_ROOT = Path('/ceph/akrami/Serkan/Head_Fixed_Behavior/Data/Processed')
 _CLUSTER_HOST_MARKERS = ('hpc', 'gpu', 'enc', 'sgw')
+
+# How sc-fetch reaches ceph from a laptop: through the SWC gateway to a login node, as $SWC_USER.
+SWC_GATEWAY = 'ssh.swc.ucl.ac.uk'
+SWC_NODE = 'hpc-gw2'
 
 
 def _on_cluster() -> bool:
     return any(x in socket.gethostname() for x in _CLUSTER_HOST_MARKERS)
 
 
+def ceph_root() -> Path:
+    """Your folder on ceph: the BEHAV_DATA_DIR environment variable. Stops with a clear message if it is
+    not set, rather than falling back to someone else's folder."""
+    value = os.environ.get('BEHAV_DATA_DIR')
+    if not value:
+        raise RuntimeError(
+            'BEHAV_DATA_DIR is not set. Add your folder on ceph to ~/.bashrc (cluster) or ~/.zshrc (Mac):\n'
+            '    export BEHAV_DATA_DIR=/ceph/akrami/<Name>/Head_Fixed_Behavior/Data\n'
+            'See START_HERE.md, "Your own data folder".')
+    return Path(value)
+
+
+def cluster_data_root() -> Path:
+    """The data root on the cluster: $BEHAV_DATA_DIR/Processed."""
+    return ceph_root() / 'Processed'
+
+
 def data_root(repo_root: Path = None) -> Path:
-    """Machine-aware data root (inputs). Local: <repo>/../../data. Cluster: ceph Processed.
-    Override with the SC_DATA_ROOT environment variable."""
+    """Machine-aware data root (inputs: snapshot, SBI networks, synthetic cohorts).
+    Cluster: $BEHAV_DATA_DIR/Processed. Laptop: <repo>/../../data. SC_DATA_ROOT overrides both."""
     env = os.environ.get('SC_DATA_ROOT')
     if env:
         return Path(env)
     if _on_cluster():
-        return _CLUSTER_DATA_ROOT
+        return cluster_data_root()
     return (repo_root or REPO_ROOT).parent.parent / 'data'
 
 
@@ -95,13 +122,13 @@ REPORTS = ('opto_contrasts', 'switch_adaptation', 'light_artefact', 'model_ident
 
 
 def results_root() -> Path:
-    """Where results go. Local: <repo>/results. Cluster: <data root>/results.
-    Override with the SC_RESULTS_ROOT environment variable."""
+    """Where results go. Cluster: $BEHAV_DATA_DIR/Processed/results. Laptop: <repo>/results.
+    SC_RESULTS_ROOT overrides both."""
     env = os.environ.get('SC_RESULTS_ROOT')
     if env:
         return Path(env)
     if _on_cluster():
-        return _CLUSTER_DATA_ROOT / 'results'
+        return cluster_data_root() / 'results'
     return REPO_ROOT / 'results'
 
 
@@ -290,21 +317,12 @@ def _get_versions() -> dict:
 # DATA LOADING HELPERS
 # =============================================================================
 
-# Default config files — scripts use --config to override
+# One config file on every machine; its raw-data path comes from BEHAV_DATA_DIR. --config overrides.
 DEFAULT_CONFIG = REPO_ROOT / 'config.yaml'
-CLUSTER_CONFIG = REPO_ROOT / 'config_slurm.yaml'
 
 
 def load_project_config(config_path=None):
-    """Load ProjectConfig from YAML. Auto-detects cluster vs local."""
+    """Load ProjectConfig from config.yaml (or ``config_path``)."""
     from behav_utils.config.schema import load_config
-
-    if config_path is not None:
-        return load_config(str(config_path))
-
-    # Auto-detect: use config_slurm.yaml if it exists and we're on the cluster
-    if CLUSTER_CONFIG.exists() and _on_cluster():
-        return load_config(str(CLUSTER_CONFIG))
-
-    return load_config(str(DEFAULT_CONFIG))
+    return load_config(str(config_path if config_path is not None else DEFAULT_CONFIG))
 
