@@ -28,7 +28,7 @@ Three kinds of run, three homes:
 | command | does | where |
 |---|---|---|
 | `load-env` | goes to the repository and loads the cluster environment (`slurm/env.sh`); a `~/.bashrc` alias, see START_HERE.md | cluster |
-| `sc-update [--no-deps]` | `git pull`, then `pip install -e .`, then prints the versions; `--no-deps` keeps an editable `behav_utils` | both |
+| `sc-update [--keep-behav-utils]` | `git pull`, then `pip install -e .`, then prints the versions; `--keep-behav-utils` installs every dependency except `behav_utils`, so an editable copy stays | both |
 | `sc-fetch snapshot \| networks \| synthetic` | copies that folder from `$BEHAV_DATA_DIR/Processed` on ceph to the same place under `data_root()` | laptop |
 | `sc-fetch results <report>/<cohort>[/<run_id>]` | copies results from ceph to the same place under `results_root()` | laptop |
 

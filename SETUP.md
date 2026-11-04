@@ -75,7 +75,7 @@ Install your local copy of the library on top; an editable install wins over the
 pip install -e <path to your behav_utils checkout>
 ```
 
-Then update the project with `sc-update --no-deps`, so your copy stays. When the project needs a library
+Then update the project with `sc-update --keep-behav-utils`, so your copy stays. When the project needs a library
 change, tag a release of `behav_utils` and move the tag in `pyproject.toml`.
 
 ## 6. Notebooks

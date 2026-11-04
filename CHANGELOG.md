@@ -19,7 +19,8 @@ Everyday commands. No report numbers change.
   (its only job was the raw-data path, which `BEHAV_DATA_DIR` now gives).
 - `slurm/env.sh`: the cluster environment in one file (module, conda env, thread settings). The Slurm
   jobs source it; the `load-env` alias in START_HERE.md does too.
-- `sc-update`: `git pull` + `pip install -e .`; `--no-deps` leaves an editable `behav_utils` alone.
+- `sc-update`: `git pull` + `pip install -e .`; `--keep-behav-utils` installs every dependency except
+  `behav_utils`, so an editable copy stays (plain `pip --no-deps` would also skip new dependencies).
 - `sc-fetch snapshot | networks | synthetic | results <report>/<cohort>`: copies from ceph to the same
   place on a laptop (rsync over ssh, as `$SWC_USER`).
 

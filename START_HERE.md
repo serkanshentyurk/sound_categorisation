@@ -81,7 +81,7 @@ sc-update
 ```
 
 On the laptop, `sc-update` does the same. If you work on `behav_utils` next to the project (an editable
-install), use `sc-update --no-deps` so it stays.
+install), use `sc-update --keep-behav-utils`: it installs everything else and leaves your copy alone.
 
 ### New sessions → snapshot (cluster)
 

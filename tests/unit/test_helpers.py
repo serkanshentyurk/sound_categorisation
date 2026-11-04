@@ -8,7 +8,17 @@ def test_update_pulls_then_installs():
     cmds = update.commands()
     assert cmds[0] == ['git', 'pull', '--ff-only']
     assert cmds[1][-3:] == ['install', '-e', '.']
-    assert update.commands(no_deps=True)[1][-1] == '--no-deps'
+    keep = update.commands(keep_behav_utils=True)
+    assert keep[1][-1] == '--no-deps' and '_install_other_requirements' in keep[2][-1]
+
+
+def test_keep_behav_utils_still_installs_the_other_dependencies(monkeypatch):
+    """--keep-behav-utils must not skip new dependencies (pip's --no-deps alone would)."""
+    reqs = ['numpy', 'joblib', 'scikit-learn',
+            'behav_utils@ git+https://github.com/serkanshentyurk/behav_utils.git@v0.9.0',
+            'torch; extra == "fit"', 'pytest; extra == "dev"']
+    monkeypatch.setattr(update.importlib.metadata, 'requires', lambda dist: reqs)
+    assert update.other_requirements() == ['numpy', 'joblib', 'scikit-learn']
 
 
 @pytest.fixture
