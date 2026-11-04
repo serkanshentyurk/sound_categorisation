@@ -12,11 +12,9 @@ pip install -e ".[dev]"             # the project + pytest + ruff; pulls behav_u
 pip install -e ".[fit]"             # torch, sbi, hmmlearn — only needed for model fitting
 ```
 
-`pip install -e .` installs the `sc-*` commands (all of them are listed under `[project.scripts]` in
-`pyproject.toml`; `docs/runs.md` says what each does) and the library `behav_utils` at the tag pinned in
-`pyproject.toml` (its own repository: https://github.com/serkanshentyurk/behav_utils). Install editable
-(`-e`): the code finds `config.yaml`, the default data root and the results root relative to the
-checkout, so a plain `pip install .` would look for them inside site-packages. Check:
+`pip install -e .` installs the `sc-*` commands (listed in `docs/runs.md`) and the library `behav_utils`
+at the tag pinned in `pyproject.toml` (its own repository: https://github.com/serkanshentyurk/behav_utils).
+Keep the `-e`: the code finds `config.yaml`, the data and the results relative to the repo. Check:
 
 ```bash
 python -c "import behav_utils, sound_categorisation; print(behav_utils.__version__, sound_categorisation.__version__)"
@@ -98,7 +96,7 @@ sc-reports summary [--run <id>]                            # pages from the late
 ssh <user>@ssh.swc.ucl.ac.uk
 module load miniconda && conda activate sound_cat
 cd <repo> && pip install -e .                                      # once per checkout: provides the sc-* commands and behav_utils
-bash slurm/submit.sh sbi-train                                                     # 4 SBI networks (settings.SBI_TRAIN_*) → data root
+bash slurm/submit.sh sbi-train                                                     # 4 SBI networks → data root
 RUN=$(sc-new-run --report model_identification --cohort opto1-cohort)                  # one run id for the chain
 bash slurm/submit.sh grid-search        --cohort opto1-cohort --distribution uniform --fit-target update_matrix --run-id $RUN
 bash slurm/submit.sh sbi-condition --cohort opto1-cohort --distribution uniform --run-id $RUN

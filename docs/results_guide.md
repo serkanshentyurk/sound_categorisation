@@ -83,8 +83,8 @@ times, and anything that changed between those times (practice, drift) ends up i
 permutation test is valid for it; the interval shown comes from resampling whole sessions, and a filled marker
 means that interval excludes zero.
 
-**Compensation contrast** — "laser-off trials inside the laser sessions minus the unflagged trials of the masking
-sessions" (like for like; up to 0.7 it used all masking trials, flagged ones included).
+**Compensation contrast** — "laser-off trials of the laser sessions minus the unflagged trials of the masking
+sessions".
 Asks whether the animal's baseline moves in a session where a third of trials are lasered. In WT it does: the
 laser-off trials sit below the masking sessions by about as much as the laser-on trials sit above them — the
 animal offsets the light-driven push. Same statistical status as the between-session contrast (session
@@ -133,9 +133,8 @@ Page 2 gives the numbers per switch — τ (how many trials the shift takes), tr
 gradual-vs-step — split by whether the switch was the first ever, to a new distribution, or back to a
 familiar one; plus how much of a day's adaptation is lost overnight, and how the criterion keeps drifting
 session by session within a block. Page 3 is the cohort QC: every animal's sessions in order, with accuracy,
-|PSE| and lapses, and a flag on sessions where the psychometric has collapsed; an animal whose Hard sessions are
-mostly flagged, leaning the same way on both A and B days (it sticks to one side whatever the distribution),
-is marked BIASED (`adaptation.BiasRule`). Pages 4–5 are the psychometrics by phase
+|PSE| and lapses, and a flag on sessions where the psychometric has collapsed. An animal whose Hard sessions are
+mostly flagged and lean the same way on A and B days sticks to one side; it is marked BIASED. Pages 4–5 are the psychometrics by phase
 (Uniform, each Hard block in order, all A, all B) — one curve per mouse and the mean, plus the paired PSE per
 mouse for each A/B block pair — first without the biased animals, then with everyone.
 

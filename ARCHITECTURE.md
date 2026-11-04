@@ -28,7 +28,7 @@ behaviour/
   contrasts.py       OptoContrasts = the contrasts of the opto design, as typed library results:
                        within         opto sessions:    laser-on − laser-off trials     (permutation p valid)
                        within_masking masking sessions: flagged − unflagged trials      (null control)
-                       (post_opto: the reference leaves the post-opto trials out; they are laser-off trials)
+                       (for post_opto, the post-opto trials are left out of the reference)
                        between        opto sessions − masking sessions, all trials      (bootstrap only)
                        compensation   laser-off trials of opto sessions − unflagged trials of masking sessions
                                       (bootstrap only)
@@ -99,17 +99,14 @@ slurm/submit.sh {train|condition|gs}        derives --array from the grids
 `load_animals(source)` in `data/cohort.py` gives the same `AnimalRecord` shape for real and synthetic animals,
 so the runners are identical downstream; synthetic cohorts carry ground truth for validation.
 
-The grids cover `settings.SBI_TRAIN_REPS` × models × `SBI_TRAIN_DISTRIBUTIONS`: pooled and moments × BE/SC ×
-Uniform now (4 networks). All 18 (3 representations × 2 models × 3 distributions) exist in the code: widen
-the two tuples, or train one by name (`sc-sbi-train --rep single --distribution hard_a`).
+By default 4 networks are trained: pooled and moments, BE and SC, Uniform only. The code supports all 18
+(3 representations × 2 models × 3 distributions): add them to `SBI_TRAIN_REPS` / `SBI_TRAIN_DISTRIBUTIONS`
+in `settings.py`, or train one by name, e.g. `sc-sbi-train --rep single --distribution hard_a`.
 
-Each method's BE/SC vote is the manuscript's model selection (Methods, *Model selection*), copied from
-there: the cross-validation is repeated over seeds and the lower-error model is called when p < 0.05. The
-manuscript used an ANOVA over 64 seeds; here it is a paired Wilcoxon over the grid-search seeds
-(`GS_N_SEEDS`, 16; `--n-seeds`) or the SBI repeats (`SBI_N_CV_REPEATS`, 64), pairing BE and SC by seed
-(`cv_utils.compare_models`). The seeds vary simulation noise and posterior samples, not the data split
-(the folds are the first and second half of the sessions), so a significant vote means the call is
-stable under that noise.
+The BE/SC call of each method is copied from the manuscript's model selection: repeat the cross-validation
+over seeds and call the model with the lower error if p < 0.05. The manuscript used an ANOVA over 64 seeds;
+here it is a paired Wilcoxon (16 grid-search seeds, or 64 SBI repeats). The seeds change the simulation
+noise, not the data split, so a significant call means it is stable under that noise.
 
 ## Design as executed (opto1 cohort)
 Expert Uniform: a masking block then a laser block per animal, plus ALM (uni/bi) sessions. Hard phase:

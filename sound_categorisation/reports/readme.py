@@ -39,8 +39,7 @@ and git state (sha + dirty flag) that produced it.
 `distribution` in {{Uniform, Hard-A, Hard-B}}; `site` in {{ppc, alm_uni, alm_bi}} (older runs: empty = ppc, plus a
 `design` column — readers normalise them with `reports.tables.normalise_site`);
 `trial_class` (trial of interest) in {{opto, post_opto}}: which trials are contrasted with the non-laser trials.
-For `post_opto` the non-laser reference leaves the post-opto trials out (they are non-laser trials themselves;
-the two sets share no trial). The contrast key stays `post_opto_vs_non_opto`.
+For `post_opto` the comparison is with the other non-laser trials (the post-opto trials are left out).
 
 ## Session types and sites
 
@@ -55,10 +54,10 @@ the two sets share no trial). The contrast key stays `post_opto_vs_non_opto`.
 
 | kind | what is compared | unit | p |
 |---|---|---|---|
-| `within` | `trial_class` trials vs non-laser trials (for `post_opto`: without the post-opto trials), in the laser sessions | trials (and sessions) | permutation (laser randomised per trial) |
+| `within` | `trial_class` trials vs non-laser trials, in the laser sessions | trials (and sessions) | permutation (laser randomised per trial) |
 | `within_masking` | fake-opto trials vs the rest, in masking sessions (null control for the trial flag) | trials | permutation |
 | `between` | laser sessions vs masking sessions, all trials | sessions (and trials) | none: session type was not randomised; the masking sessions came later |
-| `compensation` | laser-OFF trials of the laser sessions vs the unflagged trials of the masking sessions (like for like): does the baseline criterion move in a session where 30 % of trials are lasered? | sessions (and trials) | none (same reason) |
+| `compensation` | laser-OFF trials of the laser sessions vs the unflagged trials of the masking sessions: does the baseline criterion move in a session where 30 % of trials are lasered? | sessions (and trials) | none (same reason) |
 | `dod` | `within` minus `within_masking` (masking-based delta-of-deltas) | sessions/trials | bootstrap only |
 | `vs_ppc` | ALM sessions vs PPC-laser sessions, all trials (ALM sites) | sessions/trials | none |
 
@@ -77,8 +76,7 @@ Stats: `mu` (criterion / PSE of the cumulative-Gaussian fit; positive = more evi
 
 The observed value of every stat in every condition a contrast was built from, so a level can be read
 without reconstructing it from differences. `(kind, phase)` names the condition: `within/opto` = laser-on
-trials of opto sessions, `within/non_opto` = laser-off trials of opto sessions (without the post-opto trials
-when `trial_class` = post_opto), `within_masking/*` the same
+trials of opto sessions, `within/non_opto` = laser-off trials of opto sessions, `within_masking/*` the same
 on sham sessions, `between/opto|masking` = all trials of each session set, `compensation/laser_off` =
 laser-off trials of opto sessions, `compensation/masking` = unflagged trials of masking sessions. Columns: `kind phase n_trials n_sessions stat value` plus the labels.
 
@@ -90,8 +88,7 @@ Per session on all trials: the stats above, `pse` (lapse-corrected PSE), `pse_fi
 pinned to the animal's expert-Uniform fit - only the criterion free), the `pse_dynamics` fit (`pse_start`,
 `pse_end`, `pse_final`, `pse_tau`, `pse_trials_to_90`, `pse_censored`, `pse_shape_daic` = AIC(exponential) -
 AIC(step), `pse_step_switch`), and the adaptation anchors: `prev_pse` (previous session's PSE; the expert-
-Uniform PSE for the first session), `normative_pse` (ideal observer for the rig's Hard distribution - hard side a
-truncated exponential, rate 2.15329 - at the animal's own psychometric `sigma`),
+Uniform PSE for the first session), `normative_pse` (at the animal's own psychometric `sigma`),
 `convergence_final` = (end PSE - prev_pse) / (normative_pse - prev_pse), `delta_from_prev` = PSE - prev_pse.
 `trajectory_curves.csv`: rolling PSE within each session (`trial` = trial within session; 100-trial windows on
 Hard, 50 on Uniform), with the same convergence index.
@@ -100,17 +97,17 @@ Caveats that apply to every trajectory number: one session (~500 trials) at sigm
 +/-0.1 and tau only loosely; `pse_censored` = 1 means the fit did not plateau within the session; |shape_daic| < 2
 is no evidence either way.
 
-Expert-Uniform baseline (`expert_pse`, the sigma and lapses that `pse_fixed` pins, and the sigma of
-`normative_pse`): the `expert_uniform` preset in `config.yaml` - Uniform sessions without masking, washout or ALM
-sessions, the last half of those, accuracy >= 0.70 - then the last 5, on laser-off trials (`Settings.baseline_*`).
-For opto-cohort animals these are mostly laser sessions. This departs from the rule that the baseline and the
-normative denominator come from masking data only; it is kept for now and stated here.
+The expert-Uniform baseline (`expert_pse`, and the sigma and lapses used for `pse_fixed` and `normative_pse`)
+comes from the `expert_uniform` preset: Uniform sessions except masking, washout and ALM, the last half of them,
+accuracy >= 0.70, then the last 5, laser-off trials only. For the opto cohort these are mostly laser sessions.
+The plan was to take the baseline from masking sessions only; that is not done yet. `Settings.baseline_*`
+changes it.
 
 ## Switches (`<cohort>/switches/`, pre-opto cohorts)
 
 Adaptation across whole blocks after a distribution switch (blocks ≥ 1000 trials; short excursions are
 folded into their neighbours). `switches.csv`: one row per animal × switch × stat — `pre_*` (last 250 trials
-before the switch, 4-parameter fit), `normative_pse` (constant-σ observer for the rig's Hard distribution at the animal's pre-switch σ),
+before the switch, 4-parameter fit), `normative_pse` (constant-σ observer at the animal's pre-switch σ),
 the `pse_dynamics` fit on the whole block with shape pinned (`pse_tau`, `pse_final`, `pse_censored`,
 `pse_shape_daic`, …), `trials_to_criterion` (first running window at ≥ 80 % convergence), `plateau` (mean
 convergence over the last third of the block). `convergence.csv`: one row per animal × switch × method ×
@@ -122,8 +119,8 @@ toward the pre-switch criterion. `transition` ∈ first (Uniform→Hard), novel,
 `psychometrics.csv` / `psychometric_curves.csv`: one 4-parameter fit per animal × phase (the pre-switch
 Uniform block, each Hard block in order — `Hard-B #1`, `Hard-A #1`, … — and all Hard-A / all Hard-B pooled).
 `sessions.csv` carries the QC flags: `flagged` (|PSE| > 0.4, a lapse > 0.3, or accuracy < 0.6) and
-`biased_animal` (more than half of the Hard sessions flagged, and the flagged ones lean the same way on both Hard-A
-and Hard-B - an animal that sticks to one side whatever the distribution; `adaptation.BiasRule`, in meta.json). `pre_post.csv`: PSE over the last 250 trials before each switch vs the last 250 of the block. Pages of
+`biased_animal` (more than half of its Hard sessions flagged, leaning the same way on Hard-A and Hard-B: the
+animal sticks to one side; settings in `adaptation.BiasRule`). `pre_post.csv`: PSE over the last 250 trials before each switch vs the last 250 of the block. Pages of
 `summary_switches.pdf`, in order: cohort QC; psychometrics by phase (clean animals; Uniform = last 5 sessions
 before the first switch); PSE before/after each switch; convergence (manuscript recipe, clipped, beside the
 shape-pinned unclipped version); speed/shape/overnight/drift by transition; then psychometrics and convergence

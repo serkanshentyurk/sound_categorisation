@@ -3,60 +3,32 @@
 
 ## Unreleased
 
-Handover review, batch 3: report numbers change; marked ▲. Needs `behav_utils` 0.9.0.
+Handover review, batch 3. Report numbers change (▲). Needs `behav_utils` 0.9.0.
 
-- ▲ Hard-A / Hard-B density (`data/stimuli.py`): the hard side is the rig's truncated exponential, rate
-  2.15329 (`Distribution_Exp_Rate` in `Sound_Cat_V2.bonsai`, recorded in every Hard session), mean distance
-  from the boundary 1/3 — the snapshot gives 0.328-0.334 after the stable start. It used the legacy density
-  λ·exp(-λd) + exp(-λ), λ ≈ 1.841 (mean 0.378), which this rig never played. Every `normative_pse` grows by
-  about a third (Hard-A at sigma 0.2: +0.059 → +0.078), so the switch report's and the trajectory's
-  convergence values shrink by about a quarter. Synthetic Hard sessions use the same density. `rate` is a
-  parameter of every function; sampling is exact (inverse CDF).
-- ▲ `post_opto` contrasts: the reference was every laser-off trial, post-opto ones included, so about a third
-  of the reference was the test set and the effect was diluted (and the permutation gave those trials two
-  labels; `behav_utils` 0.9.0 refuses that). The reference is now the other laser-off trials, in `within`
-  and `within_masking` of both designs, hence `dod`. The key stays `post_opto_vs_non_opto`.
-- ▲ `compensation`: laser-off trials of the laser sessions vs the masking sessions' unflagged trials (was all
-  masking trials, whose flagged ones carry the masking effect). Both designs.
-- ▲ Cohort QC (`adaptation.BiasRule`): an animal is biased only when its flagged Hard sessions lean the same
-  way on both Hard-A and Hard-B; flags confined to one distribution used to count as the same lean. The rule
-  (thresholds, majority, `both_distributions`) is a `BiasRule`, `Settings.bias_rule` in the opto report and
-  `run_switches(bias_rule=…)` in the switch report, written to meta.json.
-- ▲ Through `behav_utils` 0.9.0 (exclusions before positional selection): `expert_uniform` now takes the last
-  half of the Uniform sessions that are not masking / washout / ALM, so the trajectory baseline can differ where
-  the old order left fewer than 5 sessions. The baseline itself is unchanged in definition and is now stated in
-  the report README, including that it departs from the masking-only rule; `Settings.baseline_preset`,
-  `baseline_last_n`, `baseline_trials` change it.
-- Pin `behav_utils` v0.9.0.
-- `tests/e2e/reference/e2e_contrasts.csv` regenerated: only the four `compensation` rows moved (reference
-  n 540 → 363, the unflagged masking trials); every other pinned number is unchanged.
+- ▲ Hard-A/B stimulus density now matches the rig: a truncated exponential with rate 2.15329 (mean distance
+  from the boundary 1/3). The old density was not what the rig played. Normative PSEs are about a third
+  larger, so convergence values drop by about a quarter.
+- ▲ `post_opto` is compared with the other laser-off trials. Before, the post-opto trials were also in the
+  reference, which diluted the effect.
+- ▲ `compensation` compares laser-off trials with the unflagged masking trials (was: all masking trials).
+- ▲ Bias QC: an animal counts as biased only if its flagged sessions lean the same way on both Hard-A and
+  Hard-B. The rule's settings are in `adaptation.BiasRule`.
+- ▲ The trajectory baseline can shift slightly: `behav_utils` 0.9.0 drops excluded sessions before taking
+  the last N. Its settings are `Settings.baseline_*`; the report README says how it is chosen.
+- Pin `behav_utils` v0.9.0. The pinned e2e reference was regenerated; only the four `compensation` rows moved.
 
-Handover review, batch 1 (no report number changes).
+Handover review, batch 1. No report numbers change.
 
-- `compare_models` pairs BE and SC by rep (grid-search seed / SBI repeat). It used to drop NaN errors from
-  each model's list separately and pair the rest by position, so one failed seed (a fit that raised returns
-  NaN) misaligned every later pair and could flip the call or its p. Winner, means and p now come from the
-  same pairs; `comparison` gains `n_pairs`. **Calls can change** where a run had NaN or missing reps:
-  re-run `sc-consensus` on existing runs (it only reads results). `errors_by_rep` is new; `compute_seed_errors`
-  is unchanged (its docstring now says not to pair its lists), and the usage example in `plotting/cv.py`,
-  which paired them by position, now uses `errors_by_rep`.
-- `sc-consensus` with ground truth: `consensus_correct` is NaN for Unclear / Split (was False), and the summary
-  reports how many animals were called and the accuracy among those, instead of counting Unclear as wrong.
-- The vote's provenance is written down (module docstrings, ARCHITECTURE.md, docs/runs.md): it is the
-  manuscript's model selection, with a paired Wilcoxon over seeds / SBI repeats in place of its ANOVA.
-- `snapshot_dir()` is `<data root>/behaviour/snapshots` (`paths.data_root`). It used to pick ceph whenever the
-  machine ran Linux, so on any non-cluster Linux machine it ignored `SC_DATA_ROOT`. Same paths as before on
-  a laptop and on the cluster.
-- `load_experiment_any` without a snapshot now removes the trials whose sound was never sent, as the export
-  does, so both load paths give the same trials (it used to return them).
-- `remove_silent_trials` lines the CSV up against `trials.stimulus_raw` (CSV units) rather than the normalised
-  `stimulus`; identical for this config, robust to a `stimulus_range` change.
-- `GS_N_SEEDS` 32 → 16 (what the Oct 2026 real run used); `--n-seeds` already overrides it.
-- Packaging: `ssm` dropped from `.[fit]` (nothing imports it; SLDS is not written). The version is set once,
-  in `sound_categorisation/__init__.py` (it said 0.6.1 while pyproject said 0.7.0); pyproject reads it.
-- Docs: SETUP's path to `data/paths.py`, the editable-install requirement, the full `sc-*` list; README
-  wording on where `behav_utils` lives; 4 networks by default (18 available) in SETUP / ARCHITECTURE;
-  `docs/runs.md` says ≥ 250 valid trials (the preset) and 16 seeds.
+- `compare_models` pairs BE and SC by seed. It used to pair them by position after dropping NaNs, which could
+  misalign the pairs. On the October all-mice run no call changed.
+- `sc-consensus` with ground truth reports how many animals were called and how many of those were right;
+  Unclear and Split no longer count as wrong.
+- `snapshot_dir()` follows `SC_DATA_ROOT` on every machine (it ignored it on any Linux machine).
+- Loading without a snapshot now also removes the trials whose sound was never sent.
+- `remove_silent_trials` compares against the raw stimulus column (same result for this config).
+- Grid search defaults to 16 seeds (was 32); `--n-seeds` changes it.
+- `ssm` removed from `.[fit]`. The version is set in one place, `sound_categorisation/__init__.py`.
+- Docs: corrected paths and network counts; the model-ID call is documented as the manuscript's recipe.
 
 - `behav_utils` 0.8.0 (pin moved from 0.7.1). Call sites changed: `SessionData.summary()` is a
   `SessionSummary` (`.accuracy`, not `['perf']`) in `data/cohort.py`; `compare_groups` returns a

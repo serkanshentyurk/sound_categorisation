@@ -115,11 +115,8 @@ class TestRigHardDensity:
 
     def test_density_integrates_to_one_and_peaks_at_the_boundary(self):
         from scipy.integrate import quad
-        from sound_categorisation.data.stimuli import (
-            HARD_EXP_RATE,
-            compute_distribution_density,
-            hard_side_density,
-        )
+
+        from sound_categorisation.data.stimuli import HARD_EXP_RATE, compute_distribution_density, hard_side_density
         assert quad(lambda d: float(hard_side_density(d)), 0, 1)[0] == pytest.approx(1.0, abs=1e-9)
         peak = HARD_EXP_RATE / (1 - np.exp(-HARD_EXP_RATE))
         dens = compute_distribution_density('hard_b', np.array([0.0, 1.0, -0.5]))

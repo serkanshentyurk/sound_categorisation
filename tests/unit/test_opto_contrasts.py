@@ -7,6 +7,7 @@ import pytest
 from behav_utils.analysis import shared_trial_count
 from behav_utils.data.ops.filtering import filter_trials
 from behav_utils.data.ops.selection import select_sessions
+
 from sound_categorisation.behaviour.adaptation import BiasRule, flag_biased_sessions
 from sound_categorisation.behaviour.contrasts import _reference, ppc_contrasts
 from sound_categorisation.data.cohort import ensure_presets

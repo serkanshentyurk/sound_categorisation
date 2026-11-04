@@ -39,7 +39,7 @@ Common options: `--cohort` (default `opto1-cohort`), `--snapshot`, `--config`, `
 
 | command | computes | inputs | writes | time |
 |---|---|---|---|---|
-| `sc-export-snapshot [--check-only]` | the pickled experiment every analysis loads | Bonsai CSVs via `config.yaml` | `<data root>/snapshots/sound_cat_snapshot.pkl` (`behaviour/snapshots/` on ceph) | minutes |
+| `sc-export-snapshot [--check-only]` | the pickled experiment every analysis loads | Bonsai CSVs via `config.yaml` | `<data root>/behaviour/snapshots/sound_cat_snapshot.pkl` | minutes |
 | `sc-make-synthetic-cohort --distribution D [--name N] [--n-per-model K]` | a synthetic cohort with known BE/SC ground truth | — | `<data root>/synthetic_cohorts/<name>.pkl` | seconds |
 | `sc-new-run --report R --cohort C [--fast] [--label L]` | an empty run directory (+ `logs/`), prints the id | — | `<R>/<C>/<run_id>/` | instant |
 | `sc-make-synthetic-run --results DIR --data DIR [--no-model-id]` | synthetic opto, switch and model-identification runs in the real layout, for the notebooks and CI | — | `DIR/opto_contrasts/synthetic/…`, `switch_adaptation/synthetic/…`, `light_artefact/synthetic/…`, `model_identification/synthetic_uniform/…` | minutes |
@@ -66,12 +66,9 @@ Common options: `--cohort` (default `opto1-cohort`), `--snapshot`, `--config`, `
 Real cohorts: sessions come from the `model_id_<D>` preset (`config.yaml`: regular sessions only, the last 5 that pass
 accuracy > 0.7 and ≥ 250 valid trials), read from the snapshot; an animal with fewer than `MODEL_ID_MIN_SESSIONS` (4) is
 left out. Every runner writes `<run>/sessions/<D>.csv` listing each animal's sessions (kept and dropped). Grid-search
-seeds default to `GS_N_SEEDS` (16) for a real cohort and `SYNTH_GS_N_SEEDS` (8) for a synthetic one;
-`--n-seeds N` sets them (pass the same value to `submit.sh`, which forwards it to `--print-array`, and to
-`--gather`). Each method's BE/SC call is the manuscript's (repeated CV, p < 0.05; a paired Wilcoxon over
-seeds or SBI repeats here, an ANOVA over 64 seeds there); see ARCHITECTURE.md, *The model-identification
-chain*. With ground truth, `sc-consensus` reports how many animals were called and the accuracy among
-those; Unclear / Split are not counted as wrong.
+seeds: 16 for a real cohort, 8 for a synthetic one; `--n-seeds N` changes it (pass it through `submit.sh`).
+The BE/SC call follows the manuscript (see ARCHITECTURE.md). With ground truth, `sc-consensus` reports how
+many animals were called and how many of those were right.
 
 `--fast` on `sc-grid-search` / `sc-sbi-condition` / `sc-sbi-train` / `sc-sbi-sbc` uses the tiny grid / few repeats / few simulations / few draws and
 suffixes the run id with `_fast`. `--coarse` on `sc-grid-search` selects the coarse grid. `submit.sh` creates the
