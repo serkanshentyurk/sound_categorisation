@@ -106,11 +106,13 @@ ssh keys set up (ask in `#ithpc`).
 
 ```bash
 sc-reports switch-adaptation --cohort behaviour1-cohort
-caffeinate -i sc-reports battery
+caffeinate -i sc-reports battery --jobs 6
 ```
 
-The switch report takes minutes, the battery hours. Results land in `<repo>/results/`, one folder per run;
-`latest` points at the newest. Then open the notebooks:
+The switch report takes minutes. The battery takes about six hours one animal at a time; `--jobs 6` runs six
+animals at once (use your number of cores minus two) and gives the same numbers. `caffeinate -i` only keeps
+the Mac awake. Results land in `<repo>/results/`, one folder per run; `latest` points at the newest. Then
+open the notebooks:
 
 ```bash
 jupyter lab notebooks/
@@ -143,6 +145,21 @@ sc-fetch results model_identification/all-mice
 ```
 
 Every command, its options and what it writes: [docs/runs.md](docs/runs.md).
+
+## New animals
+
+1. On the rig: a row for the mouse in `Params/Mouse_Room_Params.xlsx`, in the `behaviour_rig` repository
+   (its INSTRUCTIONS.md).
+2. Its cohort: add it to the cohort's list under `cohorts:` in `config.yaml`, or add a new cohort line.
+3. Its genotype: add it to `$BEHAV_DATA_DIR/Raw/animal_metadata.json`, for example
+   `"SS24": {"genotype": "het"}`. An animal without an entry is left out of WT vs HET comparisons; the
+   reports warn "animal(s) without genotype".
+4. Session types the data cannot show (masking, ALM, washout) go by date under `session_types:` in
+   `config.yaml`; sessions to leave out go under `sessions_to_ignore:`.
+5. Export the snapshot again. Genotypes and `sessions_to_ignore` are read at export; session types and
+   presets are read from `config.yaml` every time the snapshot is loaded.
+
+A cohort member with no data yet is left out of the reports with a warning.
 
 ## Where things are
 

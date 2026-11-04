@@ -33,6 +33,7 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+import warnings
 from pathlib import Path
 from typing import Dict, List
 
@@ -41,6 +42,7 @@ import matplotlib
 matplotlib.use('Agg')
 
 from behav_utils.config.schema import load_cohorts
+from behav_utils.data.structures import ExperimentData
 
 from sound_categorisation.data.cohort import (
     SITES,
@@ -81,12 +83,20 @@ def _meta(a, **extra) -> dict:
 
 
 def _animals(experiment, cohorts: Dict[str, List[str]], a) -> List[str]:
+    """The animals to run: --animals if given (each must exist), else the cohort's animals that have data
+    (members without data are left out with a warning)."""
     if a.cohort not in cohorts:
         sys.exit(f'unknown cohort {a.cohort!r}; cohorts in config.yaml: {sorted(cohorts)}')
-    ids = list(a.animals) if getattr(a, 'animals', None) else list(cohorts[a.cohort])
+    named = getattr(a, 'animals', None)
+    ids = list(named) if named else list(cohorts[a.cohort])
     unknown = [i for i in ids if i not in experiment.animals]
-    if unknown:
+    if unknown and named:
         sys.exit(f'animals not in the experiment: {unknown}; available: {sorted(experiment.animals)}')
+    if unknown:
+        warnings.warn(f'cohort {a.cohort}: no data for {unknown}; running without them', stacklevel=2)
+        ids = [i for i in ids if i in experiment.animals]
+    if not ids:
+        sys.exit(f'cohort {a.cohort}: none of its animals are in the experiment')
     if getattr(a, 'limit', None):
         ids = ids[:a.limit]
     return ids
@@ -103,21 +113,40 @@ def _load(a):
 
 # ── the opto report ──────────────────────────────────────────────────────────
 
+def _compute_one(experiment, aid, distribution, trial_class, design, site, cohort, settings, genotype):
+    t0 = time.time()
+    r = compute_animal(experiment, aid, distribution, trial_class, design=design, site=site, cohort=cohort,
+                       settings=settings, genotype=genotype)
+    return aid, r, time.time() - t0
+
+
+def _only(experiment, aid) -> ExperimentData:
+    """The experiment with one animal: what a parallel worker needs, without copying all the others."""
+    return ExperimentData(animals={aid: experiment.animals[aid]}, metadata=experiment.metadata)
+
+
 def run_animal(experiment, ids, distribution, trial_class, design, site, a, settings) -> Dict[str, object]:
+    """Compute, write and plot each animal. ``a.jobs`` > 1 computes that many animals at once (separate
+    processes; the numbers are the same, every resampling is seeded); writing and plotting stay here."""
     out = _condition_dir(a.run_path, distribution, design, site, trial_class)
     (out / 'pdf').mkdir(parents=True, exist_ok=True)
     by_animal, _ = gather_genotypes(experiment)
+    args = (distribution, trial_class, design, site, a.cohort, settings)
+    jobs = getattr(a, 'jobs', 1) or 1
+    if jobs > 1 and len(ids) > 1:
+        from joblib import Parallel, delayed
+        computed = Parallel(n_jobs=jobs, return_as='generator')(
+            delayed(_compute_one)(_only(experiment, aid), aid, *args, by_animal.get(aid, 'unknown')) for aid in ids)
+    else:
+        computed = (_compute_one(experiment, aid, *args, by_animal.get(aid, 'unknown')) for aid in ids)
     results = {}
-    for aid in ids:
-        t0 = time.time()
-        r = compute_animal(experiment, aid, distribution, trial_class, design=design, site=site, cohort=a.cohort,
-                           settings=settings, genotype=by_animal.get(aid, 'unknown'))
+    for aid, r, seconds in computed:
         write_result(out / aid, to_tables(r), readout_arrays(r), _meta(a, animal=aid, distribution=distribution,
                                                                      site=site_label(design, site), trial_class=trial_class,
                                                                      settings=settings.to_dict()))
         animal_pdf(r, out / 'pdf' / f'{aid}_{site_label(design, site)}_{trial_class}.pdf', settings)
         results[aid] = r
-        print(f'  {aid}: {time.time() - t0:.0f}s')
+        print(f'  {aid}: {seconds:.0f}s')
     return results
 
 
@@ -229,7 +258,7 @@ def cmd_battery(a):
             cmd_opto_contrasts(ns)
         elif stage == 'opto-contrasts':
             ns = argparse.Namespace(**base, all=True, fast=a.fast, limit=a.limit, level='both', distribution=None,
-                                    trial_class='opto', site='ppc')
+                                    trial_class='opto', site='ppc', jobs=getattr(a, 'jobs', 1))
             cmd_opto_contrasts(ns)
             opto_run_id = ns.run_id
         elif stage == 'light-artefact':
@@ -268,6 +297,7 @@ def build_parser() -> argparse.ArgumentParser:
     so.add_argument('--site', default='ppc', choices=SITES, help='inactivation site of the sessions')
     so.add_argument('--level', default='both', choices=('animal', 'group', 'both'))
     so.add_argument('--all', action='store_true', help='every site × distribution × trial class (the battery)')
+    so.add_argument('--jobs', type=int, default=1, help='animals computed at once (default 1; e.g. your number of cores)')
     so.set_defaults(fn=cmd_opto_contrasts)
 
     sw = sub.add_parser('switch-adaptation', help='switch adaptation across blocks (pre-opto cohorts)')
@@ -291,6 +321,7 @@ def build_parser() -> argparse.ArgumentParser:
     sb.add_argument('--fast', action='store_true', help='fast settings in every stage: a pipe-clean, not results')
     sb.add_argument('--skip', nargs='*', choices=BATTERY_STAGES, default=None, help='stages to leave out')
     sb.add_argument('--only', choices=BATTERY_STAGES, default=None, help='run one stage')
+    sb.add_argument('--jobs', type=int, default=1, help='animals computed at once in opto-contrasts (default 1)')
     sb.set_defaults(fn=cmd_battery)
 
     return p

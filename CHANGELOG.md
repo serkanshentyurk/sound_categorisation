@@ -3,6 +3,13 @@
 
 ## Unreleased
 
+- `sc-reports opto-contrasts` / `battery --jobs N`: N animals computed at once (separate processes). Same
+  numbers as one at a time, since every resampling is seeded; writing and plotting stay in the main process.
+  `joblib>=1.3`.
+- Reports: a cohort member with no data (SS03) is left out with a warning instead of stopping the run; an
+  animal named with `--animals` that has no data still stops it.
+- START_HERE.md: "New animals" (rig row, cohort, genotype in `animal_metadata.json`, session types, re-export).
+
 - Pin `behav_utils` v0.9.1: empty `Trial_Summary` files (a run stopped before writing anything) are skipped
   as if absent; the export used to stop on them (`SS01/SOUND_CAT_SS01_2026_1_22`). The silent-trial check
   ignores them the same way. A session whose real data sat next to an empty file was dropped whole by
