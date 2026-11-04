@@ -20,7 +20,8 @@ data/
                      AnimalRecord + load_animals (real or synthetic animals for model identification)
   snapshot.py        export/load the pickled experiment; re-applies session types and presets from config
   stimuli.py         Hard-A / Hard-B densities, normative PSE at a given sigma, stimulus sampling
-  paths.py           data/results roots (laptop vs cluster), run ids, latest resolution, build_metadata, project config
+  paths.py           every path: on the cluster all under $BEHAV_DATA_DIR (Raw, Processed, Processed/results),
+                     on a laptop <repo>/../../data and <repo>/results; run ids, latest, build_metadata
   synthetic.py       synthetic ExperimentData with the real designs' shape (the e2e tests' data)
 behaviour/
   light_artefact.py  LightArtefact: light-on − light-off per light-carrying session set (ppc_opto, ppc_sham,
@@ -51,14 +52,17 @@ reports/             compute.py  AnimalResult / GroupResult / Settings (no matpl
                      readme.py   the generated results README
                      cli.py      `python -m sound_categorisation.reports` / `sc-reports`
 plotting/            project plotters (CV, opto swarms, assignment, SBI diagnostics)
-cli/                 entry points (pyproject [project.scripts]): sc-reports, sc-export-snapshot,
-                     sc-make-synthetic-cohort, sc-new-run, sc-sbi-train, sc-sbi-condition, sc-grid-search, sc-consensus
+cli/                 entry points (pyproject [project.scripts]): sc-reports, sc-export-snapshot, sc-update,
+                     sc-fetch, sc-make-synthetic-cohort, sc-make-synthetic-run, sc-new-run, sc-sbi-train,
+                     sc-sbi-condition, sc-sbi-sbc, sc-grid-search, sc-consensus, sc-feature-selection
+slurm/               env.sh (module, conda env, threads; sourced by every job and by load-env), the job
+                     scripts, submit.sh (array size from inference/tasks.py)
 ```
 
 ## Runs: one root, one layout, one id
 
 ```
-<results root>/<report>/<cohort>/<run_id>/...      results_root(): <repo>/results locally, ceph on the cluster
+<results root>/<report>/<cohort>/<run_id>/...      results_root(): <repo>/results, or $BEHAV_DATA_DIR/Processed/results on the cluster
 <results root>/<report>/<cohort>/latest            symlink (+ latest.txt) to the newest run
 ```
 `report` ∈ `opto_contrasts`, `switch_adaptation`, `light_artefact`, `model_identification`; `run_id` = `YYYY-MM-DD_HHMM_<sha7>`,

@@ -1,17 +1,16 @@
-# Sound categorisation — PPC and statistical model updating
+# Sound categorisation: PPC and statistical model updating
 
-PhD project, Akrami Lab (Sainsbury Wellcome Centre, UCL). Head-fixed mice categorise sounds (2-AFC);
-the stimulus distribution is switched between Uniform, Hard-A and Hard-B; posterior parietal cortex
-(PPC) is silenced optogenetically (VGAT-ChR2-EYFP, 30 % of trials, bilateral). The question is whether
-PPC is causally necessary while the animal's statistical model of the task is being updated, and
-dispensable once that model is adequate.
+PhD project, Akrami Lab (Sainsbury Wellcome Centre, UCL). Head-fixed mice categorise sounds (2-AFC); the
+stimulus distribution is switched between Uniform, Hard-A and Hard-B; posterior parietal cortex (PPC) is
+silenced optogenetically (VGAT-ChR2-EYFP, 30 % of trials, bilateral). The question is whether PPC is needed
+while the animal updates its statistical model of the sounds, and not once that model fits.
 
-The analysis code is in two places:
+**New here? Read [START_HERE.md](START_HERE.md) first.** It covers the three repositories, your data
+folder, the everyday routines and who to ask.
 
-- **`sound_categorisation/`** (this repository) — the project package: cohorts, the opto contrasts,
-  per-session adaptation, BE/SC models and inference, the report pipeline.
-- **`behav_utils`** — a task-agnostic 2-AFC analysis library in its own repository,
-  [github.com/serkanshentyurk/behav_utils](https://github.com/serkanshentyurk/behav_utils), installed from a tagged release.
+This repository is the analysis. It builds on [`behav_utils`](https://github.com/serkanshentyurk/behav_utils),
+a general 2-AFC library installed from a tagged release; the experiments run from the `behaviour_rig`
+repository.
 
 ## Layout
 
@@ -28,10 +27,9 @@ sound_categorisation/                 ← repo root (pyproject.toml, config.yaml
 │   ├── features/                     SBI feature-selection diagnostics
 │   ├── reports/                      compute → tables → figures → PDF → summary (+ README, CLI)
 │   ├── plotting/                     project plotters (CV, opto swarms, assignment, SBI diagnostics)
-│   └── cli/                          entry points, installed as sc-* commands: reports, export_snapshot,
-│                                     make_synthetic_cohort, make_synthetic_run, new_run, sbi_train, sbi_condition,
-│                                     sbi_sbc, grid_search, consensus, feature_selection
-├── slurm/                            job scripts + submit.sh (array size derived from tasks.py)
+│   └── cli/                          the sc-* commands (export_snapshot, update, fetch, new_run, sbi_train,
+│                                     sbi_condition, sbi_sbc, grid_search, consensus, feature_selection, ...)
+├── slurm/                            env.sh (the cluster environment), job scripts, submit.sh
 ├── notebooks/                        the story, one notebook per chapter (notebooks/README.md); nb_setup.py
 ├── tests/                            unit/ (fast) · e2e/ (report pipeline on synthetic data, pinned reference) · fit/ (torch)
 ├── docs/                             runs.md (every command and where it writes), results_guide.md
@@ -40,33 +38,23 @@ sound_categorisation/                 ← repo root (pyproject.toml, config.yaml
 
 ## Quick start
 
+Install: [SETUP.md](SETUP.md). Then, on the laptop:
+
 ```bash
-pip install -e ".[dev]"                                   # installs the sc-* commands and behav_utils from its tagged release
-pytest tests/unit -q                                         # fast
-pytest tests/e2e -q                                          # the report pipeline end to end on synthetic data
-sc-reports battery                                           # check → opto-contrasts → light-artefact → summary (hours)
+sc-fetch snapshot
+sc-reports switch-adaptation --cohort behaviour1-cohort
+sc-reports battery
 ```
 
-Every run writes under `results/<report>/<cohort>/<run_id>/` (`opto_contrasts`, `switch_adaptation`,
-`model_identification`; run id = date + git SHA; `latest` points at the newest run): tidy CSV tables +
-`meta.json` next to every PDF, a four-page `summary.pdf`, and a generated `README.md` describing every
-column and page. `docs/runs.md` lists every command, what it computes and where it writes.
+Every run writes to `results/<report>/<cohort>/<run_id>/`: tidy CSV tables, `meta.json`, PDFs and a
+`README.md` that explains every column and page. `latest` points at the newest run.
 
 ## Read next
 
-- [SETUP.md](SETUP.md) — environments, data, snapshot, runs, cluster.
-- [docs/runs.md](docs/runs.md) — every command, what it computes, where it writes.
-- [CHANGELOG.md](CHANGELOG.md) — what changed when.
-- [ARCHITECTURE.md](ARCHITECTURE.md) — how the project layer is built on the library; the analyses and
-  what each contrast means; the model-identification chain.
-- [LLM_CONTEXT.md](LLM_CONTEXT.md) — orientation for an AI assistant working on this repo.
-- [docs/results_guide.md](docs/results_guide.md) — how to navigate and read a results folder.
-- `behav_utils` — its own repository: [README, ARCHITECTURE, docs/](https://github.com/serkanshentyurk/behav_utils).
-
-## Status (October 2026)
-
-Aim 2, expert phase: analysed (opto1 cohort, 5 HET / 4 WT). Aim 2, post-shift: the daily A/B alternation
-did not produce measurable adaptation; a blocked design is needed. Aim 1 (BE/SC identification via grid
-search + SBI) has its pipeline in place; the real-data consensus run is pending. Aim 3 (imaging) not started.
-Code: the October cleanup (layout, entry points, run ids, tests split, notebooks reading run tables, CI
-executing them on synthetic runs) and the light-artefact report are in; SLDS state assignment is not yet written.
+- [START_HERE.md](START_HERE.md): the whole project, from the rig to the results.
+- [SETUP.md](SETUP.md): installing, settings, tests.
+- [docs/runs.md](docs/runs.md): every command, what it computes, where it writes.
+- [docs/results_guide.md](docs/results_guide.md): how to read a results folder.
+- [ARCHITECTURE.md](ARCHITECTURE.md): how the code is built.
+- [CHANGELOG.md](CHANGELOG.md): what changed when.
+- [LLM_CONTEXT.md](LLM_CONTEXT.md): orientation for an AI assistant.

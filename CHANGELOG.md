@@ -3,6 +3,13 @@
 
 ## Unreleased
 
+Docs. No code changes.
+
+- `START_HERE.md` is the way in: the three repositories, your data folder, the everyday routines, where
+  things are, who to ask, the caveats in the data.
+- README, SETUP, `docs/runs.md`, ARCHITECTURE, the notebooks README and LLM_CONTEXT rewritten to match it,
+  in plain language; command blocks carry no inline comments.
+
 Everyday commands. No report numbers change.
 
 - On the cluster every path now hangs off `BEHAV_DATA_DIR` (your folder on ceph): raw data in `Raw`,

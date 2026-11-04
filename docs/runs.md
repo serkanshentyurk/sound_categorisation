@@ -1,7 +1,8 @@
 # Runs — every command, what it computes, where it writes
 
-All results go under one root (`paths.results_root()`: `<repo>/results` locally, `<data root>/results`
-on the cluster, `SC_RESULTS_ROOT` to override) as
+Where to run each command, and the one-time settings, are in [START_HERE.md](../START_HERE.md). All results go
+under one root (`paths.results_root()`: `<repo>/results` on a laptop, `$BEHAV_DATA_DIR/Processed/results` on
+the cluster, `SC_RESULTS_ROOT` to override) as
 
 ```
 <results root>/<report>/<cohort>/<run_id>/...
@@ -11,7 +12,8 @@ on the cluster, `SC_RESULTS_ROOT` to override) as
 `run_id` = `YYYY-MM-DD_HHMM_<git sha7>`, plus `_fast` for reduced runs and an optional label. Every folder a
 command writes carries a `meta.json` (run id, argv, snapshot, config, settings, package versions, git sha
 and dirty flag). Inputs that are not results — the snapshot, synthetic cohorts, trained SBI networks — live
-under `paths.data_root()` (`<repo>/../../data` locally, ceph on the cluster, `SC_DATA_ROOT` to override).
+under `paths.data_root()` (`<repo>/../../data` on a laptop, `$BEHAV_DATA_DIR/Processed` on the cluster,
+`SC_DATA_ROOT` to override).
 
 Three kinds of run, three homes:
 
@@ -20,6 +22,18 @@ Three kinds of run, three homes:
 | tests | prove the code works | `tests/{unit,e2e,fit}` (the library's suite lives in its own repo) | pytest `tmp_path` only |
 | validation | prove the method works on synthetic ground truth | the same commands, on a `synthetic_*` cohort | `model_identification/synthetic_*/<run_id>/` |
 | analysis | real cohorts | `sc-*` commands, `slurm/` | `<report>/<cohort>/<run_id>/` |
+
+## Everyday
+
+| command | does | where |
+|---|---|---|
+| `load-env` | goes to the repository and loads the cluster environment (`slurm/env.sh`); a `~/.bashrc` alias, see START_HERE.md | cluster |
+| `sc-update [--no-deps]` | `git pull`, then `pip install -e .`, then prints the versions; `--no-deps` keeps an editable `behav_utils` | both |
+| `sc-fetch snapshot \| networks \| synthetic` | copies that folder from `$BEHAV_DATA_DIR/Processed` on ceph to the same place under `data_root()` | laptop |
+| `sc-fetch results <report>/<cohort>[/<run_id>]` | copies results from ceph to the same place under `results_root()` | laptop |
+
+`sc-fetch` uses rsync over ssh as `$SWC_USER`, through `ssh.swc.ucl.ac.uk` to `hpc-gw2`; `--dry-run` lists
+what it would copy.
 
 ## Behaviour reports (laptop; `sc-reports`)
 
@@ -39,7 +53,7 @@ Common options: `--cohort` (default `opto1-cohort`), `--snapshot`, `--config`, `
 
 | command | computes | inputs | writes | time |
 |---|---|---|---|---|
-| `sc-export-snapshot [--check-only]` | the pickled experiment every analysis loads | Bonsai CSVs via `config.yaml` | `<data root>/behaviour/snapshots/sound_cat_snapshot.pkl` | minutes |
+| `sc-export-snapshot [--check-only]` | the pickled experiment every analysis loads (run it on the cluster) | the session CSVs in `$BEHAV_DATA_DIR/Raw`, via `config.yaml` | `<data root>/behaviour/snapshots/sound_cat_snapshot.pkl` | minutes |
 | `sc-make-synthetic-cohort --distribution D [--name N] [--n-per-model K]` | a synthetic cohort with known BE/SC ground truth | — | `<data root>/synthetic_cohorts/<name>.pkl` | seconds |
 | `sc-new-run --report R --cohort C [--fast] [--label L]` | an empty run directory (+ `logs/`), prints the id | — | `<R>/<C>/<run_id>/` | instant |
 | `sc-make-synthetic-run --results DIR --data DIR [--no-model-id]` | synthetic opto, switch and model-identification runs in the real layout, for the notebooks and CI | — | `DIR/opto_contrasts/synthetic/…`, `switch_adaptation/synthetic/…`, `light_artefact/synthetic/…`, `model_identification/synthetic_uniform/…` | minutes |

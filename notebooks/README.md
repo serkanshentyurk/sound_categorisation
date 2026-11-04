@@ -18,9 +18,15 @@ notebooks). `nb_setup.py` holds the loaders and the cohort/run switches.
 
 ## Running them
 
+On real data: fetch the snapshot, run the reports, open the notebooks. For `31`, fetch the
+model-identification run from the cluster first.
+
 ```bash
-sc-reports battery                        # or: sc-reports opto-contrasts --all ; sc-reports switch-adaptation --cohort behaviour1-cohort
-jupyter lab notebooks/                    # real cohorts, latest runs
+sc-fetch snapshot
+sc-reports battery
+sc-reports switch-adaptation --cohort behaviour1-cohort
+sc-fetch results model_identification/all-mice
+jupyter lab notebooks/
 ```
 
 Without data, or to see them on known-good synthetic input (this is what CI does):
@@ -28,8 +34,12 @@ Without data, or to see them on known-good synthetic input (this is what CI does
 ```bash
 sc-make-synthetic-run --results /tmp/sc_results --data /tmp/sc_data
 SC_NB_SYNTHETIC=1 SC_RESULTS_ROOT=/tmp/sc_results SC_DATA_ROOT=/tmp/sc_data jupyter lab notebooks/
-SC_NB_SYNTHETIC=1 SC_RESULTS_ROOT=/tmp/sc_results SC_DATA_ROOT=/tmp/sc_data \
-    pytest --nbmake notebooks/[0-2]*.ipynb notebooks/31_*.ipynb -q      # execute them all
+```
+
+To execute them all, as CI does:
+
+```bash
+SC_NB_SYNTHETIC=1 SC_RESULTS_ROOT=/tmp/sc_results SC_DATA_ROOT=/tmp/sc_data pytest --nbmake notebooks/[0-2]*.ipynb notebooks/31_*.ipynb -q
 ```
 
 `SC_NB_RUN=<run_id>` pins a run instead of `latest`. Outputs are not committed (strip before commit:

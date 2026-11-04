@@ -1,12 +1,11 @@
 # LLM_CONTEXT — sound_categorisation
 
-Read this first if you are an AI assistant (or a new person) working on this repository. It is the
-orientation the code cannot give you: what the science is, how the code is layered, the rules that hold,
-and where the traps are. The library lives in its own repository (github.com/serkanshentyurk/behav_utils) and
-has its own LLM_CONTEXT.md there.
+Read this first if you are an AI assistant working on this repository; a new person should start with
+START_HERE.md. This is the orientation the code cannot give you: what the science is, how the code is
+layered, the rules that hold, and where the traps are. The library lives in its own repository
+(github.com/serkanshentyurk/behav_utils) and has its own LLM_CONTEXT.md there.
 
 ## The science in six lines
-
 Head-fixed mice categorise sounds (2-AFC). The stimulus distribution is switched (Uniform → Hard-A ↔
 Hard-B). PPC is silenced optogenetically on 30 % of trials (VGAT-ChR2-EYFP HET; WT littermates get the
 same light with no opsin). Hypothesis: PPC is causally necessary while the animal's statistical model of
@@ -14,7 +13,10 @@ the task is being updated, dispensable once it is adequate. Two behavioural stra
 (boundary estimation) and SC (statistical categorisation). Aims: characterise behaviour and identify the
 model (grid search + simulation-based inference); silence PPC in expert and post-shift phases; image PPC.
 
-## What the data say so far (opto1 cohort, Sept 2026) — do not contradict these without new tables
+## What the data said (opto1 cohort, Sept 2026) — do not contradict these without new tables
+
+The November 2026 fixes moved some numbers (normative PSE about 1.3× larger, the post-opto and compensation
+references; CHANGELOG ▲). Check these statements against runs made after them.
 
 - Expert Uniform, HET: silencing changes nothing on the silenced trial (all stats within ±0.1, bounded CIs).
 - Expert Uniform, WT: light alone shifts the criterion toward A in 4/4 animals; not at ALM; no carry-over.
@@ -25,14 +27,17 @@ model (grid search + simulation-based inference); silence PPC in expert and post
   the "laser sessions vs masking sessions" contrast is order-confounded. Prediction 2 is untested, not refuted.
 
 ## Repository shape
-
 Two packages, imports one way: `sound_categorisation` (project) → `behav_utils` (library). Both are pip
-installed (`pip install -e .`, which pulls `behav_utils` from its tagged release), which also installs the `sc-*` commands;
-nothing in the packages manipulates `sys.path`. Layout and
-module roles: `README.md`, `ARCHITECTURE.md`. Environments, data, cluster: `SETUP.md`.
+installed (`pip install -e .`, which pulls `behav_utils` from its tagged release and installs the `sc-*`
+commands); nothing in the packages manipulates `sys.path`. Layout and module roles: `README.md`,
+`ARCHITECTURE.md`. Installing: `SETUP.md`. Data folders and routines: `START_HERE.md`.
+
+Paths: every path comes from `data/paths.py`. On the cluster all of them hang off `BEHAV_DATA_DIR` (raw
+data in `Raw`, snapshot and networks in `Processed`, results in `Processed/results`); the code stops if it
+is not set. `slurm/env.sh` is the cluster environment; `sc-update` pulls and reinstalls; `sc-fetch` copies
+cluster folders to the same place on a laptop.
 
 ## Rules that hold
-
 1. The library is task-agnostic. Distribution names, session types, genotypes, normative observers, cohort
    logic and report layouts are project code. If a library change needs the word `masking`, stop.
 2. Pipeline: `load → select_sessions → filter_trials → TrialArrays → compute_x → plot_x`. Computes take
@@ -52,17 +57,15 @@ module roles: `README.md`, `ARCHITECTURE.md`. Environments, data, cluster: `SETU
    English; say what a change costs and what could go wrong.
 
 ## Where to look for
-
 - which sessions an animal has of each type → `data/cohort.py: collect_sessions_ppc / _alm`; `config.yaml: session_types`
 - what a contrast is → `behaviour/contrasts.py` docstring; `docs/results_guide.md` in words
 - the numbers behind any page → `results/opto_contrasts/<cohort>/latest/<dist>/<design>_<trial_class>/<animal>/contrasts.csv`
-- which command writes what, and where → `docs/runs.md`
+- which command writes what, and where → `docs/runs.md`; where the data live → `START_HERE.md`
 - per-session adaptation → `behaviour/adaptation.py` (`Trajectory`); columns explained in the generated results README
 - SLURM job counts → `inference/tasks.py`; never hard-code an `--array`
 - run provenance → `meta.json` in every results folder (snapshot, config, settings, versions, git SHA)
 
 ## Traps
-
 - Uniform ran masking block *then* laser block; Hard ran laser sessions *then* masking sessions. Any
   between-session contrast contains time. The trajectory rows on the Hard pages show the drift.
 - Each Hard session is one switch; there is no multi-session block after a switch. Do not analyse
@@ -81,11 +84,18 @@ module roles: `README.md`, `ARCHITECTURE.md`. Environments, data, cluster: `SETU
   `pse_dynamics` τ is not identifiable at ~500 trials; it is in the tables and per-animal PDFs, not on the
   summary pages, for that reason.
 - SS12 has no data; SS17 and SS22 have no Hard sessions; SS20 has no Uniform laser sessions.
+- The Hard-A/B hard side is the rig's truncated exponential (rate 2.15329, `data/stimuli.py`), not the
+  legacy density; normative PSEs depend on it.
+- `post_opto` is compared with the other laser-off trials; post-opto trials are laser-off trials, and
+  `behav_utils` ≥ 0.9 refuses to permute phases that share trials.
+- The model-ID p-values come from seeds that vary simulation noise on a fixed data split (the manuscript's
+  recipe); they say the call is stable under that noise, not that the data favour it.
+- Data before 5 October 2026 carry rig faults (START_HERE.md, caveats); they are kept and stated.
 - `*.egg-info`, `build/`, `__pycache__` are build artefacts; they must not be tracked.
 
 ## Open work
-
-Aim 1 real-data consensus run (pipeline in place, cluster run pending); SLDS state assignment not yet
-written; `31_model_identification` real-data section waits on the consensus run; next-cohort design
-(blocked distributions, interleaved session types, opsin-negative light control at matched power).
+Aim 1: the all-mice consensus run exists (October 2026: 12 BE, 3 SC, 4 Unclear); SLDS and disRNN are not
+written; Hard-distribution networks are not trained; `31_model_identification` real-data section to do.
+Next-cohort design (blocked distributions, interleaved session types, opsin-negative light control at
+matched power).
 Neural data (Aim 3): align on `TrialArrays.trial_key`; the alignment layer is project code, not library.
