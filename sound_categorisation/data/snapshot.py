@@ -63,9 +63,9 @@ def _session_summary(experiment) -> Dict[str, int]:
 def _rows_as_loaded(session, config):
     """
     The stimulus check and the stimulus column for the trial tables behind one loaded session, trimmed and
-    merged the way behav_utils' loader does it (0.7 and 0.8): files in sorted order, each file's last row dropped
-    (``drop_last_row``), and, only when a session has several files, files left with fewer than
-    ``min_trials_per_file`` rows skipped.
+    merged the way behav_utils' loader does it (>= 0.9.1): empty files ignored as if absent, files in sorted
+    order, each file's last row dropped (``drop_last_row``), and, only when a session has several files,
+    files left with fewer than ``min_trials_per_file`` rows skipped.
 
     Returns ``(checked, stimulus)``: float arrays, ``checked`` being 1 sent / 0 not sent / NaN cannot tell;
     ``(None, None)`` if the tables cannot be read.
@@ -75,10 +75,13 @@ def _rows_as_loaded(session, config):
     import numpy as np
     import pandas as pd
 
+    from behav_utils.data.loading import is_empty_csv
+
     from sound_categorisation.data.stimulus_check import check_stimulus_delivery
 
     fs = config.file_structure
-    files = sorted(glob.glob(str(Path(session.csv_path).parent / fs.behaviour_file)))
+    files = [f for f in sorted(glob.glob(str(Path(session.csv_path).parent / fs.behaviour_file)))
+             if not is_empty_csv(f)]
     stim_col = config.columns['stimulus'].csv_name
     checked, stimulus = [], []
     for f in files:

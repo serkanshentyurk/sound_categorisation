@@ -3,6 +3,11 @@
 
 ## Unreleased
 
+- Pin `behav_utils` v0.9.1: empty `Trial_Summary` files (a run stopped before writing anything) are skipped
+  as if absent; the export used to stop on them (`SS01/SOUND_CAT_SS01_2026_1_22`). The silent-trial check
+  ignores them the same way. A session whose real data sat next to an empty file was dropped whole by
+  `behav_utils` < 0.8 and so missing from older snapshots; it is in now.
+
 Docs. No code changes.
 
 - `START_HERE.md` is the way in: the three repositories, your data folder, the everyday routines, where

@@ -139,6 +139,18 @@ def test_removes_silent_trials_and_breaks_the_next_trials_history(tmp_path):
     assert np.all(t.extra['stimulus_check'] == 1.0)
 
 
+def test_an_empty_file_next_to_the_run_changes_nothing(tmp_path):
+    """A run stopped before writing anything leaves an empty Trial_Summary; the loader and the check ignore it."""
+    folder = tmp_path.joinpath(*SESSION)
+    _write_run(folder, silent=(2, 5))
+    (folder / 'Trial_Summary2026-05-23T09_00_00.csv').write_text('')
+    exp, cfg, sess = _load(tmp_path)
+    stim = sess.trials.stimulus.copy()
+    summary = remove_silent_trials(exp, cfg, verbose=False)
+    assert summary['removed'] == 2 and summary['not_aligned'] == []
+    assert list(exp.animals['A1'].sessions[0].trials.stimulus) == list(np.delete(stim, [2, 5]))
+
+
 def test_a_silent_abort_is_skipped_like_any_abort(tmp_path):
     _write_run(tmp_path.joinpath(*SESSION), silent=(2,), abort=(2,))
     exp, cfg, sess = _load(tmp_path)
