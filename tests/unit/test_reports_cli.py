@@ -4,7 +4,6 @@ import warnings
 
 import pandas as pd
 import pytest
-
 from sound_categorisation.data.cohort import ensure_presets
 from sound_categorisation.data.synthetic import synthetic_experiment
 from sound_categorisation.reports import cli

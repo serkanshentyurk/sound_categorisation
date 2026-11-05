@@ -74,7 +74,6 @@ def _rows_as_loaded(session, config):
 
     import numpy as np
     import pandas as pd
-
     from behav_utils.data.loading import is_empty_csv
 
     from sound_categorisation.data.stimulus_check import check_stimulus_delivery

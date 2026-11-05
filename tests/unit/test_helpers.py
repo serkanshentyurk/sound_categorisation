@@ -1,6 +1,5 @@
 """sc-update and sc-fetch: the commands they would run (nothing is executed here)."""
 import pytest
-
 from sound_categorisation.cli import fetch, update
 
 
