@@ -10,7 +10,7 @@ repositories; this page says how they fit together and how to get going.
 
 | repository | what it does |
 |---|---|
-| `behaviour_rig` | runs the experiments: the Bonsai workflow, the operator GUI, the presets; pushes each session's files to ceph |
+| [`behaviour_rig`](https://github.com/serkanshentyurk/behaviour_rig) | runs the experiments: the Bonsai workflow, the operator GUI, the presets; pushes each session's files to ceph |
 | `sound_categorisation` (this one) | the analysis of this project: the snapshot, the reports, BE/SC model identification |
 | [`behav_utils`](https://github.com/serkanshentyurk/behav_utils) | a general 2-AFC analysis library the project is built on |
 
