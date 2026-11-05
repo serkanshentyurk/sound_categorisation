@@ -3,6 +3,17 @@
 
 ## Unreleased
 
+- Notebooks follow the argument: `10` expert behaviour without light (computes point estimates from the
+  snapshot, the same sessions model identification fits), `11` model identification (was `31`; the all-mice
+  run first, descriptive), `12` switches (was `11`), `20`, `21`, `90` SBI feature selection (was `30`).
+- `12`: switches without a fit (a PSE missing or beyond ±1) are left out instead of counted as reverse; the
+  expected direction is the switch's; animals the bias check drops are not tallied; §6 compares the Hard-A −
+  Hard-B criterion difference with the ideal observer's.
+- `20`, §4b: equivalence — per animal and statistic, is the 95 % interval inside a margin set in advance
+  (`mu`, `sigma` ±0.10; the rest ±0.05).
+- `21`: neither design produced adaptation, so the post-shift prediction is untested.
+- START_HERE "Status" and LLM_CONTEXT "What the data say" carry the November 2026 numbers.
+
 - `sc-reports opto-contrasts` / `battery --jobs N`: N animals computed at once (separate processes). Same
   numbers as one at a time, since every resampling is seeded; writing and plotting stay in the main process.
   `joblib>=1.3`.

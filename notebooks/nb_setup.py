@@ -4,9 +4,10 @@ Shared setup for the notebooks: which cohorts, which run, and loaders for a run'
     from nb_setup import *
 
 Notebooks READ tables that the `sc-*` commands wrote; they do not recompute. Every notebook opens a run
-with `open_run(report, cohort)` ('latest' unless `SC_NB_RUN` is set) and draws from its CSVs. The one
-exception is a single-animal cell per notebook that walks the library pipeline so the numbers are
-traceable — it uses `load_experiment()`.
+with `open_run(report, cohort)` ('latest' unless `SC_NB_RUN` is set) and draws from its CSVs. Two
+exceptions use `load_experiment()`: a single-animal cell per notebook that walks the library pipeline so the
+numbers are traceable, and notebook 10, which computes point estimates (no resampling) for the expert
+sessions without light (`expert_sessions`).
 
 Environment switches:
     SC_NB_SYNTHETIC=1   read the synthetic runs (`sc-make-synthetic-run`) and the in-memory synthetic
@@ -35,7 +36,7 @@ RUN = os.environ.get('SC_NB_RUN', 'latest')
 if SYNTHETIC:
     OPTO_COHORT, SWITCH_COHORT, MODEL_COHORT = 'synthetic', 'synthetic', 'synthetic_uniform'
 else:
-    OPTO_COHORT, SWITCH_COHORT, MODEL_COHORT = 'opto1-cohort', 'behaviour1-cohort', 'opto1-cohort'
+    OPTO_COHORT, SWITCH_COHORT, MODEL_COHORT = 'opto1-cohort', 'behaviour1-cohort', 'all-mice'
 
 apply_style()
 pd.set_option('display.width', 160)
@@ -154,6 +155,33 @@ def load_experiment():
     return load_experiment_any()
 
 
+EXPERT_PRESET = 'model_id_uniform'      # expert Uniform sessions without light: the ones model identification fits
+
+
+def expert_sessions(animal) -> list:
+    """The animal's expert sessions without light (the ``model_id_uniform`` preset). Synthetic sessions are too
+    short for its 250-trial threshold, so under SC_NB_SYNTHETIC the last five regular Uniform sessions stand in."""
+    from behav_utils import select_sessions
+    sessions = select_sessions(animal, preset=EXPERT_PRESET)
+    if not sessions and SYNTHETIC:
+        sessions = select_sessions(animal, distribution='Uniform', session_type='regular', last_n=5)
+    return sessions
+
+
+def cohorts_by_animal(animals) -> dict:
+    """{animal: its cohort in config.yaml}, the smallest cohort that lists it (so not the umbrella 'all-mice');
+    'synthetic' for every animal under SC_NB_SYNTHETIC, '?' for an animal no cohort lists."""
+    if SYNTHETIC:
+        return {aid: 'synthetic' for aid in animals}
+    from behav_utils.config.schema import load_cohorts
+    cohorts = load_cohorts(REPO_ROOT / 'config.yaml')
+    out = {}
+    for aid in animals:
+        named = [(len(ids), name) for name, ids in cohorts.items() if aid in ids]
+        out[aid] = min(named)[1] if named else '?'
+    return out
+
+
 def first_animal(df: pd.DataFrame, genotype: str | None = None) -> str:
     sub = df if genotype is None else df[df.genotype == genotype]
     return sorted(sub.animal.unique())[0]
@@ -162,4 +190,5 @@ def first_animal(df: pd.DataFrame, genotype: str | None = None) -> str:
 __all__ = ['SYNTHETIC', 'RUN', 'OPTO_COHORT', 'SWITCH_COHORT', 'MODEL_COHORT', 'REPO_ROOT',
            'GENOTYPE_COLOUR', 'COLOURS', 'PALETTE', 'np', 'pd', 'plt', 'Path',
            'banner', 'open_run', 'load_contrasts', 'load_levels', 'load_group', 'load_trajectory', 'condition_dir',
-           'load_readouts', 'load_switches', 'load_light_artefact', 'load_consensus', 'load_experiment', 'first_animal']
+           'load_readouts', 'load_switches', 'load_light_artefact', 'load_consensus', 'load_experiment', 'first_animal',
+           'EXPERT_PRESET', 'expert_sessions', 'cohorts_by_animal']

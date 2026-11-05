@@ -13,18 +13,27 @@ the task is being updated, dispensable once it is adequate. Two behavioural stra
 (boundary estimation) and SC (statistical categorisation). Aims: characterise behaviour and identify the
 model (grid search + simulation-based inference); silence PPC in expert and post-shift phases; image PPC.
 
-## What the data said (opto1 cohort, Sept 2026) — do not contradict these without new tables
+## What the data say (runs of 4–5 November 2026) — do not contradict these without new tables
 
-The November 2026 fixes moved some numbers (normative PSE about 1.3× larger, the post-opto and compensation
-references; CHANGELOG ▲). Check these statements against runs made after them.
+Medians are WT vs HET (4 vs 5 animals on Uniform, 3 vs 4 on Hard); `min_p` is the smallest p those sizes allow.
 
-- Expert Uniform, HET: silencing changes nothing on the silenced trial (all stats within ±0.1, bounded CIs).
-- Expert Uniform, WT: light alone shifts the criterion toward A in 4/4 animals; not at ALM; no carry-over.
-  Silencing removes that effect. Masking sessions (laser at zero) do not reproduce the laser, so the WT
-  animals are the light control, not the masking sessions.
-- WT compensate: laser-off trials inside laser sessions sit below masking sessions (contrast `compensation`).
-- Hard phase: the daily A/B alternation produced no measurable criterion tracking; slow drift dominates;
-  the "laser sessions vs masking sessions" contrast is order-confounded. Prediction 2 is untested, not refuted.
+- Expert Uniform, HET: silencing changes nothing on the silenced trial; every median within-session effect is
+  near zero (`mu` +0.006, accuracy +0.003). Notebook 20, §4b, tests this against margins set in advance.
+- Expert Uniform, WT: light alone shifts the criterion toward A, `mu` +0.19 vs +0.01 (p 0.016 = `min_p`: all
+  four WT above all five HET); not at ALM (WT criterion about 0.04); masking does not reproduce it (`mu` −0.16
+  vs −0.04, p 0.29). The WT animals are the light control, not the masking sessions.
+- Compensation (laser-off trials of laser sessions vs the unflagged trials of masking sessions): WT `mu` −0.24
+  vs HET +0.06, p 0.11 — the same direction as before the reference was corrected, smaller, not separated.
+- ALM in HET: large criterion medians on laser trials (0.94 unilateral, 1.16 bilateral, against 0.04; p
+  0.19–0.29), and the laser-off trials of ALM sessions shift too (`mu` +0.42 / +0.33; side bias −0.20
+  unilateral, p 0.016). ALM silencing seems to act on the whole session.
+- Carry-over: none; every post-opto median near zero, no p below 0.06.
+- Hard phase (opto1): no tracking of the daily A/B alternation, slow drift; the WT light effect has the same
+  direction (`mu` +0.36 Hard-A, +0.15 Hard-B, vs about +0.06; p 0.114, `min_p` 0.057).
+- Blocked switches (behaviour1): the ideal Hard-A − Hard-B criterion difference is about +0.20; the animals'
+  block medians differ by +0.02 (Hard-A 0.270, Hard-B 0.254, Uniform 0.137). About half the switches with a
+  fit move the right way. The bias check drops SS01, SS06, SS11 (behaviour1) and SS14, SS16 (opto1).
+- Prediction 2 (post-shift) is untested on both designs, not refuted.
 
 ## Repository shape
 Two packages, imports one way: `sound_categorisation` (project) → `behav_utils` (library). Both are pip
@@ -94,8 +103,8 @@ cluster folders to the same place on a laptop.
 - `*.egg-info`, `build/`, `__pycache__` are build artefacts; they must not be tracked.
 
 ## Open work
-Aim 1: the all-mice consensus run exists (October 2026: 12 BE, 3 SC, 4 Unclear); SLDS and disRNN are not
-written; Hard-distribution networks are not trained; `31_model_identification` real-data section to do.
+Aim 1: the all-mice consensus run exists (October 2026: 12 BE, 3 SC, 4 Unclear; descriptive, notebook 11);
+the learning phase (state-space models) and disRNN are not written; Hard-distribution networks are not trained.
 Next-cohort design (blocked distributions, interleaved session types, opsin-negative light control at
 matched power).
 Neural data (Aim 3): align on `TrialArrays.trial_key`; the alignment layer is project code, not library.

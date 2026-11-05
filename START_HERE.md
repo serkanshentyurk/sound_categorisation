@@ -183,7 +183,7 @@ Every results folder has a `meta.json` (run id, command, snapshot, settings, ver
 
 1. The project [README](README.md), then [docs/runs.md](docs/runs.md) and
    [docs/results_guide.md](docs/results_guide.md).
-2. The notebooks, in order: `00` → `10` → `11` → `20` → `21` → `31` ([notebooks/README.md](notebooks/README.md)).
+2. The notebooks, in order: `00` → `10` → `11` → `12` → `20` → `21` ([notebooks/README.md](notebooks/README.md)).
 3. [ARCHITECTURE.md](ARCHITECTURE.md), before changing code.
 4. For experiments, the `behaviour_rig` documents: README and INSTRUCTIONS first, then TRAINING,
    PARAMETERS, HARDWARE, ZAPIT, SURGERY and PERFUSION.
@@ -226,8 +226,10 @@ manuscript; ask Serkan or Athena Akrami for the current draft.
 
 ## Status (November 2026)
 
-- Expert phase (opto1 cohort, 5 HET and 4 WT): analysed.
-- After switches: the daily Hard-A/B alternation showed no measurable adaptation; a blocked design is needed.
-- Model identification on all mice (October 2026 run): 12 BE, 3 SC, 4 unclear. The SLDS and disRNN
-  analyses are not written; networks for the Hard distributions are not trained.
-- Imaging: not started.
+- Expert phase, PPC (opto1 cohort, 5 HET and 4 WT): silencing changes nothing measurable in HET animals; light
+  alone shifts the criterion in WT animals. Notebook 20 has the equivalence analysis for the HET null.
+- Adaptation: neither the daily Hard-A/B alternation (opto1) nor the blocked switches (behaviour1) moved the
+  criterion with the distribution, so the post-shift prediction could not be tested on these data.
+- Model identification on all mice (October 2026 run): 12 BE, 3 SC, 4 unclear; a description of the animals,
+  too few for a BE/SC split of the opto effects.
+- Not done: the learning phase (state-space models), networks for the Hard distributions, imaging.

@@ -81,7 +81,7 @@ snapshot ──▶ compute_animal ──▶ AnimalResult ──▶ to_tables ─
 ```
 Scripts compute deterministically from the snapshot and write tidy tables with metadata (snapshot,
 config, settings, package versions, git SHA). Figures are drawn from results or tables, never computed
-in place. Notebooks are meant to read a run's tables and narrate; a notebook that runs a bootstrap is
+in place. Notebooks are meant to read a run's tables and narrate (notebook 10 computes point estimates, no resampling); a notebook that runs a bootstrap is
 a smell. `tests/e2e/reference/e2e_contrasts.csv` pins every number the fast settings produce; a change
 that moves a number fails `tests/e2e` until the reference is regenerated on purpose (`--regen-reference`).
 
