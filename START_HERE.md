@@ -10,7 +10,7 @@ repositories; this page says how they fit together and how to get going.
 
 | repository | what it does |
 |---|---|
-| [`behaviour_rig`](https://github.com/serkanshentyurk/behaviour_rig) | runs the experiments: the Bonsai workflow, the operator GUI, the presets; pushes each session's files to ceph |
+| `behaviour_rig` | runs the experiments: the Bonsai workflow, the operator GUI, the presets; pushes each session's files to ceph |
 | `sound_categorisation` (this one) | the analysis of this project: the snapshot, the reports, BE/SC model identification |
 | [`behav_utils`](https://github.com/serkanshentyurk/behav_utils) | a general 2-AFC analysis library the project is built on |
 
@@ -195,10 +195,13 @@ manuscript; ask Serkan or Athena Akrami for the current draft.
 ## Before you analyse: caveats in the data
 
 - Data recorded before 5 October 2026 is compromised by rig faults fixed that day. On rigs 31104 and
-  31105 the right reward was about 26 % larger than the left. In Hard-A/B sessions some trials played no
-  sound (they are removed at export) and the response window opened as the sound ended. The same animal
-  ran on different rigs on different days, so no session is dropped and the data carry no rig id: state
-  it as a caveat.
+  31105 the right reward was about 26 % larger than the left. In Hard-A/B sessions about 6 % of trials
+  played no sound and the response window opened as the sound ended. The same animal ran on different rigs
+  on different days, so no session is dropped and the data carry no rig id: state it as a caveat.
+- The silent trials are removed at export where each session's logs allow the check. They don't for the end
+  of every run (the logs stop when Bonsai is killed) or for 13 whole Hard sessions of the pre-opto cohort
+  (SS01, SS06, SS07, SS08, SS09, SS11), where the trial table and the logs don't line up. Those trials are
+  kept: 15 % of Hard trials are unchecked, so roughly 1 % of Hard trials may still be silent.
 - The first 20 trials of a session (the stable start) play easy sounds, at least 0.8 from the boundary,
   with at most 3 on the same side in a row.
 - The first trial of a session has unreliable timing. It is kept.
@@ -226,10 +229,13 @@ manuscript; ask Serkan or Athena Akrami for the current draft.
 
 ## Status (November 2026)
 
-- Expert phase, PPC (opto1 cohort, 5 HET and 4 WT): silencing changes nothing measurable in HET animals; light
-  alone shifts the criterion in WT animals. Notebook 20 has the equivalence analysis for the HET null.
-- Adaptation: neither the daily Hard-A/B alternation (opto1) nor the blocked switches (behaviour1) moved the
-  criterion with the distribution, so the post-shift prediction could not be tested on these data.
+- Expert phase, PPC (opto1 cohort, 5 HET and 4 WT): no large effect of silencing in HET animals, but the null
+  is only partly shown: against margins set in advance, about 2 of 5 HET animals are within the margin for the
+  criterion, accuracy and lapses, and every HET animal is unclear for the history statistics. Light alone
+  shifts the criterion in WT animals, and the side bias in both genotypes (notebook 20).
+- Adaptation: the daily Hard-A/B alternation (opto1) produced none. The blocked switches (behaviour1) show a
+  partial shift, about half the ideal size, which the order of the blocks may partly explain. The opto cohort
+  did not adapt, so the post-shift prediction could not be tested.
 - Model identification on all mice (October 2026 run): 12 BE, 3 SC, 4 unclear; a description of the animals,
   too few for a BE/SC split of the opto effects.
 - Not done: the learning phase (state-space models), networks for the Hard distributions, imaging.

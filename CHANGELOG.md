@@ -13,6 +13,8 @@
   (`mu`, `sigma` ±0.10; the rest ±0.05).
 - `21`: neither design produced adaptation, so the post-shift prediction is untested.
 - START_HERE "Status" and LLM_CONTEXT "What the data say" carry the November 2026 numbers.
+- With the real-data results of §4b (equivalence) and §6 (blocks), and the size of the silent-trial residue
+  (about 1 % of Hard trials) in the caveats.
 
 - `sc-reports opto-contrasts` / `battery --jobs N`: N animals computed at once (separate processes). Same
   numbers as one at a time, since every resampling is seeded; writing and plotting stay in the main process.

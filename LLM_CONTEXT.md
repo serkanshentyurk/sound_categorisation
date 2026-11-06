@@ -17,8 +17,12 @@ model (grid search + simulation-based inference); silence PPC in expert and post
 
 Medians are WT vs HET (4 vs 5 animals on Uniform, 3 vs 4 on Hard); `min_p` is the smallest p those sizes allow.
 
-- Expert Uniform, HET: silencing changes nothing on the silenced trial; every median within-session effect is
-  near zero (`mu` +0.006, accuracy +0.003). Notebook 20, §4b, tests this against margins set in advance.
+- Expert Uniform, HET: no large effect of silencing; median within-session effects near zero (`mu` +0.006,
+  accuracy +0.003). Equivalence (notebook 20, §4b; 95 % intervals inside ±0.10 for `mu`/`sigma`, ±0.05 for the
+  rest, set in advance): within margin in 2 of 5 HET animals for `mu`, accuracy, easy accuracy and the lapses;
+  unclear in all 5 for hard accuracy and the history statistics (intervals wider than the margin). Side bias
+  shifts on laser trials in 4 of 5 HET animals (median −0.05), the same direction as the WT light effect
+  (−0.12, 4 of 4), so likely the light. Prediction 1 is consistent with the data, not shown as a null.
 - Expert Uniform, WT: light alone shifts the criterion toward A, `mu` +0.19 vs +0.01 (p 0.016 = `min_p`: all
   four WT above all five HET); not at ALM (WT criterion about 0.04); masking does not reproduce it (`mu` −0.16
   vs −0.04, p 0.29). The WT animals are the light control, not the masking sessions.
@@ -30,10 +34,13 @@ Medians are WT vs HET (4 vs 5 animals on Uniform, 3 vs 4 on Hard); `min_p` is th
 - Carry-over: none; every post-opto median near zero, no p below 0.06.
 - Hard phase (opto1): no tracking of the daily A/B alternation, slow drift; the WT light effect has the same
   direction (`mu` +0.36 Hard-A, +0.15 Hard-B, vs about +0.06; p 0.114, `min_p` 0.057).
-- Blocked switches (behaviour1): the ideal Hard-A − Hard-B criterion difference is about +0.20; the animals'
-  block medians differ by +0.02 (Hard-A 0.270, Hard-B 0.254, Uniform 0.137). About half the switches with a
-  fit move the right way. The bias check drops SS01, SS06, SS11 (behaviour1) and SS14, SS16 (opto1).
-- Prediction 2 (post-shift) is untested on both designs, not refuted.
+- Blocked switches (behaviour1, without the animals the bias check drops: SS01, SS06, SS11): block medians of
+  `mu` Hard-A 0.226, Hard-B 0.137, Uniform 0.141, so Hard-A − Hard-B +0.09 against the ideal +0.19 — a partial
+  shift, all of it in the Hard-A blocks. The Hard-B blocks came first and the criterion drifts upwards over
+  time (seen in opto1), so part of this may be drift. Switch by switch, 10 of 16 switches with a fit move the
+  right way, 4 the wrong way (3 of them SS05), 2 not at all. The bias check also drops SS14, SS16 (opto1).
+- Prediction 2 (post-shift opto) is untested: the opto cohort did not adapt, and the cohort that adapted
+  partially had no laser. Untested, not refuted.
 
 ## Repository shape
 Two packages, imports one way: `sound_categorisation` (project) → `behav_utils` (library). Both are pip
@@ -99,7 +106,8 @@ cluster folders to the same place on a laptop.
   `behav_utils` ≥ 0.9 refuses to permute phases that share trials.
 - The model-ID p-values come from seeds that vary simulation noise on a fixed data split (the manuscript's
   recipe); they say the call is stable under that noise, not that the data favour it.
-- Data before 5 October 2026 carry rig faults (START_HERE.md, caveats); they are kept and stated.
+- Data before 5 October 2026 carry rig faults (START_HERE.md, caveats); they are kept and stated. About 1 %
+  of Hard trials may still be silent (the unchecked end of each run, and 13 Hard sessions with no check).
 - `*.egg-info`, `build/`, `__pycache__` are build artefacts; they must not be tracked.
 
 ## Open work
