@@ -29,7 +29,11 @@ import pandas as pd
 from behav_utils.plotting.readouts import plot_psychometric_curve
 from matplotlib.figure import Figure
 
-from sound_categorisation.plotting.daily_tracker import LIGHT_COLOURS, plot_condition_curves, plot_daily_values
+from sound_categorisation.plotting.daily_tracker import (
+    LIGHT_COLOURS,
+    plot_condition_curves,
+    plot_daily_values,
+)
 
 # column: (header, how to show it, what it means, shown on hover)
 COLUMNS = {
@@ -192,12 +196,14 @@ def _sparkline(values, lo: float, hi: float, title: str, w: int = 112, h: int = 
         if v is None:
             segs, cur = (segs + [cur] if len(cur) > 1 else segs), []
         else:
-            cur.append('%.1f,%.1f' % xy(i, v))
+            px, py = xy(i, v)
+            cur.append(f'{px:.1f},{py:.1f}')
     if len(cur) > 1:
         segs.append(cur)
     lines = ''.join(f'<polyline points="{" ".join(s)}" fill="none" stroke="currentColor" stroke-width="1.2"/>'
                     for s in segs)
-    dots = ''.join('<circle cx="%.1f" cy="%.1f" r="1.4" fill="currentColor"/>' % xy(i, v) for i, v in pts)
+    dots = ''.join(f'<circle cx="{px:.1f}" cy="{py:.1f}" r="1.4" fill="currentColor"/>'
+                   for px, py in (xy(i, v) for i, v in pts))
     lx, ly = xy(*pts[-1])
     return (f'<svg class="spark" width="{w}" height="{h}" viewBox="0 0 {w} {h}"><title>{html.escape(title)}</title>'
             f'{lines}{dots}<circle cx="{lx:.1f}" cy="{ly:.1f}" r="2.6" fill="currentColor"/></svg>')

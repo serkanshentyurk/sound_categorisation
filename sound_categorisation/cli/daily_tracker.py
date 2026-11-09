@@ -27,7 +27,11 @@ from datetime import date
 
 from behav_utils.config.schema import load_cohorts, load_config
 
-from sound_categorisation.behaviour.daily_tracker import compute_daily_tracker, load_mirror, load_tracker_settings
+from sound_categorisation.behaviour.daily_tracker import (
+    compute_daily_tracker,
+    load_mirror,
+    load_tracker_settings,
+)
 from sound_categorisation.data.paths import REPO_ROOT, daily_tracker_dir, raw_mirror_dir
 from sound_categorisation.data.raw_mirror import local_copy_status, mirror_sessions
 from sound_categorisation.reports.daily_tracker import write_daily_report

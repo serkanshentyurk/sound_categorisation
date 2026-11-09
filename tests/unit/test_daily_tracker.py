@@ -24,7 +24,6 @@ from sound_categorisation.behaviour.daily_tracker import (
 from sound_categorisation.data.raw_mirror import mirror_sessions
 from sound_categorisation.reports.daily_tracker import write_daily_report
 
-
 CONFIG = Path(__file__).resolve().parents[2] / 'config.yaml'
 TODAY = date(2026, 11, 7)
 D = lambda m, d: date(2026, m, d)  # noqa: E731
