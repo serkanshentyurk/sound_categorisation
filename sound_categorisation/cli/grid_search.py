@@ -42,7 +42,7 @@ from pathlib import Path
 
 import numpy as np
 
-from sound_categorisation.data.cohort import is_synthetic_cohort, select_animals
+from sound_categorisation.data.cohort import select_animals
 from sound_categorisation.data.paths import build_metadata, model_id_dir, start_run, write_sessions_table
 from sound_categorisation.inference.cv_utils import save_cv_result
 from sound_categorisation.inference.grid_search import (
@@ -60,7 +60,6 @@ from sound_categorisation.settings import (
     GS_N_BINS,
     GS_N_FOLDS,
     GS_N_SEEDS,
-    SYNTH_GS_N_SEEDS,
 )
 
 MODELS = ('BE', 'SC')
@@ -71,7 +70,8 @@ def _gs_seed(record, model, seed, grid, fit_target,
     """Run one (animal, model, seed) GS-CV; return a neutral result dict.
 
     Maps the grid-search compute keys (avg_test_error / best_params_single)
-    into the neutral schema (test_error / best_params).
+    into the neutral schema (test_error / best_params). ``fold_errors`` keeps the held-out
+    error of each CV half (fold order), so a split call can be traced to the halves.
     """
     try:
         r = compute_grid_search_cv(
@@ -79,7 +79,8 @@ def _gs_seed(record, model, seed, grid, fit_target,
             burn_in=burn_in, n_bins=n_bins, fit_target=fit_target,
         )
         return {'rep': seed, 'test_error': r['avg_test_error'],
-                'best_params': r['best_params_single']}
+                'best_params': r['best_params_single'],
+                'fold_errors': [float(e) for e in r['test_errors']]}
     except Exception as e:
         return {'rep': seed, 'test_error': np.nan,
                 'best_params': None, 'error_msg': str(e)}
@@ -236,7 +237,7 @@ def main(argv=None):
     p.add_argument('--n-jobs', type=int, default=1,
                    help='local run only: parallel (animal, model, seed) fits (-1 = all cores)')
     p.add_argument('--n-seeds', type=int, default=None,
-                   help=f'default {GS_N_SEEDS} (real cohort) / {SYNTH_GS_N_SEEDS} (synthetic) / '
+                   help=f'default {GS_N_SEEDS} (real and synthetic cohorts) / '
                         f'{FAST_GS_N_SEEDS} (--fast)')
     args = p.parse_args(argv)
 
@@ -253,7 +254,7 @@ def main(argv=None):
     elif args.fast:
         n_seeds = FAST_GS_N_SEEDS
     else:
-        n_seeds = SYNTH_GS_N_SEEDS if is_synthetic_cohort(args.cohort) else GS_N_SEEDS
+        n_seeds = GS_N_SEEDS
     coarse = args.coarse
 
     if args.gather:

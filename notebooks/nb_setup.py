@@ -35,8 +35,10 @@ RUN = os.environ.get('SC_NB_RUN', 'latest')
 
 if SYNTHETIC:
     OPTO_COHORT, SWITCH_COHORT, MODEL_COHORT = 'synthetic', 'synthetic', 'synthetic_uniform'
+    VALIDATION_COHORT = 'synthetic_uniform'
 else:
     OPTO_COHORT, SWITCH_COHORT, MODEL_COHORT = 'opto1-cohort', 'behaviour1-cohort', 'all-mice'
+    VALIDATION_COHORT = 'synthetic_uniform_k50'      # the SBI validation run read by notebook 91
 
 apply_style()
 pd.set_option('display.width', 160)
@@ -136,6 +138,18 @@ def load_light_artefact(run: Path, distribution: str = 'Uniform') -> dict:
     return out
 
 
+def load_validation_tables(run: Path) -> dict:
+    """Every CSV that sc-validation-tables (``<run>/tables/``) and sc-sbi-check
+    (``<run>/network_check/``) wrote into a validation run, by file stem; the network checks are
+    keyed ``check_<label>`` and the session comparisons keep their ``sessions_...`` stem."""
+    out = {}
+    for p in sorted((run / 'tables').glob('*.csv')):
+        out[p.stem] = pd.read_csv(p)
+    for p in sorted((run / 'network_check').glob('*.csv')):
+        out[p.stem if p.stem.startswith('sessions_') else f'check_{p.stem}'] = pd.read_csv(p)
+    return out
+
+
 def load_consensus(run: Path, distribution: str = 'uniform') -> tuple[pd.DataFrame, str]:
     """(assignments, summary text) of a model-identification run for one distribution."""
     d = run / 'consensus' / distribution
@@ -187,8 +201,9 @@ def first_animal(df: pd.DataFrame, genotype: str | None = None) -> str:
     return sorted(sub.animal.unique())[0]
 
 
-__all__ = ['SYNTHETIC', 'RUN', 'OPTO_COHORT', 'SWITCH_COHORT', 'MODEL_COHORT', 'REPO_ROOT',
+__all__ = ['SYNTHETIC', 'RUN', 'OPTO_COHORT', 'SWITCH_COHORT', 'MODEL_COHORT', 'VALIDATION_COHORT', 'REPO_ROOT',
            'GENOTYPE_COLOUR', 'COLOURS', 'PALETTE', 'np', 'pd', 'plt', 'Path',
            'banner', 'open_run', 'load_contrasts', 'load_levels', 'load_group', 'load_trajectory', 'condition_dir',
-           'load_readouts', 'load_switches', 'load_light_artefact', 'load_consensus', 'load_experiment', 'first_animal',
+           'load_readouts', 'load_switches', 'load_light_artefact', 'load_consensus', 'load_validation_tables',
+           'load_experiment', 'first_animal',
            'EXPERT_PRESET', 'expert_sessions', 'cohorts_by_animal']

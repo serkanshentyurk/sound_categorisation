@@ -3,7 +3,12 @@
 
 import numpy as np
 import pandas as pd
-from sound_categorisation.inference.consensus import _compute_consensus, _method_dir, load_all_assignments
+from sound_categorisation.inference.consensus import (
+    _compute_consensus,
+    _method_dir,
+    compute_consensus_summary,
+    load_all_assignments,
+)
 from sound_categorisation.inference.cv_utils import save_cv_result
 
 
@@ -194,3 +199,33 @@ class TestLoadAllAssignments:
         assert 'consensus_correct' not in df.columns
         assert 'true_model' not in df.columns
         assert df.set_index('id').loc['A', 'Consensus'] == 'BE'
+
+
+class TestVoteCountsAndContested:
+
+    def test_counts(self):
+        from sound_categorisation.inference.consensus import _significant_votes
+        row = {'A': 'BE', 'A_p': 0.01, 'B': 'SC', 'B_p': 0.02, 'C': 'BE', 'C_p': 0.5}
+        v = _significant_votes(row)
+        assert v['BE'] == 1 and v['SC'] == 1
+
+    def test_two_against_one_is_called_and_contested(self, tmp_path, monkeypatch):
+        t = TestLoadAllAssignments()
+        t._patch(monkeypatch, tmp_path)
+        methods = [('grid_search', None, 'update_matrix'), ('sbi', 'pooled', 'update_matrix'),
+                   ('sbi', 'moments', 'update_matrix')]
+        t._write_method(*methods[0], 'A', 'BE', be_lo=0.10, sc_lo=0.20)
+        t._write_method(*methods[1], 'A', 'BE', be_lo=0.10, sc_lo=0.20)
+        t._write_method(*methods[2], 'A', 'BE', be_lo=0.20, sc_lo=0.10)     # the dissenting vote
+        t._write_method(*methods[0], 'B', 'SC', be_lo=0.20, sc_lo=0.10)
+        t._write_method(*methods[1], 'B', 'SC', be_lo=0.20, sc_lo=0.10)
+        t._write_method(*methods[2], 'B', 'SC', be_lo=0.20, sc_lo=0.10)
+        df = load_all_assignments(t.RUN, t.DIST, methods=methods).set_index('id')
+        assert df.loc['A', 'Consensus'] == 'BE' and bool(df.loc['A', 'contested'])
+        assert (df.loc['A', 'n_sig_BE'], df.loc['A', 'n_sig_SC']) == (2, 1)
+        assert df.loc['B', 'Consensus'] == 'SC' and not bool(df.loc['B', 'contested'])
+        two = load_all_assignments(t.RUN, t.DIST, methods=methods, min_significant_votes=2).set_index('id')
+        assert two.loc['A', 'Consensus'] == 'BE' and two.loc['B', 'Consensus'] == 'SC'
+        summary = compute_consensus_summary(df.reset_index())
+        assert 'contested calls (a significant vote against the call): 1' in summary
+

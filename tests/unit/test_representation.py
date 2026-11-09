@@ -106,3 +106,38 @@ class TestImpute:
         x = np.array([1., 2.])
         out = impute_with_medians(x, np.array([0., 0.]))
         assert np.allclose(out, x) and out is not x
+
+
+class TestDesignFeatures:
+    """The number of sessions and valid trials appended after the statistics."""
+
+    def test_pooled_appends_counts(self, synthetic_animal):
+        from sound_categorisation.inference.representation import feature_names, to_stat_vector
+        sessions = synthetic_animal.sessions[:3]
+        plain = to_stat_vector(sessions, 'pooled', ['accuracy', 'mu'])
+        x = to_stat_vector(sessions, 'pooled', ['accuracy', 'mu'],
+                           design_features=('n_sessions', 'n_valid_trials'))
+        assert np.allclose(x[:2], plain, equal_nan=True)
+        n_valid = sum(int(np.isfinite(s.get_arrays()['choices']).sum()) for s in sessions)
+        assert x[2] == 3 and x[3] == n_valid
+        assert feature_names('pooled', ['accuracy', 'mu'], ('n_sessions', 'n_valid_trials')) == \
+            ['accuracy', 'mu', 'n_sessions', 'n_valid_trials']
+
+    def test_moments_appends_after_mean_and_var(self, synthetic_animal):
+        from sound_categorisation.inference.representation import feature_names, to_stat_vector
+        sessions = synthetic_animal.sessions[:2]
+        x = to_stat_vector(sessions, 'moments', ['accuracy'], design_features=('n_sessions',))
+        assert x.shape == (3,) and x[-1] == 2
+        assert feature_names('moments', ['accuracy'], ('n_sessions',)) == \
+            ['accuracy_mean', 'accuracy_var', 'n_sessions']
+
+    def test_default_is_no_design_features(self, synthetic_animal):
+        from sound_categorisation.inference.representation import to_stat_vector
+        x = to_stat_vector(synthetic_animal.sessions[:2], 'pooled', ['accuracy'])
+        assert x.shape == (1,)
+
+    def test_unknown_feature_raises(self, synthetic_animal):
+        from sound_categorisation.inference.representation import to_stat_vector
+        with pytest.raises(ValueError, match='unknown design feature'):
+            to_stat_vector(synthetic_animal.sessions[:2], 'pooled', ['accuracy'], design_features=('n_days',))
+

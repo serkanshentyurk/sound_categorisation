@@ -6,13 +6,16 @@ exactly as on an animal, draw ``n_posterior_samples``, and record for each param
 samples lie below the true value (the rank, 0..L). A calibrated posterior gives ranks that are
 uniform over the draws (Talts et al. 2018). Two readouts come from the same ranks:
 
-    ranks         -> plot_sbc_ranks / plot_sbc_ecdf (histogram, ECDF with KS band)
+    ranks         -> ECDF differences with simultaneous bands (inference.validation, after
+                     Säilynoja et al. 2022) and KS p-values
     coverage      -> at each level c, the fraction of draws whose true value lies inside the
                      central c interval of its posterior (the rank lies within L*(1-c)/2 ..
                      L*(1+c)/2), against the nominal c
 
-``compute_sbc_ranks`` returns the dict the plotters in ``plotting/sbi_validation.py`` expect,
-plus ``theta_true``, ``theta_median`` (a free recovery check), ``coverage`` and ``prior_bounds``.
+Each draw also keeps its posterior mean, SD, median and quantiles and the network's acceptance
+rate, so parameter recovery (error, bias, R^2, contraction, z-scores) comes from the same draws
+(``inference.validation.recovery_table``). ``budget_hit`` marks draws where fewer than L samples
+fell inside the prior within the network's proposal budget (the samples were then resampled).
 Degenerate draws (the observation has a non-finite stat the net cannot impute) are skipped and
 counted in ``n_skipped``.
 """
@@ -25,7 +28,7 @@ import numpy as np
 import pandas as pd
 
 from sound_categorisation.inference.simulator import get_bounds_arrays, simulate_sessions, theta_to_params
-from sound_categorisation.settings import SBC_COVERAGE_LEVELS
+from sound_categorisation.settings import SBC_COVERAGE_LEVELS, SBC_POSTERIOR_QUANTILES, VALIDATION_SEED
 
 
 def coverage_from_ranks(ranks: np.ndarray, n_posterior_samples: int,
@@ -50,9 +53,10 @@ def coverage_from_ranks(ranks: np.ndarray, n_posterior_samples: int,
     return pd.DataFrame(rows)
 
 
-def compute_sbc_ranks(net, n_draws: int = 300, n_sessions: int = 5, T=None,
+def compute_sbc_ranks(net, n_draws: int = 1000, n_sessions: int = 5, T=None,
                       n_posterior_samples: int = 1000, distribution: str | None = None,
-                      seed: int = 0, levels: Sequence[float] = SBC_COVERAGE_LEVELS,
+                      seed: int | None = None, levels: Sequence[float] = SBC_COVERAGE_LEVELS,
+                      quantiles: Sequence[float] = SBC_POSTERIOR_QUANTILES,
                       show_progress: bool = True) -> Dict[str, Any]:
     """SBC ranks + coverage for one trained ``AmortisedSBI``.
 
@@ -60,18 +64,20 @@ def compute_sbc_ranks(net, n_draws: int = 300, n_sessions: int = 5, T=None,
         net: trained network (its ``model``, ``T``, ``burn_in``, ``dist_schedule`` are used
             unless overridden).
         n_draws: prior draws (each one simulated animal).
-        n_sessions: sessions per draw (the networks train on 4-6; 5 is the synthetic cohort).
+        n_sessions: sessions per draw: 5 is an animal's full data, 2 and 3 the CV halves.
         T: trials per session, int or (lo, hi) range; default the net's training T.
         n_posterior_samples: L, samples per conditioning (ranks are 0..L).
         distribution: session distribution; default the net's schedule.
-        seed: base seed. All ``n_draws`` prior draws come from ONE stream
-            (``default_rng(seed)``); draw ``i``'s simulation uses ``default_rng(seed + 1 + i)``.
-            (Taking each truth as the first output of a fresh sequential seed is NOT uniform
-            enough at n~300 -- KS p~0.005 in a check -- which would show up as a false
-            miscalibration.)
+        seed: base seed, default VALIDATION_SEED (disjoint from every training simulation's
+            seed). All ``n_draws`` prior draws come from ONE stream (``default_rng(seed)``);
+            draw ``i``'s simulation uses ``default_rng(seed + 1 + i)``. (Taking each truth as
+            the first output of a fresh sequential seed is NOT uniform enough at n~300 -- KS
+            p~0.005 in a check -- which would show up as a false miscalibration.)
+        quantiles: posterior quantiles stored per draw.
     """
     from scipy.stats import kstest
 
+    seed = VALIDATION_SEED if seed is None else int(seed)
     model = net.model
     T = net.T if T is None else T
     burn_in = int(getattr(net, 'burn_in', 1000))
@@ -79,8 +85,10 @@ def compute_sbc_ranks(net, n_draws: int = 300, n_sessions: int = 5, T=None,
     lo, hi = get_bounds_arrays(model)
     names = list(net.param_names)
 
+    q_levels = np.asarray(quantiles, dtype=float)
     thetas = np.random.default_rng(seed).uniform(lo, hi, size=(n_draws, len(names)))
     ranks, theta_true, theta_med, n_skipped = [], [], [], 0
+    theta_mean, theta_sd, theta_q, acceptance, budget_hit = [], [], [], [], []
     for i in range(n_draws):
         theta = thetas[i]
         rng = np.random.default_rng(seed + 1 + i)
@@ -97,12 +105,21 @@ def compute_sbc_ranks(net, n_draws: int = 300, n_sessions: int = 5, T=None,
         ranks.append((samples < theta[None, :]).sum(axis=0))
         theta_true.append(theta)
         theta_med.append(np.median(samples, axis=0))
+        theta_mean.append(samples.mean(axis=0))
+        theta_sd.append(samples.std(axis=0, ddof=1))
+        theta_q.append(np.quantile(samples, q_levels, axis=0))       # (n_q, n_params)
+        acceptance.append(float(cond.get('acceptance_rate', np.nan)))
+        budget_hit.append(bool(cond.get('budget_hit', False)))
         if show_progress and (i + 1) % 25 == 0:
             print(f'  sbc {model.value.upper()} {i + 1}/{n_draws}')
 
-    ranks = np.asarray(ranks, dtype=int).reshape(-1, len(names))
-    theta_true = np.asarray(theta_true, dtype=float).reshape(-1, len(names))
-    theta_med = np.asarray(theta_med, dtype=float).reshape(-1, len(names))
+    n_p = len(names)
+    ranks = np.asarray(ranks, dtype=int).reshape(-1, n_p)
+    theta_true = np.asarray(theta_true, dtype=float).reshape(-1, n_p)
+    theta_med = np.asarray(theta_med, dtype=float).reshape(-1, n_p)
+    theta_mean = np.asarray(theta_mean, dtype=float).reshape(-1, n_p)
+    theta_sd = np.asarray(theta_sd, dtype=float).reshape(-1, n_p)
+    theta_q = np.asarray(theta_q, dtype=float).reshape(-1, len(q_levels), n_p)
     if len(ranks):
         ks = [float(kstest(ranks[:, j] / (n_posterior_samples + 1), 'uniform').pvalue)
               for j in range(len(names))]
@@ -118,6 +135,13 @@ def compute_sbc_ranks(net, n_draws: int = 300, n_sessions: int = 5, T=None,
         'ks_pvalues': ks,
         'theta_true': theta_true,
         'theta_median': theta_med,
+        'theta_mean': theta_mean,
+        'theta_sd': theta_sd,
+        'theta_quantiles': theta_q,
+        'quantile_levels': [float(q) for q in q_levels],
+        'acceptance_rate': np.asarray(acceptance, dtype=float),
+        'budget_hit': np.asarray(budget_hit, dtype=bool),
+        'design_features': list(getattr(net, 'design_features', ()) or ()),
         'coverage': coverage_from_ranks(ranks, n_posterior_samples, levels, names),
         'prior_bounds': {n: (float(lo[j]), float(hi[j])) for j, n in enumerate(names)},
         'n_draws': int(n_draws),

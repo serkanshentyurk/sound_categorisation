@@ -5,8 +5,8 @@
 #SBATCH --mem=48G
 #SBATCH --time=2-00:00
 # One network per array task (TRAIN_GRID: rep x model x distribution). Simulations run on every
-# core of the task (joblib); training is torch on the same cores. Upper estimate per task: 2-4 h
-# simulation + up to 6 h training (moments, 100k sims); the limit leaves 4x headroom.
+# core of the task (joblib); training is torch on the same cores. Upper estimate per task:
+# pooled (100k sims) ~16 h, moments (150k sims) ~30 h, simulation and training together.
 # Submit via:  bash slurm/submit.sh sbi-train [sc-sbi-train args]
 set -euo pipefail
 

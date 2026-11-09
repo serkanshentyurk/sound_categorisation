@@ -5,7 +5,8 @@
 #SBATCH --mem=16G
 #SBATCH --time=1-00:00
 # One (rep, model) network per array task, conditioned on every animal of the cohort: 64 CV
-# repeats + the 1,000-sample saved posterior per animal. Upper estimate: ~2 h for 20 animals.
+# repeats + the 1,000-sample saved posterior per animal. Upper estimate: ~2 h for 20 animals,
+# ~10 h for the 100-animal validation cohort.
 # Submit via:  bash slurm/submit.sh sbi-condition --cohort C --distribution D --run-id ID
 set -euo pipefail
 

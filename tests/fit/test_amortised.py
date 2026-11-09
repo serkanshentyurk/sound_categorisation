@@ -119,3 +119,47 @@ class TestSaveLoad:
         # the loaded posterior is usable
         out = loaded.condition(_be_sessions(seed0=99), n_samples=100)
         assert out['posterior_samples'].shape == (100, len(loaded.param_names))
+
+
+class TestDesignFeaturesAndFiles:
+
+    def test_saved_and_restored(self, trained_net, tmp_path):
+        from sound_categorisation.inference.amortised import read_network_file, trained_prior_bounds
+        from sound_categorisation.inference.simulator import get_bounds_arrays
+        from sound_categorisation.settings import SBI_DESIGN_FEATURES
+        assert trained_net.design_features == tuple(SBI_DESIGN_FEATURES)
+        assert len(trained_net._feature_medians) == len(STATS) + len(SBI_DESIGN_FEATURES)
+        path = tmp_path / 'net.pkl'
+        trained_net.save(path)
+        loaded = AmortisedSBI.load(path)
+        assert loaded.design_features == trained_net.design_features
+        lo, hi = trained_prior_bounds(read_network_file(path))
+        assert np.allclose(lo, get_bounds_arrays('be')[0]) and np.allclose(hi, get_bounds_arrays('be')[1])
+
+    def test_condition_reports_budget(self, trained_net):
+        out = trained_net.condition(_be_sessions(seed0=5), n_samples=50)
+        assert isinstance(out['budget_hit'], bool)
+
+    def test_file_without_design_features(self, tmp_path):
+        """An October-style file (no design features, no stored bounds) loads, conditions on the statistics
+        alone with a warning, and still gives its prior bounds from the pickled sbi posterior."""
+        import pickle
+
+        from sound_categorisation.inference.amortised import read_network_file, trained_prior_bounds
+        net = AmortisedSBI(ModelType.BE, dist_schedule='uniform', N=N, T=T, burn_in=BURN, mode='pooled',
+                           stat_names=STATS, design_features=())
+        net.train(n_simulations=300, seed=1, show_progress=False)
+        path = tmp_path / 'old.pkl'
+        net.save(path)
+        data = read_network_file(path)
+        data.pop('design_features')
+        data.pop('prior_bounds')
+        with open(path, 'wb') as f:
+            pickle.dump(data, f)
+        loaded = AmortisedSBI.load(path)
+        assert loaded.design_features == ()
+        with pytest.warns(UserWarning, match='design features'):
+            out = loaded.condition(_be_sessions(seed0=6), n_samples=50)
+        assert out['posterior_samples'].shape == (50, len(BE_NAMES))
+        assert trained_prior_bounds(read_network_file(path)) is not None
+

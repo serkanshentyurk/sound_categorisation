@@ -7,6 +7,7 @@
 #   bash slurm/submit.sh grid-search  --cohort C --distribution uniform --fit-target update_matrix [--run-id ID]
 #   bash slurm/submit.sh sbi-condition --cohort C --distribution uniform [--run-id ID]
 #   bash slurm/submit.sh sbi-sbc      --cohort C --distribution uniform --run-id ID   # calibration, into the same run
+#   bash slurm/submit.sh sbi-check    --cohort C --run-id ID [--networks-dir DIR]      # networks vs current code, one job
 #
 # Grid-search arrays are throttled to GS_ARRAY_THROTTLE concurrent tasks (default 150):
 #   GS_ARRAY_THROTTLE=100 bash slurm/submit.sh grid-search ...
@@ -25,12 +26,13 @@
 # Run it after load-env (or `source slurm/env.sh`), from anywhere in the repo.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-stage="${1:?sbi-train|sbi-condition|sbi-sbc|grid-search}"; shift
+stage="${1:?sbi-train|sbi-condition|sbi-sbc|sbi-check|grid-search}"; shift
 export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1   # the login node caps threads
 case "$stage" in
   sbi-train)     cmd=sc-sbi-train;     sh=slurm/sbi_train.sh ;;
   sbi-condition) cmd=sc-sbi-condition; sh=slurm/sbi_condition.sh ;;
   sbi-sbc)       cmd=sc-sbi-sbc;       sh=slurm/sbi_sbc.sh ;;
+  sbi-check)     cmd=sc-sbi-check;     sh=slurm/sbi_check.sh ;;
   grid-search)   cmd=sc-grid-search;   sh=slurm/grid_search.sh ;;
   *) echo "unknown stage $stage"; exit 1 ;;
 esac

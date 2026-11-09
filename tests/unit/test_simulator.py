@@ -132,3 +132,14 @@ def test_T_range_is_drawn_per_session():
     assert all(100 <= n <= 200 for n in lens) and len(set(lens)) > 1
     ss = simulate_sessions('be', params, ['uniform'] * 2, 150, 20, np.random.default_rng(1))
     assert [len(s.trials.choice) for s in ss] == [150, 150]
+
+
+def test_design_features_follow_the_drawn_sessions():
+    from sound_categorisation.inference.simulator import build_simulator
+    sim, _, names = build_simulator('be', N=(2, 4), T=(30, 40), burn_in=20, mode='pooled',
+                                    stat_names=['accuracy'], design_features=('n_sessions', 'n_valid_trials'))
+    theta = np.array([0.2, 0.1, 0.5, 0.1])
+    for seed in range(5):
+        x = sim(theta, seed=seed)
+        assert x.shape == (3,) and 2 <= x[1] <= 4 and 30 * x[1] <= x[2] <= 40 * x[1]
+

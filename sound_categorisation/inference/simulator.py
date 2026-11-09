@@ -15,7 +15,7 @@ sessions (no per-session parameter drift). The observation is built by
 train and test representations cannot diverge (same pooling, same NaN handling).
 
 Reuses:
-    utils.stimulus_distributions.sample_distribution   stimulus sampling
+    data.stimuli.sample_distribution                    stimulus sampling
                                                         (uniform / hard_a / hard_b)
     models.simulate.simulate_choices                   the single params->choices core
     behav_utils.data.synthetic.session_from_arrays     sim arrays -> SessionData
@@ -122,6 +122,7 @@ def build_simulator(
     burn_in: int = 1000,
     mode: str = 'pooled',
     stat_names: Sequence[str] | None = None,
+    design_features: Sequence[str] = (),
 ) -> Tuple[Callable, object, List[str]]:
     """Build a static SBI simulator.
 
@@ -133,10 +134,12 @@ def build_simulator(
             (drawn uniformly over {lo..hi} per simulation, single-distribution
             schedule only). mode='moments' requires min N >= 2.
         T: Trials per session: an int (fixed) or a ``(lo, hi)`` range drawn
-            uniformly per session (never a network input).
+            uniformly per session.
         burn_in: Model burn-in per session.
         mode: 'pooled' or 'moments' (forwarded to to_stat_vector).
         stat_names: Summary stats (defaults to SBI_STATS via to_stat_vector).
+        design_features: Appended to x by to_stat_vector ('n_sessions',
+            'n_valid_trials'), so the network sees how much data it was given.
 
     Returns:
         (sim_fn, prior, param_names) where
@@ -159,6 +162,7 @@ def build_simulator(
         raise ValueError(f"mode='moments' needs >= 2 sessions; got n_min={n_min}")
     if stat_names is not None:
         stat_names = list(stat_names)
+    design_features = tuple(design_features or ())
 
     def sim_fn(theta, seed: int | None = None) -> np.ndarray:
         if seed is None:
@@ -171,7 +175,8 @@ def build_simulator(
             this_sched = sched
         sessions = simulate_sessions(model, theta_to_params(theta, model), this_sched, T,
                                      burn_in, rng)
-        return to_stat_vector(sessions, mode=mode, stat_names=stat_names)
+        return to_stat_vector(sessions, mode=mode, stat_names=stat_names,
+                              design_features=design_features)
 
     prior = _build_prior(model)
     return sim_fn, prior, names

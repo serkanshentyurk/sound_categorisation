@@ -166,7 +166,9 @@ shared with the switch report.
 ### Model identification (cluster)
 
 The SBI networks are trained once (`bash slurm/submit.sh sbi-train`) and kept in
-`$BEHAV_DATA_DIR/Processed/snpe_networks/`. A model-identification run:
+`$BEHAV_DATA_DIR/Processed/snpe_networks/`; a network trained with a different representation is not overwritten
+(move it into a dated subfolder first). How far the networks and the calls can be trusted is a separate validation
+run on a synthetic cohort (`docs/runs.md`, "SBI validation"; notebook 91). A model-identification run:
 
 ```bash
 load-env
@@ -282,5 +284,9 @@ manuscript; ask Serkan or Athena Akrami for the current draft.
   partial shift, about half the ideal size, which the order of the blocks may partly explain. The opto cohort
   did not adapt, so the post-shift prediction could not be tested.
 - Model identification on all mice (October 2026 run): 12 BE, 3 SC, 4 unclear; a description of the animals,
-  too few for a BE/SC split of the opto effects.
-- Not done: the learning phase (state-space models), networks for the Hard distributions, imaging.
+  too few for a BE/SC split of the opto effects. Superseded in Nov 2026: the networks were conditioned on CV halves
+  (2–3 sessions) outside their 4–6-session training design, so they are retrained with the amount of data as an
+  input and the run is redone, with a validation run (notebook 91).
+- Not done: the learning phase (state-space models), imaging. Networks for the Hard distributions and the
+  single-session representation are not planned: the opto cohort's Hard sessions all carry light, the blocked
+  shift is partial and may be drift, and a single-session voter cannot reach p < 0.05 with ≤ 5 sessions.

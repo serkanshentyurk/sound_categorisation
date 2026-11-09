@@ -6,14 +6,20 @@ One specialist network per (representation, model, distribution). The job grid i
 BE / SC x uniform = 4 networks); any representation or distribution in ``SBI_REPRESENTATIONS`` /
 ``DISTRIBUTIONS`` can still be trained by name, it is just not in the array.
 
-    pooled    N~U{4..6} sessions pooled   mode='pooled'     x-dim D
-    moments   N~U{4..6} sessions          mode='moments'    x-dim 2D (mean, variance per stat)
-    single    N=1 session                 mode='pooled'     x-dim D
+    pooled    N~U{2..6} sessions pooled   mode='pooled'     x-dim D + 2
+    moments   N~U{2..6} sessions          mode='moments'    x-dim 2D + 2 (mean, variance per stat)
+    single    N=1 session                 mode='pooled'     x-dim D + 2
+
+(+ 2: the number of sessions and valid trials, settings.SBI_DESIGN_FEATURES.)
 
 Each network is an ``AmortisedSBI`` saved to ``snpe_networks/snpe_{rep}_{model}_{distribution}.pkl``.
-The saved file carries its own config (N / T / mode / stat_names), so the
+The saved file carries its own config (N / T / mode / stat_names / design features), so the
 conditioning step (sc-sbi-condition) loads and conditions without re-specifying
 anything -- see ``AmortisedSBI.save``/``load``.
+
+An existing network trained with a different representation (statistics, design features,
+N, T, burn-in, mode) is not overwritten: move it aside first (the October 2026 networks went to
+``snpe_networks/2026-10/``) or pass ``--overwrite``. The check runs before any simulation.
 
 The heavy import (``AmortisedSBI``, which pulls in torch + sbi) is deferred into
 ``train_one`` so that ``--count`` and argument parsing run on a login node
@@ -46,6 +52,7 @@ from sound_categorisation.settings import (
     FAST_SBI_N_SIMULATIONS,
     MODEL_TYPES,
     SBI_BURN_IN,
+    SBI_DESIGN_FEATURES,
     SBI_REPRESENTATIONS,
     SBI_TRAIN_DISTRIBUTIONS,
     SBI_TRAIN_REPS,
@@ -62,13 +69,35 @@ def decode_task(task_id):
     return d['rep'], d['model'], d['distribution']
 
 
+def _as_tuple(v):
+    if isinstance(v, (list, tuple)):
+        return tuple(_as_tuple(x) for x in v)
+    return v
+
+
+def representation_changes(path, rep, distribution):
+    """Fields of the network at ``path`` that differ from what training ``rep`` on
+    ``distribution`` would now produce (empty: same representation)."""
+    from sound_categorisation.inference.amortised import read_network_file
+    from sound_categorisation.inference.constants import SBI_STATS
+    cfg = SBI_REPRESENTATIONS[rep]
+    now = {'dist_schedule': distribution, 'N': cfg['N'], 'T': cfg['T'], 'burn_in': SBI_BURN_IN,
+           'mode': cfg['mode'], 'stat_names': list(SBI_STATS),
+           'design_features': list(SBI_DESIGN_FEATURES)}
+    data = read_network_file(path)
+    saved = {k: data.get(k) for k in now}
+    saved['design_features'] = list(saved['design_features'] or ())
+    return [k for k in now if _as_tuple(saved[k]) != _as_tuple(now[k])]
+
+
 def train_one(rep, model, distribution, n_simulations=None, seed=BASE_SEED,
-              show_progress=True):
+              show_progress=True, overwrite=False):
     """Train and save one (rep, model, distribution) network. Returns the save path.
 
     ``dist_schedule=distribution`` makes the training curriculum match the phase the network
     will be conditioned on. ``n_simulations`` overrides the per-rep default in
-    SBI_REPRESENTATIONS (used by --fast and --n-simulations).
+    SBI_REPRESENTATIONS (used by --fast and --n-simulations). Refuses to replace a network
+    trained with a different representation unless ``overwrite``.
     """
     if rep not in SBI_REPRESENTATIONS:
         raise ValueError(f'Unknown rep {rep!r}; choose from {REPRESENTATIONS}.')
@@ -83,9 +112,17 @@ def train_one(rep, model, distribution, n_simulations=None, seed=BASE_SEED,
 
     cfg = SBI_REPRESENTATIONS[rep]
     n_sims = cfg['n_simulations'] if n_simulations is None else n_simulations
+    out = snpe_net_path(rep, model, distribution)
+    if out.exists() and not overwrite:
+        changed = representation_changes(out, rep, distribution)
+        if changed:
+            raise FileExistsError(
+                f'{out} was trained with a different representation ({", ".join(changed)}). '
+                'Move it aside (e.g. into snpe_networks/<yyyy-mm>/) or pass --overwrite.')
 
     print(f'[train] {rep}/{model}/{distribution}: N={cfg["N"]} mode={cfg["mode"]} '
-          f'T={cfg["T"]} burn_in={SBI_BURN_IN} n_sims={n_sims} seed={seed}')
+          f'T={cfg["T"]} burn_in={SBI_BURN_IN} design={list(SBI_DESIGN_FEATURES)} '
+          f'n_sims={n_sims} seed={seed}')
     t0 = time.time()
 
     net = AmortisedSBI(
@@ -95,10 +132,10 @@ def train_one(rep, model, distribution, n_simulations=None, seed=BASE_SEED,
         T=cfg['T'],
         burn_in=SBI_BURN_IN,
         mode=cfg['mode'],
+        design_features=SBI_DESIGN_FEATURES,
     )
     net.train(n_simulations=n_sims, seed=seed, show_progress=show_progress)
 
-    out = snpe_net_path(rep, model, distribution)
     net.save(out)
     print(f'[train] {rep}/{model}/{distribution}: saved -> {out} '
           f'({(time.time() - t0) / 60:.1f} min)')
@@ -124,6 +161,8 @@ def main(argv=None):
     p.add_argument('--fast', action='store_true',
                    help=f'Use {FAST_SBI_N_SIMULATIONS} sims to check the '
                         'pipeline runs.')
+    p.add_argument('--overwrite', action='store_true',
+                   help='replace an existing network even if its representation differs')
     p.add_argument('--print-array', action='store_true', help='print the SLURM --array range and exit')
     p.add_argument('--count', action='store_true',
                    help='Print the number of array tasks and exit.')
@@ -153,7 +192,8 @@ def main(argv=None):
     print(f'[train] {len(jobs)} network(s): {jobs}')
     t0 = time.time()
     for rep, model, distribution in jobs:
-        train_one(rep, model, distribution, n_simulations=n_sims, seed=args.seed)
+        train_one(rep, model, distribution, n_simulations=n_sims, seed=args.seed,
+                  overwrite=args.overwrite)
     print(f'[train] all done in {(time.time() - t0) / 60:.1f} min')
 
 

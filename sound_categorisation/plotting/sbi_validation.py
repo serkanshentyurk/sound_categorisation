@@ -1,336 +1,109 @@
 """
-plotting/sbi_validation.py — Visualisations for SBI validation.
+plotting/sbi_validation.py — Visualisations for SBI validation and summary-stat selection.
 
-Each plotter consumes a result dict from sound_categorisation.features.sbi:
+SBC, coverage and recovery (draw-only, single-panel, ``plot_x(table, ax=None)``). Each takes the
+rows of one ``sc-validation-tables`` CSV (``inference.validation``) for ONE network, session
+count and parameter -- select them first, e.g.
+``ecdf[(ecdf.rep == 'pooled') & (ecdf.model == 'BE') & (ecdf.n_sessions == 5) & (ecdf.param == p)]``:
 
-    plot_sbc_ranks(sbc_result)         ← compute_sbc_ranks
-    plot_sbc_ecdf(sbc_result)          ← compute_sbc_ranks
-    plot_recovery_scatter(rec_result)  ← compute_parameter_recovery
-    plot_recovery_bias(rec_result)     ← compute_parameter_recovery
-    plot_param_stat_correlations(res)  ← compute_param_stat_correlations
+    plot_sbc_ecdf_diff(ecdf_rows)      ← sbc_ecdf.csv        ECDF − uniform with the simultaneous band
+    plot_coverage(coverage_rows)       ← coverage.csv        all parameters of one network
+    plot_recovery_scatter(draw_rows)   ← recovery_draws.csv  truth vs posterior median, 5–95 %
+    plot_contraction(draw_rows)        ← recovery_draws.csv  posterior contraction vs z-score
+
+Feature selection (below) and plot_param_stat_correlations keep their own producers.
 """
 
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
 
 # =============================================================================
-# SBC
+# SBC, COVERAGE, RECOVERY  (rows of one network / session count / parameter)
 # =============================================================================
 
-def plot_sbc_ranks(
-    sbc_result: Dict[str, Any],
-    param_indices: List[int] | None = None,
-    n_bins: int = 20,
-    figsize: Tuple[float, float] | None = None,
-    title: str | None = None,
-) -> plt.Figure:
+
+def _label(rows) -> str:
+    r = rows.iloc[0]
+    return f"{r['rep']} {r['model']}, {int(r['n_sessions'])} sessions"
+
+
+def plot_sbc_ecdf_diff(rows, ax: plt.Axes | None = None) -> plt.Axes:
+    """ECDF of the SBC fractional ranks minus the uniform CDF, with the simultaneous band.
+
+    A calibrated network stays inside the band; a curve bowing up means the truth sits low in
+    the posterior too often (the posterior is shifted upwards), a ∩-shape (positive in the
+    middle) or ∪-shape means it is too wide or too narrow respectively.
     """
-    Histograms of SBC ranks, one panel per parameter.
-
-    Reference: uniform distribution (red dashed) is well-calibrated.
-    U-shape → posterior too narrow; inverted U → too wide; skew → biased.
-
-    Args:
-        sbc_result: Output of compute_sbc_ranks.
-        param_indices: Subset of parameter indices to plot. Default all.
-        n_bins: Histogram bins.
-        figsize: Figure size.
-        title: Overall figure title.
-    """
-    from scipy.stats import binom
-
-    ranks = sbc_result['ranks']
-    names = sbc_result.get('param_names')
-    ks_pvals = sbc_result.get('ks_pvalues')
-
-    n_params = ranks.shape[1]
-    indices = param_indices if param_indices is not None else list(range(n_params))
-    n_plot = len(indices)
-    n_cols = min(4, n_plot)
-    n_rows = int(np.ceil(n_plot / n_cols))
-    if figsize is None:
-        figsize = (4 * n_cols, 3.5 * n_rows)
-
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize, squeeze=False)
-    axes_flat = axes.flatten()
-    expected = len(ranks) / n_bins
-
-    for idx, p in enumerate(indices):
-        ax = axes_flat[idx]
-        ax.hist(ranks[:, p], bins=n_bins, density=False,
-                color='steelblue', edgecolor='white', alpha=0.8)
-        ax.axhline(expected, color='red', linestyle='--', linewidth=1.5,
-                   alpha=0.7, label='Expected (uniform)')
-
-        # 95% binomial band for uniform expectation
-        ci_lo = binom.ppf(0.025, len(ranks), 1 / n_bins)
-        ci_hi = binom.ppf(0.975, len(ranks), 1 / n_bins)
-        ax.axhspan(ci_lo, ci_hi, alpha=0.1, color='red', zorder=0)
-
-        label = names[p] if names is not None and p < len(names) else f'θ_{p}'
-        ks_str = ''
-        if ks_pvals is not None:
-            pval = ks_pvals[p]
-            ks_str = f'\nKS p={pval:.3f}' + (' ⚠' if pval < 0.05 else '')
-        ax.set_title(f'{label}{ks_str}', fontsize=9)
-        ax.set_xlabel('Rank')
-        ax.set_ylabel('Count')
-
-    for j in range(n_plot, len(axes_flat)):
-        axes_flat[j].set_visible(False)
-
-    fig.suptitle(title or 'SBC Rank Histograms', fontsize=13, y=1.02)
-    fig.tight_layout()
-    return fig
+    if ax is None:
+        _, ax = plt.subplots(figsize=(3.6, 2.8))
+    rows = rows.sort_values('z')
+    ax.fill_between(rows['z'], rows['band_lo'], rows['band_hi'], color='grey', alpha=0.25,
+                    linewidth=0, label='95 % simultaneous band')
+    ax.plot(rows['z'], rows['ecdf_diff'], color='black', lw=1.2)
+    ax.axhline(0, color='grey', lw=0.6)
+    ax.set_xlim(0, 1)
+    ax.set_xlabel('fractional rank')
+    ax.set_ylabel('ECDF − uniform')
+    ax.set_title(f"{rows['param'].iloc[0]} ({_label(rows)})", fontsize=9)
+    return ax
 
 
-def plot_sbc_ecdf(
-    sbc_result: Dict[str, Any],
-    param_indices: List[int] | None = None,
-    figsize: Tuple[float, float] | None = None,
-    title: str | None = None,
-) -> plt.Figure:
-    """
-    ECDF of normalised SBC ranks, one panel per parameter.
-
-    Should lie on the diagonal if calibrated. The red shaded band is a
-    KS 95% envelope; the curve leaving the band indicates miscalibration.
-
-    Args:
-        sbc_result: Output of compute_sbc_ranks.
-        param_indices: Subset of params to plot.
-        figsize: Figure size.
-        title: Figure title.
-    """
-    ranks = sbc_result['ranks']
-    n_post = sbc_result['n_posterior_samples']
-    names = sbc_result.get('param_names')
-
-    n_params = ranks.shape[1]
-    indices = param_indices if param_indices is not None else list(range(n_params))
-    n_plot = len(indices)
-    n_cols = min(4, n_plot)
-    n_rows = int(np.ceil(n_plot / n_cols))
-    if figsize is None:
-        figsize = (4 * n_cols, 4 * n_rows)
-
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize, squeeze=False)
-    axes_flat = axes.flatten()
-    n_sbc = len(ranks)
-
-    for idx, p in enumerate(indices):
-        ax = axes_flat[idx]
-        normalised = np.sort(ranks[:, p]) / (n_post + 1)
-        ecdf_y = np.arange(1, n_sbc + 1) / n_sbc
-
-        ax.plot(normalised, ecdf_y, color='steelblue', linewidth=1.5)
-        ax.plot([0, 1], [0, 1], 'r--', alpha=0.5, linewidth=1)
-
-        ks_crit = 1.36 / np.sqrt(n_sbc)
-        ax.fill_between(
-            [0, 1],
-            [-ks_crit, 1 - ks_crit],
-            [ ks_crit, 1 + ks_crit],
-            alpha=0.1, color='red',
-        )
-
-        label = names[p] if names is not None and p < len(names) else f'θ_{p}'
-        ax.set_title(label, fontsize=9)
-        ax.set_xlabel('Normalised rank')
-        ax.set_ylabel('ECDF')
-        ax.set_xlim(0, 1)
-        ax.set_ylim(0, 1)
-        ax.set_aspect('equal')
-
-    for j in range(n_plot, len(axes_flat)):
-        axes_flat[j].set_visible(False)
-
-    if title:
-        fig.suptitle(title, fontsize=13, y=1.02)
-    fig.tight_layout()
-    return fig
+def plot_coverage(rows, ax: plt.Axes | None = None) -> plt.Axes:
+    """Empirical against nominal coverage of central posterior intervals, one line per
+    parameter, with the range a calibrated network would give at each level (grey bars)."""
+    if ax is None:
+        _, ax = plt.subplots(figsize=(3.4, 3.2))
+    levels = rows.drop_duplicates('nominal').sort_values('nominal')
+    ax.vlines(levels['nominal'], levels['band_lo'], levels['band_hi'], color='grey', lw=6,
+              alpha=0.3, label='calibrated range')
+    for param, g in rows.groupby('param', sort=False):
+        g = g.sort_values('nominal')
+        ax.plot(g['nominal'], g['empirical'], 'o-', ms=3, lw=1, label=param)
+    ax.plot([0.4, 1.0], [0.4, 1.0], '--', color='grey', lw=0.8)
+    ax.set_xlim(0.4, 1.0)
+    ax.set_ylim(0.3, 1.0)
+    ax.set_xlabel('nominal coverage')
+    ax.set_ylabel('empirical coverage')
+    ax.set_title(_label(rows), fontsize=9)
+    ax.legend(fontsize=7, frameon=False)
+    return ax
 
 
-# =============================================================================
-# PARAMETER RECOVERY
-# =============================================================================
-
-def plot_recovery_scatter(
-    recovery_result: Dict[str, Any],
-    param_indices: List[int] | None = None,
-    prior_bounds: Dict[str, Tuple[float, float]] | None = None,
-    param_links: Dict[str, Any] | None = None,
-    figsize: Tuple[float, float] | None = None,
-    title: str | None = None,
-) -> plt.Figure:
-    """
-    True vs recovered scatter, one panel per parameter. Identity line shown.
-
-    Args:
-        recovery_result: Output of compute_parameter_recovery.
-        param_indices: Subset of params to plot.
-        prior_bounds: {name: (lo, hi)} — sets axis range. If None and
-            param_links provided, extracted from link.bounds.
-        param_links: {name: spec} — alternative way to set bounds.
-        figsize: Figure size.
-        title: Figure title.
-    """
-    true_p = recovery_result['true_params']
-    rec    = recovery_result['recovered_median']
-    ci_lo  = recovery_result['recovered_ci_low']
-    ci_hi  = recovery_result['recovered_ci_high']
-    names  = recovery_result['param_names']
-    corrs  = recovery_result['correlation']
-    cov    = recovery_result['coverage_90']
-
-    if prior_bounds is None and param_links is not None:
-        prior_bounds = {
-            name: link.bounds
-            for name, link in param_links.items()
-            if hasattr(link, 'bounds')
-        }
-
-    n_params = true_p.shape[1]
-    indices = param_indices if param_indices is not None else list(range(n_params))
-    n_plot = len(indices)
-    n_cols = min(4, n_plot)
-    n_rows = int(np.ceil(n_plot / n_cols))
-    if figsize is None:
-        figsize = (4.5 * n_cols, 4.5 * n_rows)
-
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize, squeeze=False)
-    axes_flat = axes.flatten()
-
-    for idx, p in enumerate(indices):
-        ax = axes_flat[idx]
-        name = names[p] if p < len(names) else f'θ_{p}'
-
-        yerr_lo = rec[:, p] - ci_lo[:, p]
-        yerr_hi = ci_hi[:, p] - rec[:, p]
-        ax.errorbar(
-            true_p[:, p], rec[:, p],
-            yerr=[yerr_lo, yerr_hi],
-            fmt='o', markersize=3, alpha=0.4,
-            elinewidth=0.5, capsize=0, color='steelblue',
-        )
-
-        if prior_bounds is not None and name in prior_bounds:
-            lo, hi = prior_bounds[name]
-            padding = (hi - lo) * 0.08
-            ax_lo, ax_hi = lo - padding, hi + padding
-        else:
-            all_vals = np.concatenate([true_p[:, p], rec[:, p]])
-            lo_d, hi_d = float(np.min(all_vals)), float(np.max(all_vals))
-            padding = (hi_d - lo_d) * 0.1
-            ax_lo, ax_hi = lo_d - padding, hi_d + padding
-
-        ax.set_xlim(ax_lo, ax_hi)
-        ax.set_ylim(ax_lo, ax_hi)
-        ax.plot([ax_lo, ax_hi], [ax_lo, ax_hi], 'k--', linewidth=1, alpha=0.5)
-
-        r = corrs[p]
-        r_str = f'r={r:.2f}' if np.isfinite(r) else 'r=N/A'
-        ax.set_title(f'{name}\n{r_str}, 90% cov={cov[p]:.0%}', fontsize=9)
-        ax.set_xlabel('True')
-        ax.set_ylabel('Recovered (median)')
-        ax.set_aspect('equal')
-
-    for j in range(n_plot, len(axes_flat)):
-        axes_flat[j].set_visible(False)
-
-    fig.suptitle(title or 'Parameter Recovery: True vs Recovered',
-                 fontsize=13, y=1.02)
-    fig.tight_layout()
-    return fig
+def plot_recovery_scatter(rows, ax: plt.Axes | None = None, max_points: int = 300) -> plt.Axes:
+    """Posterior median against the true value for one parameter, with 5–95 % intervals
+    (a fixed subsample of ``max_points`` draws for legibility; statistics use them all)."""
+    if ax is None:
+        _, ax = plt.subplots(figsize=(3.2, 3.2))
+    if len(rows) > max_points:
+        rows = rows.sample(max_points, random_state=0)
+    ax.errorbar(rows['truth'], rows['median'],
+                yerr=[rows['median'] - rows['q05'], rows['q95'] - rows['median']],
+                fmt='o', ms=2, lw=0.4, color='black', ecolor='grey', alpha=0.6)
+    lo, hi = float(rows['prior_lo'].iloc[0]), float(rows['prior_hi'].iloc[0])
+    ax.plot([lo, hi], [lo, hi], '--', color='grey', lw=0.8)
+    ax.set_xlim(lo, hi)
+    ax.set_ylim(lo, hi)
+    ax.set_xlabel(f"true {rows['param'].iloc[0]}")
+    ax.set_ylabel('posterior median')
+    ax.set_title(_label(rows), fontsize=9)
+    return ax
 
 
-def plot_recovery_bias(
-    recovery_result: Dict[str, Any],
-    param_indices: List[int] | None = None,
-    prior_bounds: Dict[str, Tuple[float, float]] | None = None,
-    param_links: Dict[str, Any] | None = None,
-    figsize: Tuple[float, float] | None = None,
-    title: str | None = None,
-) -> plt.Figure:
-    """
-    Recovery error (recovered − true) vs true value, with a running mean
-    overlay. Horizontal scatter around zero = unbiased.
-
-    Args:
-        recovery_result: Output of compute_parameter_recovery.
-        param_indices: Subset of params.
-        prior_bounds: {name: (lo, hi)} sets x-axis range.
-        param_links: {name: spec} — alternative bound source.
-        figsize: Figure size.
-        title: Figure title.
-    """
-    true_p = recovery_result['true_params']
-    rec    = recovery_result['recovered_median']
-    names  = recovery_result['param_names']
-    rmse_v = recovery_result['rmse']
-    bias_v = recovery_result['bias']
-
-    if prior_bounds is None and param_links is not None:
-        prior_bounds = {
-            name: link.bounds
-            for name, link in param_links.items()
-            if hasattr(link, 'bounds')
-        }
-
-    n_params = true_p.shape[1]
-    indices = param_indices if param_indices is not None else list(range(n_params))
-    n_plot = len(indices)
-    n_cols = min(4, n_plot)
-    n_rows = int(np.ceil(n_plot / n_cols))
-    if figsize is None:
-        figsize = (4.5 * n_cols, 4 * n_rows)
-
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize, squeeze=False)
-    axes_flat = axes.flatten()
-
-    for idx, p in enumerate(indices):
-        ax = axes_flat[idx]
-        name = names[p] if p < len(names) else f'θ_{p}'
-        error = rec[:, p] - true_p[:, p]
-
-        ax.scatter(true_p[:, p], error, s=15, alpha=0.4,
-                   color='steelblue', edgecolors='none')
-        ax.axhline(0, color='k', linestyle='--', linewidth=1, alpha=0.5)
-
-        # Running mean overlay
-        try:
-            sort_idx = np.argsort(true_p[:, p])
-            x_sorted = true_p[sort_idx, p]
-            e_sorted = error[sort_idx]
-            window = max(5, len(e_sorted) // 10)
-            if len(e_sorted) > window:
-                running = np.convolve(e_sorted, np.ones(window) / window, mode='valid')
-                x_run = x_sorted[window // 2: window // 2 + len(running)]
-                ax.plot(x_run, running, 'r-', linewidth=2, alpha=0.7)
-        except (ValueError, IndexError):
-            pass
-
-        if prior_bounds is not None and name in prior_bounds:
-            lo, hi = prior_bounds[name]
-            padding = (hi - lo) * 0.08
-            ax.set_xlim(lo - padding, hi + padding)
-
-        ax.set_title(
-            f'{name}\nbias={bias_v[p]:.4f}, RMSE={rmse_v[p]:.4f}',
-            fontsize=9,
-        )
-        ax.set_xlabel('True value')
-        ax.set_ylabel('Error (recovered − true)')
-
-    for j in range(n_plot, len(axes_flat)):
-        axes_flat[j].set_visible(False)
-
-    fig.suptitle(title or 'Parameter Recovery: Bias Analysis',
-                 fontsize=13, y=1.02)
-    fig.tight_layout()
-    return fig
+def plot_contraction(rows, ax: plt.Axes | None = None) -> plt.Axes:
+    """Posterior z-score against posterior contraction for one parameter (Schad et al. 2021):
+    good recovery sits at high contraction with |z| mostly below 2."""
+    if ax is None:
+        _, ax = plt.subplots(figsize=(3.2, 3.0))
+    ax.scatter(rows['contraction'], rows['zscore'], s=4, color='black', alpha=0.4, linewidths=0)
+    for y in (-2, 2):
+        ax.axhline(y, color='grey', lw=0.6, ls='--')
+    ax.set_xlim(min(0.0, float(rows['contraction'].min())), 1.0)
+    ax.set_xlabel('posterior contraction')
+    ax.set_ylabel('posterior z-score')
+    ax.set_title(f"{rows['param'].iloc[0]} ({_label(rows)})", fontsize=9)
+    return ax
 
 
 # =============================================================================

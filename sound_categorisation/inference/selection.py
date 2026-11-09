@@ -1,7 +1,7 @@
 """SBI conditioning for model identification (BE vs SC).
 
 ``condition_sbi(sessions, net, model)`` produces ONE model's held-out MSE
-results -- a list of per-rep ``{rep, test_error, best_params[, n_valid]}`` entries
+results -- a list of per-rep ``{rep, test_error, best_params[, fold_errors | n_valid]}`` entries
 -- ready for ``utils.cv_utils.save_cv_result``. It conditions a pre-trained net
 and scores held-out matrices; it never trains and never picks a winner.
 ``condition_posterior(sessions, net)`` is the one all-session conditioning whose
@@ -183,7 +183,10 @@ def _condition_multi(sessions, net, model, fit_target, n_folds,
         err = float(np.mean(fold_errs))
         if not np.isfinite(err):
             continue
-        results.append({'rep': rep, 'test_error': err, 'best_params': best})
+        # fold_errors[k]: held-out error with the k-th contiguous group of sessions as the
+        # test half (split_folds_by_block order: 5 sessions -> first 3, then last 2)
+        results.append({'rep': rep, 'test_error': err, 'best_params': best,
+                        'fold_errors': fold_errs})
     return results
 
 
@@ -271,7 +274,7 @@ def condition_sbi(
             extra all-session conditioning at ``n_posterior_samples``.
 
     Returns:
-        List of ``{rep, test_error, best_params[, n_valid]}`` -- the ``results``
+        List of ``{rep, test_error, best_params[, fold_errors | n_valid]}`` -- the ``results``
         argument for ``save_cv_result``. rep is the repeat index (multi) or the
         session index (single).
     """

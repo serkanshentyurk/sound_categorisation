@@ -50,6 +50,9 @@ class AmortisedSBI:
         burn_in: Model burn-in per session.
         mode: 'pooled' or 'moments' (the representation; must match conditioning).
         stat_names: Summary stats (defaults to SBI_STATS).
+        design_features: How much data x was built from, appended after the stats
+            (defaults to settings.SBI_DESIGN_FEATURES). Networks saved without them load
+            with an empty tuple and condition exactly as they were trained.
     """
 
     def __init__(
@@ -61,6 +64,7 @@ class AmortisedSBI:
         burn_in: int = 1000,
         mode: str = 'pooled',
         stat_names: Sequence[str] | None = None,
+        design_features: Sequence[str] | None = None,
     ):
         self.model = _as_model(model)
         self.dist_schedule = dist_schedule
@@ -73,15 +77,21 @@ class AmortisedSBI:
             from sound_categorisation.inference.constants import SBI_STATS
             stat_names = list(SBI_STATS)
         self.stat_names = list(stat_names)
+        if design_features is None:
+            from sound_categorisation.settings import SBI_DESIGN_FEATURES
+            design_features = SBI_DESIGN_FEATURES
+        self.design_features = tuple(design_features)
 
         self._sim_fn, self._prior, self.param_names = build_simulator(
             self.model, dist_schedule=self.dist_schedule, N=self.N, T=self.T,
             burn_in=self.burn_in, mode=self.mode, stat_names=self.stat_names,
+            design_features=self.design_features,
         )
 
         self._trained_posterior = None
         self._training_metadata = None
         self._feature_medians = None
+        self._prior_bounds = None        # {'low': [...], 'high': [...]} the network was trained on
 
     # ── Training ─────────────────────────────────────────────────────────────
 
@@ -107,7 +117,8 @@ class AmortisedSBI:
         if show_progress:
             print(f'Training AmortisedSBI [{self.model.value.upper()}] '
                   f'({n_simulations:,} sims, schedule={self.dist_schedule}, '
-                  f'N={self.N}, T={self.T}, mode={self.mode})')
+                  f'N={self.N}, T={self.T}, mode={self.mode}, '
+                  f'design={list(self.design_features)})')
 
         if seed is not None:
             torch.manual_seed(seed)
@@ -156,13 +167,17 @@ class AmortisedSBI:
         if show_progress:
             print(f'  Done in {dt / 60:.1f} min')
 
+        from sound_categorisation.inference.simulator import get_bounds_arrays
+        lo, hi = get_bounds_arrays(self.model)
         self._trained_posterior = posterior
+        self._prior_bounds = {'low': lo.tolist(), 'high': hi.tolist()}
         self._training_metadata = {
             'n_simulations': n_simulations,
             'n_valid': n_valid,
             'seed': seed,
             'dist_schedule': self.dist_schedule,
             'N': self.N, 'T': self.T, 'mode': self.mode,
+            'design_features': list(self.design_features),
             'training_time': dt,
         }
         return posterior
@@ -182,29 +197,42 @@ class AmortisedSBI:
             'N': self.N, 'T': self.T, 'burn_in': self.burn_in,
             'mode': self.mode,
             'stat_names': self.stat_names,
+            'design_features': list(self.design_features),
             'param_names': list(self.param_names),
+            'prior_bounds': self._prior_bounds,
             'trained_posterior': self._trained_posterior,
             'training_metadata': self._training_metadata,
             'feature_medians': self._feature_medians,
-            '_version': 5,
+            '_version': 6,
         }
         with open(path, 'wb') as f:
             pickle.dump(save_data, f)
 
     @classmethod
     def load(cls, path) -> 'AmortisedSBI':
-        """Load a trained AmortisedSBI. Rebuilds simulator/prior fresh."""
-        with open(path, 'rb') as f:
-            data = pickle.load(f)
+        """Load a trained AmortisedSBI. Rebuilds simulator/prior fresh.
+
+        Raises if the saved parameter names differ from the model's current order: the
+        network's output columns would otherwise be relabelled silently.
+        """
+        data = read_network_file(path)
         obj = cls(
             model=data['model'],
             dist_schedule=data['dist_schedule'],
             N=data['N'], T=data['T'], burn_in=data['burn_in'],
             mode=data['mode'], stat_names=data['stat_names'],
+            design_features=tuple(data.get('design_features') or ()),
         )
+        saved_names = data.get('param_names')
+        if saved_names is not None and list(saved_names) != list(obj.param_names):
+            raise ValueError(
+                f'{path}: the network was trained with parameters {list(saved_names)}, but '
+                f'{obj.model.value.upper()} now has {list(obj.param_names)}; its columns would '
+                'be mislabelled. Retrain it.')
         obj._trained_posterior = data['trained_posterior']
         obj._training_metadata = data.get('training_metadata')
         obj._feature_medians = data.get('feature_medians')
+        obj._prior_bounds = data.get('prior_bounds')
         return obj
 
     # ── Conditioning ─────────────────────────────────────────────────────────
@@ -228,7 +256,17 @@ class AmortisedSBI:
                           stacklevel=2)
             self._warned_stats = True
 
-        x = to_stat_vector(sessions, mode=self.mode, stat_names=self.stat_names)
+        from sound_categorisation.settings import SBI_DESIGN_FEATURES
+        if (tuple(self.design_features) != tuple(SBI_DESIGN_FEATURES)
+                and not getattr(self, '_warned_design', False)):
+            import warnings
+            warnings.warn(f'network design features {list(self.design_features)} differ from the '
+                          f'current SBI_DESIGN_FEATURES {list(SBI_DESIGN_FEATURES)}: this network '
+                          'predates them (retrain) unless intended.', stacklevel=2)
+            self._warned_design = True
+
+        x = to_stat_vector(sessions, mode=self.mode, stat_names=self.stat_names,
+                           design_features=self.design_features)
         x = np.asarray(x, dtype=float)
         if not np.all(np.isfinite(x)):
             if self._feature_medians is None:
@@ -251,6 +289,10 @@ class AmortisedSBI:
             'point_estimate': point_estimate,
             'theta_median': theta_median,
             'acceptance_rate': acceptance,
+            # fewer than n_samples fell inside the prior within LEAK_BUDGET proposals, so the
+            # samples were resampled from what was accepted (or clipped if nothing was)
+            'budget_hit': bool(np.isfinite(acceptance)
+                               and acceptance * self.LEAK_BUDGET < n_samples),
         }
 
     # Budgeted rejection sampling. sbi's DirectPosterior.sample rejects flow samples that fall
@@ -316,3 +358,45 @@ class AmortisedSBI:
     def prior(self):
         """The sbi prior (BoxUniform; None if sbi/torch unavailable)."""
         return self._prior
+
+
+# =============================================================================
+# RAW NETWORK FILES (read without building anything; used by load and the network check)
+# =============================================================================
+
+def read_network_file(path) -> Dict[str, Any]:
+    """The saved dict of a network file, as written by AmortisedSBI.save.
+
+    Unpickling the posterior needs torch/sbi; everything else is plain Python.
+    """
+    with open(path, 'rb') as f:
+        return pickle.load(f)
+
+
+def trained_prior_bounds(data: Dict[str, Any]):
+    """(low, high) arrays of the prior a saved network was trained on, or None.
+
+    Networks saved from Nov 2026 store them; older ones keep them only inside the
+    pickled sbi posterior (a BoxUniform), which is read here when available.
+    """
+    stored = data.get('prior_bounds')
+    if stored:
+        return np.asarray(stored['low'], dtype=float), np.asarray(stored['high'], dtype=float)
+    prior = getattr(data.get('trained_posterior'), 'prior', None)
+    for owner in (getattr(prior, 'base_dist', None), prior):
+        low, high = getattr(owner, 'low', None), getattr(owner, 'high', None)
+        if low is not None and high is not None:
+            return _as_np(low), _as_np(high)
+    support = getattr(prior, 'support', None)
+    low = getattr(support, 'lower_bound', None)
+    high = getattr(support, 'upper_bound', None)
+    if low is not None and high is not None:
+        return _as_np(low), _as_np(high)
+    return None
+
+
+def _as_np(t) -> np.ndarray:
+    if hasattr(t, 'detach'):
+        t = t.detach().cpu().numpy()
+    return np.asarray(t, dtype=float).reshape(-1)
+

@@ -68,9 +68,11 @@ class TestConditionMulti:
         assert isinstance(res, list) and len(res) == 4          # one per repeat
         assert [r['rep'] for r in res] == [0, 1, 2, 3]
         for r in res:
-            assert set(r) == {'rep', 'test_error', 'best_params'}
+            assert set(r) == {'rep', 'test_error', 'best_params', 'fold_errors'}
             assert np.isfinite(r['test_error'])
             assert isinstance(r['best_params'], dict)           # all-session theta
+            assert len(r['fold_errors']) == 2                   # one per CV half, fold order
+            assert r['test_error'] == pytest.approx(np.mean(r['fold_errors']))
 
     def test_best_params_stable_across_reps(self):
         # one all-session conditioning -> identical recovered params every rep

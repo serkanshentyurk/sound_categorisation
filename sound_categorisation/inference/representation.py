@@ -12,6 +12,12 @@ Two modes:
     'moments' : per-session stat vectors (N x D) -> 2 moments per feature,
                 shape (2D,) [mean, var]. Requires N >= 2 sessions.
 
+Design features (optional, appended after the statistics): how much data the vector was
+built from -- 'n_sessions' and 'n_valid_trials' (trials with a recorded choice). A network
+trained with them knows whether it is looking at an animal's full data or one CV half, so
+its posterior width follows the amount of data instead of assuming the training average.
+Networks saved before Nov 2026 were trained without them and pass an empty tuple.
+
 Composes existing primitives only (``TrialArrays``, ``compute_stats``); no
 stat or pooling logic is reimplemented here.
 """
@@ -22,11 +28,14 @@ import numpy as np
 from behav_utils.data.arrays import TrialArrays
 from behav_utils.stats import compute_stats
 
+DESIGN_FEATURES = ('n_sessions', 'n_valid_trials')   # everything to_stat_vector can append
+
 
 def to_stat_vector(
     sessions: List,
     mode: str = 'pooled',
     stat_names: Sequence[str] | None = None,
+    design_features: Sequence[str] = (),
 ) -> np.ndarray:
     """Build the SBI observation vector from sessions.
 
@@ -35,32 +44,70 @@ def to_stat_vector(
             via filter_trials).
         mode: 'pooled' or 'moments'.
         stat_names: Stats to compute. Defaults to SBI_STATS.
+        design_features: Subset of DESIGN_FEATURES appended after the statistics, in the
+            given order. Empty for networks trained without them.
 
     Returns:
-        'pooled'  -> shape (D,).
-        'moments' -> shape (2*D,)  [mean, var stacked].
+        'pooled'  -> shape (D + n_design,).
+        'moments' -> shape (2*D + n_design,)  [mean, var stacked, then design].
 
     Raises:
-        ValueError: unknown mode, or mode='moments' with fewer than 2 sessions.
+        ValueError: unknown mode or design feature, or mode='moments' with fewer than
+            2 sessions.
     """
     if stat_names is None:
         from sound_categorisation.inference.constants import SBI_STATS
         stat_names = list(SBI_STATS)
     stat_names = list(stat_names)
+    design_features = _check_design_features(design_features)
 
     if mode == 'pooled':
-        return compute_stats(TrialArrays.from_sessions(sessions), stat_names).to_numpy()
-
-    if mode == 'moments':
+        arrays = TrialArrays.from_sessions(sessions)
+        x = compute_stats(arrays, stat_names).to_numpy()
+        n_valid = arrays.n_responded
+    elif mode == 'moments':
         n = len(sessions)
         if n < 2:
             raise ValueError(
                 f"mode='moments' needs >= 2 sessions to form mean+var; got {n}")
-        X = np.vstack([compute_stats(TrialArrays.from_sessions([s]), stat_names).to_numpy()
-                       for s in sessions])       # (N, D)
-        return _nan_moments(X)
+        per_session = [TrialArrays.from_sessions([s]) for s in sessions]
+        X = np.vstack([compute_stats(a, stat_names).to_numpy()
+                       for a in per_session])       # (N, D)
+        x = _nan_moments(X)
+        n_valid = sum(a.n_responded for a in per_session)
+    else:
+        raise ValueError(f"Unknown mode: {mode!r} (expected 'pooled' or 'moments')")
 
-    raise ValueError(f"Unknown mode: {mode!r} (expected 'pooled' or 'moments')")
+    if not design_features:
+        return x
+    values = {'n_sessions': float(len(sessions)), 'n_valid_trials': float(n_valid)}
+    return np.concatenate([x, [values[name] for name in design_features]])
+
+
+def feature_names(
+    mode: str,
+    stat_names: Sequence[str],
+    design_features: Sequence[str] = (),
+) -> List[str]:
+    """Names of the entries of ``to_stat_vector``'s output, in order."""
+    stat_names = list(stat_names)
+    if mode == 'pooled':
+        names = stat_names
+    elif mode == 'moments':
+        names = [f'{s}_mean' for s in stat_names] + [f'{s}_var' for s in stat_names]
+    else:
+        raise ValueError(f"Unknown mode: {mode!r} (expected 'pooled' or 'moments')")
+    return names + list(_check_design_features(design_features))
+
+
+def _check_design_features(design_features: Sequence[str]) -> tuple:
+    names = tuple(design_features or ())
+    unknown = [n for n in names if n not in DESIGN_FEATURES]
+    if unknown:
+        raise ValueError(f'unknown design feature(s) {unknown}; known: {DESIGN_FEATURES}')
+    if len(set(names)) != len(names):
+        raise ValueError(f'design features repeat: {names}')
+    return names
 
 
 def _nan_moments(X: np.ndarray) -> np.ndarray:

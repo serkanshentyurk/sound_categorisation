@@ -3,6 +3,29 @@
 
 ## Unreleased
 
+- SBI networks see how much data they are given: `to_stat_vector` appends the number of sessions and valid trials
+  (`SBI_DESIGN_FEATURES`) and the networks train on 2–6 sessions (was 4–6), so the CV halves (2–3 sessions) the model
+  comparison conditions on are inside the training design (100k pooled / 150k moments simulations). Networks saved
+  before this have no design features and still condition as they were trained. **The October 2026 networks are
+  superseded; retrain (move them to `snpe_networks/2026-10/` first) and redo the all-mice run.**
+- `AmortisedSBI` saves its design features and trained prior bounds; `load` raises when the saved parameter order
+  differs from the model's; conditioning warns when the design features differ from settings and reports
+  `budget_hit`. `sc-sbi-train` refuses to replace a network trained with a different representation (`--overwrite`).
+- `sc-sbi-check` (new, `inference/network_check.py`, `slurm/sbi_check.sh`, `submit.sh sbi-check`): saved networks
+  against the current settings and code, and a past run's sessions against the current selection.
+- SBC: one task per (rep, model, session count) (`SBC_GRID`: 5, 3 and 2 sessions; 1,000 / 500 / 500 draws); each draw
+  keeps the posterior mean, SD, quantiles and acceptance; output under `sbc/<D>/n<N>/`; seeds from `VALIDATION_SEED`
+  (SBC draws used to share numpy seeds, and so stimulus streams, with training simulations).
+- `sc-make-synthetic-cohort --shape-from <cohort>/<run> --accuracy-rule`: synthetic animals copy real session counts
+  and lengths and pass the model-ID accuracy threshold; seeds from `VALIDATION_SEED` + 1,000,000; the cohort records
+  how many draws were rejected.
+- Grid search uses 16 seeds for synthetic cohorts too (`SYNTH_GS_N_SEEDS` removed). Grid search and SBI keep each
+  repeat's per-fold errors (`fold_errors`).
+- Consensus: `n_sig_BE`, `n_sig_SC` and `contested` (a call made with a significant vote against it).
+- `sc-validation-tables` (new, `inference/validation.py`): the thesis tables of a validation run. Notebook `91`
+  (appendix) draws them; `11` points to it and shows both consensus rules. SBC and recovery plotters are single-panel
+  (`plot_sbc_ecdf_diff`, `plot_coverage`, `plot_recovery_scatter`, `plot_contraction`; the multi-panel ones and the
+  recovery plotters without a producer are gone); `plot_confusion` shows a no-call column.
 - `sc-daily-tracker`: a daily HTML report of every animal with a session in the last 14 days, read from the
   session files on ceph without the snapshot or the cluster. Per day: trials, responded, correct,
   no-responses, early-lick aborts, accuracy (overall, hard, easy), right choices − 0.5, accuracy right − left,

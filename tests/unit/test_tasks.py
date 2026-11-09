@@ -47,3 +47,16 @@ def test_scripts_use_the_grids():
     import sound_categorisation.cli.sbi_train as T
     assert all(T.decode_task(i) == tuple(TRAIN_GRID.decode(i).values()) for i in range(TRAIN_GRID.n))
     assert all(R.decode_task(i) == tuple(CONDITION_GRID.decode(i).values()) for i in range(CONDITION_GRID.n))
+
+
+def test_sbc_grid():
+    import sound_categorisation.cli.sbi_sbc as S
+    from sound_categorisation.inference.tasks import SBC_GRID
+    from sound_categorisation.settings import MODEL_TYPES, SBC_DRAWS_BY_SESSIONS, SBI_TRAIN_REPS
+    assert SBC_GRID.names == ('rep', 'model', 'n_sessions')
+    assert SBC_GRID.n == len(SBI_TRAIN_REPS) * len(MODEL_TYPES) * len(SBC_DRAWS_BY_SESSIONS) == 12
+    for i in range(SBC_GRID.n):
+        assert SBC_GRID.encode(**SBC_GRID.decode(i)) == i
+        rep, model, n = S.decode_task(i)
+        assert (rep, model) == tuple(SBC_GRID.decode(i).values())[:2] and n in SBC_DRAWS_BY_SESSIONS
+

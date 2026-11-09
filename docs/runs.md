@@ -72,19 +72,33 @@ Common options: `--cohort` (default `opto1-cohort`), `--snapshot`, `--config`, `
 
 | command | computes | inputs | writes | time |
 |---|---|---|---|---|
-| `sc-sbi-train` / `slurm/submit.sh sbi-train` | one amortised network per (rep, model, distribution): `TRAIN_GRID` = `SBI_TRAIN_REPS` × models × `SBI_TRAIN_DISTRIBUTIONS` (now pooled/moments × BE/SC × uniform = 4 tasks; widen the settings tuples for more) | the models, `SBI_STATS` | `<data root>/snpe_networks/snpe_<rep>_<model>_<dist>.pkl` (+ `logs/`) | hours per task (GPU-free) |
+| `sc-sbi-train` / `slurm/submit.sh sbi-train` | one amortised network per (rep, model, distribution): `TRAIN_GRID` = `SBI_TRAIN_REPS` × models × `SBI_TRAIN_DISTRIBUTIONS` (now pooled/moments × BE/SC × uniform = 4 tasks; widen the settings tuples for more), trained on 2–6 sessions with the number of sessions and valid trials as inputs (`SBI_DESIGN_FEATURES`); refuses to replace a network trained with a different representation (`--overwrite`) | the models, `SBI_STATS` | `<data root>/snpe_networks/snpe_<rep>_<model>_<dist>.pkl` (+ `logs/`) | ≤ 16 h pooled, ≤ 30 h moments per task |
 | `sc-grid-search --cohort C --distribution D --fit-target T --run-id ID [--task-id i]` / `submit.sh grid-search` | grid-search CV per (animal, model, seed) → partials | snapshot or cohort | `model_identification/<cohort>/<ID>/grid_search/<T>/<D>/partials/` | minutes–hours per task |
 | `sc-grid-search ... --run-id ID --gather` | partials → one final per (animal, model) | the partials | `.../grid_search/<T>/<D>/<animal>_<model>.pkl` | seconds |
 | `sc-sbi-condition --cohort C --distribution D --run-id ID [--task-id i]` / `submit.sh sbi-condition` | condition the phase-matched networks on every animal → held-out MSE per CV repeat plus the saved all-session posterior (`SBI_N_POSTERIOR_SAMPLES_SAVED` samples, key `posterior`), `CONDITION_GRID` (4 tasks) | networks, snapshot or cohort | `model_identification/<cohort>/<ID>/sbi/<T>/<D>/<rep>/<animal>_<model>.pkl` | minutes per task |
-| `sc-sbi-sbc --cohort C --distribution D --run-id ID [--task-id i] [--n-draws N]` | calibration of each network: `SBC_N_DRAWS` fresh prior draws × `SBC_N_SESSIONS` sessions, conditioned like animals → SBC ranks, KS p-values, empirical vs nominal coverage at 50/80/90/95 % (`CONDITION_GRID`, 4 tasks) | networks | `<run>/sbc/<D>/<rep>/<model>.pkl`, `<model>_coverage.csv` | minutes per task |
+| `sc-sbi-sbc --cohort C --distribution D --run-id ID [--task-id i] [--n-draws N]` | calibration of each network at 5 sessions (an animal's data) and at 3 and 2 (the CV halves): `SBC_DRAWS_BY_SESSIONS` fresh prior draws, conditioned like animals → SBC ranks, KS p-values, coverage at 50/80/90/95 %, and per draw the posterior mean, SD, quantiles and acceptance (`SBC_GRID`, 12 tasks; seeds from `VALIDATION_SEED`) | networks | `<run>/sbc/<D>/n<N>/<rep>/<model>.pkl`, `<model>_coverage.csv` | ≤ 4 h per task |
+| `sc-sbi-check --cohort C --run-id ID [--networks-dir DIR] [--real-run C/ID]` / `submit.sh sbi-check` | every network in a directory against the current settings and code: stored config, parameter order, trained prior, and a fingerprint (feature medians of 5,000 fresh simulations against those stored at training); with `--real-run`, that run's sessions against what the current code selects | networks (and the snapshot for `--real-run`) | `<run>/network_check/<label>.csv`, `sessions_<cohort>_<id>_<D>.csv` | ≤ 2 h (one 20-core job) |
+| `sc-validation-tables --cohort C --run-id ID [--real C/ID] [--october C/ID]` | every thesis table of a validation run: SBC summary, coverage, ECDF bands, parameter recovery, model recovery per voter and consensus under both rules with intervals, contested calls, grid search by true σ_percep, the real animals' σ_percep and calls | the run's SBC and model-identification results | `<run>/tables/*.csv` | minutes (laptop or login node) |
 | `sc-consensus --cohort C --distribution D [--run-id ID\|latest]` | GS-UM + SBI-pooled-UM + SBI-moments-UM calls → one BE/SC call per animal | the finals of one run | `model_identification/<cohort>/<ID>/consensus/<D>/{assignments.csv, summary.txt, meta.json}` | seconds |
 
 Real cohorts: sessions come from the `model_id_<D>` preset (`config.yaml`: regular sessions only, the last 5 that pass
 accuracy > 0.7 and ≥ 250 valid trials), read from the snapshot; an animal with fewer than `MODEL_ID_MIN_SESSIONS` (4) is
 left out. Every runner writes `<run>/sessions/<D>.csv` listing each animal's sessions (kept and dropped). Grid-search
-seeds: 16 for a real cohort, 8 for a synthetic one; `--n-seeds N` changes it (pass it through `submit.sh`).
-The BE/SC call follows the manuscript (see ARCHITECTURE.md). With ground truth, `sc-consensus` reports how
-many animals were called and how many of those were right.
+seeds: 16 for every cohort, so a synthetic validation run repeats the real procedure; `--n-seeds N` changes it (pass it
+through `submit.sh`). Each repeat and seed keeps its per-fold errors (`fold_errors`). The BE/SC call follows the
+manuscript (see ARCHITECTURE.md): the consensus calls the model with more significant votes (at least one) and flags a
+call made with a significant vote against it (`contested`); `--min-votes 2` is the stricter rule. With ground truth,
+`sc-consensus` reports how many animals were called and how many of those were right.
+
+## SBI validation (cluster, then laptop)
+
+Thesis-standard checks of the SBI model identification, all in one run of a synthetic cohort shaped like the real
+animals (`sc-make-synthetic-cohort --shape-from all-mice/<id> --accuracy-rule`: each synthetic animal copies a real
+animal's session count and lengths, and a draw is kept only if every session passes the `model_id_<D>` accuracy
+threshold). The order: archive old networks, train, make the cohort, then the grid search (the long part; it does not
+need the networks), SBI conditioning, `sc-consensus`, `sc-sbi-sbc`, `sc-sbi-check` (current and archived networks), and
+finally `sc-validation-tables`. Notebook 91 reads `<run>/tables/` and `<run>/network_check/`. The real cohort gets a
+fresh run with the same commands, so every thesis number comes from one code version.
 
 `--fast` on `sc-grid-search` / `sc-sbi-condition` / `sc-sbi-train` / `sc-sbi-sbc` uses the tiny grid / few repeats / few simulations / few draws and
 suffixes the run id with `_fast`. `--coarse` on `sc-grid-search` selects the coarse grid. `submit.sh` creates the

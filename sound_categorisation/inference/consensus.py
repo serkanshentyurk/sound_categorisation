@@ -25,6 +25,10 @@ Consensus rule (configurable):
     2. Fewer than min_significant_votes significant -> 'Unclear'.
     3. Strict majority on one model -> that model.
     4. Tie / no majority -> 'Split'.
+With the default min_significant_votes=1 this calls the model with more significant votes
+(at least one). A call made with a significant vote against it (2 vs 1) stands but is
+flagged ``contested``; the counts behind every call are kept (``n_sig_BE``, ``n_sig_SC``).
+The thesis reports this rule and min_significant_votes=2 side by side.
 
 Each method's vote is the manuscript's model selection (Methods, "Model selection"): repeated
 cross-validation, the lower-error model called when p < 0.05. The manuscript used an ANOVA over 64
@@ -80,27 +84,33 @@ def _method_dir(source: str, rep: str | None, fit_target: str, run: Path, distri
 
 # ── consensus rule (row-based; auto-detects method columns) ──────────────────
 
-def _compute_consensus(row: dict, alpha: float = 0.05,
-                       min_significant_votes: int = 1) -> str:
-    """Majority vote over a row's method columns.
+def _significant_votes(row: dict, alpha: float = 0.05) -> Counter:
+    """Significant BE/SC votes in a row: Counter({'BE': n, 'SC': m}).
 
     A method column K is any key with a sibling '{K}_p'. K contributes a vote
     when its value is 'BE'/'SC' and its p-value is < alpha. The auto-detection
     keeps the rule agnostic to which methods are present.
     """
-    votes = []
+    votes = Counter()
     for key in list(row):
         p_key = f'{key}_p'
         if p_key not in row:
             continue
         val, p = row.get(key), row.get(p_key)
         if val in ('BE', 'SC') and pd.notna(p) and p < alpha:
-            votes.append(val)
+            votes[val] += 1
+    return votes
 
-    if len(votes) < min_significant_votes:
+
+def _compute_consensus(row: dict, alpha: float = 0.05,
+                       min_significant_votes: int = 1) -> str:
+    """Majority vote over a row's significant method votes (see _significant_votes)."""
+    votes = _significant_votes(row, alpha)
+    n = sum(votes.values())
+    if n < min_significant_votes:
         return 'Unclear'
-    top_model, top_count = Counter(votes).most_common(1)[0]
-    return top_model if top_count > len(votes) / 2 else 'Split'
+    top_model, top_count = votes.most_common(1)[0]
+    return top_model if top_count > n / 2 else 'Split'
 
 
 # ── public API ───────────────────────────────────────────────────────────────
@@ -126,8 +136,10 @@ def load_all_assignments(
     Returns:
         One row per animal: 'id', then per method '{label}', '{label}_p',
         '{label}_be', '{label}_sc'; 'true_model' if any method carried ground
-        truth; 'Consensus'; and 'consensus_correct' when truth is known (NaN for an
-        animal that was not called: Unclear / Split).
+        truth; 'Consensus'; 'n_sig_BE' / 'n_sig_SC' (significant votes per model);
+        'contested' (a BE/SC call with at least one significant vote for the other model);
+        and 'consensus_correct' when truth is known (NaN for an animal that was not
+        called: Unclear / Split).
     """
     methods = methods or DEFAULT_METHODS
 
@@ -166,8 +178,13 @@ def load_all_assignments(
             row[f'{label}_sc'] = sc
         if has_truth:
             row['true_model'] = true_model_by_animal.get(aid)
+        votes = _significant_votes(row, alpha)
         row['Consensus'] = _compute_consensus(
             row, alpha=alpha, min_significant_votes=min_significant_votes)
+        row['n_sig_BE'] = votes['BE']
+        row['n_sig_SC'] = votes['SC']
+        other = {'BE': 'SC', 'SC': 'BE'}.get(row['Consensus'])
+        row['contested'] = bool(other is not None and votes[other] > 0)
         if has_truth:
             tm = true_model_by_animal.get(aid)
             called = row['Consensus'] in ('BE', 'SC')
@@ -187,6 +204,9 @@ def compute_consensus_summary(assign_df: pd.DataFrame) -> str:
     lines = [f'{len(assign_df)} animals total', 'Consensus:']
     for label, n in counts.items():
         lines.append(f'  {label}: {n}')
+    if 'contested' in assign_df:
+        n_contested = int(assign_df['contested'].fillna(False).astype(bool).sum())
+        lines.append(f'contested calls (a significant vote against the call): {n_contested}')
     if 'consensus_correct' in assign_df:
         with_truth = (assign_df['true_model'].isin(['BE', 'SC']) if 'true_model' in assign_df
                       else pd.Series(True, index=assign_df.index))

@@ -360,33 +360,44 @@ def plot_param_distributions(
 # comparison / recovery frames returned by utils.cv_utils.load_cv_results.
 
 def plot_confusion(comparison_df, ax: plt.Axes | None = None,
-                   labels: Tuple[str, str] = ('BE', 'SC')) -> plt.Axes:
-    """Confusion matrix of identified vs true model (rows true, cols identified)."""
+                   labels: Tuple[str, str] = ('BE', 'SC'), call_col: str = 'winner') -> plt.Axes:
+    """Confusion matrix of identified vs true model (rows true, cols identified).
+
+    ``call_col`` is the column holding each animal's call ('winner' of a comparison table, or
+    'Consensus' / a voter column of an assignments table). Calls that are neither label
+    (Unclear, Split, 'no call') are counted in a last 'no call' column, drawn only if any occur.
+    """
     if ax is None:
         _, ax = plt.subplots(figsize=(4, 4))
 
-    mat = np.zeros((len(labels), len(labels)), dtype=int)
-    for _, r in comparison_df.iterrows():
-        if r.get('true_model') in labels and r.get('winner') in labels:
-            mat[labels.index(r['true_model']), labels.index(r['winner'])] += 1
+    rows = [(r.get('true_model'), r.get(call_col)) for _, r in comparison_df.iterrows()
+            if r.get('true_model') in labels]
+    no_call = any(c not in labels for _, c in rows)
+    cols = list(labels) + (['no call'] if no_call else [])
+    mat = np.zeros((len(labels), len(cols)), dtype=int)
+    for tm, c in rows:
+        mat[labels.index(tm), labels.index(c) if c in labels else len(labels)] += 1
 
     total = mat.sum()
-    acc = np.trace(mat) / total if total else np.nan
+    correct = int(sum(mat[i, i] for i in range(len(labels))))
     ax.imshow(mat, cmap='Blues', vmin=0)
     thresh = mat.max() / 2 if mat.max() else 0
     for i in range(len(labels)):
-        for j in range(len(labels)):
+        for j in range(len(cols)):
             ax.text(j, i, mat[i, j], ha='center', va='center',
                     color='white' if mat[i, j] > thresh else 'black',
                     fontweight='bold')
 
-    ax.set_xticks(range(len(labels)))
-    ax.set_xticklabels([f'{lab} fit' for lab in labels])
+    ax.set_xticks(range(len(cols)))
+    ax.set_xticklabels([f'{c} fit' if c in labels else c for c in cols])
     ax.set_yticks(range(len(labels)))
     ax.set_yticklabels([f'true {lab}' for lab in labels])
     ax.set_xlabel('Identified')
     ax.set_ylabel('True')
-    ax.set_title(f'Model ID: {acc:.0%} ({int(np.trace(mat))}/{int(total)})')
+    n_none = int(mat[:, len(labels):].sum())
+    acc = correct / total if total else np.nan
+    ax.set_title(f'Model ID: {acc:.0%} ({correct}/{int(total)})'
+                 + (f', {n_none} no call' if n_none else ''))
     return ax
 
 

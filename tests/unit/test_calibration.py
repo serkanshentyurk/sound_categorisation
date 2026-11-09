@@ -68,11 +68,66 @@ def test_overconfident_stub_fails():
     assert (cov[0.95] < 0.3).all()
 
 
-def test_plotters_accept_the_result():
+def test_per_draw_posterior_summaries():
+    res = compute_sbc_ranks(_StubNet('prior'), n_draws=20, n_sessions=2, T=40,
+                            n_posterior_samples=100, seed=2, show_progress=False)
+    n, p = res['theta_true'].shape
+    assert res['theta_mean'].shape == (n, p) and res['theta_sd'].shape == (n, p)
+    assert res['theta_quantiles'].shape == (n, len(res['quantile_levels']), p)
+    q = res['quantile_levels']
+    assert np.all(res['theta_quantiles'][:, q.index(0.05)] <= res['theta_quantiles'][:, q.index(0.95)])
+    assert res['acceptance_rate'].shape == (n,) and res['budget_hit'].dtype == bool
+    assert res['design_features'] == []                    # the stub has none
+
+
+def test_default_seed_is_the_validation_seed():
+    from sound_categorisation.settings import VALIDATION_SEED
+    res = compute_sbc_ranks(_StubNet('prior'), n_draws=3, n_sessions=2, T=30,
+                            n_posterior_samples=20, show_progress=False)
+    assert res['seed'] == VALIDATION_SEED
+
+
+def test_tables_and_single_panel_plotters(tmp_path):
+    """SBC results laid out as sc-sbi-sbc writes them -> validation tables -> plotters."""
+    import pickle
+
     import matplotlib
     matplotlib.use('Agg')
-    from sound_categorisation.plotting.sbi_validation import plot_sbc_ecdf, plot_sbc_ranks
-    res = compute_sbc_ranks(_StubNet('prior'), n_draws=30, n_sessions=2, T=40,
-                            n_posterior_samples=50, seed=1, show_progress=False)
-    plot_sbc_ranks(res)
-    plot_sbc_ecdf(res)
+    import matplotlib.pyplot as plt
+    from sound_categorisation.inference import validation as V
+    from sound_categorisation.plotting.sbi_validation import (
+        plot_contraction,
+        plot_coverage,
+        plot_recovery_scatter,
+        plot_sbc_ecdf_diff,
+    )
+    for n_sess in (2, 5):
+        res = compute_sbc_ranks(_StubNet('prior'), n_draws=40, n_sessions=n_sess, T=40,
+                                n_posterior_samples=60, seed=4, show_progress=False)
+        d = tmp_path / 'sbc' / 'uniform' / f'n{n_sess}' / 'pooled'
+        d.mkdir(parents=True)
+        with open(d / 'BE.pkl', 'wb') as f:
+            pickle.dump(res, f)
+    results = V.load_sbc(tmp_path, 'uniform')
+    assert sorted(r['n_sessions'] for r in results) == [2, 5]
+    summ = V.sbc_summary_table(results)
+    assert set(summ['param']) == set(PARAMS) and (summ['n_used'] == 40).all()
+    cov = V.coverage_table(results)
+    assert ((cov['band_lo'] <= cov['nominal']) & (cov['nominal'] <= cov['band_hi'])).all()
+    ecdf = V.ecdf_table(results, n_points=20, n_sim=200)
+    assert len(ecdf) == 2 * len(PARAMS) * 20
+    assert (ecdf['band_lo'] < 0).all() and (ecdf['band_hi'] > 0).all()
+    draws = V.recovery_draws(results)
+    rec = V.recovery_table(draws)
+    assert len(draws) == 2 * 40 * len(PARAMS) and len(rec) == 2 * len(PARAMS)
+    # a posterior equal to the prior recovers nothing: R^2 <= ~0, no contraction
+    assert (rec['r2'] < 0.3).all() and (rec['contraction_median'].abs() < 0.3).all()
+
+    sel = dict(rep='pooled', model='BE', n_sessions=5)
+    one = ecdf[(ecdf.rep == 'pooled') & (ecdf.n_sessions == 5) & (ecdf.param == 'eta_learning')]
+    assert plot_sbc_ecdf_diff(one) is not None
+    assert plot_coverage(cov[(cov.rep == sel['rep']) & (cov.n_sessions == 5)]) is not None
+    d5 = draws[(draws.n_sessions == 5) & (draws.param == 'sigma_percep')]
+    fig, ax = plt.subplots()
+    assert plot_recovery_scatter(d5, ax=ax) is ax and plot_contraction(d5) is not None
+    plt.close('all')

@@ -17,9 +17,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Sequence, Tuple
 
-from sound_categorisation.settings import MODEL_TYPES, SBI_TRAIN_DISTRIBUTIONS, SBI_TRAIN_REPS
+from sound_categorisation.settings import (
+    MODEL_TYPES,
+    SBC_DRAWS_BY_SESSIONS,
+    SBI_TRAIN_DISTRIBUTIONS,
+    SBI_TRAIN_REPS,
+)
 
-__all__ = ['TaskGrid', 'TRAIN_GRID', 'CONDITION_GRID', 'gs_grid']
+__all__ = ['TaskGrid', 'TRAIN_GRID', 'CONDITION_GRID', 'SBC_GRID', 'gs_grid']
 
 
 @dataclass(frozen=True)
@@ -71,8 +76,12 @@ class TaskGrid:
 # settings.SBI_TRAIN_REPS / SBI_TRAIN_DISTRIBUTIONS -- widen those to train more networks.
 TRAIN_GRID = TaskGrid.of(rep=SBI_TRAIN_REPS, model=MODEL_TYPES, distribution=SBI_TRAIN_DISTRIBUTIONS)
 
-# conditioning (and SBC): one job per (representation, model); the distribution is a run-level argument
+# conditioning: one job per (representation, model); the distribution is a run-level argument
 CONDITION_GRID = TaskGrid.of(rep=SBI_TRAIN_REPS, model=MODEL_TYPES)
+
+# SBC: one job per (representation, model, session count) -- full data and the CV half sizes
+SBC_GRID = TaskGrid.of(rep=SBI_TRAIN_REPS, model=MODEL_TYPES,
+                       n_sessions=tuple(SBC_DRAWS_BY_SESSIONS))
 
 
 def gs_grid(animals: Sequence[str], n_seeds: int, models: Sequence[str] = ('BE', 'SC')) -> TaskGrid:

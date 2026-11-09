@@ -48,7 +48,8 @@ models/              BE (boundary-estimation) and SC (statistical-categorisation
 inference/           amortised SBI (types, simulator, representation, selection, amortised),
                      grid_search (CV over model parameters, held-out UM / conditional-psychometric MSE),
                      cv_utils (CV result schema), fold_utils (block-aware folds), consensus (GS + SBI votes),
-                     tasks (TaskGrid: TRAIN_GRID, CONDITION_GRID, gs_grid)
+                     tasks (TaskGrid: TRAIN_GRID, CONDITION_GRID, SBC_GRID, gs_grid), calibration (SBC),
+                     network_check (saved networks against the current code), validation (thesis tables)
 features/            feature_diagnostics: which summary statistics carry BE/SC identity and parameters
 reports/             compute.py  AnimalResult / GroupResult / Settings (no matplotlib)
                      tables.py   to_tables, group_tables, readout_arrays, write_result / read_result
@@ -61,8 +62,8 @@ reports/             compute.py  AnimalResult / GroupResult / Settings (no matpl
 plotting/            project plotters (CV, opto swarms, assignment, SBI diagnostics, daily tracker)
 cli/                 entry points (pyproject [project.scripts]): sc-reports, sc-export-snapshot, sc-update,
                      sc-fetch, sc-make-synthetic-cohort, sc-make-synthetic-run, sc-new-run, sc-sbi-train,
-                     sc-sbi-condition, sc-sbi-sbc, sc-grid-search, sc-consensus, sc-feature-selection,
-                     sc-daily-tracker
+                     sc-sbi-condition, sc-sbi-sbc, sc-sbi-check, sc-grid-search, sc-consensus,
+                     sc-validation-tables, sc-feature-selection, sc-daily-tracker
 slurm/               env.sh (module, conda env, threads; sourced by every job and by load-env), the job
                      scripts, submit.sh (array size from inference/tasks.py)
 ```
@@ -106,7 +107,10 @@ sc-sbi-train    TRAIN_GRID (4 tasks)    simulate BE/SC → train one amortised n
 sc-sbi-condition      CONDITION_GRID (4)      condition each animal's expert data → posterior + held-out MSE
 sc-grid-search       gs_grid(animals, seeds) grid search CV per (animal, model, seed) → partials → --gather
 sc-consensus                            GS + SBI calls → assignments.csv, summary.txt
-slurm/submit.sh {train|condition|gs}        derives --array from the grids
+sc-sbi-sbc           SBC_GRID (12)           calibration per (rep, model, session count)
+sc-sbi-check                            saved networks vs current settings and code
+sc-validation-tables                    a validation run → tables/ (notebook 91)
+slurm/submit.sh {train|condition|sbc|check|gs}  derives --array from the grids
 ```
 `load_animals(source)` in `data/cohort.py` gives the same `AnimalRecord` shape for real and synthetic animals,
 so the runners are identical downstream; synthetic cohorts carry ground truth for validation.
@@ -118,7 +122,9 @@ in `settings.py`, or train one by name, e.g. `sc-sbi-train --rep single --distri
 The BE/SC call of each method is copied from the manuscript's model selection: repeat the cross-validation
 over seeds and call the model with the lower error if p < 0.05. The manuscript used an ANOVA over 64 seeds;
 here it is a paired Wilcoxon (16 grid-search seeds, or 64 SBI repeats). The seeds change the simulation
-noise, not the data split, so a significant call means it is stable under that noise.
+noise, not the data split, so a significant call means it is stable under that noise; the synthetic validation
+run (notebook 91) gives the procedure's correct, wrong and no-call rates. The consensus calls the model with more
+significant votes (at least one) and flags a call with a significant vote against it as contested.
 
 ## Design as executed (opto1 cohort)
 Expert Uniform: a masking block then a laser block per animal, plus ALM (uni/bi) sessions. Hard phase:
@@ -126,9 +132,9 @@ six laser sessions alternating Hard-A/Hard-B daily, then six masking sessions wi
 Each Hard session is therefore one switch, and the trajectory is per session, not per block.
 
 ## Notebooks
-`00` data & task · `10` expert behaviour · `11` switch adaptation · `20` opto experts (PPC, light-only
-control, ALM, WT vs HET) · `21` opto Hard (+ session trajectory) · `30` SBI feature selection · `31` model
-identification. Each says what produced its tables and how to run that, reads the run `latest` points at
+`00` data & task · `10` expert behaviour · `11` model identification · `12` switch adaptation · `20` opto
+experts (PPC, light-only control, ALM, WT vs HET) · `21` opto Hard (+ session trajectory) · `90` SBI feature
+selection (appendix) · `91` SBI validation (appendix). Each says what produced its tables and how to run that, reads the run `latest` points at
 (`notebooks/nb_setup.py: open_run`), and walks one animal through the library pipeline before showing the
 cohort. CI executes them (`nbmake`) against `sc-make-synthetic-run` output with `SC_NB_SYNTHETIC=1`. A
 future `40` would cross opto effects with the BE/SC calls once the real consensus run exists.

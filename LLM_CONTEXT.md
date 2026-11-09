@@ -111,8 +111,13 @@ cluster folders to the same place on a laptop.
 - `*.egg-info`, `build/`, `__pycache__` are build artefacts; they must not be tracked.
 
 ## Open work
-Aim 1: the all-mice consensus run exists (October 2026: 12 BE, 3 SC, 4 Unclear; descriptive, notebook 11);
-the learning phase (state-space models) and disRNN are not written; Hard-distribution networks are not trained.
+Aim 1: the all-mice consensus run exists (October 2026: 12 BE, 3 SC, 4 Unclear; descriptive, notebook 11), but
+is superseded: its networks were trained on 4–6 sessions and conditioned on 2–3-session CV halves. Nov 2026: networks
+retrained with the number of sessions and valid trials as inputs (2–6 sessions), all-mice run redone, and an SBI
+validation run (synthetic cohort of 50 BE + 50 SC shaped like the real animals, real-run seeds and repeats; SBC at 5, 3
+and 2 sessions; network check; notebook 91). Primary consensus rule: more significant votes (≥ 1), contested calls
+flagged; the two-vote rule reported alongside. The learning phase (state-space models) and disRNN are not written;
+Hard-distribution and single-session networks are not planned (no question the data can answer needs them).
 Next-cohort design (blocked distributions, interleaved session types, opsin-negative light control at
 matched power).
 Neural data (Aim 3): align on `TrialArrays.trial_key`; the alignment layer is project code, not library.

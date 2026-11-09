@@ -19,6 +19,7 @@ on the Hard phases.
 | `20_opto_expert` | PPC inactivation in experts, the light itself (light-artefact report), ALM specificity, WT vs HET, equivalence | `opto_contrasts/…/latest`, `light_artefact/…/latest` |
 | `21_opto_hard` | opto on the Hard phases and the per-session trajectory (no adaptation to disrupt) | `opto_contrasts/<cohort>/latest` |
 | `90_sbi_feature_selection` | appendix: choosing the SBI summary-statistic vector (simulates; slow; cached) | nothing |
+| `91_sbi_validation` | appendix: SBI networks against the current code, calibration and coverage, parameter and model recovery (synthetic cohort, both consensus rules), the real animals' σ and calls | `model_identification/synthetic_uniform_k50/latest` (`tables/`, `network_check/`) |
 | `dev/` | model explorers, not maintained against the current API | — |
 
 ## Running them
