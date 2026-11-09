@@ -559,3 +559,34 @@ session_types:
     SS21: ['20260713', '20260714', '20260715', '20260716', '20260717', '20260718', '20260719']
     SS22: ['20260713', '20260714', '20260715', '20260716', '20260717', '20260718', '20260719']
     SS23: ['20260713', '20260714', '20260715', '20260716', '20260717', '20260718', '20260719']
+
+# =============================================================================
+# Daily tracker (sc-daily-tracker)
+# =============================================================================
+# Every number the tracker uses is here; the code has no copies of them. To change one: edit, commit, then
+# run sc-update on the PC that runs the tracker. The report's last section lists the values it used.
+# The move-on criteria follow behaviour_rig/TRAINING.md. The side-bias thresholds are not here: they are
+# adaptation.BiasRule's (sound_categorisation/behaviour/adaptation.py), shared with the switch report.
+daily_tracker:
+  days: 14                  # days shown, ending today; --days overrides it
+  last_sessions: 5          # per condition (preset): the pooled and mean summaries use its last 5 sessions
+  summary_days: all         # how far back the copy and the summaries go: all, or a number of days
+  expected_cohorts: []      # cohorts (block cohorts above) whose animals are listed even with no session in
+                            # the window, as "no session on ceph"; e.g. [behaviour2-cohort] once SS24–SS35
+                            # are added there. --cohort also counts.
+  early_steps: [habituation, lick-to-release, three-and-three]
+  full_task_training: [regular-antibias-200, regular-antibias-175, regular-antibias-150, regular-antibias-100,
+                       regular-antibias-050, regular-antibias-025, regular]
+                            # any other full-task preset counts as an experiment: no move-on mark
+  flags:
+    min_correct_trials: 200                 # fewer correct trials than this: low trials
+    accuracy_drop: 0.10                     # this far below the median of earlier sessions of the same preset
+    accuracy_drop_reference_sessions: 5     # how many earlier sessions that median uses (at least 2 needed)
+  move_on:
+    early_step_min_trials: 300              # trials on the current early step, across its sessions
+    full_task:                              # training presets: every one of the last N sessions on the preset
+      sessions_in_a_row: 2
+      min_correct_trials: 200
+      min_accuracy: 0.70
+      min_hard_accuracy: 0.60               # more than this on |stimulus| < 0.3
+      max_accuracy_difference: 0.10         # |accuracy right − left| at most this

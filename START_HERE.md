@@ -58,6 +58,10 @@ export BEHAV_DATA_DIR=/ceph/akrami/<Name>/Head_Fixed_Behavior/Data
 export SWC_USER=<your SWC username>
 ```
 
+`sc-fetch` and `sc-daily-tracker` reach ceph through the gateway and the login node `hpc-gw2`. If that
+node does not answer, add `export SWC_NODE=hpc-gw1` to `~/.zshrc` to go through `hpc-gw1` instead, and
+remove the line once `hpc-gw2` is back.
+
 If you run experiments, the rig needs to know your folder too: in the `behaviour_rig` repository copy
 `GUI/paths/serkan.json` to `GUI/paths/<name>.json` and set `"data_path"` to
 `/<Name>/Head_Fixed_Behavior/Data/Raw`. It must end in `/Raw`, because that is where the analysis looks.
@@ -117,6 +121,47 @@ open the notebooks:
 ```bash
 jupyter lab notebooks/
 ```
+
+### Daily behaviour tracker (laptop or rig PC)
+
+How each animal is doing, read straight from the session files on ceph: no snapshot, no cluster job.
+[DAILY_TRACKER.md](DAILY_TRACKER.md) is the step-by-step version for someone who only wants to look at the
+animals (setting it up, reading the page, changing whose data it reads, what to do when it fails).
+
+```bash
+sc-daily-tracker
+```
+
+It shows every animal with a session in the last 14 days, writes
+`results/daily_tracker/daily_tracker_<date>.html` and opens it. Sessions reach ceph only when Push Data is
+pressed, so run it after the day's push (the next morning, say). Options: `--days 7`, `--cohort <name>`,
+`--no-open`, `--no-copy` (rebuild the page from the local copy, without contacting ceph), and `--dry-run`,
+which lists what would be copied and changes nothing; use it on the first run.
+
+The page opens on an overview: the animals that need a look first (a flag on or since their latest
+session), each with a 14-day trend, its latest session (date and session number) and the move-on mark.
+Click an animal for its own page: every day of the window, newest first, values against date with
+preset changes marked, the latest psychometric curve, and for every condition (preset) its last five
+sessions, pooled and as mean ± SD next to the individual sessions, light trials on their own rows. The
+arrow keys step through the animals and Esc goes back; `daily_tracker_latest.html` is always the newest
+report, for a bookmark. Early training steps show trials only. Flags: side bias, low trials, accuracy
+drop, and a missing day ("not run, or not pushed"). Animals of the cohorts listed in
+`daily_tracker.expected_cohorts` that have no session on ceph are listed at the top.
+
+It copies only `Trial_Summary` and `Session_Parameters` files (never videos, lick files or logs) to
+`<X>/data/raw_mirror/`: the shown animals' whole history the first time, then new files only. On a laptop
+the files come over ssh as `SWC_USER`, like `sc-fetch` (the password twice per run without ssh keys;
+`SWC_NODE` picks the login node, see "Your own data folder"). On a
+rig PC they come from the mapped drive: install the project in its own environment as in SETUP.md (a
+plain `pip install -e .`, no `[fit]`; never into the rig's environment) and set `BEHAV_DATA_DIR` to the
+data folder on that drive, e.g. `setx BEHAV_DATA_DIR "Z:\Serkan\Head_Fixed_Behavior\Data"`, then open a
+new terminal.
+
+Every number it uses (the 14 days, the five sessions, the flag thresholds, the move-on criteria taken from
+`behaviour_rig/TRAINING.md`) is in `config.yaml`, block `daily_tracker`, with a comment on each. To change
+one: edit it, commit, then run `sc-update` on the PC that runs the tracker. The page's last section lists
+the values it used. The side-bias thresholds are `BiasRule`'s in `sound_categorisation/behaviour/adaptation.py`,
+shared with the switch report.
 
 ### Model identification (cluster)
 

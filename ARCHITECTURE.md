@@ -21,7 +21,10 @@ data/
   snapshot.py        export/load the pickled experiment; re-applies session types and presets from config
   stimuli.py         Hard-A / Hard-B densities, normative PSE at a given sigma, stimulus sampling
   paths.py           every path: on the cluster all under $BEHAV_DATA_DIR (Raw, Processed, Processed/results),
-                     on a laptop <repo>/../../data and <repo>/results; run ids, latest, build_metadata
+                     on a laptop <repo>/../../data and <repo>/results; run ids, latest, build_metadata;
+                     raw_source (local folder or ssh), raw_mirror_dir, daily_tracker_dir
+  raw_mirror.py      the daily tracker's copy of Trial_Summary and Session_Parameters only: from the local
+                     folder or over ssh (find + tar), shown animals' whole history, timestamps kept
   synthetic.py       synthetic ExperimentData with the real designs' shape (the e2e tests' data)
 behaviour/
   light_artefact.py  LightArtefact: light-on − light-off per light-carrying session set (ppc_opto, ppc_sham,
@@ -37,7 +40,10 @@ behaviour/
                        vs_ppc         ALM sessions − PPC opto sessions (ALM design)
                      STATS / STATS_RT / SENSITIVITY / BIAS: which statistics each design reports
   adaptation.py      compute_trajectory(animal, distributions) -> Trajectory: one row per session in order;
-                     compute_switches / SwitchResult: block-level adaptation after a distribution switch
+                     compute_switches / SwitchResult: block-level adaptation after a distribution switch;
+                     BiasRule, session_bias_checks (per session), flag_biased_sessions (per animal)
+  daily_tracker.py   DailyTracker: per-day rows, condition summaries (pooled and mean, light separately),
+                     flags, move-on marks; settings from config.yaml's daily_tracker block
 models/              BE (boundary-estimation) and SC (statistical-categorisation) generative models
 inference/           amortised SBI (types, simulator, representation, selection, amortised),
                      grid_search (CV over model parameters, held-out UM / conditional-psychometric MSE),
@@ -49,12 +55,14 @@ reports/             compute.py  AnimalResult / GroupResult / Settings (no matpl
                      figures.py  one function per page; pdf.py  per-animal and group PDFs
                      summary.py  the four-page summary; switches.py  the switch-adaptation report
                      light_artefact.py  the light-artefact report (tables, per-animal + group PDFs, fold)
+                     daily_tracker.py   the daily tracker's self-contained HTML page
                      readme.py   the generated results README
                      cli.py      `python -m sound_categorisation.reports` / `sc-reports`
-plotting/            project plotters (CV, opto swarms, assignment, SBI diagnostics)
+plotting/            project plotters (CV, opto swarms, assignment, SBI diagnostics, daily tracker)
 cli/                 entry points (pyproject [project.scripts]): sc-reports, sc-export-snapshot, sc-update,
                      sc-fetch, sc-make-synthetic-cohort, sc-make-synthetic-run, sc-new-run, sc-sbi-train,
-                     sc-sbi-condition, sc-sbi-sbc, sc-grid-search, sc-consensus, sc-feature-selection
+                     sc-sbi-condition, sc-sbi-sbc, sc-grid-search, sc-consensus, sc-feature-selection,
+                     sc-daily-tracker
 slurm/               env.sh (module, conda env, threads; sourced by every job and by load-env), the job
                      scripts, submit.sh (array size from inference/tasks.py)
 ```

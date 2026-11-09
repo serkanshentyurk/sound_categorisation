@@ -24,6 +24,7 @@ def test_keep_behav_utils_still_installs_the_other_dependencies(monkeypatch):
 def laptop(tmp_path, monkeypatch):
     monkeypatch.setenv('BEHAV_DATA_DIR', '/ceph/akrami/Someone/Head_Fixed_Behavior/Data')
     monkeypatch.setenv('SWC_USER', 'someone')
+    monkeypatch.delenv('SWC_NODE', raising=False)
     monkeypatch.setenv('SC_DATA_ROOT', str(tmp_path / 'data'))
     monkeypatch.setenv('SC_RESULTS_ROOT', str(tmp_path / 'results'))
     return tmp_path
@@ -35,6 +36,11 @@ def test_fetch_snapshot_mirrors_the_cluster_layout(laptop):
     assert cmd[-2] == ('someone@hpc-gw2:/ceph/akrami/Someone/Head_Fixed_Behavior/Data/Processed/'
                        'behaviour/snapshots/sound_cat_snapshot.pkl')
     assert cmd[-1] == f'{laptop}/data/behaviour/snapshots/'
+
+
+def test_fetch_goes_through_the_login_node_in_swc_node(laptop, monkeypatch):
+    monkeypatch.setenv('SWC_NODE', 'hpc-gw1')
+    assert fetch.command('snapshot')[-2].startswith('someone@hpc-gw1:/ceph/')
 
 
 def test_fetch_results_and_dry_run(laptop):

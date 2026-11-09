@@ -48,9 +48,15 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent   # <repo>/sound_categ
 
 _CLUSTER_HOST_MARKERS = ('hpc', 'gpu', 'enc', 'sgw')
 
-# How sc-fetch reaches ceph from a laptop: through the SWC gateway to a login node, as $SWC_USER.
+# How sc-fetch and sc-daily-tracker reach ceph from a laptop: through the SWC gateway to a login node, as
+# $SWC_USER. The node is hpc-gw2 unless SWC_NODE names another (hpc-gw1 when hpc-gw2 does not answer).
 SWC_GATEWAY = 'ssh.swc.ucl.ac.uk'
-SWC_NODE = 'hpc-gw2'
+DEFAULT_SWC_NODE = 'hpc-gw2'
+
+
+def swc_node() -> str:
+    """The login node to go through: $SWC_NODE if set, else hpc-gw2."""
+    return os.environ.get('SWC_NODE') or DEFAULT_SWC_NODE
 
 
 def _on_cluster() -> bool:
@@ -88,6 +94,39 @@ def data_root(repo_root: Path = None) -> Path:
 def cohort_path(cohort: str) -> Path:
     """Synthetic-cohort pickle (an input to GS and SBI validation runs)."""
     return data_root() / 'synthetic_cohorts' / f'{cohort}.pkl'
+
+
+# ── the daily tracker's raw data ─────────────────────────────────────────────
+
+def raw_source() -> tuple:
+    """Where the daily tracker reads the raw session folders: ('local', Path) or ('ssh', remote).
+
+    'local' when $BEHAV_DATA_DIR/Raw exists on this machine: the cluster, or a rig PC with BEHAV_DATA_DIR
+    set to its mapped drive (e.g. Z:\\Serkan\\Head_Fixed_Behavior\\Data). Otherwise 'ssh', with the
+    remote ('user@<login node>', '/ceph/.../Raw') reached through the SWC gateway as $SWC_USER, as sc-fetch
+    does; the login node is swc_node().
+    """
+    raw = ceph_root() / 'Raw'
+    if raw.is_dir():
+        return 'local', raw
+    user = os.environ.get('SWC_USER')
+    if not user:
+        raise RuntimeError(
+            f'{raw} is not on this machine and SWC_USER is not set, so the session files cannot be reached.\n'
+            'On a laptop add your SWC username to ~/.zshrc:  export SWC_USER=<your SWC username>\n'
+            'On a rig PC set BEHAV_DATA_DIR to the data folder on the mapped drive.\n'
+            'See START_HERE.md, "Daily behaviour tracker".')
+    return 'ssh', (f'{user}@{swc_node()}', raw.as_posix())
+
+
+def raw_mirror_dir() -> Path:
+    """The daily tracker's local copy of the raw session files: <data root>/raw_mirror/Raw."""
+    return data_root() / 'raw_mirror' / 'Raw'
+
+
+def daily_tracker_dir() -> Path:
+    """Where the daily tracker writes its reports: <results root>/daily_tracker."""
+    return results_root() / 'daily_tracker'
 
 
 def snpe_networks_dir() -> Path:

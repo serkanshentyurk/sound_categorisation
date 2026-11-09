@@ -432,6 +432,25 @@ class BiasRule:
     both_distributions: bool = True
 
 
+def session_bias_checks(sessions: pd.DataFrame, rule: BiasRule | None = None,
+                        pse_column: str = 'pse_fixed') -> pd.DataFrame:
+    """The per-session part of ``BiasRule``: which of its three tests each session fails.
+
+    Returns a frame on ``sessions``' index with booleans ``pse_out`` (|PSE| > ``rule.pse``),
+    ``lapse_out`` (either lapse > ``rule.lapse``), ``accuracy_out`` (accuracy < ``rule.accuracy``) and
+    ``flagged`` (any of them). A missing value fails nothing. ``pse_column`` names the PSE to test:
+    ``pse_fixed`` in the switch report, the free-fit ``pse`` in the daily tracker.
+    """
+    r = rule if rule is not None else BiasRule()
+    out = pd.DataFrame(index=sessions.index)
+    out['pse_out'] = (sessions[pse_column].abs() > r.pse).fillna(False).astype(bool)
+    out['lapse_out'] = ((sessions['lapse_low'] > r.lapse)
+                        | (sessions['lapse_high'] > r.lapse)).fillna(False).astype(bool)
+    out['accuracy_out'] = (sessions['accuracy'] < r.accuracy).fillna(False).astype(bool)
+    out['flagged'] = out['pse_out'] | out['lapse_out'] | out['accuracy_out']
+    return out
+
+
 def flag_biased_sessions(sessions: pd.DataFrame, rule: BiasRule | None = None) -> pd.DataFrame:
     """Add ``flagged`` (per session) and ``biased_animal`` (per animal) to a sessions table.
 
@@ -440,8 +459,7 @@ def flag_biased_sessions(sessions: pd.DataFrame, rule: BiasRule | None = None) -
     """
     r = rule if rule is not None else BiasRule()
     s = sessions.copy()
-    s['flagged'] = ((s['pse_fixed'].abs() > r.pse) | (s['lapse_low'] > r.lapse)
-                    | (s['lapse_high'] > r.lapse) | (s['accuracy'] < r.accuracy)).fillna(False)
+    s['flagged'] = session_bias_checks(s, r)['flagged']
     biased = {}
     for aid, d in s.groupby('animal'):
         frac = d['flagged'].mean()

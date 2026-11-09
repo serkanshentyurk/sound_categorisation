@@ -22,7 +22,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from sound_categorisation.data.paths import SWC_GATEWAY, SWC_NODE, cluster_data_root, data_root, results_root
+from sound_categorisation.data.paths import SWC_GATEWAY, cluster_data_root, data_root, results_root, swc_node
 from sound_categorisation.data.snapshot import SNAPSHOT_FILENAME
 
 # What can be fetched: name -> (where it lives, sub-path, is it one file). Add a line to add a target.
@@ -59,7 +59,7 @@ def command(target: str, sub: str = '', dry_run: bool = False) -> list[str]:
     user = _swc_user()
     remote, local = paths_for(target, sub)
     return (['rsync', '-av'] + (['-n'] if dry_run else [])
-            + ['-e', f'ssh -J {user}@{SWC_GATEWAY}', f'{user}@{SWC_NODE}:{remote}', f'{local}/'])
+            + ['-e', f'ssh -J {user}@{SWC_GATEWAY}', f'{user}@{swc_node()}:{remote}', f'{local}/'])
 
 
 def main(argv=None) -> int:

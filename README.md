@@ -8,6 +8,10 @@ while the animal updates its statistical model of the sounds, and not once that 
 **New here? Read [START_HERE.md](START_HERE.md) first.** It covers the three repositories, your data
 folder, the everyday routines and who to ask.
 
+**Only want to see how the animals are doing?** [DAILY_TRACKER.md](DAILY_TRACKER.md) sets up one command,
+`sc-daily-tracker`, that shows every animal's last 14 days in the browser, straight from ceph; no coding
+needed.
+
 This repository is the analysis. It builds on [`behav_utils`](https://github.com/serkanshentyurk/behav_utils),
 a general 2-AFC library installed from a tagged release; the experiments run from the `behaviour_rig`
 repository.
@@ -52,6 +56,7 @@ Every run writes to `results/<report>/<cohort>/<run_id>/`: tidy CSV tables, `met
 ## Read next
 
 - [START_HERE.md](START_HERE.md): the whole project, from the rig to the results.
+- [DAILY_TRACKER.md](DAILY_TRACKER.md): checking the animals each day, without the code.
 - [SETUP.md](SETUP.md): installing, settings, tests.
 - [docs/runs.md](docs/runs.md): every command, what it computes, where it writes.
 - [docs/results_guide.md](docs/results_guide.md): how to read a results folder.

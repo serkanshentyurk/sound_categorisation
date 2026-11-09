@@ -3,6 +3,29 @@
 
 ## Unreleased
 
+- `sc-daily-tracker`: a daily HTML report of every animal with a session in the last 14 days, read from the
+  session files on ceph without the snapshot or the cluster. Per day: trials, responded, correct,
+  no-responses, early-lick aborts, accuracy (overall, hard, easy), right choices − 0.5, accuracy right − left,
+  PSE and lapses (trials without light), preset, stage, distribution, rig. Per condition (preset), the last
+  five sessions pooled and as mean ± SD with the individual sessions, light trials separately. Flags: side
+  bias (BiasRule per session, free-fit PSE), low trials, accuracy drop, missing day. Move-on marks from
+  behaviour_rig/TRAINING.md. Every number is in the new `config.yaml` block `daily_tracker`.
+  The page opens on an overview sorted by urgency (with 14-day trends and session numbers); each
+  animal has its own view (#<animal>, arrow keys to step through); expected animals with no session on
+  ceph are listed (`daily_tracker.expected_cohorts`); `daily_tracker_latest.html` for a bookmark.
+- `data/raw_mirror.py`: the tracker's local copy, from the local folder (rig PC, cluster) or over ssh
+  (`find` + `tar`, one connection); only `Trial_Summary` and `Session_Parameters`, never videos.
+- `adaptation.session_bias_checks`: the per-session part of `BiasRule`, naming the test that failed;
+  `flag_biased_sessions` uses it (no number changes).
+- `behav_utils` pinned to v0.10.0 (adds `accuracy_b_minus_a`).
+- `sc-daily-tracker --no-copy`: rebuild the page from the local copy, without contacting ceph; the page
+  says so at the top. A `--cohort` run no longer deletes the other animals from the local copy.
+- `DAILY_TRACKER.md`: setting up and reading the daily tracker without knowing the code (whose data,
+  who logs in, where the copy and the pages go, what to do when it fails); linked from README and
+  START_HERE.
+- `SWC_NODE`: the login node `sc-fetch` and `sc-daily-tracker` go through (default `hpc-gw2`), e.g.
+  `hpc-gw1` when `hpc-gw2` does not answer. A failed ssh listing now suggests it.
+
 - Notebooks follow the argument: `10` expert behaviour without light (computes point estimates from the
   snapshot, the same sessions model identification fits), `11` model identification (was `31`; the all-mice
   run first, descriptive), `12` switches (was `11`), `20`, `21`, `90` SBI feature selection (was `30`).

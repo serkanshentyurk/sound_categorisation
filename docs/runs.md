@@ -31,8 +31,10 @@ Three kinds of run, three homes:
 | `sc-update [--keep-behav-utils]` | `git pull`, then `pip install -e .`, then prints the versions; `--keep-behav-utils` installs every dependency except `behav_utils`, so an editable copy stays | both |
 | `sc-fetch snapshot \| networks \| synthetic` | copies that folder from `$BEHAV_DATA_DIR/Processed` on ceph to the same place under `data_root()` | laptop |
 | `sc-fetch results <report>/<cohort>[/<run_id>]` | copies results from ceph to the same place under `results_root()` | laptop |
+| `sc-daily-tracker [--days N] [--cohort C] [--no-copy] [--no-open] [--dry-run]` | how each animal is doing, from the session files on ceph (no snapshot): copies the shown animals' `Trial_Summary` and `Session_Parameters` to `<data root>/raw_mirror/`, writes `<results root>/daily_tracker/daily_tracker_<date>.html` and opens it; numbers in `config.yaml`, block `daily_tracker` | laptop or rig PC |
 
-`sc-fetch` uses rsync over ssh as `$SWC_USER`, through `ssh.swc.ucl.ac.uk` to `hpc-gw2`; `--dry-run` lists
+`sc-fetch` uses rsync over ssh as `$SWC_USER`, through `ssh.swc.ucl.ac.uk` to `hpc-gw2` (or the login node
+in `$SWC_NODE`, e.g. `hpc-gw1` when `hpc-gw2` does not answer); `--dry-run` lists
 what it would copy.
 
 ## Behaviour reports (laptop; `sc-reports`)
