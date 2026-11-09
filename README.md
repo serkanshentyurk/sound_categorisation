@@ -53,6 +53,19 @@ sc-reports battery
 Every run writes to `results/<report>/<cohort>/<run_id>/`: tidy CSV tables, `meta.json`, PDFs and a
 `README.md` that explains every column and page. `latest` points at the newest run.
 
+## Checking the animals each day
+
+```bash
+sc-daily-tracker
+```
+
+This copies the new session files from ceph (only `Trial_Summary` and `Session_Parameters`) and opens a page
+with every animal's last 14 days: an overview sorted by what needs a look, and a page per animal. It needs
+`BEHAV_DATA_DIR` (whose data on ceph) and, on a laptop, `SWC_USER` (your SWC username). `--no-copy` rebuilds
+the page from the last copy without contacting ceph, and `results/daily_tracker/daily_tracker_latest.html`
+is always the newest page. Setting it up from scratch, reading the page, and what to do when it fails:
+[DAILY_TRACKER.md](DAILY_TRACKER.md).
+
 ## Read next
 
 - [START_HERE.md](START_HERE.md): the whole project, from the rig to the results.
