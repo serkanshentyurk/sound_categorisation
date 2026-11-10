@@ -62,7 +62,13 @@ PY
   mkdir -p "$logdir"
 fi
 
-range="$("$cmd" --print-array "$@" ${extra[@]+"${extra[@]}"})"
+# --print-array may print progress first (grid search loads the cohort: snapshot and cohort lines), so keep
+# only its last line, and stop if that is not an array range
+range="$("$cmd" --print-array "$@" ${extra[@]+"${extra[@]}"} | tail -n 1)"
+if ! [[ "$range" =~ ^[0-9]+-[0-9]+$ ]]; then
+  echo "could not read an array range from $cmd --print-array (last line: '$range')" >&2
+  exit 1
+fi
 if [ "$stage" = grid-search ]; then range="${range}%${GS_ARRAY_THROTTLE:-150}"; fi
 echo "sbatch --array=$range --output=$logdir/${stage}_%A_%a.out --error=$logdir/${stage}_%A_%a.err $sh $* ${extra[*]+"${extra[*]}"}"
 sbatch --array="$range" --job-name="$stage" --output="$logdir/${stage}_%A_%a.out" --error="$logdir/${stage}_%A_%a.err" \

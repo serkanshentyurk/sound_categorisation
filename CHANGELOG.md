@@ -3,6 +3,9 @@
 
 ## Unreleased
 
+- `slurm/submit.sh` keeps only the last line of `--print-array` and stops if it is not an array range. Grid
+  search on a real cohort prints the snapshot and cohort lines first, and all of it went into `--array`
+  (sbatch: invalid job array specification).
 - SBI networks see how much data they are given: `to_stat_vector` appends the number of sessions and valid trials
   (`SBI_DESIGN_FEATURES`) and the networks train on 2–6 sessions (was 4–6), so the CV halves (2–3 sessions) the model
   comparison conditions on are inside the training design (100k pooled / 150k moments simulations). Networks saved
