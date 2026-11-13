@@ -33,20 +33,20 @@ Two rep paths, chosen by the net's session count:
 
 Reuses (no metric reimplemented):
     utils.fold_utils.split_folds_by_block            block-level CV folds
-    behav_utils.data.ops.filtering.pool_arrays       block-aware pooling
-    behav_utils.data.synthetic.session_from_arrays   half-session construction
-    behav_utils.readouts.fit.fit_update_matrix, matrix_error
+    behav_utils.data.pool_arrays                     block-aware pooling
+    behav_utils.data.session_from_arrays             half-session construction
+    behav_utils.readouts.fit_update_matrix, matrix_error
     models.simulate.simulate_choices                 params -> choices
 """
 
 from typing import Any, Dict, List
 
 import numpy as np
-from behav_utils.data.ops.filtering import pool_arrays
-from behav_utils.data.synthetic import session_from_arrays
-from behav_utils.readouts.fit import fit_update_matrix, matrix_error
+from behav_utils.data import pool_arrays, session_from_arrays
+from behav_utils.readouts import fit_update_matrix, matrix_error
 
 from sound_categorisation.inference.fold_utils import split_folds_by_block
+from sound_categorisation.inference.grid_search import score_choices
 from sound_categorisation.inference.types import ModelType
 from sound_categorisation.models.simulate import simulate_choices
 
@@ -67,7 +67,7 @@ def _block_ids(sessions: List) -> np.ndarray:
 
 def _empirical_target(pooled: Dict[str, np.ndarray], fit_target: str, n_bins: int):
     um, cm, _ = fit_update_matrix(
-        pooled['stimuli'], pooled['choices'], pooled['categories'],
+        pooled['stimuli'], pooled['choices'], correct=pooled['correct'],
         n_bins=n_bins, trial_filter='post_correct',
         no_response=pooled['no_response'],
         not_blockstart=pooled['prev_has_prev'],
@@ -82,7 +82,7 @@ def _simulated_target(model, params: Dict[str, float],
         model, params, pooled['stimuli'], pooled['categories'],
         burn_in=burn_in, seed=seed)
     um, cm, _ = fit_update_matrix(
-        pooled['stimuli'], sim_ch, pooled['categories'],
+        pooled['stimuli'], sim_ch, correct=score_choices(sim_ch, pooled['truth'], pooled['task']),
         n_bins=n_bins, trial_filter='post_correct',
         no_response=pooled['no_response'],
         not_blockstart=pooled['prev_has_prev'],

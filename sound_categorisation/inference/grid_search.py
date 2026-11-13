@@ -38,14 +38,15 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, List, Tuple
 
 import numpy as np
-from behav_utils.data.ops.filtering import pool_arrays
-from behav_utils.readouts.fit import fit_update_matrix, matrix_error
+from behav_utils.data import pool_arrays
+from behav_utils.readouts import fit_update_matrix, matrix_error
+from behav_utils.tasks import Outcome, TwoAFC
 from joblib import Parallel, delayed
 
 from sound_categorisation.inference.fold_utils import split_folds_by_block
 
 if TYPE_CHECKING:
-    from behav_utils.data.structures import SessionData
+    from behav_utils.data import SessionData
 
 # =============================================================================
 # PARAMETER GRID DEFINITIONS
@@ -137,6 +138,16 @@ FAST_GRID = {
 # CORE: SIMULATE → UPDATE MATRIX
 # =============================================================================
 
+def score_choices(choices: np.ndarray, truth: np.ndarray, task=None) -> np.ndarray:
+    """The task's score of ``choices`` as ``fit_update_matrix`` takes it: 1 correct, 0 error, NaN where
+    there is no score (no response, or no correct response). In behav_utils 1.0 the task decides what is
+    correct; ``task`` defaults to the project's two-choice task (TwoAFC: B above 0, A on it)."""
+    task = task if task is not None else TwoAFC()
+    choices = np.asarray(choices, dtype=float)
+    codes = task.score(choices, truth, np.zeros(len(choices), dtype=bool))
+    return np.where(codes == Outcome.CORRECT, 1.0, np.where(codes == Outcome.ERROR, 0.0, np.nan))
+
+
 def simulate_model_matrices(
     model_type: str,
     stimuli: np.ndarray,
@@ -152,9 +163,12 @@ def simulate_model_matrices(
     seed: int,
     burn_in: int = 1000,
     n_bins: int = 8,
+    task=None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Simulate model and compute both update matrix and conditional psychometric matrix.
+
+    ``task`` scores the simulated choices (default: the project's TwoAFC).
 
     Returns:
         (update_matrix, conditional_matrix): each (n_bins, n_bins)
@@ -200,8 +214,9 @@ def simulate_model_matrices(
         raise ValueError(f"Unknown model_type: {model_type}")
 
     # Compute both matrices using behav_utils
+    truth = (task if task is not None else TwoAFC()).truth(stimuli)
     um, cm, _ = fit_update_matrix(
-        stimuli, choices, categories,
+        stimuli, choices, correct=score_choices(choices, truth, task),
         n_bins=n_bins,
         trial_filter='post_correct',
         no_response=np.isnan(choices),
@@ -232,6 +247,7 @@ def _evaluate_single_point(
     burn_in: int,
     n_bins: int,
     fit_target: str = 'update_matrix',
+    task=None,
 ) -> float:
     """Evaluate one grid point: simulate → select matrix → MSE against target.
 
@@ -242,7 +258,7 @@ def _evaluate_single_point(
         um, cm = simulate_model_matrices(
             model_type, stimuli, categories, no_response, not_blockstart,
             sigma_percep, A_repulsion, param1, param2,
-            param1_name, param2_name, seed, burn_in, n_bins,
+            param1_name, param2_name, seed, burn_in, n_bins, task=task,
         )
         if fit_target == 'update_matrix':
             model_matrix = um
@@ -271,6 +287,7 @@ def _grid_sweep(
     n_bins: int = 8,
     n_jobs: int = -1,
     fit_target: str = 'update_matrix',
+    task=None,
 ) -> Dict[str, Any]:
     """
     Grid search over all parameter combinations.
@@ -309,7 +326,7 @@ def _grid_sweep(
             model_type, stimuli, categories, no_response, not_blockstart,
             target_matrix, sp, ar, p1, p2,
             grid.model_param1_name, grid.model_param2_name,
-            seed, burn_in, n_bins, fit_target,
+            seed, burn_in, n_bins, fit_target, task=task,
         )
         for _, _, _, _, sp, ar, p1, p2 in jobs
     )
@@ -356,7 +373,8 @@ def sessions_to_arrays(
     is the per-trial expansion of ``session_boundaries``.
 
     Returns:
-        {stimuli, categories, choices, no_response, not_blockstart, block_ids}
+        {stimuli, categories, choices, correct, truth, task, no_response, not_blockstart, block_ids};
+        ``correct`` and ``truth`` are the session task's (behav_utils 1.0), ``task`` the task itself.
     """
     pooled = pool_arrays(sessions)
     boundaries = pooled['session_boundaries']      # cumulative offsets, len n_sessions + 1
@@ -366,6 +384,9 @@ def sessions_to_arrays(
         'stimuli': pooled['stimuli'],
         'categories': pooled['categories'],
         'choices': pooled['choices'],
+        'correct': pooled['correct'],
+        'truth': pooled['truth'],
+        'task': pooled['task'],
         'no_response': pooled['no_response'],
         'not_blockstart': pooled['prev_has_prev'],
         'block_ids': block_ids,
@@ -438,6 +459,8 @@ def compute_grid_search_cv(
     no_resp = data['no_response']
     nbs = data['not_blockstart']
     blocks = data['block_ids']
+    correct = data['correct']
+    task = data.get('task')
 
     folds = split_folds_by_block(blocks, n_folds)
 
@@ -447,7 +470,7 @@ def compute_grid_search_cv(
     for train_mask, test_mask in folds:
         # Empirical matrices on training data
         train_um, train_cm, _ = fit_update_matrix(
-            stim[train_mask], choices[train_mask], cat[train_mask],
+            stim[train_mask], choices[train_mask], correct=correct[train_mask],
             n_bins=n_bins, trial_filter='post_correct',
             no_response=no_resp[train_mask],
             not_blockstart=nbs[train_mask],
@@ -460,7 +483,7 @@ def compute_grid_search_cv(
             stim[train_mask], cat[train_mask],
             no_resp[train_mask], nbs[train_mask],
             train_target, seed, burn_in, n_bins, n_jobs,
-            fit_target=fit_target,
+            fit_target=fit_target, task=task,
         )
 
         best = sweep['best_params']
@@ -468,7 +491,7 @@ def compute_grid_search_cv(
 
         # Evaluate on test fold: simulate both matrices, pick the right one
         test_um_emp, test_cm_emp, _ = fit_update_matrix(
-            stim[test_mask], choices[test_mask], cat[test_mask],
+            stim[test_mask], choices[test_mask], correct=correct[test_mask],
             n_bins=n_bins, trial_filter='post_correct',
             no_response=no_resp[test_mask],
             not_blockstart=nbs[test_mask],
@@ -481,7 +504,7 @@ def compute_grid_search_cv(
             best['sigma_percep'], best['A_repulsion'],
             best[grid.model_param1_name], best[grid.model_param2_name],
             grid.model_param1_name, grid.model_param2_name,
-            seed, burn_in, n_bins,
+            seed, burn_in, n_bins, task=task,
         )
 
         if fit_target == 'update_matrix':

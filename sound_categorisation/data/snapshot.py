@@ -14,13 +14,15 @@ Export removes trials whose sound was never sent (data/stimulus_check.py); see r
 import hashlib
 import pickle
 import warnings
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Dict, Tuple, Union
 
 # 2: trials whose sound was never sent are removed at export (remove_silent_trials). Snapshots of
 # version 1 still contain them, so load_snapshot refuses them and asks for a re-export.
-SNAPSHOT_FORMAT_VERSION = 2
+# 3: exported with behav_utils 1.0. A version-2 snapshot holds behav_utils 0.10 objects, which unpickle
+# under 1.0 without their new fields (outcome codes, the recorded columns, source), so it is refused too.
+SNAPSHOT_FORMAT_VERSION = 3
 SNAPSHOT_FILENAME = 'sound_cat_snapshot.pkl'
 
 
@@ -63,9 +65,10 @@ def _session_summary(experiment) -> Dict[str, int]:
 def _rows_as_loaded(session, config):
     """
     The stimulus check and the stimulus column for the trial tables behind one loaded session, trimmed and
-    merged the way behav_utils' loader does it (>= 0.9.1): empty files ignored as if absent, files in sorted
-    order, each file's last row dropped (``drop_last_row``), and, only when a session has several files,
-    files left with fewer than ``min_trials_per_file`` rows skipped.
+    merged the way behav_utils' csv_folders reader does it (1.0): empty files ignored as if absent, files in
+    name order, each file's last row dropped (``drop_last_row``), and files left with fewer than
+    ``min_trials_per_file`` rows skipped (in 1.0 also when the session has only one file). The session's
+    ``source`` is its folder (or its one file, with ``merge_files: false``).
 
     Returns ``(checked, stimulus)``: float arrays, ``checked`` being 1 sent / 0 not sent / NaN cannot tell;
     ``(None, None)`` if the tables cannot be read.
@@ -74,13 +77,14 @@ def _rows_as_loaded(session, config):
 
     import numpy as np
     import pandas as pd
-    from behav_utils.data.loading import is_empty_csv
+    from behav_utils.data import is_empty_csv
 
     from sound_categorisation.data.stimulus_check import check_stimulus_delivery
 
-    fs = config.file_structure
-    files = [f for f in sorted(glob.glob(str(Path(session.csv_path).parent / fs.behaviour_file)))
-             if not is_empty_csv(f)]
+    reader = config.reader
+    source = Path(session.source)
+    found = [str(source)] if source.is_file() else sorted(glob.glob(str(source / reader.behaviour_file)))
+    files = [f for f in found if not is_empty_csv(f)]
     stim_col = config.columns['stimulus'].csv_name
     checked, stimulus = [], []
     for f in files:
@@ -91,9 +95,9 @@ def _rows_as_loaded(session, config):
         if stim_col not in df.columns:
             return None, None
         check = check_stimulus_delivery(f, df).astype('Float64').to_numpy(dtype=float, na_value=np.nan)
-        if fs.drop_last_row and len(df) > 1:
+        if reader.drop_last_row and len(df) > 1:
             df, check = df.iloc[:-1], check[:-1]
-        if len(files) > 1 and len(df) < fs.min_trials_per_file:
+        if len(df) < reader.min_trials_per_file:
             continue
         checked.append(check)
         stimulus.append(pd.to_numeric(df[stim_col], errors='coerce').to_numpy(dtype=float))
@@ -118,14 +122,14 @@ def remove_silent_trials(experiment, config, verbose: bool = True) -> Dict:
     totals, ``per_session`` counts and the ``not_aligned`` session ids.
     """
     import numpy as np
-    from behav_utils.data.ops.filtering import filter_trial_data
+    from behav_utils.data import filter_trial_data
 
     prev_values = ('prev_stimulus', 'prev_choice', 'prev_correct', 'prev_category', 'prev_reaction_time',
                    'prev_opto_on')
     per_session, not_aligned = {}, []
     for animal in experiment.animals.values():
         for session in animal.sessions:
-            if session.csv_path is None:
+            if not session.source:
                 continue
             t = session.trials
             checked, stimulus = _rows_as_loaded(session, config)
@@ -175,8 +179,8 @@ def export_snapshot(
     verbose: bool = True,
 ) -> Path:
     """Load data from CSV via config, save as versioned snapshot."""
-    from behav_utils.config.schema import load_config
-    from behav_utils.data.loading import load_experiment
+    from behav_utils.config import load_config
+    from behav_utils.data import load_experiment
 
     config_path = Path(config_path)
 
@@ -210,10 +214,10 @@ def export_snapshot(
 
     meta = {
         'format_version': SNAPSHOT_FORMAT_VERSION,
-        'exported_at': datetime.now(timezone.utc).isoformat(),
+        'exported_at': datetime.now(UTC).isoformat(),
         'config_path': str(config_path.resolve()),
         'config_hash': _config_hash(config_path),
-        'data_dir': str(config.file_structure.data_dir),
+        'data_dir': str(config.reader.data_dir),
         'behav_utils_version': _get_behav_utils_version(),
         'n_animals': experiment.n_animals,
         'n_sessions_total': total_sessions,
@@ -268,7 +272,9 @@ def load_snapshot(
 
     meta = snapshot.get('metadata', {})
     if meta.get('format_version', 0) != SNAPSHOT_FORMAT_VERSION:
-        raise ValueError('Snapshot format version mismatch. Re-export.')
+        raise ValueError(f"Snapshot format {meta.get('format_version', 0)}, this code reads "
+                         f"{SNAPSHOT_FORMAT_VERSION} (behav_utils {meta.get('behav_utils_version', '?')} wrote it). "
+                         f'Re-export with sc-export-snapshot.')
 
     experiment = snapshot['experiment']
 
@@ -277,7 +283,7 @@ def load_snapshot(
     if exported_at:
         try:
             export_time = datetime.fromisoformat(exported_at)
-            age_hours = (datetime.now(timezone.utc) - export_time).total_seconds() / 3600
+            age_hours = (datetime.now(UTC) - export_time).total_seconds() / 3600
             if age_hours > warn_age_hours:
                 warnings.warn(
                     f'Snapshot is {age_hours:.0f}h old '
@@ -296,18 +302,15 @@ def load_snapshot(
             export_hash = meta.get('config_hash', '')
             if export_hash and current_hash != export_hash:
                 warnings.warn(
-                    'Config has changed since snapshot was exported. '
-                    'Re-export if column mappings changed.',
+                    'config.yaml has changed since the snapshot was exported; re-export it if column '
+                    'mappings or session_types changed (session types are set when the data are loaded).',
                     stacklevel=2,
                 )
-            # Presets and session types live in the config, not the pickle: re-apply both
-            # so a snapshot behaves exactly like a fresh load.
-            from behav_utils.config.schema import load_config
-            from behav_utils.data.loading import apply_session_type
-            from behav_utils.data.ops.selection import register_presets_from_config
+            # Presets live in the config, not the pickle: register them for select_sessions. Session types
+            # were applied when the experiment was loaded for export (1.0 keeps that step private).
+            from behav_utils.config import load_config
+            from behav_utils.data import register_presets_from_config
             cfg = load_config(config_path)
-            for type_name, mapping in cfg.session_types.items():
-                apply_session_type(experiment, mapping, type_name)
             if cfg.session_presets:
                 register_presets_from_config({'session_presets': cfg.session_presets})
 
@@ -324,8 +327,8 @@ def check_staleness(
     config_path: Union[str, Path],
 ) -> Dict:
     """Compare snapshot contents against current CSV data on disk."""
-    from behav_utils.config.schema import load_config
-    from behav_utils.data.loading import load_experiment
+    from behav_utils.config import load_config
+    from behav_utils.data import load_experiment
 
     with open(snapshot_path, 'rb') as f:
         snapshot = pickle.load(f)

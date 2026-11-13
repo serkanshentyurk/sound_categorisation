@@ -18,10 +18,14 @@ from collections import namedtuple
 from pathlib import Path
 from typing import Dict, List, Tuple
 
-from behav_utils.config.schema import load_cohorts
-from behav_utils.data.loading import load_experiment
-from behav_utils.data.ops.selection import list_presets, register_presets_from_config, select_sessions
-from behav_utils.data.synthetic import session_from_arrays
+from behav_utils.config import load_cohorts
+from behav_utils.data import (
+    list_presets,
+    load_experiment,
+    register_presets_from_config,
+    select_sessions,
+    session_from_arrays,
+)
 
 from sound_categorisation.data.paths import REPO_ROOT, cohort_path
 from sound_categorisation.settings import MODEL_ID_MIN_SESSIONS
@@ -89,7 +93,7 @@ def load_experiment_any(config_path: Path | None = None, snapshot_path: Path | N
 
 def _load_csv_as_exported(config_path: Path):
     """The CSV loader plus the clean-up ``export_snapshot`` applies (``remove_silent_trials``)."""
-    from behav_utils.config.schema import load_config
+    from behav_utils.config import load_config
 
     from sound_categorisation.data.snapshot import remove_silent_trials
     config = load_config(str(config_path))

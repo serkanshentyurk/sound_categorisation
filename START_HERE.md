@@ -158,7 +158,7 @@ data folder on that drive, e.g. `setx BEHAV_DATA_DIR "Z:\Serkan\Head_Fixed_Behav
 new terminal.
 
 Every number it uses (the 14 days, the five sessions, the flag thresholds, the move-on criteria taken from
-`behaviour_rig/TRAINING.md`) is in `config.yaml`, block `daily_tracker`, with a comment on each. To change
+`behaviour_rig/TRAINING.md`) is in `config.yaml`, block `custom.daily_tracker`, with a comment on each. To change
 one: edit it, commit, then run `sc-update` on the PC that runs the tracker. The page's last section lists
 the values it used. The side-bias thresholds are `BiasRule`'s in `sound_categorisation/behaviour/adaptation.py`,
 shared with the switch report.
@@ -203,7 +203,7 @@ Every command, its options and what it writes: [docs/runs.md](docs/runs.md).
    reports warn "animal(s) without genotype".
 4. Session types the data cannot show (masking, ALM, washout) go by date under `session_types:` in
    `config.yaml`; sessions to leave out go under `sessions_to_ignore:`.
-5. Export the snapshot again. Genotypes and `sessions_to_ignore` are read at export; session types and
+5. Export the snapshot again. Genotypes, `sessions_to_ignore` and session types are read at export;
    presets are read from `config.yaml` every time the snapshot is loaded.
 
 A cohort member with no data yet is left out of the reports with a warning.

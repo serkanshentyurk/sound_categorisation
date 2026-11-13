@@ -6,8 +6,7 @@ raises for that), so the moments path mirrors the pooled path.
 
 import numpy as np
 import pytest
-from behav_utils.data.arrays import TrialArrays
-from behav_utils.data.ops.filtering import filter_trials
+from behav_utils.data import TrialArrays, filter_trials
 from behav_utils.stats import compute_stats
 from sound_categorisation.inference.constants import SBI_STATS
 from sound_categorisation.inference.representation import (

@@ -26,7 +26,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from behav_utils.plotting.readouts import plot_psychometric_curve
+from behav_utils.plotting import plot_psychometric_curve
 from matplotlib.figure import Figure
 
 from sound_categorisation.plotting.daily_tracker import (

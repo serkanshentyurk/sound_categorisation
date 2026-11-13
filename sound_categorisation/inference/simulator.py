@@ -26,7 +26,7 @@ Reuses:
 from typing import Callable, Dict, List, Sequence, Tuple, Union
 
 import numpy as np
-from behav_utils.data.synthetic import session_from_arrays
+from behav_utils.data import session_from_arrays
 
 from sound_categorisation.inference.representation import to_stat_vector
 from sound_categorisation.inference.types import ModelType, get_default_param_configs

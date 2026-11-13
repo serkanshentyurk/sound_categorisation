@@ -11,7 +11,7 @@ from datetime import date
 from pathlib import Path
 
 import pytest
-from behav_utils.config.schema import load_config
+from behav_utils.config import load_config
 from sound_categorisation.data import paths
 from sound_categorisation.data import raw_mirror as rm
 from sound_categorisation.data.raw_mirror import mirror_sessions, select_folders, session_parameters

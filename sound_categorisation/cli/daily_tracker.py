@@ -25,7 +25,7 @@ import sys
 import webbrowser
 from datetime import date
 
-from behav_utils.config.schema import load_cohorts, load_config
+from behav_utils.config import load_cohorts, load_config
 
 from sound_categorisation.behaviour.daily_tracker import (
     compute_daily_tracker,

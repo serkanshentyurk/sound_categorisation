@@ -31,18 +31,18 @@ from dataclasses import dataclass, field
 from typing import Dict, Sequence
 
 import pandas as pd
-from behav_utils.analysis.comparison import (
-    DeltaStats,
-    Interaction,
-    compute_delta_stat,
-    compute_interaction,
-    contrast_key,
-)
-from behav_utils.data.ops.filtering import build_mask, filter_trials, opto_mask
+from behav_utils.analysis import DeltaStats, Interaction, compute_delta_stat, compute_interaction
+from behav_utils.data import build_mask, filter_trials, opto_mask
 from behav_utils.stats import PSYCHOMETRIC
 
 __all__ = ['OptoContrasts', 'ppc_contrasts', 'alm_contrasts', 'dod_point',
            'STATS', 'STATS_RT', 'SENSITIVITY', 'BIAS', 'DUAL_UNITS', 'N_BOOT', 'N_PERM']
+
+
+def contrast_key(label: str, reference: str) -> str:
+    """The key ``DeltaStats.contrasts`` files a contrast under: ``<label>_vs_<reference>``."""
+    return f'{label}_vs_{reference}'
+
 
 STATS = ['accuracy', 'hard_accuracy', 'easy_accuracy', 'recency', 'side_bias',
          *PSYCHOMETRIC, 'lose_shift', 'win_stay']

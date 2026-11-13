@@ -41,8 +41,8 @@ import matplotlib
 
 matplotlib.use('Agg')
 
-from behav_utils.config.schema import load_cohorts
-from behav_utils.data.structures import ExperimentData
+from behav_utils.config import load_cohorts
+from behav_utils.data import ExperimentData
 
 from sound_categorisation.data.cohort import (
     SITES,

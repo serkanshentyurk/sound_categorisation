@@ -17,10 +17,18 @@ from typing import Dict, List, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
-from behav_utils.data.arrays import TrialArrays
-from behav_utils.data.synthetic import sample_stimuli
+from behav_utils.data import TrialArrays
 from behav_utils.readouts import compute_update_matrix
-from behav_utils.stats import compute_stats, list_producers
+from behav_utils.stats import (
+    LOGISTIC_HISTORY,
+    PSE_DYNAMICS,
+    PSYCHOMETRIC,
+    SD_PROFILE,
+    SDT,
+    compute_stats,
+    list_stats,
+)
+from behav_utils.tasks import TwoAFC
 from scipy.stats import spearmanr
 from sklearn.ensemble import (
     GradientBoostingClassifier,
@@ -43,6 +51,26 @@ from sound_categorisation.models.sc_core import SCModel, SCParams, SCState
 # 64 columns (um_<cur>_<prev>) come from the readout, not the stat registry.
 UM_KEY = 'update_matrix'
 N_UM_BINS = 8
+
+
+# behav_utils' fits that produce several statistics at once, by producer name; every other statistic is its
+# own producer. (1.0 keeps its producer listing private; these tuples are public.)
+_FITS = {'psychometric': PSYCHOMETRIC, 'sdt': SDT, 'logistic_history': LOGISTIC_HISTORY,
+         'pse_dynamics': PSE_DYNAMICS, 'sd_profile': SD_PROFILE}
+
+
+def list_producers() -> Dict[str, Tuple[str, ...]]:
+    """{producer: its statistics}, for every statistic behav_utils computes for a two-choice task."""
+    names = list_stats(task=TwoAFC())
+    fitted = {n for outputs in _FITS.values() for n in outputs}
+    out: Dict[str, Tuple[str, ...]] = {}
+    for n in names:
+        if n in fitted:
+            producer = next(p for p, outputs in _FITS.items() if n in outputs)
+            out.setdefault(producer, tuple(_FITS[producer]))
+        else:
+            out[n] = (n,)
+    return out
 
 
 def list_available_stats() -> List[str]:
@@ -123,7 +151,7 @@ def compute_param_stat_correlations(model_type, stat_names=None, n_samples=1000,
     stat_names_expanded = get_stat_names_expanded(stat_names)
 
     # one fixed stimulus sequence, shared across all draws
-    stimuli, categories = sample_stimuli(n_trials=n_trials, rng=np.random.default_rng(seed))
+    stimuli, categories = sample_distribution(n_trials, 'uniform', rng=np.random.default_rng(seed))
     no_response = np.zeros(n_trials, dtype=bool)
     not_blockstart = np.ones(n_trials, dtype=bool)
     not_blockstart[0] = False

@@ -25,7 +25,7 @@ stat or pooling logic is reimplemented here.
 from typing import List, Sequence
 
 import numpy as np
-from behav_utils.data.arrays import TrialArrays
+from behav_utils.data import TrialArrays
 from behav_utils.stats import compute_stats
 
 DESIGN_FEATURES = ('n_sessions', 'n_valid_trials')   # everything to_stat_vector can append

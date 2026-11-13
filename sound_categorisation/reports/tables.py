@@ -18,7 +18,7 @@ today is readable by any code tomorrow.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Dict, Tuple
 
@@ -194,7 +194,7 @@ def write_result(out_dir, tables: Dict[str, pd.DataFrame], readouts: Dict[str, n
         written.append(name)
     if readouts:
         np.savez_compressed(out_dir / 'readouts.npz', **readouts)
-    m = {'written_utc': datetime.now(timezone.utc).isoformat(), 'versions': _versions(),
+    m = {'written_utc': datetime.now(UTC).isoformat(), 'versions': _versions(),
          'tables': sorted(written), 'has_readouts': bool(readouts), **(meta or {})}
     (out_dir / 'meta.json').write_text(json.dumps(m, indent=2, default=str))
     return out_dir

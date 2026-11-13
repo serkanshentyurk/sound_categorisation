@@ -16,7 +16,7 @@ import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from behav_utils.plotting.readouts import plot_psychometric_curve
+from behav_utils.plotting import plot_psychometric_curve
 
 _COLOURS = ('#1f77b4', '#d62728', '#2ca02c', '#9467bd', '#8c564b')
 LIGHT_COLOURS = {'no light': '#1f77b4', 'light': '#d62728'}

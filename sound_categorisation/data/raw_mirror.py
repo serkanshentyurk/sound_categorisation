@@ -24,6 +24,7 @@ from __future__ import annotations
 import csv
 import fnmatch
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -31,8 +32,6 @@ import tarfile
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from pathlib import Path, PurePosixPath
-
-from behav_utils.data.loading import parse_date_from_path
 
 from sound_categorisation.data.paths import SWC_GATEWAY, raw_mirror_dir, raw_source
 
@@ -93,10 +92,25 @@ def select_folders(folders, *, today: date, days: int, summary_days: int | None,
     return tuple(shown), keep
 
 
+def folder_date(name: str, regex: str) -> date | None:
+    """A session folder's date from its name, as behav_utils' csv_folders reader reads it: the regex's
+    groups ``year``, ``month``, ``day`` (or its first three groups); None if it does not match."""
+    match = re.search(regex, PurePosixPath(str(name)).name)
+    if not match:
+        return None
+    groups = match.groupdict()
+    try:
+        if groups.get('year') is not None:
+            return date(int(groups['year']), int(groups['month']), int(groups['day']))
+        return date(*(int(g) for g in match.groups()[:3]))
+    except (ValueError, TypeError, IndexError, KeyError):
+        return None
+
+
 def _dated(pairs, regex: str) -> list:
     out = []
     for a, f in pairs:
-        d = parse_date_from_path(f, regex)
+        d = folder_date(f, regex)
         if d is not None:
             out.append((a, f, d))
     return out
@@ -225,7 +239,7 @@ def local_copy_status(config, *, days: int, today: date | None = None, animals=N
     if not dest.is_dir():
         return (), {}
     today = today or date.today()
-    dated = _dated(_local_folders(dest), config.file_structure.date_regex)
+    dated = _dated(_local_folders(dest), config.reader.date_regex)
     shown, _ = select_folders(dated, today=today, days=days, summary_days=None, animals=animals)
     last: dict = {}
     for a, _, d in dated:
@@ -270,7 +284,7 @@ def mirror_sessions(config, *, days: int, summary_days: int | None, today: date 
     today = today or date.today()
     route, where = source or raw_source()
     dest = Path(dest) if dest is not None else raw_mirror_dir()
-    regex = config.file_structure.date_regex
+    regex = config.reader.date_regex
     say = progress or (lambda message: None)
     if route == 'local':
         raw = Path(where)

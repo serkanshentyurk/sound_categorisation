@@ -19,7 +19,7 @@ from typing import Dict, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
-from behav_utils.plotting.styles import COLOURS
+from behav_utils.plotting import COLOURS
 
 # Convenience aliases
 BE_COLOUR = COLOURS['BE']
@@ -258,7 +258,7 @@ def plot_update_matrix(
     Wraps the library plotter (single source of UM styling) for the raw-array
     call sites in the CV figures.
     """
-    from behav_utils.plotting.readouts import plot_update_matrix as _plot
+    from behav_utils.plotting import plot_update_matrix as _plot
     from behav_utils.readouts import UpdateMatrix
     _, ax = _plot(UpdateMatrix.from_matrix(np.asarray(um, float)), ax=ax, vmin=vmin, vmax=vmax,
                   cmap=cmap, colorbar=show_colourbar, title=title)

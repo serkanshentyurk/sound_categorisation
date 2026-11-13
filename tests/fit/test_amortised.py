@@ -14,7 +14,7 @@ pytestmark = pytest.mark.fit
 torch = pytest.importorskip('torch')
 pytest.importorskip('sbi')
 
-from behav_utils.data.synthetic import session_from_arrays  # noqa: E402
+from behav_utils.data import session_from_arrays  # noqa: E402
 from sound_categorisation.data.stimuli import sample_distribution  # noqa: E402
 from sound_categorisation.inference import AmortisedSBI  # noqa: E402
 from sound_categorisation.inference.types import ModelType, get_default_param_configs  # noqa: E402

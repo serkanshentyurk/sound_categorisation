@@ -7,7 +7,7 @@
 # Key differences from the processed config:
 #   - choice column: First_Lick (string) instead of Choice (int)
 #   - choice_mapping: uses string keys (Left/Right) with contingency rules
-#   - file_structure: points at Raw/ directory
+#   - reader: csv_folders under Raw/ (behav_utils 1.0)
 #   - drop_last_row: true (Bonsai CSVs may have truncated final row)
 #   - no Rolling_* columns (these were computed by the old pipeline)
 # =============================================================================
@@ -32,34 +32,28 @@ cohorts:
                       SS14, SS15, SS16, SS17, SS18, SS19, SS20, SS21, SS22, SS23]
 
 # =============================================================================
-# File structure
+# Reader: one folder per animal, one folder per session in it (SOUND_CAT_<animal>_<year>_<month>_<day>).
+# The session's date comes from the folder name only.
 # =============================================================================
-file_structure:
+reader:
+  type: csv_folders
   data_dir: "${BEHAV_DATA_DIR}/Raw"
-  animal_pattern: "{animal_id}"
-  session_pattern: "SOUND_CAT_{animal_id}_{date}"
   behaviour_file: "Trial_Summary*.csv"
-  date_format: "{year}_{month}_{day}"
   date_regex: "(?P<year>\\d{4})_(?P<month>\\d{1,2})_(?P<day>\\d{1,2})"
   drop_last_row: true
+  merge_files: true             # a session's files, in name order, with trial numbers renumbered
+  min_trials_per_file: 10       # a shorter file is skipped; since behav_utils 1.0 also a session's only file
 
 # =============================================================================
 # Task parameters
 # =============================================================================
 task:
-  inputs:
-    - stimulus
-  outputs:
-    - choice
-    - reaction_time
-
   primary_stimulus: stimulus
   primary_choice: choice
 
   boundary: 0.0
   stimulus_range: [-1.0, 1.0]
-  n_categories: 2
-  category_rule: "above_boundary"
+  b_side: positive              # category B is above the boundary; a stimulus on it is A (on_boundary)
 
   choice_mapping:
     type: "spatial_to_category"
@@ -561,32 +555,33 @@ session_types:
     SS23: ['20260713', '20260714', '20260715', '20260716', '20260717', '20260718', '20260719']
 
 # =============================================================================
-# Daily tracker (sc-daily-tracker)
+# Daily tracker (sc-daily-tracker): custom.daily_tracker
 # =============================================================================
 # Every number the tracker uses is here; the code has no copies of them. To change one: edit, commit, then
 # run sc-update on the PC that runs the tracker. The report's last section lists the values it used.
 # The move-on criteria follow behaviour_rig/TRAINING.md. The side-bias thresholds are not here: they are
 # adaptation.BiasRule's (sound_categorisation/behaviour/adaptation.py), shared with the switch report.
-daily_tracker:
-  days: 14                  # days shown, ending today; --days overrides it
-  last_sessions: 5          # per condition (preset): the pooled and mean summaries use its last 5 sessions
-  summary_days: all         # how far back the copy and the summaries go: all, or a number of days
-  expected_cohorts: []      # cohorts (block cohorts above) whose animals are listed even with no session in
-                            # the window, as "no session on ceph"; e.g. [behaviour2-cohort] once SS24–SS35
-                            # are added there. --cohort also counts.
-  early_steps: [habituation, lick-to-release, three-and-three]
-  full_task_training: [regular-antibias-200, regular-antibias-175, regular-antibias-150, regular-antibias-100,
-                       regular-antibias-050, regular-antibias-025, regular]
-                            # any other full-task preset counts as an experiment: no move-on mark
-  flags:
-    min_correct_trials: 200                 # fewer correct trials than this: low trials
-    accuracy_drop: 0.10                     # this far below the median of earlier sessions of the same preset
-    accuracy_drop_reference_sessions: 5     # how many earlier sessions that median uses (at least 2 needed)
-  move_on:
-    early_step_min_trials: 300              # trials on the current early step, across its sessions
-    full_task:                              # training presets: every one of the last N sessions on the preset
-      sessions_in_a_row: 2
-      min_correct_trials: 200
-      min_accuracy: 0.70
-      min_hard_accuracy: 0.60               # more than this on |stimulus| < 0.3
-      max_accuracy_difference: 0.10         # |accuracy right − left| at most this
+custom:                     # project-only settings: behav_utils 1.0 refuses unknown top-level keys
+  daily_tracker:
+    days: 14                  # days shown, ending today; --days overrides it
+    last_sessions: 5          # per condition (preset): the pooled and mean summaries use its last 5 sessions
+    summary_days: all         # how far back the copy and the summaries go: all, or a number of days
+    expected_cohorts: []      # cohorts (block cohorts above) whose animals are listed even with no session in
+                              # the window, as "no session on ceph"; e.g. [behaviour2-cohort] once SS24–SS35
+                              # are added there. --cohort also counts.
+    early_steps: [habituation, lick-to-release, three-and-three]
+    full_task_training: [regular-antibias-200, regular-antibias-175, regular-antibias-150, regular-antibias-100,
+                         regular-antibias-050, regular-antibias-025, regular]
+                              # any other full-task preset counts as an experiment: no move-on mark
+    flags:
+      min_correct_trials: 200                 # fewer correct trials than this: low trials
+      accuracy_drop: 0.10                     # this far below the median of earlier sessions of the same preset
+      accuracy_drop_reference_sessions: 5     # how many earlier sessions that median uses (at least 2 needed)
+    move_on:
+      early_step_min_trials: 300              # trials on the current early step, across its sessions
+      full_task:                              # training presets: every one of the last N sessions on the preset
+        sessions_in_a_row: 2
+        min_correct_trials: 200
+        min_accuracy: 0.70
+        min_hard_accuracy: 0.60               # more than this on |stimulus| < 0.3
+        max_accuracy_difference: 0.10         # |accuracy right − left| at most this

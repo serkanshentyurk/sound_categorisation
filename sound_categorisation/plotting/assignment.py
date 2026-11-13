@@ -20,7 +20,7 @@ from typing import List, Tuple
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from behav_utils.plotting.styles import COLOURS
+from behav_utils.plotting import COLOURS
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 

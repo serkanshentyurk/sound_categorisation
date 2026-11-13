@@ -19,8 +19,7 @@ from typing import Dict, List, Sequence, Tuple
 
 import pandas as pd
 from behav_utils.analysis import collect_rows, compare_groups
-from behav_utils.data.arrays import TrialArrays
-from behav_utils.data.ops.filtering import filter_trials
+from behav_utils.data import TrialArrays, filter_trials
 from behav_utils.readouts import (
     PsychometricCurve,
     UpdateMatrix,

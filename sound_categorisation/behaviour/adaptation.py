@@ -33,15 +33,17 @@ from typing import Sequence
 
 import numpy as np
 import pandas as pd
-from behav_utils.analysis.phase import compute_phase_stats
-from behav_utils.analysis.rolling import compute_rolling_stats
-from behav_utils.data.arrays import TrialArrays
-from behav_utils.data.ops.filtering import filter_trials
-from behav_utils.data.ops.selection import select_sessions
-from behav_utils.data.ops.switches import block_after, block_before, find_switches
-from behav_utils.readouts.fit import fit_psychometric
-from behav_utils.stats import PSE_DYNAMICS, PSYCHOMETRIC, compute_stats
-from behav_utils.stats.dynamics import fit_pse_dynamics
+from behav_utils.analysis import compute_phase_stats, compute_rolling_stats
+from behav_utils.data import (
+    TrialArrays,
+    block_after,
+    block_before,
+    filter_trials,
+    find_switches,
+    select_sessions,
+)
+from behav_utils.readouts import fit_psychometric
+from behav_utils.stats import PSE_DYNAMICS, PSYCHOMETRIC, compute_stats, fit_pse_dynamics
 from scipy.optimize import minimize_scalar
 from scipy.stats import norm
 

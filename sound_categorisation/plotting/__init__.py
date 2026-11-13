@@ -8,5 +8,5 @@ Import from submodules directly:
     from sound_categorisation.plotting.sbi_validation import plot_sbc_ecdf_diff, plot_coverage
 
 For pair-comparison plots (opto, pre/post shift, HET vs WT):
-    from behav_utils.plotting.comparison import plot_comparison
+    from behav_utils.plotting import plot_psychometric_comparison
 """

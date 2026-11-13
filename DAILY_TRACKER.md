@@ -101,7 +101,7 @@ Statistics use trials without light. Right and left are the rig's right and left
 | The cluster login node it goes through | `hpc-gw2` | `SWC_NODE` (e.g. `hpc-gw1`) |
 | The local copy | `~/sound_cat/data/raw_mirror/Raw/` | `SC_DATA_ROOT` (the copy goes in `$SC_DATA_ROOT/raw_mirror`) |
 | The pages | `<repository>/results/daily_tracker/` | `SC_RESULTS_ROOT` (pages in `$SC_RESULTS_ROOT/daily_tracker`) |
-| The window, thresholds, move-on criteria, expected cohorts | `config.yaml`, block `daily_tracker` | edit it (the comments explain each number) |
+| The window, thresholds, move-on criteria, expected cohorts | `config.yaml`, block `custom.daily_tracker` | edit it (the comments explain each number) |
 
 All of these are lines like `export NAME=value` in `~/.zshrc`; for a single run, put the setting in front of
 the command, e.g. `BEHAV_DATA_DIR=/ceph/akrami/<Name>/Head_Fixed_Behavior/Data sc-daily-tracker`.
@@ -116,7 +116,7 @@ the command, e.g. `BEHAV_DATA_DIR=/ceph/akrami/<Name>/Head_Fixed_Behavior/Data s
   new version.
 
 **Expected animals.** List the cohorts that should be running in `config.yaml`, under
-`daily_tracker: expected_cohorts:` (a cohort is a named list of animals in the `cohorts:` block of the same
+`custom: daily_tracker: expected_cohorts:` (a cohort is a named list of animals in the `cohorts:` block of the same
 file). Their animals then appear at the top of the page whenever they have no session on ceph in the window.
 
 ## If something goes wrong

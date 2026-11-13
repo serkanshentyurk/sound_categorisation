@@ -27,7 +27,7 @@ from typing import Dict, Sequence
 import numpy as np
 import pandas as pd
 from behav_utils import TrialArrays, compute_delta_stat, compute_interaction, filter_trials, select_sessions
-from behav_utils.analysis.comparison import DeltaStats, Interaction
+from behav_utils.analysis import DeltaStats, Interaction
 from behav_utils.readouts import PsychometricCurve, compute_binned_curve, compute_psychometric_curve
 from behav_utils.stats import PSYCHOMETRIC, SDT
 

@@ -58,11 +58,15 @@ _MAX_CANDIDATES = 100_000
 
 def preset_min_accuracy(distribution: str) -> float:
     """min_accuracy of the model_id_<distribution> preset (config.yaml)."""
-    from behav_utils.data.ops.selection import get_preset
+    import yaml
+    from behav_utils.data import preset_from_spec
 
-    from sound_categorisation.data.cohort import ensure_presets
-    ensure_presets()
-    acc = get_preset(f'model_id_{distribution}').min_accuracy
+    from sound_categorisation.data.paths import DEFAULT_CONFIG
+    name = f'model_id_{distribution}'
+    spec = ((yaml.safe_load(DEFAULT_CONFIG.read_text()) or {}).get('session_presets') or {}).get(name)
+    if not isinstance(spec, dict):
+        raise ValueError(f'config.yaml has no session preset {name}')
+    acc = preset_from_spec(name, spec).min_accuracy
     if acc is None:
         raise ValueError(f'preset model_id_{distribution} has no min_accuracy')
     return float(acc)

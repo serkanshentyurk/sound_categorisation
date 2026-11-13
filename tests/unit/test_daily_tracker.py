@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-from behav_utils.config.schema import load_config
+from behav_utils.config import load_config
 from sound_categorisation.behaviour.adaptation import BiasRule, session_bias_checks
 from sound_categorisation.behaviour.daily_tracker import (
     TrackerSettings,

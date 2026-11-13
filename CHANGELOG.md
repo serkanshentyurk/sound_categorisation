@@ -3,6 +3,30 @@
 
 ## Unreleased
 
+- **behav_utils 1.0** (pyproject: `behav_utils[store] @ …@v1.0.0`, Python ≥ 3.11; CI on 3.11 and 3.12).
+  - `config.yaml`: `reader:` (csv_folders) replaces `file_structure:` (`animal_pattern`, `session_pattern`,
+    `date_format` gone; `merge_files` and `min_trials_per_file` now written out); `task.b_side: positive` replaces
+    `category_rule`, and `inputs`, `outputs`, `n_categories` are gone; the tracker's settings moved to
+    `custom.daily_tracker` (1.0 refuses unknown top-level keys).
+  - Every import from a behav_utils module path now comes from the public sub-package (`behav_utils.data`,
+    `.stats`, `.readouts`, …). Names 1.0 removed or made private are replaced: `contrast_key` (a local helper, same
+    keys), `parse_date_from_path` (`raw_mirror.folder_date`), `sample_stimuli` (`data.stimuli.sample_distribution`),
+    `list_producers` (`features.feature_diagnostics.list_producers`, built from the public tuples; the same 26
+    producers), `get_preset` (`preset_from_spec` on the config's preset).
+  - Update matrices take the task's score: `fit_update_matrix(..., correct=)` gets `pool_arrays`' `correct` for
+    data and `grid_search.score_choices` for simulated choices; grid search and model selection pass the task on.
+  - Daily tracker: no-response and early-lick counts read the rig's labels from `outcome_recorded` (1.0's
+    `outcome` holds codes, and the old reading counted zero); `correct` is the task's score; the session folder is
+    `source` (1.0's name for it; `csv_path` was a file inside it); the file time is the folder's newest CSV.
+    Sessions whose only file has fewer than `min_trials_per_file` rows are no longer loaded (1.0), so the tracker
+    no longer lists them.
+  - Snapshot (still a pickle): format 3. A snapshot exported with behav_utils 0.10 is refused (its objects
+    unpickle under 1.0 without the new fields): re-export. The stimulus check reads the session folder from
+    `source` and follows 1.0's file rules; loading no longer re-applies `session_types` (1.0 applies them when
+    the data are loaded, and keeps that step private): edit them, then re-export.
+  - Feature diagnostics draw their fixed stimulus sequence with the project's sampler (notebook 90's numbers can
+    move at Monte-Carlo level; `SBI_STATS` does not change).
+
 - `slurm/submit.sh` keeps only the last line of `--print-array` and stops if it is not an array range. Grid
   search on a real cohort prints the snapshot and cohort lines first, and all of it went into `--array`
   (sbatch: invalid job array specification).

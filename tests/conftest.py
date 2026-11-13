@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import yaml
-from behav_utils.data.ops.selection import register_presets_from_config
+from behav_utils.data import register_presets_from_config
 
 # Presets are defined by the project config, not the library: register them once for the suite.
 register_presets_from_config(yaml.safe_load((Path(__file__).parent.parent / 'config.yaml').read_text()))
@@ -36,7 +36,7 @@ def rng():
 
 def _make_trial_data(n, rng, noise=0.20, opto_frac=0.0):
     """Helper: create TrialData with correct fields."""
-    from behav_utils.data.structures import TrialData
+    from behav_utils.data import TrialData
 
     stimuli = rng.uniform(-1, 1, n)
     categories = (stimuli > 0).astype(float)
@@ -64,7 +64,7 @@ def _make_trial_data(n, rng, noise=0.20, opto_frac=0.0):
 def _make_session(session_idx, base_date, trials, distribution='Uniform',
                   stage='Full_Task_Cont', masking=False, washout=False):
     """Helper: create SessionData with correct fields."""
-    from behav_utils.data.structures import SessionData, SessionMetadata
+    from behav_utils.data import SessionData, SessionMetadata
 
     if washout:
         session_type = 'washout'
@@ -111,7 +111,7 @@ def synthetic_animal(rng):
     Session 10-11: Uniform, opto (masking)
     Sessions 12-14: Uniform, opto (real)
     """
-    from behav_utils.data.structures import AnimalData
+    from behav_utils.data import AnimalData
 
     sessions = []
     base_date = date(2026, 1, 1)
@@ -145,7 +145,7 @@ def synthetic_opto_animal(rng):
     14-18: Asym_Right opto
     19-23: Asym_Right recovery
     """
-    from behav_utils.data.structures import AnimalData
+    from behav_utils.data import AnimalData
 
     # (idx, distribution, opto_frac, is_masking, is_washout)
     phases = (

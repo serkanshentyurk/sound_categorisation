@@ -26,7 +26,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from behav_utils.plotting.styles import COLOURS, PALETTE, apply_style
+from behav_utils.plotting import COLOURS, PALETTE, apply_style
 from sound_categorisation.data.paths import REPO_ROOT, data_root, resolve_run, results_root
 from sound_categorisation.reports.tables import normalise_site
 
@@ -187,7 +187,7 @@ def cohorts_by_animal(animals) -> dict:
     'synthetic' for every animal under SC_NB_SYNTHETIC, '?' for an animal no cohort lists."""
     if SYNTHETIC:
         return {aid: 'synthetic' for aid in animals}
-    from behav_utils.config.schema import load_cohorts
+    from behav_utils.config import load_cohorts
     cohorts = load_cohorts(REPO_ROOT / 'config.yaml')
     out = {}
     for aid in animals:

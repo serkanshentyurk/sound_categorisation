@@ -20,7 +20,7 @@ import os
 import platform
 import re
 import socket
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sound_categorisation.inference.constants import SBI_STATS
@@ -314,7 +314,7 @@ def build_metadata(script_name: str, args: dict, run_id: str | None = None) -> d
         'argv': list(sys.argv),
         'args': dict(args),  # shallow copy; caller passes a serialisable dict
         'run_id': run_id,
-        'timestamp_utc': datetime.now(timezone.utc).isoformat(),
+        'timestamp_utc': datetime.now(UTC).isoformat(),
         'hostname': socket.gethostname(),
         'platform': platform.platform(),
         'python_version': sys.version.split()[0],
@@ -362,6 +362,6 @@ DEFAULT_CONFIG = REPO_ROOT / 'config.yaml'
 
 def load_project_config(config_path=None):
     """Load ProjectConfig from config.yaml (or ``config_path``)."""
-    from behav_utils.config.schema import load_config
+    from behav_utils.config import load_config
     return load_config(str(config_path if config_path is not None else DEFAULT_CONFIG))
 

@@ -5,7 +5,7 @@ Install on the cluster and on your laptop; the routines that use them are in
 
 ## 1. Install
 
-You need conda and Python 3.10 or newer. The conda environment is called `sound_cat`.
+You need conda and Python 3.11 or newer (behav_utils 1.0 needs it). The conda environment is called `sound_cat`.
 
 On the cluster (SWC HPC: `ssh <SWC username>@ssh.swc.ucl.ac.uk`, then `ssh hpc-gw2`):
 
@@ -97,6 +97,6 @@ SC_NB_SYNTHETIC=1 SC_RESULTS_ROOT=/tmp/sc_results SC_DATA_ROOT=/tmp/sc_data jupy
 | `ModuleNotFoundError: behav_utils` | `pip install -e .` in this environment |
 | `sc-update` stops at `git pull` | your checkout has commits that are not on GitHub; sort it out with git by hand |
 | `KeyError: preset 'expert_uniform'` | presets come from `config.yaml`: load the snapshot first, or call `sound_categorisation.data.cohort.ensure_presets()` |
-| warning "config has changed" on loading the snapshot | column mappings changed: run `sc-export-snapshot` again; editing session types or presets alone is fine |
+| warning "config has changed" on loading the snapshot | column mappings or session types changed: run `sc-export-snapshot` again; editing presets alone is fine |
 | warning that the snapshot was written by another `behav_utils` version | run `sc-export-snapshot` again |
 | `compare_groups: need two groups` | only one genotype selected (e.g. `--limit 1`); the rows are still written |

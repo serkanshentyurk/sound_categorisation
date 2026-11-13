@@ -11,7 +11,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 import numpy as np
-from behav_utils.data.structures import AnimalData, ExperimentData, SessionData, SessionMetadata, TrialData
+from behav_utils.data import AnimalData, ExperimentData, SessionData, SessionMetadata, TrialData
 
 __all__ = ['synthetic_experiment', 'write_synthetic_runs']
 

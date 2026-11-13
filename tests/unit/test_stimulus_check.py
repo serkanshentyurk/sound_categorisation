@@ -11,8 +11,8 @@ import numpy as np
 import pandas as pd
 import pytest
 import yaml
-from behav_utils.config.schema import ChoiceMapping, ColumnMapping, FileStructure, ProjectConfig, TaskConfig
-from behav_utils.data.loading import load_experiment
+from behav_utils.config import load_config
+from behav_utils.data import load_experiment
 from sound_categorisation.data.snapshot import (
     SNAPSHOT_FORMAT_VERSION,
     export_snapshot,
@@ -105,16 +105,24 @@ def test_misaligned_table_gives_na_and_warns(tmp_path):
 
 
 # ── remove_silent_trials ─────────────────────────────────────────────────────
+def _config_dict(data_dir, min_trials_per_file=None):
+    reader = {'type': 'csv_folders', 'data_dir': str(data_dir), 'behaviour_file': 'Trial_Summary*.csv',
+              'drop_last_row': True, 'date_regex': r'(\d{4})_(\d{1,2})_(\d{1,2})'}
+    if min_trials_per_file is not None:
+        reader['min_trials_per_file'] = min_trials_per_file
+    return {'project': {'name': 'test'}, 'reader': reader,
+            'columns': {'trial_number': {'csv_name': 'Trial_Number', 'dtype': 'int'},
+                        'stimulus': {'csv_name': 'Stim_Relative', 'dtype': 'float'},
+                        'choice': {'csv_name': 'Choice', 'dtype': 'float'},
+                        'abort': {'csv_name': 'Abort_Trial', 'dtype': 'bool', 'optional': True,
+                                  'default': False}},
+            'task': {'boundary': 0.0, 'choice_mapping': {'type': 'identity', 'no_response_value': -1}}}
+
+
 def _config(data_dir):
-    cols = {'trial_number': ColumnMapping(csv_name='Trial_Number', dtype='int'),
-            'stimulus': ColumnMapping(csv_name='Stim_Relative', dtype='float'),
-            'choice': ColumnMapping(csv_name='Choice', dtype='float'),
-            'abort': ColumnMapping(csv_name='Abort_Trial', dtype='bool', optional=True, default=False)}
-    task = TaskConfig(inputs=['stimulus'], outputs=['choice'], boundary=0.0,
-                      choice_mapping=ChoiceMapping(type='identity', no_response_value=-1))
-    fs = FileStructure(data_dir=str(data_dir), drop_last_row=True, behaviour_file='Trial_Summary*.csv',
-                       date_regex=r'(\d{4})_(\d{1,2})_(\d{1,2})', min_trials_per_file=2)
-    return ProjectConfig(name='test', columns=cols, task=task, file_structure=fs)
+    path = data_dir / 'test_config.yaml'           # a file there is fine: the reader looks at folders only
+    path.write_text(yaml.safe_dump(_config_dict(data_dir, min_trials_per_file=2)))
+    return load_config(path)
 
 
 def _load(tmp_path):
@@ -191,14 +199,8 @@ def test_session_that_does_not_line_up_is_left_alone(tmp_path):
 
 
 def _write_config(tmp_path):
-    cfg = {'file_structure': {'data_dir': str(tmp_path / 'data'), 'session_pattern': 'SOUND_CAT_{animal_id}_{date}',
-                              'behaviour_file': 'Trial_Summary*.csv', 'drop_last_row': True,
-                              'date_regex': r'(\d{4})_(\d{1,2})_(\d{1,2})'},
-           'columns': {'trial_number': {'csv_name': 'Trial_Number', 'dtype': 'int'},
-                       'stimulus': {'csv_name': 'Stim_Relative', 'dtype': 'float'},
-                       'choice': {'csv_name': 'Choice', 'dtype': 'float'}},
-           'task': {'inputs': ['stimulus'], 'outputs': ['choice'], 'boundary': 0.0,
-                    'choice_mapping': {'type': 'identity', 'no_response_value': -1}}}
+    cfg = _config_dict(tmp_path / 'data', min_trials_per_file=2)    # 1.0 applies it to one-file sessions too
+    del cfg['columns']['abort']
     (tmp_path / 'config.yaml').write_text(yaml.safe_dump(cfg))
     return tmp_path / 'config.yaml'
 
@@ -210,7 +212,7 @@ def test_export_removes_them_and_records_the_counts(tmp_path):
         warnings.simplefilter('ignore')
         out = export_snapshot(config, output_path=tmp_path / 'snap.pkl', verbose=False)
         exp, meta = load_snapshot(out)[:2]
-    assert meta['format_version'] == SNAPSHOT_FORMAT_VERSION == 2
+    assert meta['format_version'] == SNAPSHOT_FORMAT_VERSION == 3
     assert meta['stimulus_check']['removed'] == 1 and meta['n_trials_total'] == 6
     assert exp.animals['A1'].sessions[0].trials.n_trials == 6
 

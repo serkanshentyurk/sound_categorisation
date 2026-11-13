@@ -3,7 +3,7 @@ The daily tracker: how each animal is doing, from the raw session files (data.ra
 
     from sound_categorisation.behaviour.daily_tracker import (
         compute_daily_tracker, load_mirror, load_tracker_settings)
-    settings = load_tracker_settings()             # config.yaml, block daily_tracker
+    settings = load_tracker_settings()             # config.yaml, block custom.daily_tracker
     experiment, notes = load_mirror()              # the behav_utils loader, unchanged, on the local copy
     tracker = compute_daily_tracker(experiment, settings, notes=notes)
 
@@ -21,15 +21,14 @@ Statistics use trials without light, so laser and masking days compare with regu
 columns turn category B into the right spout with the session's sound contingency:
 ``right_choices_minus_50`` is side_bias and ``accuracy_right_minus_left`` is accuracy_b_minus_a.
 
-Every number comes from config.yaml's daily_tracker block (no defaults here), except the side-bias test,
-which is adaptation.BiasRule's (shared with the switch report) applied to the free-fit PSE: pse_fixed needs
-the animal's expert Uniform sessions, and on this data the expert preset cannot yet find them.
+Every number comes from config.yaml's custom.daily_tracker block (no defaults here), except the side-bias
+test, which is adaptation.BiasRule's (shared with the switch report) applied to the free-fit PSE: pse_fixed
+needs the animal's expert Uniform sessions, and on this data the expert preset cannot yet find them.
 """
 
 from __future__ import annotations
 
 import logging
-import os
 import warnings
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
@@ -38,13 +37,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import yaml
-from behav_utils.analysis.group import average_arrays
-from behav_utils.analysis.phase import compute_phase_stats
-from behav_utils.config.schema import load_config
-from behav_utils.data.arrays import TrialArrays
-from behav_utils.data.loading import load_experiment
-from behav_utils.data.ops.filtering import filter_trials
-from behav_utils.data.ops.selection import select_sessions
+from behav_utils.analysis import average_arrays, compute_phase_stats
+from behav_utils.config import load_config
+from behav_utils.data import TrialArrays, filter_trials, load_experiment, select_sessions
 from behav_utils.readouts import compute_psychometric_curve
 from behav_utils.stats import PSYCHOMETRIC
 
@@ -64,7 +59,7 @@ MISSING_COLUMNS = ['animal', 'last_session', 'days_since']
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Settings: config.yaml, block daily_tracker
+# Settings: config.yaml, block custom.daily_tracker
 # ═══════════════════════════════════════════════════════════════════════════
 
 _KEYS = {
@@ -88,7 +83,7 @@ _KEYS = {
 
 @dataclass(frozen=True)
 class TrackerSettings:
-    """The numbers in config.yaml's daily_tracker block (see the block's comments for their meaning)."""
+    """The numbers in config.yaml's custom.daily_tracker block (its comments give their meaning)."""
     days: int
     last_sessions: int
     summary_days: int | None            # None: the whole history ('all' in the YAML)
@@ -112,13 +107,13 @@ class TrackerSettings:
             node = block
             for key in path:
                 if not isinstance(node, dict) or key not in node:
-                    missing.append('daily_tracker.' + '.'.join(path))
+                    missing.append('custom.daily_tracker.' + '.'.join(path))
                     break
                 node = node[key]
             else:
                 values[name] = node
         if missing:
-            raise ValueError('config.yaml, block daily_tracker, is missing: ' + ', '.join(missing))
+            raise ValueError('config.yaml, block custom.daily_tracker, is missing: ' + ', '.join(missing))
         sd = values['summary_days']
         values['summary_days'] = None if str(sd).strip().lower() == 'all' else int(sd)
         values['early_steps'] = tuple(values['early_steps'])
@@ -135,7 +130,8 @@ class TrackerSettings:
                 v = 'all'
             if isinstance(v, tuple):
                 v = ', '.join(v)
-            rows.append({'setting': 'daily_tracker.' + '.'.join(path), 'value': v, 'set in': 'config.yaml'})
+            rows.append({'setting': 'custom.daily_tracker.' + '.'.join(path), 'value': v,
+                         'set in': 'config.yaml'})
         r = rule or BiasRule()
         for name in ('pse', 'lapse', 'accuracy'):
             rows.append({'setting': f'BiasRule.{name}', 'value': getattr(r, name),
@@ -144,11 +140,13 @@ class TrackerSettings:
 
 
 def load_tracker_settings(config_path: Path | None = None) -> TrackerSettings:
-    """The daily_tracker block of config.yaml. Stops with the missing keys rather than guessing them."""
+    """The custom.daily_tracker block of config.yaml (project settings live under ``custom:``, which
+    behav_utils ignores). Stops with the missing keys rather than guessing them."""
     path = Path(config_path) if config_path else REPO_ROOT / 'config.yaml'
-    block = (yaml.safe_load(path.read_text()) or {}).get('daily_tracker')
+    block = ((yaml.safe_load(path.read_text()) or {}).get('custom') or {}).get('daily_tracker')
     if not isinstance(block, dict):
-        raise ValueError(f'{path} has no daily_tracker block; see START_HERE.md, "Daily behaviour tracker".')
+        raise ValueError(f'{path} has no custom.daily_tracker block; see START_HERE.md, '
+                         f'"Daily behaviour tracker".')
     return TrackerSettings.from_block(block)
 
 
@@ -172,7 +170,7 @@ def load_mirror(config_path: Path | None = None, data_dir: Path | None = None) -
     warning that every trial is a no-response is dropped: in the early steps no response is asked for.
     """
     cfg = load_config(Path(config_path) if config_path else REPO_ROOT / 'config.yaml')
-    cfg.file_structure.data_dir = str(data_dir or raw_mirror_dir())
+    cfg.reader.data_dir = str(data_dir or raw_mirror_dir())
     notes: list = []
     handler = _Collect(notes)
     logger = logging.getLogger('behav_utils')
@@ -250,6 +248,30 @@ def _any_true(values) -> bool:
     return any(str(v).strip().lower() in ('true', '1') for v in np.asarray(values, dtype=object))
 
 
+def _session_folder(s) -> Path | None:
+    """The session's folder. behav_utils 1.0 keeps it as ``source`` (with ``merge_files: false``, the one
+    file instead); 0.10's ``csv_path`` was a file inside it."""
+    if not s.source:
+        return None
+    path = Path(s.source)
+    return path.parent if path.is_file() else path
+
+
+def _rig_outcome(t) -> np.ndarray:
+    """The rig's Trial_Outcome labels ('Abort' for no response, 'Early', ...). behav_utils 1.0 keeps them
+    as ``outcome_recorded``; ``outcome`` holds the task's codes."""
+    labels = getattr(t, 'outcome_recorded', None)
+    if labels is None or len(labels) != t.n_trials:
+        return np.full(t.n_trials, '', dtype=object)
+    return np.asarray(labels, dtype=str)
+
+
+def _newest_csv_time(folder: Path | None) -> datetime | None:
+    """When the session's newest CSV was last written."""
+    times = [f.stat().st_mtime for f in folder.glob('*.csv')] if folder is not None else []
+    return datetime.fromtimestamp(max(times)) if times else None
+
+
 def _record(animal_id: str, s, settings: TrackerSettings) -> dict:
     t = s.trials
     extra = getattr(t, 'extra', None) or {}
@@ -261,10 +283,10 @@ def _record(animal_id: str, s, settings: TrackerSettings) -> dict:
         group = 'training'
     else:
         group = 'experiment'
-    folder = Path(s.csv_path).parent if s.csv_path else None
+    folder = _session_folder(s)
     params = session_parameters(folder) if folder is not None else {}
-    outcome = np.asarray(getattr(t, 'outcome', np.array([])), dtype=str)
-    choice, category = np.asarray(t.choice, dtype=float), np.asarray(t.category, dtype=float)
+    outcome = _rig_outcome(t)
+    choice = np.asarray(t.choice, dtype=float)
     valid = np.asarray(t.valid_mask, dtype=bool)
     light = np.asarray(getattr(t, 'opto_on', np.zeros(len(choice))), dtype=bool)
     rec = {
@@ -274,10 +296,10 @@ def _record(animal_id: str, s, settings: TrackerSettings) -> dict:
         'rig': params.get('Rig_ID', ''),
         'test_run': _any_true(extra.get('Emulator')) or str(params.get('Agent_Sim', '')).lower() == 'true',
         'trials': len(choice), 'responded': int(valid.sum()),
-        'correct': int(np.sum(valid & (choice == category))),
+        'correct': int(np.sum(valid & np.asarray(t.correct, dtype=bool))),     # the task's score
         'no_response': int(np.sum(outcome == 'Abort')), 'early': int(np.sum(outcome == 'Early')),
         'light_trials': int(light.sum()),
-        'file_time': datetime.fromtimestamp(os.path.getmtime(s.csv_path)) if s.csv_path else None,
+        'file_time': _newest_csv_time(folder),
     }
     if group == 'early step':          # no response is asked for: not measured, rather than zero
         for key in ('responded', 'correct', 'no_response', 'early'):
