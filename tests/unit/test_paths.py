@@ -32,7 +32,7 @@ def test_snapshot_dir_follows_the_data_root(tmp_path, monkeypatch):
     from sound_categorisation.data.snapshot import default_output_path, snapshot_dir
     monkeypatch.setenv('SC_DATA_ROOT', str(tmp_path))
     assert snapshot_dir() == tmp_path / 'behaviour' / 'snapshots'
-    assert default_output_path() == tmp_path / 'behaviour' / 'snapshots' / 'sound_cat_snapshot.pkl'
+    assert default_output_path() == tmp_path / 'behaviour' / 'snapshots' / 'sound_cat_store'
     monkeypatch.delenv('SC_DATA_ROOT')
     monkeypatch.setattr(paths, '_on_cluster', lambda: False)        # a non-cluster machine, whatever its OS
     assert snapshot_dir() == paths.REPO_ROOT.parent.parent / 'data' / 'behaviour' / 'snapshots'

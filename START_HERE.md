@@ -89,8 +89,8 @@ install), use `sc-update --keep-behav-utils`: it installs everything else and le
 
 ### New sessions → snapshot (cluster)
 
-The snapshot is the pickled experiment every analysis reads. Export it after new sessions, or after
-changing column mappings in `config.yaml`:
+The snapshot is the experiment every analysis reads, saved as a behav_utils store (a folder of Parquet
+tables). Export it after new sessions, or after changing column mappings or `session_types` in `config.yaml`:
 
 ```bash
 load-env
@@ -214,7 +214,7 @@ A cohort member with no data yet is left out of the reports with a warning.
 |---|---|---|
 | raw sessions | `$BEHAV_DATA_DIR/Raw/<animal>/SOUND_CAT_<animal>_<Y>_<M>_<D>/` | not needed |
 | genotypes | `$BEHAV_DATA_DIR/Raw/animal_metadata.json` | in the snapshot |
-| snapshot | `$BEHAV_DATA_DIR/Processed/behaviour/snapshots/sound_cat_snapshot.pkl` | `<X>/data/behaviour/snapshots/` |
+| snapshot | `$BEHAV_DATA_DIR/Processed/behaviour/snapshots/sound_cat_store/` | `<X>/data/behaviour/snapshots/sound_cat_store/` |
 | SBI networks | `$BEHAV_DATA_DIR/Processed/snpe_networks/` | `<X>/data/snpe_networks/` |
 | synthetic cohorts | `$BEHAV_DATA_DIR/Processed/synthetic_cohorts/` | `<X>/data/synthetic_cohorts/` |
 | results | `$BEHAV_DATA_DIR/Processed/results/<report>/<cohort>/<run>/` | `<repo>/results/<report>/<cohort>/<run>/` |

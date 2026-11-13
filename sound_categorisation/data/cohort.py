@@ -57,17 +57,17 @@ def ensure_presets(config_path: Path | None = None) -> None:
 def load_experiment_any(config_path: Path | None = None, snapshot_path: Path | None = None):
     """Load the experiment: the snapshot if it exists, else the CSV loader via config.
 
-    ``snapshot_path`` defaults to ``<data root>/behaviour/snapshots/sound_cat_snapshot.pkl``
-    (``snapshot.snapshot_dir``; ``SC_DATA_ROOT`` overrides the data root), so a normal call needs
-    no argument. Without a snapshot the CSVs are loaded and the trials whose sound was never sent
-    are removed, as the export does, so both paths give the same trials. Raises a clear error
-    naming the snapshot path tried if neither source is available.
+    ``snapshot_path`` defaults to the store ``<data root>/behaviour/snapshots/sound_cat_store``
+    (``snapshot.default_output_path``; ``SC_DATA_ROOT`` overrides the data root), so a normal call
+    needs no argument. Without a snapshot the CSVs are loaded and the trials whose sound was never
+    sent are removed, as loading the snapshot does, so both paths give the same trials. Raises a clear
+    error naming the snapshot path tried if neither source is available.
     """
     config_path = Path(config_path) if config_path else REPO_ROOT / 'config.yaml'
     if snapshot_path is None:
         try:
-            from sound_categorisation.data.snapshot import SNAPSHOT_FILENAME, snapshot_dir
-            snapshot_path = snapshot_dir(REPO_ROOT) / SNAPSHOT_FILENAME
+            from sound_categorisation.data.snapshot import default_output_path
+            snapshot_path = default_output_path(REPO_ROOT)
         except Exception:
             snapshot_path = None
     snapshot_path = Path(snapshot_path) if snapshot_path else None
@@ -79,20 +79,20 @@ def load_experiment_any(config_path: Path | None = None, snapshot_path: Path | N
         return experiment
     if snapshot_path is not None:
         warnings.warn(f'no snapshot at {snapshot_path}; loading the CSVs instead (needs the raw data mounted; '
-                      f'silent trials are removed as at export)', stacklevel=2)
+                      f'silent trials are removed as when loading the snapshot)', stacklevel=2)
     if config_path.exists():
         try:
             return _load_csv_as_exported(config_path)
         except FileNotFoundError as exc:
             raise FileNotFoundError(
                 f'{exc}\n\nNo snapshot found either (looked for {snapshot_path}). '
-                f'Pass snapshot_path=/path/to/sound_cat_snapshot.pkl, or mount the raw '
-                f'data dir the config points to.') from None
+                f'Fetch it (sc-fetch snapshot), pass snapshot_path=/path/to/sound_cat_store, or mount '
+                f'the raw data dir the config points to.') from None
     raise FileNotFoundError(f'no snapshot at {snapshot_path!r} and no config at {config_path}')
 
 
 def _load_csv_as_exported(config_path: Path):
-    """The CSV loader plus the clean-up ``export_snapshot`` applies (``remove_silent_trials``)."""
+    """The CSV loader plus the clean-up loading the snapshot applies (``remove_silent_trials``)."""
     from behav_utils.config import load_config
 
     from sound_categorisation.data.snapshot import remove_silent_trials

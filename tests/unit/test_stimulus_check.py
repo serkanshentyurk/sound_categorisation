@@ -1,5 +1,5 @@
-"""data/stimulus_check + snapshot.remove_silent_trials: finding trials whose sound was never sent, and removing
-them at snapshot export.
+"""data/stimulus_check + snapshot: finding trials whose sound was never sent, keeping the check in the
+snapshot store and removing those trials when it is loaded.
 
 Driven by small synthetic Bonsai runs in tmp_path (a trial table, an epoch log and an event log per run): silent
 trials, logs cut off at the end (killed runs), file stamps a second apart, two runs in one folder (a restart), a
@@ -15,6 +15,7 @@ from behav_utils.config import load_config
 from behav_utils.data import load_experiment
 from sound_categorisation.data.snapshot import (
     SNAPSHOT_FORMAT_VERSION,
+    changes_since_0_10,
     export_snapshot,
     load_snapshot,
     remove_silent_trials,
@@ -205,16 +206,64 @@ def _write_config(tmp_path):
     return tmp_path / 'config.yaml'
 
 
-def test_export_removes_them_and_records_the_counts(tmp_path):
+def test_the_store_keeps_them_and_loading_removes_them(tmp_path):
+    pytest.importorskip('pyarrow')
     _write_run(tmp_path / 'data' / SESSION[0] / SESSION[1], silent=(2,))
     config = _write_config(tmp_path)
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')
-        out = export_snapshot(config, output_path=tmp_path / 'snap.pkl', verbose=False)
-        exp, meta = load_snapshot(out)[:2]
-    assert meta['format_version'] == SNAPSHOT_FORMAT_VERSION == 3
-    assert meta['stimulus_check']['removed'] == 1 and meta['n_trials_total'] == 6
+        out = export_snapshot(config, output_path=tmp_path / 'snap', verbose=False)
+        exp, meta = load_snapshot(out)
+    assert meta['format_version'] == SNAPSHOT_FORMAT_VERSION == 4
+    assert meta['stimulus_check']['silent'] == 1
+    assert meta['n_trials_total'] == 7                            # stored with the silent one
+    assert meta['removed_at_load']['removed'] == 1
     assert exp.animals['A1'].sessions[0].trials.n_trials == 6
+
+
+def test_a_store_loads_to_the_same_trials_and_history_as_the_csvs(tmp_path):
+    """A store rebuilds the lag-1 view from the trials it holds, so the silent trial is removed after
+    loading: the trial after it has no history, exactly as when the CSVs are loaded."""
+    pytest.importorskip('pyarrow')
+    from sound_categorisation.data.cohort import load_experiment_any
+    _write_run(tmp_path / 'data' / SESSION[0] / SESSION[1], silent=(2,))
+    config = _write_config(tmp_path)
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        stored, _ = load_snapshot(export_snapshot(config, output_path=tmp_path / 'snap', verbose=False))
+        fresh = load_experiment_any(config_path=config, snapshot_path=tmp_path / 'missing')
+    a, b = stored.animals['A1'].sessions[0].trials, fresh.animals['A1'].sessions[0].trials
+    for name in ('trial_number', 'stimulus', 'choice', 'prev_stimulus', 'prev_choice', 'prev_correct',
+                 'prev_has_prev'):
+        np.testing.assert_array_equal(np.asarray(getattr(a, name), dtype=float),
+                                      np.asarray(getattr(b, name), dtype=float), err_msg=name)
+    assert list(a.prev_has_prev) == [False, True, False, True, True, True]     # the silent trial's successor
+
+
+def test_a_pickle_snapshot_is_refused(tmp_path):
+    old = tmp_path / 'sound_cat_snapshot.pkl'
+    old.write_bytes(b'')
+    with pytest.raises(ValueError, match='pickle snapshot'):
+        load_snapshot(old)
+    with pytest.raises(ValueError, match='pickle snapshot'):
+        export_snapshot(tmp_path / 'config.yaml', output_path=old, verbose=False)
+
+
+def test_the_export_counts_where_1_0_can_differ(tmp_path):
+    rows = {'Trial_Number': [1, 2, 3, 4, 5, 6], 'Stim_Relative': [-0.5, 0.0, 0.5, np.nan, 0.3, -0.3],
+            'Choice': [0, 1, -1, 1, 1, 0]}
+    for day, n in (('23', 6), ('24', 2)):              # the 24th: one row left once the last is dropped
+        folder = tmp_path / 'data' / 'A1' / f'SOUND_CAT_A1_2026_5_{day}'
+        folder.mkdir(parents=True)
+        pd.DataFrame({k: v[:n] for k, v in rows.items()}).to_csv(folder / 'Trial_Summary_1.csv', index=False)
+    config = load_config(_write_config(tmp_path))
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        changes = changes_since_0_10(load_experiment(config), config)
+    assert changes['not_loaded'] == ['A1_20260524']     # min_trials_per_file, now also for one-file sessions
+    assert changes['boundary'] == 1 and changes['nan_stimulus'] == 1
+    assert changes['after_unscored'] == 2                         # after the no-response and the NaN stimulus
+    assert changes['recorded_disagrees'] == 0                     # no recorded correct column mapped
 
 
 def test_csv_fallback_removes_them_too(tmp_path):

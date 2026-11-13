@@ -34,8 +34,8 @@ def test_fetch_snapshot_mirrors_the_cluster_layout(laptop):
     cmd = fetch.command('snapshot')
     assert cmd[:2] == ['rsync', '-av'] and cmd[2:4] == ['-e', 'ssh -J someone@ssh.swc.ucl.ac.uk']
     assert cmd[-2] == ('someone@hpc-gw2:/ceph/akrami/Someone/Head_Fixed_Behavior/Data/Processed/'
-                       'behaviour/snapshots/sound_cat_snapshot.pkl')
-    assert cmd[-1] == f'{laptop}/data/behaviour/snapshots/'
+                       'behaviour/snapshots/sound_cat_store/')        # a store: the folder's contents
+    assert cmd[-1] == f'{laptop}/data/behaviour/snapshots/sound_cat_store/'
 
 
 def test_fetch_goes_through_the_login_node_in_swc_node(laptop, monkeypatch):

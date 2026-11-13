@@ -18,7 +18,7 @@ data/
   cohort.py          load_experiment_any (snapshot or CSV), gather_genotypes, ensure_presets,
                      collect_sessions_ppc / collect_sessions_alm (the per-animal session sets a design compares),
                      AnimalRecord + load_animals (real or synthetic animals for model identification)
-  snapshot.py        export/load the pickled experiment; re-applies session types and presets from config
+  snapshot.py        export/load the snapshot store; silent trials removed when loading; presets from config
   stimuli.py         Hard-A / Hard-B densities, normative PSE at a given sigma, stimulus sampling
   paths.py           every path: on the cluster all under $BEHAV_DATA_DIR (Raw, Processed, Processed/results),
                      on a laptop <repo>/../../data and <repo>/results; run ids, latest, build_metadata;
@@ -141,7 +141,8 @@ future `40` would cross opto effects with the BE/SC calls once the real consensu
 
 ## Conventions
 - Verbs: `load_`, `select_`, `filter_`, `compute_`, `plot_`; results are typed; plotters draw only.
-- CSV/JSON on disk for anything a human or notebook reads; pickle only for the snapshot and networks.
+- CSV/JSON on disk for anything a human or notebook reads; the snapshot is a behav_utils store (Parquet);
+  pickle only for networks and model-identification results.
 - British English; line length 110; `ruff` clean; CI runs `tests/unit`, `tests/e2e`, `tests/fit` and the notebooks
   on synthetic runs; the library's own CI runs in its repository.
 - Tests live in `tests/{unit,e2e,fit}` and write only to `tmp_path`; validation runs (synthetic cohorts,

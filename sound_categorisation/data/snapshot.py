@@ -1,29 +1,36 @@
 """
-Experiment Snapshot Export / Import
+Experiment snapshot: export and load
 
-Usage (export — on cluster):
+Usage (export, on the cluster, where the raw data are):
     sc-export-snapshot
 
-Usage (load — in notebooks):
+Usage (load, in notebooks):
     from sound_categorisation.data.snapshot import load_snapshot
     experiment, meta = load_snapshot(PATH_SNAPSHOT)
 
-Export removes trials whose sound was never sent (data/stimulus_check.py); see remove_silent_trials.
+The snapshot is a behav_utils store (1.0): a folder of Parquet tables and JSON that reloads exactly. It keeps
+every loaded trial, each with its stimulus check in ``trials.extra['stimulus_check']``, and loading removes
+the trials whose sound was never sent (data/stimulus_check.py; apply_stimulus_check). Removal waits until
+loading because a store rebuilds the lag-1 view from the trials it holds: removed at export, the trial after a
+silent one would get the trial before the silent one as its predecessor instead of no history.
+
+The export also reports where behav_utils 1.0 can give another number than 0.10 did on these data
+(changes_since_0_10); all zero means no statistic moved for those reasons.
 """
 
 import hashlib
-import pickle
+import json
 import warnings
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Dict, Tuple, Union
 
-# 2: trials whose sound was never sent are removed at export (remove_silent_trials). Snapshots of
-# version 1 still contain them, so load_snapshot refuses them and asks for a re-export.
-# 3: exported with behav_utils 1.0. A version-2 snapshot holds behav_utils 0.10 objects, which unpickle
-# under 1.0 without their new fields (outcome codes, the recorded columns, source), so it is refused too.
-SNAPSHOT_FORMAT_VERSION = 3
-SNAPSHOT_FILENAME = 'sound_cat_snapshot.pkl'
+# 2: trials whose sound was never sent are removed at export (a pickle).
+# 3: the same pickle, written with behav_utils 1.0.
+# 4: a behav_utils store: every trial kept with its stimulus check; silent trials are removed when loading.
+#    Pickles (formats 2 and 3) are refused: export again.
+SNAPSHOT_FORMAT_VERSION = 4
+SNAPSHOT_NAME = 'sound_cat_store'
 
 
 def snapshot_dir(repo_root: Path | None = None) -> Path:
@@ -39,7 +46,8 @@ def snapshot_dir(repo_root: Path | None = None) -> Path:
 
 
 def default_output_path(repo_root: Path | None = None) -> Path:
-    return snapshot_dir(repo_root) / SNAPSHOT_FILENAME
+    """The snapshot store: ``<data root>/behaviour/snapshots/sound_cat_store`` (a folder)."""
+    return snapshot_dir(repo_root) / SNAPSHOT_NAME
 
 
 def _config_hash(config_path: Union[str, Path]) -> str:
@@ -56,10 +64,26 @@ def _get_behav_utils_version() -> str:
 
 
 def _session_summary(experiment) -> Dict[str, int]:
-    return {
-        aid: animal.n_sessions
-        for aid, animal in experiment.animals.items()
-    }
+    """Number of sessions per animal."""
+    return {aid: len(animal.sessions) for aid, animal in sorted(experiment.animals.items())}
+
+
+def _refuse_pickle(path: Path) -> None:
+    if path.suffix == '.pkl' or path.is_file():
+        raise ValueError(f'{path} is a pickle snapshot, which this code no longer reads (behav_utils 1.0 '
+                         f'cannot open it reliably). Export the store with sc-export-snapshot (it goes to '
+                         f'<data root>/behaviour/snapshots/{SNAPSHOT_NAME}), or fetch it with '
+                         f'sc-fetch snapshot.')
+
+
+def read_snapshot_metadata(path: Union[str, Path]) -> Dict:
+    """What export_snapshot recorded, read from the store's store.json without loading any trials."""
+    path = Path(path)
+    _refuse_pickle(path)
+    info = path / 'store.json'
+    if not info.is_file():
+        raise FileNotFoundError(f'no snapshot store at {path}: run sc-export-snapshot, or sc-fetch snapshot')
+    return dict(json.loads(info.read_text()).get('experiment_metadata') or {})
 
 
 def _rows_as_loaded(session, config):
@@ -106,26 +130,18 @@ def _rows_as_loaded(session, config):
     return np.concatenate(checked), np.concatenate(stimulus)
 
 
-def remove_silent_trials(experiment, config, verbose: bool = True) -> Dict:
+def attach_stimulus_check(experiment, config, verbose: bool = True) -> Dict:
     """
-    Remove, in place, every trial whose sound was never sent (data/stimulus_check.py).
+    Check every trial's sound (data/stimulus_check.py) and keep the result in
+    ``trials.extra['stimulus_check']``: 1 sent, 0 never sent, NaN cannot tell. Removes nothing; see
+    apply_stimulus_check. A session whose files do not line up with its loaded trials (same number of rows,
+    same Stim_Relative row for row, compared in CSV units: ``trials.stimulus_raw``) gets no check, with a
+    warning, and so keeps every trial.
 
-    The trial after a removed one loses its lag-1 history (``prev_has_prev`` False, prev values NaN): its
-    predecessor's Stim_Relative was left over from an earlier trial and nothing was heard. A removed trial
-    that was also an abort was never anyone's predecessor (aborts are skipped), so it changes no history.
-    Trials that cannot be checked are kept; every remaining trial carries the result in
-    ``trials.extra['stimulus_check']`` (1 sent, NaN cannot tell). A session whose files do not line up with
-    its loaded trials (same number of rows, same Stim_Relative row for row, compared in CSV units:
-    ``trials.stimulus_raw``) is left as it is, with a warning.
-
-    Returns the counts export_snapshot stores in the snapshot metadata: ``removed`` and ``unchecked``
-    totals, ``per_session`` counts and the ``not_aligned`` session ids.
+    Returns ``silent`` and ``unchecked`` totals, ``per_session`` counts and the ``not_aligned`` session ids.
     """
     import numpy as np
-    from behav_utils.data import filter_trial_data
 
-    prev_values = ('prev_stimulus', 'prev_choice', 'prev_correct', 'prev_category', 'prev_reaction_time',
-                   'prev_opto_on')
     per_session, not_aligned = {}, []
     for animal in experiment.animals.values():
         for session in animal.sessions:
@@ -142,7 +158,48 @@ def remove_silent_trials(experiment, config, verbose: bool = True) -> Dict:
                               f'no trials removed', stacklevel=2)
                 not_aligned.append(session.session_id)
                 continue
-            silent = checked == 0
+            t.extra['stimulus_check'] = checked
+            per_session[session.session_id] = {'silent': int(np.sum(checked == 0)),
+                                               'unchecked': int(np.isnan(checked).sum())}
+    summary = {
+        'silent': sum(c['silent'] for c in per_session.values()),
+        'unchecked': sum(c['unchecked'] for c in per_session.values()),
+        'per_session': per_session,
+        'not_aligned': not_aligned,
+    }
+    if verbose:
+        print(f"Sound check: {summary['silent']} trials whose sound was never sent (removed when loading); "
+              f"{summary['unchecked']} could not be checked (kept)"
+              + (f'; {len(not_aligned)} sessions could not be lined up (left as loaded)'
+                 if not_aligned else ''))
+    return summary
+
+
+def apply_stimulus_check(experiment, verbose: bool = False) -> Dict:
+    """
+    Remove, in place, every trial whose stored stimulus check says its sound was never sent.
+
+    The trial after a removed one loses its lag-1 history (``prev_has_prev`` False, prev values NaN): its
+    predecessor's Stim_Relative was left over from an earlier trial and nothing was heard. A removed trial
+    that was also an abort was never anyone's predecessor (aborts are skipped), so it changes no history.
+    Sessions without a stored check are left as they are. Returns the ``removed`` total and ``per_session``
+    counts.
+    """
+    import numpy as np
+    from behav_utils.data import filter_trial_data
+
+    prev_values = ('prev_stimulus', 'prev_choice', 'prev_correct', 'prev_category', 'prev_reaction_time',
+                   'prev_opto_on')
+    per_session = {}
+    for animal in experiment.animals.values():
+        for session in animal.sessions:
+            t = session.trials
+            checked = (t.extra or {}).get('stimulus_check')
+            if checked is None or len(checked) != t.n_trials:
+                continue
+            silent = np.asarray(checked, dtype=float) == 0
+            if not silent.any():
+                continue
             # A trial's predecessor is the latest earlier non-abort trial (behav_utils' lag-1 rule).
             lose_history = np.zeros(t.n_trials, dtype=bool)
             last = -1
@@ -155,63 +212,146 @@ def remove_silent_trials(experiment, config, verbose: bool = True) -> Dict:
                 t.prev_has_prev = np.where(lose_history, False, t.prev_has_prev)
                 for name in prev_values:
                     setattr(t, name, np.where(lose_history, np.nan, getattr(t, name)))
-            t.extra['stimulus_check'] = checked
-            if silent.any():
-                session.trials = filter_trial_data(t, ~silent, clear_flags=False)
-            per_session[session.session_id] = {'removed': int(silent.sum()),
-                                               'unchecked': int(np.isnan(checked).sum())}
-    summary = {
-        'removed': sum(c['removed'] for c in per_session.values()),
-        'unchecked': sum(c['unchecked'] for c in per_session.values()),
-        'per_session': per_session,
-        'not_aligned': not_aligned,
-    }
+            session.trials = filter_trial_data(t, ~silent, clear_flags=False)
+            per_session[session.session_id] = int(silent.sum())
+    summary = {'removed': sum(per_session.values()), 'per_session': per_session}
     if verbose:
-        print(f"Sound check: removed {summary['removed']} trials whose sound was never sent; "
-              f"{summary['unchecked']} could not be checked (kept)"
-              + (f"; {len(not_aligned)} sessions could not be lined up (left as loaded)" if not_aligned else ''))
+        print(f"Sound check: removed {summary['removed']} trials whose sound was never sent")
     return summary
 
+
+def remove_silent_trials(experiment, config, verbose: bool = True) -> Dict:
+    """
+    Check every trial's sound and remove, in place, the trials whose sound was never sent: attach then apply,
+    what a fresh CSV load needs to match the snapshot. Every remaining trial carries its check in
+    ``trials.extra['stimulus_check']`` (1 sent, NaN cannot tell).
+
+    Returns ``removed`` and ``unchecked`` totals, ``per_session`` counts and the ``not_aligned`` session ids.
+    """
+    attached = attach_stimulus_check(experiment, config, verbose=False)
+    applied = apply_stimulus_check(experiment)
+    summary = {
+        'removed': applied['removed'],
+        'unchecked': attached['unchecked'],
+        'per_session': {sid: {'removed': c['silent'], 'unchecked': c['unchecked']}
+                        for sid, c in attached['per_session'].items()},
+        'not_aligned': attached['not_aligned'],
+    }
+    if verbose:
+        not_aligned = summary['not_aligned']
+        print(f"Sound check: removed {summary['removed']} trials whose sound was never sent; "
+              f"{summary['unchecked']} could not be checked (kept)"
+              + (f'; {len(not_aligned)} sessions could not be lined up (left as loaded)'
+                 if not_aligned else ''))
+    return summary
+
+
+# ── where behav_utils 1.0 can differ from 0.10 ───────────────────────────────
+
+_CHANGES = {
+    'not_loaded': 'sessions found but not loaded (min_trials_per_file now drops a short only file)',
+    'boundary': 'trials with the stimulus on the boundary (scored by the task)',
+    'nan_stimulus': 'trials with a NaN stimulus (no category, no score)',
+    'after_unscored': 'trials after a trial without a score (prev_correct NaN; was 0 after a no-response)',
+    'recorded_disagrees': "trials where the rig's Correct disagrees with the task's score",
+}
+
+
+def _recorded_disagreements(t) -> int:
+    """Scored trials whose recorded correct column says otherwise (0 when none is mapped)."""
+    import numpy as np
+    import pandas as pd
+    from behav_utils.tasks import Outcome
+
+    recorded = getattr(t, 'correct_recorded', None)
+    if recorded is None or len(recorded) != t.n_trials:
+        return 0
+    recorded = pd.to_numeric(pd.Series(np.asarray(recorded, dtype=object)), errors='coerce')
+    recorded = recorded.to_numpy(dtype=float)
+    codes = np.asarray(t.outcome)
+    scored = (codes == Outcome.CORRECT) | (codes == Outcome.ERROR)
+    known = scored & ~np.isnan(recorded)
+    return int(np.sum(known & ((recorded == 1) != np.asarray(t.correct, dtype=bool))))
+
+
+def changes_since_0_10(experiment, config) -> Dict:
+    """
+    Where behav_utils 1.0 can give another number than 0.10 did on these data (the changes its changelog marks
+    with a triangle): sessions the reader finds but loading drops, trials with the stimulus on the boundary or
+    NaN, trials after a trial without a score, and trials where the rig's recorded score disagrees with the
+    task's. All zero means no statistic can have moved for these reasons.
+
+    Returns the totals (``not_loaded`` lists session ids) and ``per_session`` counts where any is non-zero.
+    """
+    import numpy as np
+    from behav_utils.data import discover_sessions
+
+    loaded = {s.session_id for a in experiment.animals.values() for s in a.sessions}
+    try:
+        found = discover_sessions(config, peek=False)
+        found = found[~found['ignored'].astype(bool)]
+        not_loaded = sorted(set(found['session_id']) - loaded)
+    except Exception as e:                          # listing is a courtesy; the export does not depend on it
+        not_loaded = [f'(could not list the sessions: {type(e).__name__}: {e})']
+    totals = {'boundary': 0, 'nan_stimulus': 0, 'after_unscored': 0, 'recorded_disagrees': 0}
+    per_session = {}
+    for animal in experiment.animals.values():
+        for s in animal.sessions:
+            t = s.trials
+            stimulus = np.asarray(t.stimulus, dtype=float)
+            kept = ~np.asarray(t.abort, dtype=bool)
+            boundary = float(getattr(s.task, 'boundary', 0.0) or 0.0)
+            counts = {
+                'boundary': int(np.sum(kept & (stimulus == boundary))),
+                'nan_stimulus': int(np.sum(kept & np.isnan(stimulus))),
+                'after_unscored': int(np.sum(np.asarray(t.prev_has_prev, dtype=bool)
+                                             & np.isnan(np.asarray(t.prev_correct, dtype=float)))),
+                'recorded_disagrees': _recorded_disagreements(t),
+            }
+            for k, v in counts.items():
+                totals[k] += v
+            if any(counts.values()):
+                per_session[s.session_id] = {k: v for k, v in counts.items() if v}
+    return {'not_loaded': not_loaded, **totals, 'per_session': per_session}
+
+
+def _print_changes(changes: Dict) -> None:
+    print('Where behav_utils 1.0 can differ from 0.10 on these data (0 = it cannot have moved a number):')
+    for key, label in _CHANGES.items():
+        value = changes[key]
+        n = len(value) if isinstance(value, list) else value
+        extra = ''
+        if isinstance(value, list) and value:
+            extra = '  ' + ', '.join(value[:8]) + (' …' if len(value) > 8 else '')
+        print(f'  {n:>7}  {label}{extra}')
+
+
+# ── export and load ──────────────────────────────────────────────────────────
 
 def export_snapshot(
     config_path: Union[str, Path],
     output_path: Union[str, Path] | None = None,
     verbose: bool = True,
 ) -> Path:
-    """Load data from CSV via config, save as versioned snapshot."""
+    """Load every session from the raw CSVs via the config, attach the stimulus check and save the store
+    (replacing an existing one). Returns the store's path."""
     from behav_utils.config import load_config
     from behav_utils.data import load_experiment
 
     config_path = Path(config_path)
-
-    if output_path is None:
-        output_path = default_output_path()
-    else:
-        output_path = Path(output_path)
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
+    output_path = Path(output_path) if output_path is not None else default_output_path()
+    _refuse_pickle(output_path)
     if verbose:
         print(f'Loading from config: {config_path}')
-
     config = load_config(str(config_path))
     experiment = load_experiment(config)
-    stimulus_check = remove_silent_trials(experiment, config, verbose=verbose)
+    stimulus_check = attach_stimulus_check(experiment, config, verbose=verbose)
+    changes = changes_since_0_10(experiment, config)
+    if verbose:
+        _print_changes(changes)
 
-    # Clean ALL config references
-    experiment.config = None
-    for animal in experiment.animals.values():
-        if hasattr(animal, '_config'):
-            animal._config = None
-
-    # Build metadata
     session_counts = _session_summary(experiment)
-    total_sessions = sum(session_counts.values())
-    total_trials = 0
-    for animal in experiment.animals.values():
-        for session in animal.sessions:
-            total_trials += session.n_trials
-
+    total_trials = sum(s.n_trials for a in experiment.animals.values() for s in a.sessions)
     meta = {
         'format_version': SNAPSHOT_FORMAT_VERSION,
         'exported_at': datetime.now(UTC).isoformat(),
@@ -220,27 +360,26 @@ def export_snapshot(
         'data_dir': str(config.reader.data_dir),
         'behav_utils_version': _get_behav_utils_version(),
         'n_animals': experiment.n_animals,
-        'n_sessions_total': total_sessions,
+        'n_sessions_total': sum(session_counts.values()),
         'n_trials_total': total_trials,
         'session_counts': session_counts,
         'animal_ids': sorted(experiment.animals.keys()),
         'stimulus_check': stimulus_check,
+        'changes_since_0_10': changes,
     }
+    experiment.metadata.update(meta)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    experiment.save(output_path, overwrite=True)
 
-    snapshot = {'experiment': experiment, 'metadata': meta}
-    with open(output_path, 'wb') as f:
-        pickle.dump(snapshot, f, protocol=pickle.HIGHEST_PROTOCOL)
-
-    size_mb = output_path.stat().st_size / 1e6
     if verbose:
+        size_mb = sum(f.stat().st_size for f in output_path.rglob('*') if f.is_file()) / 1e6
         print('Exported snapshot:')
         print(f'  Animals:  {meta["n_animals"]}')
-        print(f'  Sessions: {total_sessions}')
-        print(f'  Trials:   {total_trials}')
+        print(f'  Sessions: {meta["n_sessions_total"]}')
+        print(f'  Trials:   {total_trials} (silent ones included; removed when loading)')
         print(f'  Config:   {meta["config_hash"]}')
         print(f'  Size:     {size_mb:.1f} MB')
         print(f'  Saved to: {output_path}')
-
     return output_path
 
 
@@ -249,64 +388,39 @@ def load_snapshot(
     config_path: Union[str, Path] | None = None,
     warn_age_hours: float = 72,
 ) -> Tuple:
-    """Load a snapshot, with staleness and version checks."""
+    """Load the snapshot store, with version, age and config checks, and remove the trials whose sound was
+    never sent. Returns ``(experiment, meta)``; ``meta['removed_at_load']`` counts the removed trials."""
+    from behav_utils.data import ExperimentData
+
     path = Path(path)
-    if not path.exists():
-        raise FileNotFoundError(f'Snapshot not found: {path}')
-
-    with open(path, 'rb') as f:
-        try:
-            snapshot = pickle.load(f)
-        except Exception as e:
-            raise ValueError(
-                f'Failed to unpickle snapshot. This usually means '
-                f'behav_utils data classes changed since export. '
-                f'Re-export from CSV.\nOriginal error: {e}'
-            ) from e
-
-    if not isinstance(snapshot, dict) or 'experiment' not in snapshot:
-        raise ValueError(
-            'Not a valid snapshot file. Re-export with '
-            'sc-export-snapshot.'
-        )
-
-    meta = snapshot.get('metadata', {})
+    meta = read_snapshot_metadata(path)
     if meta.get('format_version', 0) != SNAPSHOT_FORMAT_VERSION:
         raise ValueError(f"Snapshot format {meta.get('format_version', 0)}, this code reads "
                          f"{SNAPSHOT_FORMAT_VERSION} (behav_utils {meta.get('behav_utils_version', '?')} wrote it). "
                          f'Re-export with sc-export-snapshot.')
+    experiment = ExperimentData.load(path)
 
-    experiment = snapshot['experiment']
-
-    # Staleness warning
     exported_at = meta.get('exported_at', '')
     if exported_at:
         try:
-            export_time = datetime.fromisoformat(exported_at)
-            age_hours = (datetime.now(UTC) - export_time).total_seconds() / 3600
+            age_hours = (datetime.now(UTC) - datetime.fromisoformat(exported_at)).total_seconds() / 3600
             if age_hours > warn_age_hours:
-                warnings.warn(
-                    f'Snapshot is {age_hours:.0f}h old '
-                    f'(exported {exported_at}). '
-                    f'Re-export if new sessions have been collected.',
-                    stacklevel=2,
-                )
+                warnings.warn(f'Snapshot is {age_hours:.0f}h old (exported {exported_at}). '
+                              f'Re-export if new sessions have been collected.', stacklevel=2)
         except (ValueError, TypeError):
             pass
 
-    # Config hash check
     if config_path is not None:
         config_path = Path(config_path)
         if config_path.exists():
-            current_hash = _config_hash(config_path)
             export_hash = meta.get('config_hash', '')
-            if export_hash and current_hash != export_hash:
+            if export_hash and _config_hash(config_path) != export_hash:
                 warnings.warn(
                     'config.yaml has changed since the snapshot was exported; re-export it if column '
                     'mappings or session_types changed (session types are set when the data are loaded).',
                     stacklevel=2,
                 )
-            # Presets live in the config, not the pickle: register them for select_sessions. Session types
+            # Presets live in the config, not the store: register them for select_sessions. Session types
             # were applied when the experiment was loaded for export (1.0 keeps that step private).
             from behav_utils.config import load_config
             from behav_utils.data import register_presets_from_config
@@ -314,10 +428,12 @@ def load_snapshot(
             if cfg.session_presets:
                 register_presets_from_config({'session_presets': cfg.session_presets})
 
+    meta['removed_at_load'] = apply_stimulus_check(experiment)
     print(
         f'Loaded snapshot: {meta.get("n_animals", "?")} animals, '
         f'{meta.get("n_sessions_total", "?")} sessions '
-        f'(exported {exported_at[:10] if exported_at else "unknown"})'
+        f'(exported {exported_at[:10] if exported_at else "unknown"}); '
+        f'{meta["removed_at_load"]["removed"]} trials whose sound was never sent removed'
     )
     return experiment, meta
 
@@ -326,14 +442,11 @@ def check_staleness(
     snapshot_path: Union[str, Path],
     config_path: Union[str, Path],
 ) -> Dict:
-    """Compare snapshot contents against current CSV data on disk."""
+    """Compare the snapshot's sessions per animal with what the raw data hold now."""
     from behav_utils.config import load_config
     from behav_utils.data import load_experiment
 
-    with open(snapshot_path, 'rb') as f:
-        snapshot = pickle.load(f)
-    snap_counts = snapshot['metadata']['session_counts']
-
+    snap_counts = read_snapshot_metadata(snapshot_path)['session_counts']
     config = load_config(str(config_path))
     experiment = load_experiment(config)
     current_counts = _session_summary(experiment)

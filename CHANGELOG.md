@@ -3,6 +3,19 @@
 
 ## Unreleased
 
+- **The snapshot is a behav_utils store** (format 4): `<data root>/behaviour/snapshots/sound_cat_store/`, a folder
+  of Parquet tables and JSON, written by `sc-export-snapshot` and copied by `sc-fetch snapshot`. Pickles
+  (formats 2 and 3) are refused: export again on the cluster.
+  - The store keeps every loaded trial with its stimulus check (`trials.extra['stimulus_check']`), and
+    `load_snapshot` removes the trials whose sound was never sent. Removal waits until loading because a store
+    rebuilds the lag-1 view from the trials it holds: removed at export, the trial after a silent one would get
+    the trial before it as its predecessor instead of no history. A loaded store gives the same trials and history
+    as the CSV path (`load_experiment_any` without a snapshot); a test checks this.
+  - `snapshot.attach_stimulus_check` / `apply_stimulus_check` split what `remove_silent_trials` does (it still does
+    both, for the CSV path); `read_snapshot_metadata` reads what the export recorded without loading trials.
+  - The export prints, and records as `changes_since_0_10`, where behav_utils 1.0 can give another number than
+    0.10 did on these data: sessions found but not loaded, trials on the boundary or with a NaN stimulus, trials
+    after one without a score, and trials whose recorded Correct disagrees with the task's score.
 - **behav_utils 1.0** (pyproject: `behav_utils[store] @ …@v1.0.0`, Python ≥ 3.11; CI on 3.11 and 3.12).
   - `config.yaml`: `reader:` (csv_folders) replaces `file_structure:` (`animal_pattern`, `session_pattern`,
     `date_format` gone; `merge_files` and `min_trials_per_file` now written out); `task.b_side: positive` replaces

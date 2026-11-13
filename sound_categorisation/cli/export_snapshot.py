@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
 Export the experiment snapshot: read every session's CSVs (the raw data, $BEHAV_DATA_DIR/Raw) and save
-the pickled experiment the analyses load, at <data root>/behaviour/snapshots/sound_cat_snapshot.pkl.
-Run it on the cluster, where the raw data is.
+the experiment the analyses load as a behav_utils store (a folder of Parquet tables and JSON), at
+<data root>/behaviour/snapshots/sound_cat_store. Run it on the cluster, where the raw data is. It also
+prints where behav_utils 1.0 can give another number than 0.10 did on these data.
 
     sc-export-snapshot
     sc-export-snapshot --check-only
-    sc-export-snapshot --config other.yaml --output /some/path.pkl
+    sc-export-snapshot --config other.yaml --output /some/folder
 """
 
 import argparse
@@ -27,7 +28,7 @@ def main(argv=None):
     parser.add_argument('--config', type=str, default=None,
                         help='config YAML (default: config.yaml at the repo root)')
     parser.add_argument('--output', type=str, default=None,
-                        help='output path (default: <data root>/behaviour/snapshots/sound_cat_snapshot.pkl)')
+                        help='output folder (default: <data root>/behaviour/snapshots/sound_cat_store)')
     parser.add_argument('--check-only', action='store_true',
                         help='Compare existing snapshot against current data')
     args = parser.parse_args(argv)

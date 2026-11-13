@@ -55,7 +55,7 @@ Common options: `--cohort` (default `opto1-cohort`), `--snapshot`, `--config`, `
 
 | command | computes | inputs | writes | time |
 |---|---|---|---|---|
-| `sc-export-snapshot [--check-only]` | the pickled experiment every analysis loads (run it on the cluster) | the session CSVs in `$BEHAV_DATA_DIR/Raw`, via `config.yaml` | `<data root>/behaviour/snapshots/sound_cat_snapshot.pkl` | minutes |
+| `sc-export-snapshot [--check-only]` | the experiment every analysis loads, as a behav_utils store (run it on the cluster) | the session CSVs in `$BEHAV_DATA_DIR/Raw`, via `config.yaml` | `<data root>/behaviour/snapshots/sound_cat_store/` | minutes |
 | `sc-make-synthetic-cohort --distribution D [--name N] [--n-per-model K]` | a synthetic cohort with known BE/SC ground truth | — | `<data root>/synthetic_cohorts/<name>.pkl` | seconds |
 | `sc-new-run --report R --cohort C [--fast] [--label L]` | an empty run directory (+ `logs/`), prints the id | — | `<R>/<C>/<run_id>/` | instant |
 | `sc-make-synthetic-run --results DIR --data DIR [--no-model-id]` | synthetic opto, switch and model-identification runs in the real layout, for the notebooks and CI | — | `DIR/opto_contrasts/synthetic/…`, `switch_adaptation/synthetic/…`, `light_artefact/synthetic/…`, `model_identification/synthetic_uniform/…` | minutes |

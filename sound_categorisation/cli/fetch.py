@@ -23,11 +23,11 @@ import sys
 from pathlib import Path
 
 from sound_categorisation.data.paths import SWC_GATEWAY, cluster_data_root, data_root, results_root, swc_node
-from sound_categorisation.data.snapshot import SNAPSHOT_FILENAME
+from sound_categorisation.data.snapshot import SNAPSHOT_NAME
 
 # What can be fetched: name -> (where it lives, sub-path, is it one file). Add a line to add a target.
 TARGETS = {
-    'snapshot':  ('data', f'behaviour/snapshots/{SNAPSHOT_FILENAME}', True),
+    'snapshot':  ('data', f'behaviour/snapshots/{SNAPSHOT_NAME}', False),     # a store: a folder
     'networks':  ('data', 'snpe_networks', False),
     'synthetic': ('data', 'synthetic_cohorts', False),
     'results':   ('results', '', False),
