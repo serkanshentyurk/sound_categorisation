@@ -44,7 +44,8 @@ behaviour/
                      BiasRule, session_bias_checks (per session), flag_biased_sessions (per animal)
   daily_tracker.py   DailyTracker: per-day rows, condition summaries (pooled and mean, light separately),
                      flags, move-on marks; settings from config.yaml's custom.daily_tracker block
-models/              BE (boundary-estimation) and SC (statistical-categorisation) generative models
+models/              BE (boundary-estimation) and SC (statistical-categorisation) generative models;
+                     (simulate.py: as behav_utils models, BoundaryEstimation and StatisticalCategorisation)
 inference/           amortised SBI (types, simulator, representation, selection, amortised),
                      grid_search (CV over model parameters, held-out UM / conditional-psychometric MSE),
                      cv_utils (CV result schema), fold_utils (block-aware folds), consensus (GS + SBI votes),

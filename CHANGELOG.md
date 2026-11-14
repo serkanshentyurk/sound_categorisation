@@ -3,6 +3,18 @@
 
 ## Unreleased
 
+- **BE and SC as behav_utils models** (`models/simulate.py`): `BoundaryEstimation` and
+  `StatisticalCategorisation` subclass `behav_utils.models.Model`, so behav_utils' `simulate`,
+  `simulate_responses` and synthetic generators run them; `make_model('be' | 'sc' | ModelType, params)` builds
+  one. They stay in this project (behav_utils is model-agnostic) and wrap the unchanged cores. A run draws one
+  seed from its rng and is then `simulate_choices` with it, so every simulation is what it was: the same SBI
+  training sets, synthetic cohorts and calibration runs, and the trained networks stay valid (checked value
+  for value; tests pin it).
+  `laser_blocks_update=True` stops learning on laser trials (off by default: the laser is ignored, as before).
+  - `inference.simulator.simulate_sessions` runs each session through behav_utils' `simulate` on a `Design`.
+  - `data.stimuli.RigDistribution('Uniform' | 'Hard-A' | 'Hard-B')`: the rig's distributions as a behav_utils
+    `StimulusDistribution`, for `make_design` and the synthetic generators.
+  - The cores' `make_simulator`, written for 0.10's `generate_synthetic_animal(simulator=...)`, is gone.
 - **The snapshot is a behav_utils store** (format 4): `<data root>/behaviour/snapshots/sound_cat_store/`, a folder
   of Parquet tables and JSON, written by `sc-export-snapshot` and copied by `sc-fetch snapshot`. Pickles
   (formats 2 and 3) are refused: export again on the cluster.

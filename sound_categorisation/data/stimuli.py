@@ -19,7 +19,8 @@ distance 0.378), which is not what this rig plays; normative PSEs computed with 
 25 % too small.
 
 Sampling is exact (inverse CDF), so it needs no rejection loop. Every function takes ``rate`` if
-a different rig setting has to be modelled.
+a different rig setting has to be modelled. ``RigDistribution`` is the same three distributions as a
+behav_utils ``StimulusDistribution``, for ``make_design`` and the synthetic generators.
 
 Usage:
     from sound_categorisation.data.stimuli import sample_distribution, compute_normative_pse
@@ -28,9 +29,11 @@ Usage:
     compute_normative_pse('hard_a', sigma_percep=0.2)    # ≈ +0.078
 """
 
+from dataclasses import dataclass
 from typing import Dict, Tuple
 
 import numpy as np
+from behav_utils.tasks import StimulusDistribution
 from scipy.integrate import quad
 from scipy.optimize import brentq
 from scipy.stats import norm
@@ -175,6 +178,37 @@ def compute_distribution_density(
         )
 
     return {'s': s_arr, 'density_a': p_a, 'density_b': p_b}
+
+
+_NAMES = ('uniform', 'hard_a', 'hard_b')
+
+
+@dataclass(frozen=True)
+class RigDistribution(StimulusDistribution):
+    """One of the rig's distributions as a behav_utils ``StimulusDistribution`` (stimuli on [-1, 1], boundary
+    at 0): ``name`` is 'Uniform', 'Hard-A' or 'Hard-B', as ``sample_distribution`` takes it. ``sample`` is
+    ``sample_distribution``'s draw; ``pdf`` gives both categories equal weight, as the rig's coin flip does.
+
+        make_design(TwoAFC(), RigDistribution('Hard-A'), 300, rng=rng)
+    """
+    name: str = 'Uniform'
+    rate: float = HARD_EXP_RATE
+
+    def __post_init__(self):
+        if self.name.lower().replace('-', '_').replace(' ', '_') not in _NAMES:
+            raise ValueError(f'RigDistribution: unknown distribution {self.name!r} '
+                             f'(Uniform, Hard-A or Hard-B)')
+
+    @property
+    def support(self) -> tuple:
+        return (-1.0, 1.0)
+
+    def sample(self, n: int, rng: np.random.Generator) -> np.ndarray:
+        return sample_distribution(n, self.name, rng=rng, rate=self.rate)[0]
+
+    def pdf(self, x) -> np.ndarray:
+        density = compute_distribution_density(self.name, x, rate=self.rate)
+        return 0.5 * (density['density_a'] + density['density_b'])
 
 
 def compute_normative_pse(

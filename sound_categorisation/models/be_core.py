@@ -565,21 +565,6 @@ class BEModel:
         return choices, p_B, final_state, history
 
 
-    @staticmethod
-    def make_simulator(params: BEParams, burn_in: int = 1000, seed: int = 42):
-        """Return a stateful simulator callable for generate_synthetic_animal."""
-        state = BEModel.create_initial_state(params=params, burn_in=burn_in, seed=seed)
-
-        def simulator(stimuli, categories, rng, **kwargs):
-            nonlocal state
-            choices, _, state, _ = BEModel.simulate_session(
-                params, state, stimuli, categories, rng, return_history=False,
-            )
-            return choices
-
-        return simulator
-
-
     # =========================================================================
     # BURN-IN SIMULATION
     # =========================================================================

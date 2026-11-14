@@ -17,8 +17,8 @@ train and test representations cannot diverge (same pooling, same NaN handling).
 Reuses:
     data.stimuli.sample_distribution                    stimulus sampling
                                                         (uniform / hard_a / hard_b)
-    models.simulate.simulate_choices                   the single params->choices core
-    behav_utils.data.synthetic.session_from_arrays     sim arrays -> SessionData
+    models.simulate.make_model                         BE / SC as behav_utils models
+    behav_utils.models.simulate                        a model on a Design -> SessionData
     inference.representation.to_stat_vector            pooled / moments x-builder
     inference.types.get_default_param_configs          theta order + bounds
 """
@@ -26,11 +26,12 @@ Reuses:
 from typing import Callable, Dict, List, Sequence, Tuple, Union
 
 import numpy as np
-from behav_utils.data import session_from_arrays
+from behav_utils.models import Design, simulate
+from behav_utils.tasks import TwoAFC
 
 from sound_categorisation.inference.representation import to_stat_vector
 from sound_categorisation.inference.types import ModelType, get_default_param_configs
-from sound_categorisation.models.simulate import simulate_choices
+from sound_categorisation.models.simulate import make_model
 
 # =============================================================================
 # PARAMETER LAYOUT (theta <-> params), driven by get_default_param_configs
@@ -101,16 +102,16 @@ def draw_T(T, rng: np.random.Generator) -> int:
 def simulate_sessions(model, params: Dict[str, float], schedule: Sequence[str], T,
                       burn_in: int, rng: np.random.Generator) -> List:
     """One simulated animal: a SessionData per entry of ``schedule``, each ``draw_T(T, rng)``
-    trials from ``params`` (seeds drawn from ``rng``, decorrelated per session). The one place
-    the training simulator, the synthetic cohort and the SBC calibration draw their sessions
-    from. ``T`` is an int or a ``(lo, hi)`` range drawn per session."""
+    trials from ``params``, run through behav_utils' ``simulate`` (each session's seed drawn from
+    ``rng``, so sessions are decorrelated). The one place the training simulator, the synthetic
+    cohort and the SBC calibration draw their sessions from. ``T`` is an int or a ``(lo, hi)``
+    range drawn per session."""
     from sound_categorisation.data.stimuli import sample_distribution
+    agent, task = make_model(model, params, burn_in=burn_in), TwoAFC()
     sessions = []
     for i, dist in enumerate(schedule):
-        stim, cat = sample_distribution(draw_T(T, rng), dist, rng=rng)
-        sess_seed = int(rng.integers(0, 2**31 - 1))
-        ch = simulate_choices(model, params, stim, cat, burn_in=burn_in, seed=sess_seed)
-        sessions.append(session_from_arrays(stim, ch, cat, session_idx=i, distribution=dist))
+        stim, _ = sample_distribution(draw_T(T, rng), dist, rng=rng)
+        sessions.append(simulate(agent, Design(task, stim, label=dist), rng, session_idx=i))
     return sessions
 
 
