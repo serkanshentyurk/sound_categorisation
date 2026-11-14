@@ -3,6 +3,12 @@
 
 ## Unreleased
 
+- **Docs for behav_utils 1.0**: SETUP (the `store` extra, and troubleshooting for what the move ran into:
+  an environment without 1.0, `python` resolving to the shared miniconda, a session filed under the wrong
+  animal, a drained `cpu` partition, `sbatch --wrap` running `sh`), START_HERE (strict loading; the rig's
+  `Correct` in the early stages), LLM_CONTEXT (1.0's traps: public imports, session ids and trial keys, the
+  task's score, the store, the BE/SC models' draws), DAILY_TRACKER, README, runs.md.
+
 - **BE and SC as behav_utils models** (`models/simulate.py`): `BoundaryEstimation` and
   `StatisticalCategorisation` subclass `behav_utils.models.Model`, so behav_utils' `simulate`,
   `simulate_responses` and synthetic generators run them; `make_model('be' | 'sc' | ModelType, params)` builds

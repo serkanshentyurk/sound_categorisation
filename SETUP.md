@@ -34,7 +34,8 @@ pip install -e ".[dev]"
 
 `[dev]` adds pytest and ruff; `[fit]` adds torch and sbi, which only the cluster needs (model
 identification). `pip install -e .` installs the `sc-*` commands and `behav_utils` at the tag pinned in
-`pyproject.toml`. Keep the `-e`: the code finds `config.yaml`, the data and the results from the repository.
+`pyproject.toml`, with its `store` extra (pyarrow), which the snapshot needs. Keep the `-e`: the code finds
+`config.yaml`, the data and the results from the repository.
 
 ## 2. One-time settings
 
@@ -69,10 +70,11 @@ pytest tests/e2e -q --regen-reference
 
 ## 5. Working on behav_utils at the same time
 
-Install your local copy of the library on top; an editable install wins over the pinned one:
+Install your local copy of the library on top, with its `store` extra; an editable install wins over the
+pinned one:
 
 ```bash
-pip install -e <path to your behav_utils checkout>
+pip install -e "<path to your behav_utils checkout>[store]"
 ```
 
 Then update the project with `sc-update --keep-behav-utils`, so your copy stays. When the project needs a library
@@ -97,6 +99,12 @@ SC_NB_SYNTHETIC=1 SC_RESULTS_ROOT=/tmp/sc_results SC_DATA_ROOT=/tmp/sc_data jupy
 | `ModuleNotFoundError: behav_utils` | `pip install -e .` in this environment |
 | `sc-update` stops at `git pull` | your checkout has commits that are not on GitHub; sort it out with git by hand |
 | `KeyError: preset 'expert_uniform'` | presets come from `config.yaml`: load the snapshot first, or call `sound_categorisation.data.cohort.ensure_presets()` |
-| warning "config has changed" on loading the snapshot | column mappings or session types changed: run `sc-export-snapshot` again; editing presets alone is fine |
-| warning that the snapshot was written by another `behav_utils` version | run `sc-export-snapshot` again |
+| warning "config has changed" on loading the snapshot | column mappings, `session_types` or `sessions_to_ignore` changed: run `sc-export-snapshot` again (they are applied when the data are loaded); editing presets alone is fine |
+| "Snapshot format N, this code reads 4", or "is a pickle snapshot" | run `sc-export-snapshot` again on the cluster, then `sc-fetch snapshot` |
+| `ImportError: cannot import name … from 'behav_utils.data'` | this environment has behav_utils older than 1.0: `pip install -e .`, or `python -m pip install --upgrade "behav_utils[store] @ git+https://github.com/serkanshentyurk/behav_utils.git@v1.0.0"` |
+| "the store needs pyarrow" | `pip install -e .` (it brings behav_utils' `store` extra), or `pip install pyarrow` |
+| `which python` is the shared miniconda, not `~/.conda/envs/sound_cat/bin/python` (pip then fails with "Permission denied") | `source slurm/env.sh`, which puts the environment first; if `~/.bashrc` activates it too, wrap those lines in `if [[ $- == *i* ]]; then … fi` |
+| export stops: "the animal_id column says 'X' but the reader says 'Y'" | a session folder filed under the wrong animal: move it to the right animal's folder, or list its date under `sessions_to_ignore` |
+| Slurm job pending with `ReqNodeNotAvail` | the `cpu` partition's nodes are down (`sinfo -p cpu`): `scontrol update JobId=<id> Partition=cpu_backfill`, or submit with `-p cpu_backfill` |
+| `sbatch --wrap` job fails with "source: not found" | `--wrap` runs `sh`: wrap the command in `bash -lc '…'` |
 | `compare_groups: need two groups` | only one genotype selected (e.g. `--limit 1`); the rows are still written |

@@ -23,9 +23,11 @@ sound_categorisation/                 ← repo root (pyproject.toml, config.yaml
 ├── sound_categorisation/             project package
 │   ├── settings.py                   constants: distributions, model types, fit sizes, thresholds, seeds
 │   ├── data/                         cohort (experiment, genotypes, session sets, AnimalRecord),
-│   │                                 snapshot (export/load), stimuli (Hard-A/B densities, normative PSE), paths
+│   │                                 snapshot (export/load, behav_utils store), stimuli (Hard-A/B densities,
+│   │                                 RigDistribution, normative PSE), paths
 │   ├── behaviour/                    contrasts (OptoContrasts, ppc/alm_contrasts), adaptation (switches, trajectory)
-│   ├── models/                       BE and SC generative models, perception, simulation, traces
+│   ├── models/                       BE and SC generative models (also as behav_utils models), perception,
+│   │                                 simulation, traces
 │   ├── inference/                    amortised SBI, simulator, representation, selection, grid_search,
 │   │                                 cv_utils, fold_utils, consensus, tasks (TaskGrid for every SLURM array)
 │   ├── features/                     SBI feature-selection diagnostics

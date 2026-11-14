@@ -43,10 +43,12 @@ Medians are WT vs HET (4 vs 5 animals on Uniform, 3 vs 4 on Hard); `min_p` is th
   partially had no laser. Untested, not refuted.
 
 ## Repository shape
-Two packages, imports one way: `sound_categorisation` (project) → `behav_utils` (library). Both are pip
-installed (`pip install -e .`, which pulls `behav_utils` from its tagged release and installs the `sc-*`
-commands); nothing in the packages manipulates `sys.path`. Layout and module roles: `README.md`,
-`ARCHITECTURE.md`. Installing: `SETUP.md`. Data folders and routines: `START_HERE.md`.
+Two packages, imports one way: `sound_categorisation` (project) → `behav_utils` (library, 1.0). Both are
+pip installed (`pip install -e .`, which pulls `behav_utils[store]` from its tagged release and installs the
+`sc-*` commands); nothing in the packages manipulates `sys.path`. Import library names from their public
+homes (`behav_utils.data`, `.stats`, `.readouts`, `.models`, …), never from module paths below them. Layout
+and module roles: `README.md`, `ARCHITECTURE.md`. Installing: `SETUP.md`. Data folders and routines:
+`START_HERE.md`.
 
 Paths: every path comes from `data/paths.py`. On the cluster all of them hang off `BEHAV_DATA_DIR` (raw
 data in `Raw`, snapshot and networks in `Processed`, results in `Processed/results`); the code stops if it
@@ -80,6 +82,11 @@ cluster folders to the same place on a laptop.
 - per-session adaptation → `behaviour/adaptation.py` (`Trajectory`); columns explained in the generated results README
 - SLURM job counts → `inference/tasks.py`; never hard-code an `--array`
 - run provenance → `meta.json` in every results folder (snapshot, config, settings, versions, git SHA)
+- BE/SC as behav_utils models (for `simulate`, `simulate_responses`, the synthetic generators) →
+  `models/simulate.py` (`make_model`); the rig's distributions as a `StimulusDistribution` →
+  `data/stimuli.RigDistribution`
+- what behav_utils 1.0 could change on our data → `sc-export-snapshot`'s table, stored in the snapshot's
+  metadata as `changes_since_0_10` (`snapshot.read_snapshot_metadata`)
 
 ## Traps
 - Uniform ran masking block *then* laser block; Hard ran laser sessions *then* masking sessions. Any
@@ -89,10 +96,26 @@ cluster folders to the same place on a laptop.
 - `expert_uniform` and other presets exist only after a config/snapshot is loaded; for in-memory data
   call `sound_categorisation.data.cohort.ensure_presets()`.
 - `filter_trials(trial_type='all')` keeps laser trials (and drops aborts, like every trial type).
-- `load_experiment` (behav_utils ≥ 0.8) raises on a session that fails to load instead of skipping it
-  with a warning; `strict=False` restores the skip, but look at the file first — a skipped session
-  shifts every later `session_idx`. `ExperimentData.load` warns when a snapshot was written by another
-  library version: re-export (`sc-export-snapshot`) rather than carry it forward.
+- Loading is strict (behav_utils 1.0): a session that fails to load raises, and so does an `Animal_ID`
+  column naming another animal than the folder (SS21's 4 July 2026 run is in `sessions_to_ignore` for that).
+  `strict=False` warns instead, but look at the files first: a skipped session shifts every later
+  `session_idx`. A session whose only file has fewer than `min_trials_per_file` (10) rows is not loaded.
+- Session ids are `<animal>_<YYYYMMDD>` (the date from the folder name); the folder's name is
+  `SessionData.source_id`, its path `SessionData.source` (a folder, not a CSV). A trial key is a hash of
+  experimenter, animal and session id with the trial number in its low bits: `project.experimenter` is
+  empty; set it before aligning neural data on `trial_key`, never after.
+- The task scores: `TrialData.correct` / `TrialArrays.correct` are its score, `TrialData.outcome` holds
+  outcome codes, and the rig's labels and `Correct` column are kept as `outcome_recorded` /
+  `correct_recorded` (the daily tracker counts no-responses and early licks from those labels). In the early
+  training stages the rig's `Correct` means something else; never analyse `correct_recorded`.
+  `prev_correct` is NaN after a trial without a score. `fit_update_matrix` takes the score as `correct=`
+  (simulated choices: `grid_search.score_choices`).
+- The snapshot is a behav_utils store (Parquet), format 4; pickles are refused. It keeps every trial with its
+  stimulus check, and loading removes the silent ones, because a store rebuilds the lag-1 view from the
+  trials it holds. Session types and `sessions_to_ignore` are applied when the data are loaded, so after
+  editing them export again.
+- A `BoundaryEstimation` / `StatisticalCategorisation` run equals `simulate_choices` with one seed drawn from
+  the run's rng; keep it so (tests pin it), or the trained SBI networks no longer match their simulator.
 - `animal.session_table` is counts + accuracy, for picking sessions; per-session statistics come from
   `compute_phase_stats(..., per_session=True)`. `compare_groups` returns a `GroupComparison`
   (`.test(stat)`, `.table()`), not a dict.
@@ -103,7 +126,7 @@ cluster folders to the same place on a laptop.
 - The Hard-A/B hard side is the rig's truncated exponential (rate 2.15329, `data/stimuli.py`), not the
   legacy density; normative PSEs depend on it.
 - `post_opto` is compared with the other laser-off trials; post-opto trials are laser-off trials, and
-  `behav_utils` ≥ 0.9 refuses to permute phases that share trials.
+  `behav_utils` refuses to permute phases that share trials.
 - The model-ID p-values come from seeds that vary simulation noise on a fixed data split (the manuscript's
   recipe); they say the call is stable under that noise, not that the data favour it.
 - Data before 5 October 2026 carry rig faults (START_HERE.md, caveats); they are kept and stated. About 1 %

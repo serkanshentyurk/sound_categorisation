@@ -85,7 +85,8 @@ sc-update
 ```
 
 On the laptop, `sc-update` does the same. If you work on `behav_utils` next to the project (an editable
-install), use `sc-update --keep-behav-utils`: it installs everything else and leaves your copy alone.
+install, with its `store` extra: SETUP.md, section 5), use `sc-update --keep-behav-utils`: it installs
+everything else and leaves your copy alone.
 
 ### New sessions → snapshot (cluster)
 
@@ -245,10 +246,18 @@ manuscript; ask Serkan or Athena Akrami for the current draft.
   31105 the right reward was about 26 % larger than the left. In Hard-A/B sessions about 6 % of trials
   played no sound and the response window opened as the sound ended. The same animal ran on different rigs
   on different days, so no session is dropped and the data carry no rig id: state it as a caveat.
-- The silent trials are removed at export where each session's logs allow the check. They don't for the end
-  of every run (the logs stop when Bonsai is killed) or for 13 whole Hard sessions of the pre-opto cohort
-  (SS01, SS06, SS07, SS08, SS09, SS11), where the trial table and the logs don't line up. Those trials are
-  kept: 15 % of Hard trials are unchecked, so roughly 1 % of Hard trials may still be silent.
+- The silent trials are removed when the snapshot is loaded (the export stores each trial's check), where
+  each session's logs allow the check. They don't for the end of every run (the logs stop when Bonsai is
+  killed) or for 13 whole Hard sessions of the pre-opto cohort (SS01, SS06, SS07, SS08, SS09, SS11), where
+  the trial table and the logs don't line up. Those trials are kept: 15 % of Hard trials are unchecked, so
+  roughly 1 % of Hard trials may still be silent.
+- Loading is strict since behav_utils 1.0 (November 2026). A session folder filed under the wrong animal (its
+  `Animal_ID` column names another animal) stops the export: move the folder, or list its date under
+  `sessions_to_ignore` (SS21's run of 4 July 2026, labelled SS22, is ignored for that reason). A session whose
+  only file has fewer than 10 rows is not loaded.
+- In the early training stages (Lick_To_Release, Three_And_Three) the rig's `Correct` column does not mean
+  what the task's score means; the loader warns about it on every such session. Statistics use the task's
+  score everywhere, as they always have; no analysed session is affected.
 - The first 20 trials of a session (the stable start) play easy sounds, at least 0.8 from the boundary,
   with at most 3 on the same side in a row.
 - The first trial of a session has unreliable timing. It is kept.

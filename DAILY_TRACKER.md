@@ -90,7 +90,8 @@ condition (preset) its last five sessions, pooled and as mean ± SD next to each
 light on their own rows. ← and → move between animals, Esc goes back to the overview, and ↑ top returns
 to the top of the page. The page's address ends in `#<animal>`, so it can be bookmarked or sent.
 
-Statistics use trials without light. Right and left are the rig's right and left spouts.
+Statistics use trials without light. Right and left are the rig's right and left spouts. A session whose
+only file has fewer than 10 rows (a run stopped at once) is not loaded, so it does not appear.
 
 ## Where things are, and how to change them
 
