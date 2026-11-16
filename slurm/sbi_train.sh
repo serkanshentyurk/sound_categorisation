@@ -3,7 +3,7 @@
 #SBATCH -N 1
 #SBATCH -c 20
 #SBATCH --mem=48G
-#SBATCH --time=2-00:00
+#SBATCH --time=4-00:00
 # One network per array task (TRAIN_GRID: rep x model x distribution). Prior draws are simulated on
 # every core of the task (joblib, one thread per worker) until the network's training set is full;
 # the density estimator then trains with torch on the same cores. A network with the accuracy rule
@@ -13,6 +13,8 @@
 # no saving from giving failing draws up early): pooled BE (100k kept, about 700k drawn) 30 h;
 # pooled SC (100k kept, about 170k drawn) 10 h; single BE / SC (200k, one session each) 12 h.
 # The log gives draws, passed, kept and the simulation and training times separately.
+# The time limit is 4 days (the partition allows 10): a task has no checkpoint, so one that ran out
+# of time would lose its simulations, and a task that finishes early gives its node back.
 # Check the chain first:  sbatch slurm/smoke.sh
 # Submit via:  bash slurm/submit.sh sbi-train [sc-sbi-train args]
 set -euo pipefail

@@ -30,6 +30,8 @@
     worker (the job's thread count used to reach every worker), shuts the worker pool down before the density
     estimator trains, and the log gives draws, passed, kept and the simulation and training times separately.
     The training set does not depend on the number of workers.
+- `slurm/sbi_train.sh`: time limit 4 days (was 2; the partition allows 10). A task has no checkpoint, and the
+  pooled BE network's upper estimate is 30 h.
 - **`sc-smoke` / `sbatch slurm/smoke.sh`** (`cli/smoke.py`): the whole chain, small, in a scratch folder (its own
   data and results roots), with a check after each stage; ends with `SMOKE PASSED` or the failed check. For use
   after a change to the fitting code and before submitting real jobs.
