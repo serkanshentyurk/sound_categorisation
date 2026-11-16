@@ -13,7 +13,9 @@ Each result stamps which network produced it (rep, model, distribution, the net'
 filename and its own stat vector) into the metadata, so a file is self-identifying, and
 carries ``posterior``: SBI_N_POSTERIOR_SAMPLES_SAVED samples of the one all-session
 conditioning (intervals, narrowing, the example posterior), whose median is the
-``best_params`` on every CV rep.
+``best_params`` on every CV rep. The single-session representation has no all-session
+conditioning (``posterior`` is None): its results are one per session, each with that
+session's own estimate as ``best_params`` and a held-out error from the two halves of the session.
 
 --distribution is required: condition ONE phase per launch (its networks + its
 sessions). For real data the sessions default to the model_id_<distribution> preset unless
@@ -115,7 +117,11 @@ def condition_cohort(records, rep, model, distribution, out_dir, fit_target,
 
     written = 0
     for record in records:
-        posterior = condition_posterior(record.sessions, net, n_samples=n_posterior_samples_saved)
+        # A single-session network is trained on one session: all of an animal's sessions pooled are
+        # outside what it has seen, so it saves no all-session posterior. Its per-session estimates
+        # are the best_params of its results.
+        posterior = (None if net.N == 1 else
+                     condition_posterior(record.sessions, net, n_samples=n_posterior_samples_saved))
         best = posterior['point_estimate'] if posterior else None
         try:
             results = condition_sbi(

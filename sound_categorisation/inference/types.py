@@ -59,21 +59,11 @@ class ParamConfig:
 # DEFAULT PARAMETER CONFIGURATIONS
 # =============================================================================
 
-def get_default_param_configs(model_type: ModelType) -> Dict[str, ParamConfig]:
-    """Get default ParamConfig for each parameter of a model."""
-    if model_type == ModelType.BE:
-        from sound_categorisation.models.be_core import BEParams
-        bounds = BEParams.get_bounds()
-        return {
-            name: ParamConfig(name, bounds=bounds[name])
-            for name in BEParams.get_param_names()
-        }
-    elif model_type == ModelType.SC:
-        from sound_categorisation.models.sc_core import SCParams
-        bounds = SCParams.get_bounds()
-        return {
-            name: ParamConfig(name, bounds=bounds[name])
-            for name in SCParams.get_param_names()
-        }
-    else:
+def get_default_param_configs(model_type: ModelType, prior: str | None = None) -> Dict[str, ParamConfig]:
+    """ParamConfig for each parameter of a model, in theta order, with the bounds of a prior
+    variant (``models.priors``; None = the one in use, ``settings.SBI_PRIOR``)."""
+    from sound_categorisation.models.priors import prior_bounds
+    if not isinstance(model_type, ModelType):
         raise ValueError(f"Unknown model type: {model_type}")
+    return {name: ParamConfig(name, bounds=bounds)
+            for name, bounds in prior_bounds(model_type.value, prior).items()}

@@ -1,7 +1,8 @@
 """
 Tidy tables from report results, and their persistence.
 
-    tables = to_tables(animal_result)             # {'contrasts': df, 'trajectory': df, 'trajectory_curves': df}
+    tables = to_tables(animal_result)             # {'contrasts': df, 'levels': df, 'equivalence': df,
+                                                  #  'trajectory': df, 'trajectory_curves': df}
     write_result(out_dir, tables, readouts, meta)  # tables/*.csv, readouts.npz, meta.json
     tables, readouts, meta = read_result(out_dir)
 
@@ -13,6 +14,10 @@ One schema for every contrast row, whatever the site:
 ``kind`` ∈ within, within_masking, between, compensation, dod, vs_ppc. Group tables add
 ``group`` and the rank-test columns. CSV + JSON, not pickle: a table written
 today is readable by any code tomorrow.
+
+``equivalence`` reads the ``within`` contrast (trials unit) against the margins the run was given
+(``Settings.margins``): one row per statistic that has a margin, with the verdict of
+``contrasts.equivalence_verdict``.
 """
 
 from __future__ import annotations
@@ -25,10 +30,12 @@ from typing import Dict, Tuple
 import numpy as np
 import pandas as pd
 
+from sound_categorisation.behaviour.contrasts import equivalence_verdict
 from sound_categorisation.data.cohort import site_label
 from sound_categorisation.reports.compute import AnimalResult, GroupResult
 
-__all__ = ['to_tables', 'group_tables', 'readout_arrays', 'write_result', 'read_result', 'CONTRAST_COLUMNS']
+__all__ = ['to_tables', 'group_tables', 'readout_arrays', 'write_result', 'read_result', 'CONTRAST_COLUMNS',
+           'EQUIVALENCE_COLUMNS', 'equivalence_table']
 
 LEVEL_COLUMNS = ['cohort', 'animal', 'genotype', 'distribution', 'site', 'trial_class', 'kind', 'phase',
                  'n_trials', 'n_sessions', 'stat', 'value']
@@ -36,6 +43,25 @@ LEVEL_COLUMNS = ['cohort', 'animal', 'genotype', 'distribution', 'site', 'trial_
 CONTRAST_COLUMNS = ['cohort', 'animal', 'genotype', 'distribution', 'site', 'trial_class', 'kind', 'contrast',
                     'unit', 'stat', 'diff', 'ci_lo', 'ci_hi', 'boot_p', 'perm_p',
                     'n_a', 'n_b', 'n_sessions_a', 'n_sessions_b']
+
+
+EQUIVALENCE_COLUMNS = ['cohort', 'animal', 'genotype', 'distribution', 'site', 'trial_class', 'stat',
+                       'diff', 'ci_lo', 'ci_hi', 'margin', 'verdict']
+
+
+def equivalence_table(contrasts: pd.DataFrame, margins: Dict[str, float]) -> pd.DataFrame:
+    """The ``within`` contrast (laser-on − laser-off trials of the laser sessions, trials unit) read against
+    the equivalence margins: one row per statistic that has a margin, with its interval, the margin and the
+    verdict (``contrasts.equivalence_verdict``). Empty when there is no such contrast or no margin applies."""
+    rows = contrasts[(contrasts['kind'] == 'within') & (contrasts['unit'] == 'trials')
+                     & contrasts['stat'].isin(list(margins))] if len(contrasts) else contrasts
+    if not len(rows):
+        return pd.DataFrame(columns=EQUIVALENCE_COLUMNS)
+    out = rows.copy()
+    out['margin'] = out['stat'].map(margins).astype(float)
+    out['verdict'] = [equivalence_verdict(lo, hi, m)
+                      for lo, hi, m in zip(out['ci_lo'], out['ci_hi'], out['margin'])]
+    return out[EQUIVALENCE_COLUMNS].reset_index(drop=True)
 
 
 def _qc(sessions: pd.DataFrame, rule=None) -> pd.DataFrame:
@@ -105,6 +131,7 @@ def to_tables(r: AnimalResult) -> Dict[str, pd.DataFrame]:
     return {
         'contrasts': contrasts,
         'levels': levels,
+        'equivalence': equivalence_table(contrasts, r.margins),
         'trajectory': (_qc(tr.sessions.assign(expert_pse=tr.baseline_pse, sigma=tr.sigma, **tlab),
                            getattr(tr, 'bias_rule', None))
                        if tr is not None else pd.DataFrame()),

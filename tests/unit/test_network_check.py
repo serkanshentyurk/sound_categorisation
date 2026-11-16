@@ -50,6 +50,34 @@ def test_config_flags_what_changed():
     assert not rows.loc['stat_names', 'ok']                     # a 3-stat test network
 
 
+def test_config_reports_the_prior_and_the_accuracy_rule():
+    """A file that records neither is a manuscript network trained without the rule."""
+    rows = pd.DataFrame(config_rows(_network(), 'snpe_pooled_BE_uniform.pkl')).set_index('check')
+    assert rows.loc['prior', 'stored'] == 'manuscript' and not rows.loc['prior', 'ok']
+    assert not rows.loc['min_accuracy (accuracy rule)', 'ok']            # pooled now trains with 0.70
+    new = dict(_network(), prior='learning', min_accuracy=0.70)
+    rows = pd.DataFrame(config_rows(new, 'snpe_pooled_BE_uniform.pkl')).set_index('check')
+    assert rows.loc['prior', 'ok'] and rows.loc['min_accuracy (accuracy rule)', 'ok']
+    single = dict(_network(N=1), prior='learning')                       # single: no rule, none stored
+    rows = pd.DataFrame(config_rows(single, 'snpe_single_BE_uniform.pkl')).set_index('check')
+    assert rows.loc['min_accuracy (accuracy rule)', 'ok'] and rows.loc['N (sessions)', 'ok']
+
+
+def test_fingerprint_draws_follow_the_networks_prior_and_rule():
+    """Fresh draws come from the prior the file names and pass its accuracy rule, as in training."""
+    data = dict(_network(design=SBI_DESIGN_FEATURES), prior='learning', min_accuracy=0.62)
+    X = simulate_features(data, n_draws=60, seed=7)
+    assert 0 < len(X) < 60 and X[:, 0].min() >= 0.62 - 0.1               # pooled accuracy of passing draws
+    plain = simulate_features(dict(data, min_accuracy=None), n_draws=60, seed=7)
+    assert len(plain) == 60
+    # a rule nothing passes: no simulations, and the fingerprint says so instead of judging
+    none = simulate_features(dict(data, min_accuracy=0.999), n_draws=10, seed=7)
+    assert none.shape == (0, len(STATS) + len(SBI_DESIGN_FEATURES))
+    data['feature_medians'] = compute_feature_medians(X)
+    rows = fingerprint_rows(dict(data, min_accuracy=0.999), 'snpe_pooled_BE_uniform.pkl', n_draws=10, seed=7)
+    assert len(rows) == 1 and rows[0]['check'] == 'draws passing the accuracy rule' and rows[0]['ok'] is None
+
+
 def test_parameters_and_prior_bounds():
     rows = pd.DataFrame(parameter_rows(_network(), 'snpe_pooled_BE_uniform.pkl'))
     assert rows['ok'].all() and len(rows) == 1 + len(get_param_names('be'))
@@ -102,4 +130,4 @@ def test_train_refuses_a_different_representation(tmp_path):
     with open(path, 'wb') as f:
         pickle.dump(_network(), f)
     changed = representation_changes(path, 'pooled', 'uniform')
-    assert {'N', 'design_features', 'stat_names', 'burn_in'} <= set(changed)
+    assert {'N', 'design_features', 'stat_names', 'burn_in', 'prior', 'min_accuracy'} <= set(changed)

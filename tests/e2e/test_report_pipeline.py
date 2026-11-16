@@ -15,9 +15,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
+from sound_categorisation.behaviour.contrasts import VERDICTS
 from sound_categorisation.data.synthetic import synthetic_experiment
 from sound_categorisation.reports import (
     CONTRAST_COLUMNS,
+    EQUIVALENCE_COLUMNS,
     Settings,
     compute_animal,
     compute_group,
@@ -60,6 +62,18 @@ def test_contrast_table_schema(fast_result):
     assert set(t['kind']) == {'within', 'within_masking', 'between', 'compensation', 'dod'}
     assert set(t['unit']) == {'trials', 'sessions'}
     assert t['perm_p'].notna().sum() > 0 and t.loc[t['kind'] == 'between', 'perm_p'].isna().all()
+
+
+def test_equivalence_table(fast_result):
+    """equivalence.csv: the within contrast on trials against the margins, one row per stat with a margin."""
+    tables = to_tables(fast_result)
+    eq = tables['equivalence']
+    assert list(eq.columns) == EQUIVALENCE_COLUMNS and set(eq['stat']) == {'accuracy', 'side_bias'}
+    assert set(eq['verdict']) <= set(VERDICTS) and (eq['margin'] == 0.05).all()
+    c = tables['contrasts']
+    within = c[(c.kind == 'within') & (c.unit == 'trials')].set_index('stat')
+    for _, row in eq.iterrows():
+        assert row['ci_lo'] == within.loc[row['stat'], 'ci_lo'] and row['ci_hi'] == within.loc[row['stat'], 'ci_hi']
 
 
 def test_alm_site_has_vs_ppc(exp):

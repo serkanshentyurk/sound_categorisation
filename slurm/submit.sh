@@ -23,6 +23,9 @@
 #   sc-grid-search --cohort opto1-cohort --distribution uniform --fit-target update_matrix --run-id $RUN --gather
 #   sc-consensus --cohort opto1-cohort --distribution uniform --run-id $RUN
 #
+# After a change to the fitting code, check the whole chain small before any of the above:
+#   sbatch slurm/smoke.sh
+#
 # Run it after load-env (or `source slurm/env.sh`), from anywhere in the repo.
 set -euo pipefail
 cd "$(dirname "$0")/.."

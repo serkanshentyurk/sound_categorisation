@@ -3,6 +3,118 @@
 
 ## Unreleased
 
+- **Training structure for the retrain** (agreed 16 November 2026). What changes for the networks:
+  - *Prior:* every model fit uses one prior variant, `settings.SBI_PRIOR = 'learning'`: the networks, the grid
+    search grid, synthetic cohorts, calibration draws. A network records its variant (`prior` in the file; a file
+    without one is a `manuscript` network) and is conditioned, calibrated and checked on its own ranges.
+  - *Flat space:* BE's two rates are log-uniform under `learning`. The density estimator is trained on their
+    logarithms (`models/priors.py`: `to_flat` / `from_flat` / `flat_bounds`); samples and estimates come out in
+    the parameters' own units. Calibration results and the recovery tables are in flat space (new `scale` column).
+  - *Accuracy rule:* the pooled network trains only on simulations whose every session reaches the session
+    filter's minimum accuracy (`accuracy_rule` in `SBI_REPRESENTATIONS`), as every selected real session does.
+    Prior draws are simulated until `n_simulations` are kept (BE: about one in seven passes), a draw is given up
+    at its first failing session, and calibration draws are filtered the same way. Why: under `manuscript` only
+    about 4 % of BE's training simulations were where the animals are.
+  - *Representations:* `SBI_TRAIN_REPS = ('pooled', 'single')`. Pooled: 2–5 sessions (was 2–6; no animal has 6)
+    of 250–600 trials (was 250–500; two animals average more than 500 a session), 100,000 kept. Single: one
+    session of 100–600 trials (its held-out test conditions on half-sessions), 200,000, no accuracy rule (for one
+    session the rule is readable from the accuracy statistic, and half-sessions are not selected by it).
+    Moments is no longer trained: its between-session variances rest on 2–5 sessions, and under `learning` it
+    covered 10 (SC) and 3 (BE) of 19 animals against 15 and 13 for pooled.
+  - *Consensus:* grid search and pooled SBI vote; the single-session network is listed beside them
+    (`SBI-single-UM_be` / `_sc` / `_lower` / `_lower_pvalue`) without a vote, and the summary prints every
+    method's mean held-out error. `sc-sbi-sbc` covers pooled at 5 / 3 / 2 sessions and single at 1 (8 tasks).
+  - *Grid search:* the full grid spans the prior in use (`grid_from_prior`: same 8,000 points per model,
+    log-spaced for BE's rates, `sigma_percep` to 0.5); `--grid manuscript` keeps the old grid.
+  - *Training loop:* `AmortisedSBI.simulate_training_set` draws and simulates in rounds with one thread per
+    worker (the job's thread count used to reach every worker), shuts the worker pool down before the density
+    estimator trains, and the log gives draws, passed, kept and the simulation and training times separately.
+    The training set does not depend on the number of workers.
+- **`sc-smoke` / `sbatch slurm/smoke.sh`** (`cli/smoke.py`): the whole chain, small, in a scratch folder (its own
+  data and results roots), with a check after each stage; ends with `SMOKE PASSED` or the failed check. For use
+  after a change to the fitting code and before submitting real jobs.
+- `sc-make-synthetic-cohort`: truths come from the prior in use (`--prior` names another), recorded in
+  `generation`; the candidate limit per animal under the accuracy rule went from 50 to 1,000 (BE passes rarely).
+- `sc-sbi-range`: the default prior is the one in use; acceptance rates are read only from posteriors of networks
+  trained on the prior being shown.
+- `preset_min_accuracy` moved to `data/cohort.py`; `accuracy_rule(rep, distribution)` is in
+  `inference/simulator.py`.
+- **Prior variants** (`models/priors.py`, `docs/prior_variants.md`): `manuscript` (the ranges the first networks
+  were trained on) and `learning` (the same four parameters with wider learning ranges: BE `eta_learning` 0.005
+  to 0.9 and `eta_relax` 0.001 to 0.4, drawn uniformly in the logarithm; SC `gamma` 0.30 to 0.999). The wider
+  ranges come from a scan of the simulator, recorded in the doc.
+  Why: `sc-sbi-range` put 9 of 19 expert mice outside both models under the trained ranges (Uniform, pooled).
+- **`sc-sbi-range --prior {manuscript,learning,all}`**: the range tables under a prior variant, written to
+  `<run>/range/<D>/<prior>/` (a table made before the variants is in `<run>/range/<D>/`: move it into
+  `manuscript/`). New per prior: `recognised.csv`, the share of each model's draws that a classifier trained on
+  other draws of both models calls that model (every draw; draws passing the accuracy rule). `comparison.csv`
+  and `comparison_animals.csv` beside the variants put them side by side: how many animals each prior covers
+  per model, how well each model's draws are recognised, and which models cover each animal.
+  Result when added (19 expert mice, Uniform, pooled; `learning` from 1,000 draws per model, `manuscript` from
+  2,000): animals covered by BE / SC / neither were 4 / 6 / 9 under `manuscript` and 13 / 15 / 3 under
+  `learning`; BE's passing draws were recognised 0.92 and 0.59. The wider ranges cover the animals, and where
+  the animals are, a slowly learning BE and SC give the same statistics.
+- **Tried and removed: a side bias and a lapse** shared by both models
+  (`P(B) = (1 - lapse) * P_model(B at s_hat - bias) + lapse / 2`), with the prior variants `nuisance` and `wide`.
+  They did not bring the animals inside the models (BE / SC / neither: 1 / 5 / 14 on the trained ranges, 4 / 14 /
+  5 on the wider ones) and the lapse cost BE accuracy it cannot spare. `docs/prior_variants.md` keeps the
+  table. The models are unchanged from before; `tests/unit/test_models.py` now pins their choices.
+- **`sc-sbi-range`** (`inference/prior_range.py`, `cli/sbi_range.py`): where each animal's statistics fall in
+  what BE and SC simulate at the training configuration. Per representation and model it draws parameters from
+  the prior (2,000 by default), simulates them exactly as the training simulator does (a test keeps the two
+  equal), and writes `<run>/range/<D>/<prior>/`: `simulated.csv` (quantiles per feature), `animals.csv` (each animal's
+  value, its percentile, outside the central 99 % or not) and `summary.csv` (features outside, the worst one,
+  `nearest_percentile`, and the saved posterior's acceptance rate when the run has it). Two reference sets: every
+  prior draw, and the draws whose every session reaches the session filter's minimum accuracy. No torch and no
+  network needed: results saved on the cluster are read on a machine without torch (their torch objects are
+  skipped; the acceptance rate is a plain number).
+  Why: on Uniform, about 4 % of BE prior draws reach a pooled accuracy above 0.70 and none above 0.80 (150
+  draws), while the animals are selected at accuracy above 0.70; the table shows, per animal, whether the
+  networks were trained near it.
+- **Equivalence in the pipeline**: `sc-reports opto-contrasts` writes `equivalence.csv` per animal: the `within`
+  contrast (trials unit) against margins set in advance (`settings.EQUIVALENCE_MARGINS`, recorded in `meta.json`
+  under `settings.margins`), with the verdict within margin / effect / unclear
+  (`behaviour.contrasts.equivalence_verdict`). Notebook 20 §4b reads the table (`nb_setup.load_equivalence`)
+  where it used to compute the verdicts itself. The margins and the rule are unchanged; a run made before this
+  has no table, and the notebook says so.
+- **Every run records its environment**: `paths.start_run` writes `<run>/environment.txt`, each installed package
+  with its version, when it creates a run. SETUP §7 says how to commit the cluster environment for final runs.
+- **CI runs the SBI tests**: a second job installs CPU-only torch and sbi and runs `tests/fit`, which the first
+  job could only skip. `features/feature_diagnostics.py` gets a small test (`tests/unit/test_feature_diagnostics.py`).
+- **Session intervals described as rough**: the generated results README and `behaviour/contrasts.py` no longer
+  call the session-unit interval the honest one. It is the right unit for anything that varies by session, but
+  with three to six sessions per set an interval meant to cover 95 % covers roughly 80 to 90 % (simulated with
+  no true difference: the interval excluded zero in 18 % of runs at three sessions per set, 10 % at six, 8 % at
+  ten). No number changes.
+
+- **behav_utils 1.1.0** (pyproject: `behav_utils[store] @ …@v1.1.0`). One change moves numbers: the session
+  bootstrap now draws the sessions two phases share once for both, so a contrast within the same sessions is
+  paired.
+  - `within` and `within_masking` (laser-on − laser-off in the same sessions) and the light-artefact contrasts:
+    the session-unit interval is narrower, because session-to-session variation common to both trial sets now
+    cancels. `dod` and the site interaction are differences of those, so their session-unit intervals narrow too.
+  - `between`, `compensation` and `vs_ppc` compare different sessions: still drawn separately, from a different
+    random stream, so their session-unit intervals move by resampling noise only.
+  - Trial-unit intervals, permutation p-values and every observed value are unchanged.
+  - From fewer than about ten sessions a session-unit interval is too narrow (behav_utils docs, *Resampling
+    units*); the session sets here are small (the Hard phase has three sessions per distribution and session
+    type), so read those intervals as rough.
+  - `tests/e2e/reference/e2e_contrasts.csv` regenerated: its ten session-unit rows changed, the ten trial-unit
+    rows did not. Runs made before this have the old session-unit intervals; rerun `sc-reports battery` for
+    current ones.
+  - behav_utils 1.1.0 needs pandas 2.1 or later and numpy 1.24.1 or later.
+
+- **Every contrast resamples with its own seed** (`behaviour/contrasts.py`: `SEED` + `SEED_OFFSET`; the
+  light-artefact sets: `CONTRAST_SEED` + the set's position). Until now `within` and `within_masking` used the
+  same seed, so when the laser and masking sets had the same number of sessions (three and three on each Hard
+  distribution) every draw took the same session positions in both, and `dod` paired the k-th laser session with
+  the k-th masking session. The light-artefact site interaction (`ppc_sham − alm`) had the same coupling.
+  - `within` and the first light-artefact set (`ppc_opto`) keep their seed and their numbers. `within_masking`,
+    `between`, `compensation`, `vs_ppc` and the other light-artefact sets get new seeds: their intervals and p-values
+    move by resampling noise, and `dod` and the site interaction move with them. Observed values do not change.
+  - `ppc_contrasts` and `alm_contrasts` take `seed=`.
+  - The e2e reference is regenerated for this too.
+
 - **Docs for behav_utils 1.0**: SETUP (the `store` extra, and troubleshooting for what the move ran into:
   an environment without 1.0, `python` resolving to the shared miniconda, a session filed under the wrong
   animal, a drained `cpu` partition, `sbatch --wrap` running `sh`), START_HERE (strict loading; the rig's

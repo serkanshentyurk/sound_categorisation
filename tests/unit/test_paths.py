@@ -84,6 +84,22 @@ def test_start_run_creates_logs_and_latest(tmp_path):
     assert resolve_run('opto_contrasts', 'coh', str(run), root=tmp_path) == run
 
 
+def test_start_run_records_the_environment_once(tmp_path):
+    """A new run lists every installed package with its version; reopening the run keeps the first list."""
+    import numpy
+
+    run = start_run('opto_contrasts', 'coh', '2026-01-01_0000000', root=tmp_path)
+    lines = (run / 'environment.txt').read_text().splitlines()
+    assert lines[0].startswith('# python ') and f'numpy=={numpy.__version__}' in lines
+    packages = [line for line in lines if not line.startswith('#')]
+    assert all('==' in line for line in packages)
+    names = [line.split('==')[0].lower() for line in packages]
+    assert names == sorted(names)
+    (run / 'environment.txt').write_text('as first written\n')
+    start_run('opto_contrasts', 'coh', '2026-01-01_0000000', root=tmp_path)
+    assert (run / 'environment.txt').read_text() == 'as first written\n'
+
+
 def test_latest_moves_with_each_start(tmp_path):
     a = start_run('opto_contrasts', 'coh', '2026-01-01_0000000', root=tmp_path)
     b = start_run('opto_contrasts', 'coh', '2026-01-02_0000000', root=tmp_path)

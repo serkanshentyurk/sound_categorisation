@@ -2,24 +2,33 @@
 """Train the amortised SBI networks for model identification.
 
 One specialist network per (representation, model, distribution). The job grid is
-``settings.SBI_TRAIN_REPS x MODEL_TYPES x SBI_TRAIN_DISTRIBUTIONS`` (currently pooled / moments x
+``settings.SBI_TRAIN_REPS x MODEL_TYPES x SBI_TRAIN_DISTRIBUTIONS`` (currently pooled / single x
 BE / SC x uniform = 4 networks); any representation or distribution in ``SBI_REPRESENTATIONS`` /
 ``DISTRIBUTIONS`` can still be trained by name, it is just not in the array.
 
-    pooled    N~U{2..6} sessions pooled   mode='pooled'     x-dim D + 2
-    moments   N~U{2..6} sessions          mode='moments'    x-dim 2D + 2 (mean, variance per stat)
-    single    N=1 session                 mode='pooled'     x-dim D + 2
+    pooled    N~U{2..5} sessions pooled   mode='pooled'     x-dim D + 2   accuracy rule
+    single    N=1 session                 mode='pooled'     x-dim D + 2   no rule
+    moments   N~U{2..5} sessions          mode='moments'    x-dim 2D + 2  accuracy rule (not trained now)
 
 (+ 2: the number of sessions and valid trials, settings.SBI_DESIGN_FEATURES.)
 
-Each network is an ``AmortisedSBI`` saved to ``snpe_networks/snpe_{rep}_{model}_{distribution}.pkl``.
-The saved file carries its own config (N / T / mode / stat_names / design features), so the
-conditioning step (sc-sbi-condition) loads and conditions without re-specifying
-anything -- see ``AmortisedSBI.save``/``load``.
+Every network is trained on the prior variant in use (``settings.SBI_PRIOR``, models/priors.py).
+With the accuracy rule a simulation is kept only if every simulated session reaches the session
+filter's minimum accuracy (config.yaml, ``model_id_<distribution>``), as every selected real
+session does; prior draws are simulated until ``n_simulations`` are kept, and a draw is given up at
+its first failing session. The log reports draws, kept, and the time spent simulating and training
+separately.
 
-An existing network trained with a different representation (statistics, design features,
-N, T, burn-in, mode) is not overwritten: move it aside first (the October 2026 networks went to
-``snpe_networks/2026-10/``) or pass ``--overwrite``. The check runs before any simulation.
+Each network is an ``AmortisedSBI`` saved to ``snpe_networks/snpe_{rep}_{model}_{distribution}.pkl``.
+The saved file carries its own config (N / T / mode / stat_names / design features / prior /
+accuracy rule), so the conditioning step (sc-sbi-condition) loads and conditions without
+re-specifying anything -- see ``AmortisedSBI.save``/``load``.
+
+An existing network trained with a different representation (statistics, design features, N, T,
+burn-in, mode, prior, accuracy rule) is not overwritten: move it aside first (the October 2026
+networks went to ``snpe_networks/2026-10/``, the ones trained on the manuscript ranges in November
+to ``snpe_networks/2026-11-manuscript/``) or pass ``--overwrite``. The check runs before any
+simulation.
 
 The heavy import (``AmortisedSBI``, which pulls in torch + sbi) is deferred into
 ``train_one`` so that ``--count`` and argument parsing run on a login node
@@ -34,7 +43,8 @@ Cluster (SLURM array, one network per task)::
     N=$(sc-sbi-train --count)        # -> 4
     bash slurm/submit.sh sbi-train                       # task_id -> (rep, model, distribution)
 
-Smoke test (tiny n_simulations, just checks the pipeline runs end to end)::
+Smoke test (tiny n_simulations, just checks the pipeline runs end to end; point SC_DATA_ROOT at a
+scratch folder first, or the tiny networks land where the real ones go -- slurm/smoke.sh does)::
 
     sc-sbi-train --rep pooled --model BE --fast
 """
@@ -45,6 +55,7 @@ import argparse
 import time
 
 from sound_categorisation.data.paths import snpe_net_path
+from sound_categorisation.inference.simulator import accuracy_rule
 from sound_categorisation.inference.tasks import TRAIN_GRID
 from sound_categorisation.settings import (
     BASE_SEED,
@@ -78,15 +89,18 @@ def _as_tuple(v):
 def representation_changes(path, rep, distribution):
     """Fields of the network at ``path`` that differ from what training ``rep`` on
     ``distribution`` would now produce (empty: same representation)."""
-    from sound_categorisation.inference.amortised import read_network_file
+    from sound_categorisation.inference.amortised import network_prior, read_network_file
     from sound_categorisation.inference.constants import SBI_STATS
+    from sound_categorisation.models.priors import current
     cfg = SBI_REPRESENTATIONS[rep]
     now = {'dist_schedule': distribution, 'N': cfg['N'], 'T': cfg['T'], 'burn_in': SBI_BURN_IN,
            'mode': cfg['mode'], 'stat_names': list(SBI_STATS),
-           'design_features': list(SBI_DESIGN_FEATURES)}
+           'design_features': list(SBI_DESIGN_FEATURES), 'prior': current(),
+           'min_accuracy': accuracy_rule(rep, distribution)}
     data = read_network_file(path)
     saved = {k: data.get(k) for k in now}
     saved['design_features'] = list(saved['design_features'] or ())
+    saved['prior'] = network_prior(data)
     return [k for k in now if _as_tuple(saved[k]) != _as_tuple(now[k])]
 
 
@@ -96,8 +110,10 @@ def train_one(rep, model, distribution, n_simulations=None, seed=BASE_SEED,
 
     ``dist_schedule=distribution`` makes the training curriculum match the phase the network
     will be conditioned on. ``n_simulations`` overrides the per-rep default in
-    SBI_REPRESENTATIONS (used by --fast and --n-simulations). Refuses to replace a network
-    trained with a different representation unless ``overwrite``.
+    SBI_REPRESENTATIONS (used by --fast and --n-simulations): the number of simulations kept.
+    The network is trained on the prior in use (settings.SBI_PRIOR) and, for a representation
+    with ``accuracy_rule``, on simulations passing the session filter's minimum accuracy.
+    Refuses to replace a network trained with a different representation unless ``overwrite``.
     """
     if rep not in SBI_REPRESENTATIONS:
         raise ValueError(f'Unknown rep {rep!r}; choose from {REPRESENTATIONS}.')
@@ -112,6 +128,7 @@ def train_one(rep, model, distribution, n_simulations=None, seed=BASE_SEED,
 
     cfg = SBI_REPRESENTATIONS[rep]
     n_sims = cfg['n_simulations'] if n_simulations is None else n_simulations
+    min_accuracy = accuracy_rule(rep, distribution)
     out = snpe_net_path(rep, model, distribution)
     if out.exists() and not overwrite:
         changed = representation_changes(out, rep, distribution)
@@ -122,7 +139,7 @@ def train_one(rep, model, distribution, n_simulations=None, seed=BASE_SEED,
 
     print(f'[train] {rep}/{model}/{distribution}: N={cfg["N"]} mode={cfg["mode"]} '
           f'T={cfg["T"]} burn_in={SBI_BURN_IN} design={list(SBI_DESIGN_FEATURES)} '
-          f'n_sims={n_sims} seed={seed}')
+          f'n_sims={n_sims} (kept) min_accuracy={min_accuracy} seed={seed}')
     t0 = time.time()
 
     net = AmortisedSBI(
@@ -133,6 +150,7 @@ def train_one(rep, model, distribution, n_simulations=None, seed=BASE_SEED,
         burn_in=SBI_BURN_IN,
         mode=cfg['mode'],
         design_features=SBI_DESIGN_FEATURES,
+        min_accuracy=min_accuracy,
     )
     net.train(n_simulations=n_sims, seed=seed, show_progress=show_progress)
 
@@ -155,12 +173,12 @@ def main(argv=None):
                    help=f'SLURM array index 0-{N_TASKS - 1}; '
                         'overrides --rep/--model/--distribution.')
     p.add_argument('--n-simulations', type=int, default=None,
-                   help='Override the per-rep simulation budget.')
+                   help='Override the per-rep number of simulations kept.')
     p.add_argument('--seed', type=int, default=BASE_SEED,
                    help='Training seed (default %(default)s).')
     p.add_argument('--fast', action='store_true',
-                   help=f'Use {FAST_SBI_N_SIMULATIONS} sims to check the '
-                        'pipeline runs.')
+                   help=f'Keep {FAST_SBI_N_SIMULATIONS} sims to check the pipeline runs. Set '
+                        'SC_DATA_ROOT to a scratch folder first (slurm/smoke.sh does).')
     p.add_argument('--overwrite', action='store_true',
                    help='replace an existing network even if its representation differs')
     p.add_argument('--print-array', action='store_true', help='print the SLURM --array range and exit')

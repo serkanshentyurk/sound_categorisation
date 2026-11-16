@@ -24,6 +24,40 @@ class TestParameterGrid:
             assert FAST_GRID[model].n_combinations < COARSE_GRID[model].n_combinations < DEFAULT_GRID[model].n_combinations
 
 
+class TestGridFollowsThePrior:
+    """The grid search and the SBI networks search the same space."""
+
+    def test_default_grid_spans_the_prior_in_use(self):
+        from sound_categorisation.inference.grid_search import DEFAULT_GRID, GRIDS
+        from sound_categorisation.models.priors import log_uniform_params, prior_bounds
+        from sound_categorisation.settings import SBI_PRIOR
+        assert DEFAULT_GRID is GRIDS[SBI_PRIOR]
+        for model in ('BE', 'SC'):
+            grid, bounds = DEFAULT_GRID[model], prior_bounds(model.lower())
+            names = list(bounds)
+            assert (grid.model_param1_name, grid.model_param2_name) == (names[2], names[3])
+            axes = [grid.sigma_percep_values, grid.A_repulsion_values, grid.model_param1_values,
+                    grid.model_param2_values]
+            assert [len(a) for a in axes] == [10, 4, 20, 10] and grid.n_combinations == 8000
+            for name, values in zip(names, axes):
+                np.testing.assert_allclose([values[0], values[-1]], bounds[name])
+                steps = np.diff(np.log(values)) if name in log_uniform_params(model.lower()) else np.diff(values)
+                np.testing.assert_allclose(steps, steps[0])       # even, in the logarithm where the prior is
+
+    def test_be_rates_are_log_spaced_under_learning(self):
+        from sound_categorisation.inference.grid_search import GRIDS
+        eta = GRIDS['learning']['BE'].model_param1_values
+        assert eta[0] == 0.005 and np.sum(eta < 0.05) >= 8        # the slow end is searched
+
+    def test_manuscript_grid_is_kept_as_it_was(self):
+        from sound_categorisation.inference.grid_search import GRIDS
+        be, sc = GRIDS['manuscript']['BE'], GRIDS['manuscript']['SC']
+        np.testing.assert_allclose(be.model_param1_values, np.linspace(0.1, 0.9, 20))
+        np.testing.assert_allclose(be.model_param2_values, np.linspace(0.05, 0.4, 10))
+        np.testing.assert_allclose(sc.model_param1_values, np.linspace(0.1, 1.0, 20))
+        np.testing.assert_allclose(be.sigma_percep_values, np.linspace(0.05, 0.30, 10))
+
+
 class TestSimulateModelMatrices:
     """simulate_model_matrices generates per-θ update matrices."""
 

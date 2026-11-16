@@ -9,8 +9,8 @@ hand-made ranks.
 import numpy as np
 import pandas as pd
 from sound_categorisation.inference.calibration import compute_sbc_ranks, coverage_from_ranks
-from sound_categorisation.inference.simulator import get_bounds_arrays
 from sound_categorisation.inference.types import ModelType
+from sound_categorisation.models.priors import flat_bounds, from_flat, sample_prior
 
 PARAMS = ['sigma_percep', 'A_repulsion', 'eta_learning', 'eta_relax']
 
@@ -18,21 +18,21 @@ PARAMS = ['sigma_percep', 'A_repulsion', 'eta_learning', 'eta_relax']
 class _StubNet:
     """Mimics the AmortisedSBI attributes compute_sbc_ranks reads, with a chosen posterior."""
 
-    def __init__(self, kind='prior'):
+    def __init__(self, kind='prior', prior_name='learning', min_accuracy=None):
         self.model = ModelType.BE
         self.T, self.burn_in, self.dist_schedule, self.mode = 40, 10, 'uniform', 'pooled'
         self.param_names = list(PARAMS)
-        self.kind = kind
+        self.kind, self.prior_name, self.min_accuracy = kind, prior_name, min_accuracy
         self._k = 0
 
     def condition(self, sessions, n_samples=1000):
-        lo, hi = get_bounds_arrays('be')
+        lo, hi = flat_bounds('be', self.prior_name)
         self._k += 1
         rng = np.random.default_rng(10_000 + self._k)
-        if self.kind == 'prior':
-            s = rng.uniform(lo, hi, size=(n_samples, 4))
+        if self.kind == 'prior':                 # the prior itself: calibrated by construction
+            s = sample_prior('be', self.prior_name, n_samples, rng)[1]
         else:                                    # overconfident and biased: a sliver at the lower end
-            s = lo + 0.05 * (hi - lo) * rng.uniform(size=(n_samples, 4))
+            s = from_flat('be', self.prior_name, lo + 0.05 * (hi - lo) * rng.uniform(size=(n_samples, 4)))
         return {'posterior_samples': s, 'param_names': self.param_names,
                 'point_estimate': dict(zip(self.param_names, np.median(s, axis=0)))}
 
@@ -78,6 +78,33 @@ def test_per_draw_posterior_summaries():
     assert np.all(res['theta_quantiles'][:, q.index(0.05)] <= res['theta_quantiles'][:, q.index(0.95)])
     assert res['acceptance_rate'].shape == (n,) and res['budget_hit'].dtype == bool
     assert res['design_features'] == []                    # the stub has none
+
+
+def test_recovery_is_stored_where_the_prior_is_flat():
+    """Under the learning prior BE's two rates are log-uniform: their truths, posterior summaries
+    and bounds are stored as logarithms, the other parameters as they are."""
+    res = compute_sbc_ranks(_StubNet('prior'), n_draws=30, n_sessions=2, T=40,
+                            n_posterior_samples=100, seed=6, show_progress=False)
+    assert res['prior'] == 'learning' and res['log_uniform'] == ['eta_learning', 'eta_relax']
+    low, high = flat_bounds('be', 'learning')
+    for j, name in enumerate(PARAMS):
+        assert res['prior_bounds'][name] == (low[j], high[j])
+        assert np.all(res['theta_true'][:, j] >= low[j]) and np.all(res['theta_true'][:, j] <= high[j])
+        assert np.all(res['theta_median'][:, j] >= low[j]) and np.all(res['theta_median'][:, j] <= high[j])
+    assert res['theta_true'][:, 2].max() < 0 and res['theta_true'][:, 0].min() > 0     # log rate, plain sigma
+    old = compute_sbc_ranks(_StubNet('prior', prior_name='manuscript'), n_draws=5, n_sessions=2, T=40,
+                            n_posterior_samples=50, seed=6, show_progress=False)
+    assert old['prior'] == 'manuscript' and old['log_uniform'] == [] and old['theta_true'][:, 2].min() >= 0.05
+
+
+def test_accuracy_rule_redraws_until_every_session_passes():
+    """A network trained with the rule is calibrated on truths that pass it, like its training set."""
+    kwargs = dict(n_draws=25, n_sessions=2, T=60, n_posterior_samples=50, seed=8, show_progress=False)
+    ruled = compute_sbc_ranks(_StubNet('prior', min_accuracy=0.62), **kwargs)
+    plain = compute_sbc_ranks(_StubNet('prior'), **kwargs)
+    assert ruled['min_accuracy'] == 0.62 and ruled['n_rejected'] > 0 and len(ruled['ranks']) == 25
+    assert plain['min_accuracy'] is None and plain['n_rejected'] == 0
+    assert not np.array_equal(ruled['theta_true'], plain['theta_true'])     # other truths survive
 
 
 def test_default_seed_is_the_validation_seed():

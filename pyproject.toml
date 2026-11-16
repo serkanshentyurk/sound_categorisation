@@ -9,7 +9,7 @@ description = "PPC causal role in auditory categorisation — project code on to
 requires-python = ">=3.11"
 dependencies = [
     "numpy", "pandas", "scipy", "matplotlib", "pyyaml", "joblib>=1.3", "scikit-learn",
-    "behav_utils[store] @ git+https://github.com/serkanshentyurk/behav_utils.git@v1.0.0",
+    "behav_utils[store] @ git+https://github.com/serkanshentyurk/behav_utils.git@v1.1.0",
 ]
 
 [project.optional-dependencies]
@@ -26,6 +26,8 @@ sc-sbi-train       = "sound_categorisation.cli.sbi_train:main"
 sc-sbi-condition   = "sound_categorisation.cli.sbi_condition:main"
 sc-sbi-sbc         = "sound_categorisation.cli.sbi_sbc:main"
 sc-sbi-check       = "sound_categorisation.cli.sbi_check:main"
+sc-sbi-range       = "sound_categorisation.cli.sbi_range:main"
+sc-smoke           = "sound_categorisation.cli.smoke:main"
 sc-validation-tables = "sound_categorisation.cli.validation_tables:main"
 sc-grid-search     = "sound_categorisation.cli.grid_search:main"
 sc-consensus       = "sound_categorisation.cli.consensus:main"

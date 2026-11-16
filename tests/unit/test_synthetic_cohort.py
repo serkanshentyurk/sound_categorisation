@@ -10,12 +10,34 @@ from sound_categorisation.cli.make_synthetic_cohort import (
     preset_min_accuracy,
     shapes_from_run,
 )
-from sound_categorisation.settings import BASE_SEED, SBI_REPRESENTATIONS, VALIDATION_SEED
+from sound_categorisation.settings import BASE_SEED, SBI_MAX_DRAWS, SBI_REPRESENTATIONS, VALIDATION_SEED
 
 
 def test_seed_ranges_are_disjoint():
-    max_training_seed = BASE_SEED + max(r['n_simulations'] for r in SBI_REPRESENTATIONS.values())
+    """Training draw i uses seed BASE_SEED + i, and a network stops at SBI_MAX_DRAWS draws."""
+    max_training_seed = BASE_SEED + SBI_MAX_DRAWS
+    assert SBI_MAX_DRAWS > 10 * max(r['n_simulations'] for r in SBI_REPRESENTATIONS.values())
     assert VALIDATION_SEED > max_training_seed and COHORT_SEED >= VALIDATION_SEED + 1_000_000
+
+
+def test_truths_come_from_the_prior_in_use_unless_one_is_named(tmp_path, monkeypatch):
+    monkeypatch.setenv('SC_DATA_ROOT', str(tmp_path))
+    from sound_categorisation.models.priors import prior_bounds
+    seen = {}
+    for prior in (None, 'manuscript'):
+        path = make_cohort(f'synthetic_uniform_{prior}', n_per_model=6, n_sessions=2, trials=40,
+                           burn_in=20, prior=prior)
+        with open(path, 'rb') as f:
+            cohort = pickle.load(f)
+        name = prior or 'learning'
+        assert cohort['generation']['prior'] == name
+        for animal in cohort['animals']:
+            bounds = prior_bounds(animal['true_model'].lower(), name)
+            assert list(animal['true_params']) == list(bounds)
+            assert all(bounds[k][0] <= v <= bounds[k][1] for k, v in animal['true_params'].items())
+        seen[name] = [a['true_params'] for a in cohort['animals'] if a['true_model'] == 'BE']
+    assert min(p['eta_learning'] for p in seen['learning']) < 0.05     # below the manuscript floor
+    assert min(p['eta_learning'] for p in seen['manuscript']) >= 0.05
 
 
 def test_preset_threshold():

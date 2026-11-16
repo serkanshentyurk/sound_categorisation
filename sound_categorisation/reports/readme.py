@@ -64,13 +64,27 @@ For `post_opto` the comparison is with the other non-laser trials (the post-opto
 Columns: `cohort animal genotype distribution site trial_class kind contrast unit stat diff ci_lo ci_hi boot_p perm_p
 n_a n_b n_sessions_a n_sessions_b`. `diff` is a - b for the contrast named in `contrast` (e.g. `opto_vs_non_opto`).
 `unit` is the bootstrap resampling unit: `trials` (stratified by stimulus bin; assumes trials exchangeable) or
-`sessions` (whole sessions; the honest interval for anything that varies by session). `boot_p` is the two-sided
-bootstrap p against 0; `perm_p` the permutation p where the randomisation allows one, else NaN.
+`sessions` (whole sessions; the right unit for anything that varies by session). A session interval from few
+sessions is too narrow: with the three to six sessions a set has here, an interval meant to cover 95 % covers
+roughly 80 to 90 %, so read it as rough and rest claims on the per-animal values and the tests across animals.
+Sessions two trial sets share (`within`, `within_masking`) are drawn once for both, so those intervals are
+paired. `boot_p` is the two-sided bootstrap p against 0; `perm_p` the permutation p where the randomisation
+allows one, else NaN.
 
 Stats: `mu` (criterion / PSE of the cumulative-Gaussian fit; positive = more evidence needed to choose B),
 `sigma` (slope), `lapse_low`, `lapse_high`, `accuracy`, `hard_accuracy`, `easy_accuracy`, `side_bias`
 (P(B) - 0.5), `recency`, `win_stay`, `lose_shift`; ALM adds `reaction_time`, `reaction_time_jitter`.
 `mu`/`sigma` are NaN where the fit was unreliable (sigma > 5 or |mu| > 0.99).
+
+## Equivalence (`equivalence.csv`)
+
+Is the laser effect absent? A p-value cannot show that; an interval inside a margin fixed beforehand can. One
+row per statistic that has a margin: the `within` contrast on the trials unit (`diff`, `ci_lo`, `ci_hi`), the
+`margin` and the `verdict`: `within margin` (the whole 95 % interval inside +/- margin: any effect is smaller
+than the margin), `effect` (the interval excludes zero and is not inside), `unclear` (neither: these data
+cannot tell) or `no interval`. The margins are `settings.EQUIVALENCE_MARGINS`, recorded in `meta.json` under
+`settings.margins`: `mu` and `sigma` 0.10, the other statistics 0.05. For HET animals on Uniform this is
+prediction 1, PPC dispensable in experts.
 
 ## Levels (`levels.csv`)
 

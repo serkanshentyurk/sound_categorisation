@@ -90,6 +90,20 @@ sc-make-synthetic-run --results /tmp/sc_results --data /tmp/sc_data
 SC_NB_SYNTHETIC=1 SC_RESULTS_ROOT=/tmp/sc_results SC_DATA_ROOT=/tmp/sc_data jupyter lab notebooks/
 ```
 
+## 7. Which environment made a result
+
+Every run folder holds `environment.txt`, the installed packages and their versions at the time the run was
+created; nothing needs doing for that. `pyproject.toml` does not pin versions, so for results that have to be
+reproducible later (a thesis, a paper), also commit the cluster environment once the runs are final:
+
+```bash
+conda env export -n sound_cat --no-builds > environment.lock.yml
+git add environment.lock.yml
+git commit -m "Environment of the final runs"
+```
+
+`conda env create -f environment.lock.yml` rebuilds it.
+
 ## Troubleshooting
 
 | symptom | fix |

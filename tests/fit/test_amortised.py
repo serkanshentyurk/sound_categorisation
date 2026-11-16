@@ -163,3 +163,131 @@ class TestDesignFeaturesAndFiles:
         assert out['posterior_samples'].shape == (50, len(BE_NAMES))
         assert trained_prior_bounds(read_network_file(path)) is not None
 
+
+
+RULE = 0.62                    # an accuracy rule about half of these short BE simulations pass
+
+
+@pytest.fixture(scope='module')
+def ruled_net():
+    net = AmortisedSBI(ModelType.BE, dist_schedule='uniform', N=(2, 3), T=(60, 90), burn_in=BURN,
+                       mode='pooled', stat_names=STATS, min_accuracy=RULE)
+    net.train(n_simulations=300, seed=0, show_progress=False)
+    return net
+
+
+class TestPriorVariantAndAccuracyRule:
+    """A network belongs to a prior variant and, optionally, to the accuracy rule. Inside it works
+    in flat space (BE's two rates as logarithms under 'learning'); what comes out is in the
+    parameters' own units."""
+
+    RULE = RULE
+
+    def test_a_new_network_is_on_the_prior_in_use(self, trained_net):
+        from sound_categorisation.settings import SBI_PRIOR
+        assert trained_net.prior_name == SBI_PRIOR == 'learning' and trained_net.min_accuracy is None
+        assert trained_net._training_metadata['prior'] == 'learning'
+
+    def test_the_density_estimator_sees_flat_space(self, trained_net):
+        from sound_categorisation.inference.amortised import _as_np
+        from sound_categorisation.models.priors import flat_bounds
+        low, high = flat_bounds('be', 'learning')
+        base = trained_net.prior.base_dist
+        np.testing.assert_allclose(_as_np(base.low), low, rtol=1e-6)
+        np.testing.assert_allclose(_as_np(base.high), high, rtol=1e-6)
+        assert low[2] == pytest.approx(np.log(0.005)) and low[0] == pytest.approx(0.05)
+
+    def test_posterior_samples_are_in_own_units_inside_the_prior(self, trained_net):
+        out = trained_net.condition(_be_sessions(seed0=20), n_samples=300)
+        low, high = trained_net.bounds()
+        s = out['posterior_samples']
+        assert np.all(s >= low - 1e-9) and np.all(s <= high + 1e-9)
+        assert s[:, 2].min() > 0 and s[:, 3].min() > 0              # rates, not their logarithms
+        assert 0.0 <= out['acceptance_rate'] <= 1.0
+        assert all(low[i] <= v <= high[i] for i, v in enumerate(out['theta_median']))
+
+    def test_rule_keeps_passing_simulations_and_records_the_draws(self, ruled_net):
+        meta = ruled_net._training_metadata
+        assert meta['n_simulations'] == 300 and meta['n_drawn'] > 300
+        assert 300 / meta['n_drawn'] <= meta['pass_rate'] < 1 and meta['min_accuracy'] == self.RULE
+        assert meta['simulation_time'] > 0 and meta['fit_time'] >= 0
+        assert meta['training_time'] >= meta['simulation_time']
+        # every kept simulation passed the rule, so the stored median accuracy is above it
+        assert ruled_net._feature_medians[STATS.index('accuracy')] >= self.RULE
+
+    def test_prior_and_rule_survive_save_and_load(self, ruled_net, tmp_path):
+        from sound_categorisation.inference.amortised import network_prior, read_network_file
+        path = tmp_path / 'ruled.pkl'
+        ruled_net.save(path)
+        data = read_network_file(path)
+        assert network_prior(data) == 'learning' and data['min_accuracy'] == self.RULE
+        assert data['log_uniform'] == ['eta_learning', 'eta_relax'] and data['_version'] == 7
+        loaded = AmortisedSBI.load(path)
+        assert loaded.prior_name == 'learning' and loaded.min_accuracy == self.RULE
+        out = loaded.condition(_be_sessions(seed0=30), n_samples=100)
+        assert out['posterior_samples'].shape == (100, len(BE_NAMES))
+
+    def test_a_file_from_before_the_variants_is_a_manuscript_network(self, tmp_path):
+        """Such a file records no prior and no rule: it loads on the manuscript ranges, without a
+        rule, samples inside those ranges, and says so once when conditioned."""
+        import pickle
+
+        from sound_categorisation.inference.amortised import read_network_file
+        from sound_categorisation.models.priors import bounds_arrays
+        net = AmortisedSBI(ModelType.BE, dist_schedule='uniform', N=N, T=T, burn_in=BURN, mode='pooled',
+                           stat_names=STATS, prior='manuscript')
+        net.train(n_simulations=300, seed=2, show_progress=False)
+        path = tmp_path / 'november.pkl'
+        net.save(path)
+        data = read_network_file(path)
+        for key in ('prior', 'log_uniform', 'min_accuracy'):
+            data.pop(key)
+        with open(path, 'wb') as f:
+            pickle.dump(data, f)
+        loaded = AmortisedSBI.load(path)
+        assert loaded.prior_name == 'manuscript' and loaded.min_accuracy is None
+        with pytest.warns(UserWarning, match="'manuscript' prior"):
+            out = loaded.condition(_be_sessions(seed0=7), n_samples=100)
+        low, high = bounds_arrays('be', 'manuscript')
+        assert np.all(out['posterior_samples'] >= low - 1e-9) and np.all(out['posterior_samples'] <= high + 1e-9)
+
+    def test_condition_posterior_reports_the_networks_prior(self, trained_net):
+        from sound_categorisation.inference.selection import condition_posterior
+        post = condition_posterior(_be_sessions(seed0=40), trained_net, n_samples=100)
+        assert post['prior'] == 'learning' and post['log_uniform'] == ['eta_learning', 'eta_relax']
+        assert post['prior_bounds']['eta_learning'] == (0.005, 0.9)
+
+    def test_sbc_runs_on_a_ruled_network(self, ruled_net):
+        from sound_categorisation.inference.calibration import compute_sbc_ranks
+        res = compute_sbc_ranks(ruled_net, n_draws=6, n_sessions=2, n_posterior_samples=50, seed=3,
+                                show_progress=False)
+        assert res['ranks'].shape == (6, len(BE_NAMES)) and res['prior'] == 'learning'
+        assert res['min_accuracy'] == self.RULE and res['n_rejected'] >= 0
+        assert res['theta_true'][:, 2].max() < 0                    # log eta_learning
+
+
+class TestTrainCommand:
+    """sc-sbi-train on a scratch data root: the four networks of the array, small."""
+
+    def test_fast_training_writes_networks_with_the_current_settings(self, tmp_path, monkeypatch):
+        monkeypatch.setenv('SC_DATA_ROOT', str(tmp_path))
+        from sound_categorisation.cli import sbi_train
+        from sound_categorisation.data.paths import snpe_net_path
+        from sound_categorisation.inference.amortised import read_network_file
+        from sound_categorisation.settings import SBI_REPRESENTATIONS, SBI_TRAIN_REPS
+        monkeypatch.setattr(sbi_train, 'FAST_SBI_N_SIMULATIONS', 200)
+        sbi_train.main(['--fast', '--model', 'SC'])
+        for rep in SBI_TRAIN_REPS:
+            path = snpe_net_path(rep, 'SC', 'uniform')
+            assert path.exists() and path.is_relative_to(tmp_path)
+            data = read_network_file(path)
+            cfg = SBI_REPRESENTATIONS[rep]
+            assert (data['N'], data['T'], data['prior']) == (cfg['N'], cfg['T'], 'learning')
+            assert data['min_accuracy'] == (0.70 if cfg['accuracy_rule'] else None)
+            assert data['training_metadata']['n_simulations'] == 200
+            assert sbi_train.representation_changes(path, rep, 'uniform') == []
+        # a second run finds the same representation and may replace it; another one is refused
+        sbi_train.main(['--fast', '--rep', 'single', '--model', 'SC'])
+        monkeypatch.setitem(SBI_REPRESENTATIONS['single'], 'T', (100, 300))
+        with pytest.raises(FileExistsError, match='different representation'):
+            sbi_train.main(['--fast', '--rep', 'single', '--model', 'SC'])

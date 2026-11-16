@@ -44,6 +44,7 @@ from behav_utils.tasks import Outcome, TwoAFC
 from joblib import Parallel, delayed
 
 from sound_categorisation.inference.fold_utils import split_folds_by_block
+from sound_categorisation.settings import SBI_PRIOR
 
 if TYPE_CHECKING:
     from behav_utils.data import SessionData
@@ -70,8 +71,9 @@ class ParameterGrid:
                 len(self.model_param2_values))
 
 
-# Manuscript grids
-DEFAULT_GRID = {
+# The manuscript's grids: the ranges every grid search before mid-November 2026 swept. They are
+# not the SBI prior of that time (sigma_percep stops at 0.30, SC's gamma runs from 0.1).
+MANUSCRIPT_GRID = {
     'BE': ParameterGrid(
         sigma_percep_values=np.linspace(0.05, 0.30, 10),
         A_repulsion_values=np.linspace(0.0, 0.5, 4),
@@ -90,24 +92,30 @@ DEFAULT_GRID = {
     ),
 }
 
-COARSE_GRID = {
-    'BE': ParameterGrid(
-        sigma_percep_values=np.linspace(0.05, 0.30, 4),
-        A_repulsion_values=np.array([0.0, 0.25, 0.5]),
-        model_param1_values=np.linspace(0.1, 0.9, 8),
-        model_param2_values=np.linspace(0.05, 0.4, 4),
-        model_param1_name='eta_learning',
-        model_param2_name='eta_relax',
-    ),
-    'SC': ParameterGrid(
-        sigma_percep_values=np.linspace(0.05, 0.30, 4),
-        A_repulsion_values=np.array([0.0, 0.25, 0.5]),
-        model_param1_values=np.linspace(0.1, 1.0, 8),
-        model_param2_values=np.linspace(0.1, 1.0, 4),
-        model_param1_name='gamma',
-        model_param2_name='sigma_update',
-    ),
+
+def grid_from_prior(model: str, variant: str | None = None, n_points=(10, 4, 20, 10)) -> ParameterGrid:
+    """A grid over a prior variant's ranges (``models.priors``; None = the one in use), so the grid
+    search and the SBI networks search the same space: ``n_points`` values per parameter in theta
+    order, evenly spaced between the bounds, in the logarithm for a log-uniform parameter."""
+    from sound_categorisation.models.priors import log_uniform_params, prior_bounds
+    bounds = prior_bounds(model, variant)
+    logs = log_uniform_params(model, variant)
+    names = list(bounds)
+    values = [(np.geomspace if name in logs else np.linspace)(*bounds[name], n)
+              for name, n in zip(names, n_points)]
+    return ParameterGrid(sigma_percep_values=values[0], A_repulsion_values=values[1],
+                         model_param1_values=values[2], model_param2_values=values[3],
+                         model_param1_name=names[2], model_param2_name=names[3])
+
+
+# The grids in use: the prior in use (settings.SBI_PRIOR), at the manuscript grids' resolution
+# (8,000 points per model) and at a coarse one (384).
+GRIDS = {
+    'manuscript': MANUSCRIPT_GRID,
+    'learning': {m: grid_from_prior(m.lower(), 'learning') for m in ('BE', 'SC')},
 }
+DEFAULT_GRID = GRIDS[SBI_PRIOR]
+COARSE_GRID = {m: grid_from_prior(m.lower(), SBI_PRIOR, n_points=(4, 3, 8, 4)) for m in ('BE', 'SC')}
 
 
 # FAST_GRID: a deliberately tiny sweep for "does it run" checks only. Two params

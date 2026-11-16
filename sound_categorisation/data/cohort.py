@@ -32,7 +32,8 @@ from sound_categorisation.settings import MODEL_ID_MIN_SESSIONS
 
 __all__ = ['load_experiment_any', 'gather_genotypes', 'collect_sessions_ppc',
            'collect_sessions_alm', 'ensure_presets', 'SITE_TYPE', 'GENOTYPES', 'CONTROL_TYPES',
-           'AnimalRecord', 'load_animals', 'select_animals', 'is_synthetic_cohort']
+           'AnimalRecord', 'load_animals', 'select_animals', 'is_synthetic_cohort',
+           'preset_min_accuracy']
 
 GENOTYPES = ('wt', 'het')
 SITE_TYPE = {'uni': 'alm_control_uni', 'bi': 'alm_control_bi'}
@@ -260,3 +261,20 @@ def load_animals(cohort, config_path=None, preset='model_id_uniform', experiment
     """One list of AnimalRecord for a cohort, whichever kind it is (see ``select_animals``)."""
     return select_animals(cohort, config_path=config_path, preset=preset, experiment=experiment,
                           min_sessions=min_sessions)[0]
+
+
+def preset_min_accuracy(distribution: str) -> float:
+    """min_accuracy of the model_id_<distribution> session preset (config.yaml): the accuracy
+    every selected session of a model-identification run reaches."""
+    import yaml
+    from behav_utils.data import preset_from_spec
+
+    from sound_categorisation.data.paths import DEFAULT_CONFIG
+    name = f'model_id_{distribution}'
+    spec = ((yaml.safe_load(DEFAULT_CONFIG.read_text()) or {}).get('session_presets') or {}).get(name)
+    if not isinstance(spec, dict):
+        raise ValueError(f'config.yaml has no session preset {name}')
+    acc = preset_from_spec(name, spec).min_accuracy
+    if acc is None:
+        raise ValueError(f'preset model_id_{distribution} has no min_accuracy')
+    return float(acc)

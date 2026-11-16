@@ -37,6 +37,8 @@ LIGHT_STATS = ('side_bias', 'accuracy', *PSYCHOMETRIC[:2], *SDT)     # side_bias
 LIGHT_SETS = ('ppc_opto', 'ppc_sham', 'alm_uni', 'alm_bi')
 KEY = 'on_vs_off'
 N_BOOT, N_PERM, N_BINS = 1000, 1000, 8
+CONTRAST_SEED = 42      # each set resamples with CONTRAST_SEED + its position in LIGHT_SETS, so the two sides
+                        # of the site interaction never draw the same session positions
 
 
 def light_sets(animal, distribution: str) -> Dict[str, list]:
@@ -106,7 +108,8 @@ def compute_light_artefact(animal, distribution: str, *, names: Sequence[str] = 
         if min(a_on.n_responded, a_off.n_responded) < 20:
             continue
         contrasts[name] = compute_delta_stat({'off': off, 'on': on}, list(names), reference='off', curve=False,
-                                             n_permutations=n_perm, n_bootstrap=n_boot, units=list(units))
+                                             n_permutations=n_perm, n_bootstrap=n_boot, units=list(units),
+                                             seed=CONTRAST_SEED + LIGHT_SETS.index(name))
         curves[name] = {'on': compute_psychometric_curve(a_on, n_bootstrap=curve_boot),
                         'off': compute_psychometric_curve(a_off, n_bootstrap=curve_boot)}
         bins += _bin_rows(a_on, a_off, name, n_boot if n_boot else 0, rng)

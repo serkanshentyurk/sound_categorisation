@@ -4,7 +4,8 @@
 A cohort is a pickle at ``cohort_path(name)`` with the shape ``_synthetic_records``
 expects: ``{'animals': [{'animal_id', 'sessions': [{stimuli, choices, categories}],
 'true_model', 'true_params'}, ...], 'generation': {...}}``. Animals are simulated from the BE
-and SC priors, so the cohort carries ground truth for the recovery / identification checks.
+and SC priors (the prior variant in use, ``settings.SBI_PRIOR``, unless ``--prior`` names
+another), so the cohort carries ground truth for the recovery / identification checks.
 
 Two options make the synthetic animals look like the real ones the model comparison is run on:
 
@@ -44,32 +45,15 @@ import pickle
 
 import numpy as np
 
+from sound_categorisation.data.cohort import preset_min_accuracy
 from sound_categorisation.data.paths import cohort_path
-from sound_categorisation.models.be_core import BEParams
-from sound_categorisation.models.sc_core import SCParams
+from sound_categorisation.models.priors import PRIOR_VARIANTS, resolve, sample_prior
 from sound_categorisation.settings import DISTRIBUTIONS, SBI_TRAIN_T, VALIDATION_SEED
 
-_PARAMS = {'BE': BEParams, 'SC': SCParams}
 COHORT_SEED = VALIDATION_SEED + 1_000_000
 # seed layout below COHORT_SEED + 300,000: truths (+1, +2), shapes (+3, +4), and the sessions of
 # candidate j (+100,000 + j for BE, +200,000 + j for SC)
 _MAX_CANDIDATES = 100_000
-
-
-def preset_min_accuracy(distribution: str) -> float:
-    """min_accuracy of the model_id_<distribution> preset (config.yaml)."""
-    import yaml
-    from behav_utils.data import preset_from_spec
-
-    from sound_categorisation.data.paths import DEFAULT_CONFIG
-    name = f'model_id_{distribution}'
-    spec = ((yaml.safe_load(DEFAULT_CONFIG.read_text()) or {}).get('session_presets') or {}).get(name)
-    if not isinstance(spec, dict):
-        raise ValueError(f'config.yaml has no session preset {name}')
-    acc = preset_from_spec(name, spec).min_accuracy
-    if acc is None:
-        raise ValueError(f'preset model_id_{distribution} has no min_accuracy')
-    return float(acc)
 
 
 def shapes_from_run(run, distribution: str = 'uniform'):
@@ -88,7 +72,7 @@ def _session_accuracy(session) -> float:
 
 def make_cohort(name, distribution='uniform', n_per_model=10, n_sessions=5,
                 trials=SBI_TRAIN_T, burn_in=1000, seed=None, shapes=None,
-                min_accuracy=None, max_candidates_per_animal=50):
+                min_accuracy=None, max_candidates_per_animal=1000, prior=None):
     """Simulate a BE+SC cohort and write it to cohort_path(name); return the path.
 
     ``trials`` is an int or a ``(lo, hi)`` range drawn per session (default: the networks'
@@ -98,14 +82,16 @@ def make_cohort(name, distribution='uniform', n_per_model=10, n_sessions=5,
     is kept only if every session's accuracy is at least that (the session filter's rule);
     otherwise a new draw is tried, up to ``max_candidates_per_animal`` per kept animal on
     average. Sessions come from ``inference.simulator.simulate_sessions`` -- the same generator
-    the networks train on.
+    the networks train on. ``prior`` is the prior variant the truths are drawn from
+    (``models.priors``; None = the one in use).
     """
     from sound_categorisation.inference.simulator import simulate_sessions
     seed = COHORT_SEED if seed is None else int(seed)
+    prior = resolve(prior)
     shape_list = [list(v) for _, v in sorted(shapes.items())] if shapes else None
     max_candidates = min(_MAX_CANDIDATES, max_candidates_per_animal * n_per_model)
 
-    animals, generation = [], {'seed': seed, 'distribution': distribution,
+    animals, generation = [], {'seed': seed, 'distribution': distribution, 'prior': prior,
                                'n_per_model': n_per_model, 'min_accuracy': min_accuracy,
                                'shapes_from': sorted(shapes) if shapes else None,
                                'n_sessions': None if shapes else n_sessions,
@@ -119,7 +105,8 @@ def make_cohort(name, distribution='uniform', n_per_model=10, n_sessions=5,
                 raise RuntimeError(
                     f'{model}: only {kept}/{n_per_model} animals passed the accuracy rule '
                     f'(>= {min_accuracy}) after {n_candidates} draws')
-            params = _PARAMS[model].sample_prior(rng=prior_rng).to_dict()
+            names, theta = sample_prior(model.lower(), prior, 1, prior_rng)
+            params = dict(zip(names, map(float, theta[0])))
             if shape_list:
                 lengths = shape_list[int(shape_rng.integers(len(shape_list)))]
             else:
@@ -173,6 +160,8 @@ def main(argv=None):
     p.add_argument('--accuracy-rule', action='store_true',
                    help='keep a draw only if every session reaches the model_id_<D> preset\'s min_accuracy')
     p.add_argument('--burn-in', type=int, default=1000, help='Model burn-in per session.')
+    p.add_argument('--prior', default=None, choices=PRIOR_VARIANTS,
+                   help='prior variant the truths are drawn from (default: the one in use)')
     p.add_argument('--seed', type=int, default=COHORT_SEED)
     args = p.parse_args(argv)
     if args.trials is None:
@@ -199,14 +188,14 @@ def main(argv=None):
     path = make_cohort(name, distribution=args.distribution,
                        n_per_model=args.n_per_model, n_sessions=args.n_sessions,
                        trials=trials, burn_in=args.burn_in, seed=args.seed, shapes=shapes,
-                       min_accuracy=min_accuracy)
+                       min_accuracy=min_accuracy, prior=args.prior)
     with open(path, 'rb') as f:
         gen = pickle.load(f)['generation']
     shape = f'shapes from {args.shape_from}' if shapes else f'{args.n_sessions}x{trials} trials'
     rule = (f', accuracy >= {min_accuracy} in every session (rejected {gen["BE_rejected"]} BE, '
             f'{gen["SC_rejected"]} SC draws)' if min_accuracy is not None else '')
     print(f'[cohort] wrote {2 * args.n_per_model} animals ({args.n_per_model} BE + {args.n_per_model} SC), '
-          f'{shape}{rule}, phase={args.distribution} -> {path}')
+          f'{shape}{rule}, phase={args.distribution}, prior={gen["prior"]} -> {path}')
 
 
 if __name__ == '__main__':

@@ -39,18 +39,23 @@ behaviour/
                        dod            within − within_masking (Interaction)
                        vs_ppc         ALM sessions − PPC opto sessions (ALM design)
                      STATS / STATS_RT / SENSITIVITY / BIAS: which statistics each design reports
+                     Every contrast resamples with its own seed (SEED + SEED_OFFSET), so the two sides of dod
+                     never draw the same sessions. equivalence_verdict reads an interval against a margin
+                     set in advance (settings.EQUIVALENCE_MARGINS); the report writes equivalence.csv.
   adaptation.py      compute_trajectory(animal, distributions) -> Trajectory: one row per session in order;
                      compute_switches / SwitchResult: block-level adaptation after a distribution switch;
                      BiasRule, session_bias_checks (per session), flag_biased_sessions (per animal)
   daily_tracker.py   DailyTracker: per-day rows, condition summaries (pooled and mean, light separately),
                      flags, move-on marks; settings from config.yaml's custom.daily_tracker block
 models/              BE (boundary-estimation) and SC (statistical-categorisation) generative models;
-                     (simulate.py: as behav_utils models, BoundaryEstimation and StatisticalCategorisation)
+                     (simulate.py: as behav_utils models, BoundaryEstimation and StatisticalCategorisation;
+                     priors.py: the prior variants manuscript / learning, docs/prior_variants.md)
 inference/           amortised SBI (types, simulator, representation, selection, amortised),
                      grid_search (CV over model parameters, held-out UM / conditional-psychometric MSE),
                      cv_utils (CV result schema), fold_utils (block-aware folds), consensus (GS + SBI votes),
                      tasks (TaskGrid: TRAIN_GRID, CONDITION_GRID, SBC_GRID, gs_grid), calibration (SBC),
-                     network_check (saved networks against the current code), validation (thesis tables)
+                     network_check (saved networks against the current code), validation (thesis tables),
+                     prior_range (each animal's statistics against the models' simulated range)
 features/            feature_diagnostics: which summary statistics carry BE/SC identity and parameters
 reports/             compute.py  AnimalResult / GroupResult / Settings (no matplotlib)
                      tables.py   to_tables, group_tables, readout_arrays, write_result / read_result
@@ -62,8 +67,8 @@ reports/             compute.py  AnimalResult / GroupResult / Settings (no matpl
                      cli.py      `python -m sound_categorisation.reports` / `sc-reports`
 plotting/            project plotters (CV, opto swarms, assignment, SBI diagnostics, daily tracker)
 cli/                 entry points (pyproject [project.scripts]): sc-reports, sc-export-snapshot, sc-update,
-                     sc-fetch, sc-make-synthetic-cohort, sc-make-synthetic-run, sc-new-run, sc-sbi-train,
-                     sc-sbi-condition, sc-sbi-sbc, sc-sbi-check, sc-grid-search, sc-consensus,
+                     sc-fetch, sc-make-synthetic-cohort, sc-make-synthetic-run, sc-new-run, sc-smoke, sc-sbi-train,
+                     sc-sbi-condition, sc-sbi-sbc, sc-sbi-check, sc-sbi-range, sc-grid-search, sc-consensus,
                      sc-validation-tables, sc-feature-selection, sc-daily-tracker
 slurm/               env.sh (module, conda env, threads; sourced by every job and by load-env), the job
                      scripts, submit.sh (array size from inference/tasks.py)
@@ -80,11 +85,12 @@ slurm/               env.sh (module, conda env, threads; sourced by every job an
 its `meta.json`; every consumer (`sc-reports summary`, `sc-consensus`, the notebooks) resolves a run with
 `paths.resolve_run(report, cohort, 'latest' | run_id)`. On the cluster the run id is created once by
 `slurm/submit.sh` (`sc-new-run`) and shared by every array task, whose logs land in `<run>/logs/`.
+`start_run` also writes `<run>/environment.txt` (every installed package and its version) when it creates a run.
 
 ## The report pipeline
 
 ```
-snapshot ──▶ compute_animal ──▶ AnimalResult ──▶ to_tables ──▶ contrasts.csv, trajectory.csv, readouts.npz, meta.json
+snapshot ──▶ compute_animal ──▶ AnimalResult ──▶ to_tables ──▶ contrasts.csv, equivalence.csv, trajectory.csv, readouts.npz, meta.json
                     │                                              │
                     └──▶ animal_pdf                                └──▶ summary (reads tables only)
          compute_group  ──▶ GroupResult   ──▶ group_tables ──▶ group_rows.csv, group_tests.csv
@@ -108,17 +114,24 @@ sc-sbi-train    TRAIN_GRID (4 tasks)    simulate BE/SC → train one amortised n
 sc-sbi-condition      CONDITION_GRID (4)      condition each animal's expert data → posterior + held-out MSE
 sc-grid-search       gs_grid(animals, seeds) grid search CV per (animal, model, seed) → partials → --gather
 sc-consensus                            GS + SBI calls → assignments.csv, summary.txt
-sc-sbi-sbc           SBC_GRID (12)           calibration per (rep, model, session count)
+sc-sbi-sbc           SBC_GRID (8)            calibration per (rep at one session count, model)
 sc-sbi-check                            saved networks vs current settings and code
+sc-sbi-range [--prior]                  each animal's statistics against what BE and SC simulate under a
+                                        prior variant → range/<D>/<prior>/, and the variants compared
 sc-validation-tables                    a validation run → tables/ (notebook 91)
+sc-smoke / sbatch slurm/smoke.sh        the whole chain, small, in a scratch folder, with checks
 slurm/submit.sh {train|condition|sbc|check|gs}  derives --array from the grids
 ```
 `load_animals(source)` in `data/cohort.py` gives the same `AnimalRecord` shape for real and synthetic animals,
 so the runners are identical downstream; synthetic cohorts carry ground truth for validation.
 
-By default 4 networks are trained: pooled and moments, BE and SC, Uniform only. The code supports all 18
-(3 representations × 2 models × 3 distributions): add them to `SBI_TRAIN_REPS` / `SBI_TRAIN_DISTRIBUTIONS`
-in `settings.py`, or train one by name, e.g. `sc-sbi-train --rep single --distribution hard_a`.
+By default 4 networks are trained: pooled and single, BE and SC, Uniform only (`SBI_TRAIN_REPS` /
+`SBI_TRAIN_DISTRIBUTIONS` in `settings.py`; another one can be trained by name, e.g.
+`sc-sbi-train --rep moments --distribution hard_a`). Pooled votes in the consensus with the grid search;
+single is reported beside them (per-session fits, exploratory). All model fits share one prior variant,
+`settings.SBI_PRIOR` (`models/priors.py`, `docs/prior_variants.md`): the networks, the grid search grid,
+synthetic cohorts and calibration draws. A saved network records the variant and the accuracy rule it was
+trained with, and is conditioned, calibrated and checked with those.
 
 The BE/SC call of each method is copied from the manuscript's model selection: repeat the cross-validation
 over seeds and call the model with the lower error if p < 0.05. The manuscript used an ANOVA over 64 seeds;

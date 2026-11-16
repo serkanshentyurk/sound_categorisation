@@ -15,6 +15,9 @@ Flow:
 The observation x is built by to_stat_vector (representation.py) for BOTH
 simulation (training) and conditioning, so train and test representations match.
 
+The parameter ranges are a prior variant of models/priors.py (settings.SBI_PRIOR is the one in
+use); a network records its variant and, when it has one, its accuracy rule.
+
 Module structure:
     types.py          -- ModelType, ParamConfig, get_default_param_configs
     constants.py      -- SBI_STATS

@@ -77,13 +77,21 @@ def _read_all(run: Path, name: str, exclude_group: bool = True) -> pd.DataFrame:
     if not files:
         return pd.DataFrame()
     df = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
-    return normalise_site(df) if name in ('contrasts', 'levels', 'group_rows', 'group_tests', 'trajectory') else df
+    return normalise_site(df) if name in ('contrasts', 'levels', 'equivalence', 'group_rows', 'group_tests',
+                                          'trajectory') else df
 
 
 def load_contrasts(run: Path) -> pd.DataFrame:
     """Every per-animal contrasts.csv of an opto-contrasts run, one frame (columns include distribution,
     site (ppc | alm_uni | alm_bi), trial_class, kind, unit, stat, diff, ci_lo, ci_hi, boot_p, perm_p)."""
     return _read_all(run, 'contrasts')
+
+
+def load_equivalence(run: Path) -> pd.DataFrame:
+    """Every per-animal equivalence.csv: the within contrast (trials unit) against the margins set in advance,
+    one row per animal, condition and statistic, with the verdict. Empty for a run made before the table
+    existed."""
+    return _read_all(run, 'equivalence')
 
 
 def load_levels(run: Path) -> pd.DataFrame:
@@ -203,7 +211,7 @@ def first_animal(df: pd.DataFrame, genotype: str | None = None) -> str:
 
 __all__ = ['SYNTHETIC', 'RUN', 'OPTO_COHORT', 'SWITCH_COHORT', 'MODEL_COHORT', 'VALIDATION_COHORT', 'REPO_ROOT',
            'GENOTYPE_COLOUR', 'COLOURS', 'PALETTE', 'np', 'pd', 'plt', 'Path',
-           'banner', 'open_run', 'load_contrasts', 'load_levels', 'load_group', 'load_trajectory', 'condition_dir',
+           'banner', 'open_run', 'load_contrasts', 'load_levels', 'load_equivalence', 'load_group', 'load_trajectory', 'condition_dir',
            'load_readouts', 'load_switches', 'load_light_artefact', 'load_consensus', 'load_validation_tables',
            'load_experiment', 'first_animal',
            'EXPERT_PRESET', 'expert_sessions', 'cohorts_by_animal']

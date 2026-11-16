@@ -1,6 +1,9 @@
 """Tests for models.be_core and models.sc_core determinism and API."""
 
 import numpy as np
+import pytest
+from sound_categorisation.models.be_core import BEModel, BEParams
+from sound_categorisation.models.sc_core import SCModel, SCParams
 
 
 class TestBEModel:
@@ -127,3 +130,32 @@ class TestSCModel:
             val = getattr(params, name)
             lo, hi = bounds[name]
             assert lo <= val <= hi
+
+
+# =============================================================================
+# THE MODELS' CHOICES, PINNED
+# =============================================================================
+
+BE_MID = dict(sigma_percep=0.15, A_repulsion=0.1, eta_learning=0.3, eta_relax=0.05)
+SC_MID = dict(sigma_percep=0.15, A_repulsion=0.1, gamma=0.95, sigma_update=0.3)
+
+# 300 uniform stimuli from seed 11, burn-in 200, seed 7: the first 60 choices, how many B choices, and
+# the sum of the first five P(B).
+PINNED = {
+    'BEParams': ('101101000000110111111001100110000100010000000000010000100000', 135, 1.5537236690369503),
+    'SCParams': ('011001001001100111111010110110000110101000001100010100101000', 143, 1.8436133057103392),
+}
+
+
+@pytest.mark.parametrize('core, params_type, mid', [(BEModel, BEParams, BE_MID), (SCModel, SCParams, SC_MID)])
+def test_the_models_choices_are_what_they_were(core, params_type, mid):
+    """The trained networks, the grid search and every saved simulation assume these models: a change
+    to either that alters a choice fails here."""
+    stimuli = np.random.default_rng(11).uniform(-1, 1, 300)
+    categories = (stimuli > 0).astype(int)
+    params = params_type(**mid)
+    state = core.create_initial_state(burn_in=200, params=params, seed=7)
+    choices, p_B, _, _ = core.simulate_session(params, state, stimuli, categories, np.random.default_rng(7))
+    first, n_b, p5 = PINNED[params_type.__name__]
+    assert ''.join(str(int(c)) for c in choices[:60]) == first
+    assert int(choices.sum()) == n_b and float(p_B[:5].sum()) == pytest.approx(p5, abs=1e-12)

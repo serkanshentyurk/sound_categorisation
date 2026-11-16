@@ -49,6 +49,7 @@ from sound_categorisation.inference.grid_search import (
     COARSE_GRID,
     DEFAULT_GRID,
     FAST_GRID,
+    GRIDS,
     compute_grid_search_cv,
 )
 from sound_categorisation.settings import (
@@ -60,6 +61,7 @@ from sound_categorisation.settings import (
     GS_N_BINS,
     GS_N_FOLDS,
     GS_N_SEEDS,
+    SBI_PRIOR,
 )
 
 MODELS = ('BE', 'SC')
@@ -236,6 +238,10 @@ def main(argv=None):
                    help='print the array size (n_animals*n_models*n_seeds) and exit')
     p.add_argument('--n-jobs', type=int, default=1,
                    help='local run only: parallel (animal, model, seed) fits (-1 = all cores)')
+    p.add_argument('--grid', default=None, choices=tuple(GRIDS),
+                   help=f"full grid to sweep: the ranges of a prior variant (default: the prior in use, "
+                        f"'{SBI_PRIOR}'), or 'manuscript' for the grid every run before mid-November "
+                        "2026 used. Pass the same value to every stage of a run")
     p.add_argument('--n-seeds', type=int, default=None,
                    help=f'default {GS_N_SEEDS} (real and synthetic cohorts) / '
                         f'{FAST_GS_N_SEEDS} (--fast)')
@@ -286,7 +292,7 @@ def main(argv=None):
     write_sessions_table(run, args.distribution, sessions_table)
     out_dir = model_id_dir(run, 'grid_search', args.fit_target, args.distribution)
     grid_set = (FAST_GRID if args.fast
-                else (COARSE_GRID if coarse else DEFAULT_GRID))
+                else (COARSE_GRID if coarse else (GRIDS[args.grid] if args.grid else DEFAULT_GRID)))
     ng = (len(grid_set['BE'].sigma_percep_values) *
           len(grid_set['BE'].A_repulsion_values) *
           len(grid_set['BE'].model_param1_values) *
@@ -294,7 +300,7 @@ def main(argv=None):
     print(f'=== GS [{run.name}] {label} phase={args.distribution} preset={preset} '
           f'/ {args.fit_target} | grid={ng} pts x {n_seeds} seeds ===')
     print(f'  {len(records)} animals x {len(MODELS)} models x {n_seeds} seeds, '
-          f'grid={"fast" if args.fast else ("coarse" if coarse else "full")}')
+          f'grid={"fast" if args.fast else ("coarse" if coarse else f"full ({args.grid or SBI_PRIOR})")}')
     print(f'  out={out_dir}')
 
     t0 = time.time()

@@ -18,6 +18,15 @@ rate, so parameter recovery (error, bias, R^2, contraction, z-scores) comes from
 fell inside the prior within the network's proposal budget (the samples were then resampled).
 Degenerate draws (the observation has a non-finite stat the net cannot impute) are skipped and
 counted in ``n_skipped``.
+
+The draws come from the network's own prior (``net.prior_name``) and, for a network trained with
+the accuracy rule, are repeated until every simulated session passes it (``n_rejected`` counts the
+repeats): the truths then follow the same distribution as the network's training set, which is what
+calibration is defined against. Ranks are the same in any monotone scale. Everything else stored
+per parameter (truth, posterior mean, SD, median, quantiles, ``prior_bounds``) is in flat space
+(``models.priors``): the logarithm for a log-uniform parameter (listed in ``log_uniform``), the
+parameter itself otherwise. That is where the prior is a uniform box, so "relative to the prior
+width" and contraction mean what they say.
 """
 
 from __future__ import annotations
@@ -27,7 +36,8 @@ from typing import Any, Dict, Sequence
 import numpy as np
 import pandas as pd
 
-from sound_categorisation.inference.simulator import get_bounds_arrays, simulate_sessions, theta_to_params
+from sound_categorisation.inference.simulator import simulate_sessions, theta_to_params
+from sound_categorisation.models import priors
 from sound_categorisation.settings import SBC_COVERAGE_LEVELS, SBC_POSTERIOR_QUANTILES, VALIDATION_SEED
 
 
@@ -57,7 +67,7 @@ def compute_sbc_ranks(net, n_draws: int = 1000, n_sessions: int = 5, T=None,
                       n_posterior_samples: int = 1000, distribution: str | None = None,
                       seed: int | None = None, levels: Sequence[float] = SBC_COVERAGE_LEVELS,
                       quantiles: Sequence[float] = SBC_POSTERIOR_QUANTILES,
-                      show_progress: bool = True) -> Dict[str, Any]:
+                      show_progress: bool = True, max_candidates: int = 500) -> Dict[str, Any]:
     """SBC ranks + coverage for one trained ``AmortisedSBI``.
 
     Args:
@@ -74,6 +84,7 @@ def compute_sbc_ranks(net, n_draws: int = 1000, n_sessions: int = 5, T=None,
             the first output of a fresh sequential seed is NOT uniform enough at n~300 -- KS
             p~0.005 in a check -- which would show up as a false miscalibration.)
         quantiles: posterior quantiles stored per draw.
+        max_candidates: most prior draws tried per kept draw, on average, under the accuracy rule.
     """
     from scipy.stats import kstest
 
@@ -82,24 +93,37 @@ def compute_sbc_ranks(net, n_draws: int = 1000, n_sessions: int = 5, T=None,
     T = net.T if T is None else T
     burn_in = int(getattr(net, 'burn_in', 1000))
     dist = distribution or (net.dist_schedule if isinstance(net.dist_schedule, str) else net.dist_schedule[0])
-    lo, hi = get_bounds_arrays(model)
+    prior_name = getattr(net, 'prior_name', None) or 'manuscript'
+    min_accuracy = getattr(net, 'min_accuracy', None)
+    key = model.value
+    lo, hi = priors.flat_bounds(key, prior_name)
     names = list(net.param_names)
 
     q_levels = np.asarray(quantiles, dtype=float)
-    thetas = np.random.default_rng(seed).uniform(lo, hi, size=(n_draws, len(names)))
-    ranks, theta_true, theta_med, n_skipped = [], [], [], 0
+    theta_rng = np.random.default_rng(seed)             # one stream for every truth
+    ranks, theta_true, theta_med, n_skipped, n_rejected = [], [], [], 0, 0
     theta_mean, theta_sd, theta_q, acceptance, budget_hit = [], [], [], [], []
-    for i in range(n_draws):
-        theta = thetas[i]
-        rng = np.random.default_rng(seed + 1 + i)
-        sessions = simulate_sessions(model, theta_to_params(theta, model), [dist] * n_sessions,
-                                     T, burn_in, rng)
+    n_kept, candidate = 0, 0
+    while n_kept < n_draws:
+        if candidate >= max_candidates * n_draws:
+            raise RuntimeError(f'{key.upper()}: {n_kept}/{n_draws} draws passed the accuracy rule '
+                               f'(>= {min_accuracy}) after {candidate} candidates')
+        theta = priors.sample_prior(key, prior_name, 1, theta_rng)[1][0]
+        rng = np.random.default_rng(seed + 1 + candidate)
+        candidate += 1
+        sessions = simulate_sessions(model, theta_to_params(theta, model, prior_name),
+                                     [dist] * n_sessions, T, burn_in, rng, min_accuracy=min_accuracy)
+        if sessions is None:
+            n_rejected += 1
+            continue
+        n_kept += 1
         try:
             cond = net.condition(sessions, n_samples=n_posterior_samples)
         except ValueError:
             n_skipped += 1
             continue
-        samples = np.asarray(cond['posterior_samples'], dtype=float)
+        samples = priors.to_flat(key, prior_name, np.asarray(cond['posterior_samples'], dtype=float))
+        theta = priors.to_flat(key, prior_name, theta)
         if samples.shape[0] != n_posterior_samples:
             raise RuntimeError(f'expected {n_posterior_samples} posterior samples, got {samples.shape}')
         ranks.append((samples < theta[None, :]).sum(axis=0))
@@ -110,8 +134,8 @@ def compute_sbc_ranks(net, n_draws: int = 1000, n_sessions: int = 5, T=None,
         theta_q.append(np.quantile(samples, q_levels, axis=0))       # (n_q, n_params)
         acceptance.append(float(cond.get('acceptance_rate', np.nan)))
         budget_hit.append(bool(cond.get('budget_hit', False)))
-        if show_progress and (i + 1) % 25 == 0:
-            print(f'  sbc {model.value.upper()} {i + 1}/{n_draws}')
+        if show_progress and n_kept % 25 == 0:
+            print(f'  sbc {model.value.upper()} {n_kept}/{n_draws}')
 
     n_p = len(names)
     ranks = np.asarray(ranks, dtype=int).reshape(-1, n_p)
@@ -144,8 +168,12 @@ def compute_sbc_ranks(net, n_draws: int = 1000, n_sessions: int = 5, T=None,
         'design_features': list(getattr(net, 'design_features', ()) or ()),
         'coverage': coverage_from_ranks(ranks, n_posterior_samples, levels, names),
         'prior_bounds': {n: (float(lo[j]), float(hi[j])) for j, n in enumerate(names)},
+        'prior': prior_name,
+        'log_uniform': list(priors.log_uniform_params(key, prior_name)),
+        'min_accuracy': min_accuracy,
         'n_draws': int(n_draws),
         'n_skipped': int(n_skipped),
+        'n_rejected': int(n_rejected),
         'n_sessions': int(n_sessions),
         'T': T if isinstance(T, int) else tuple(int(t) for t in T),
         'distribution': dist,

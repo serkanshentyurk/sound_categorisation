@@ -22,7 +22,14 @@ out, since they are laser-off trials themselves and the two sets must not share 
 
 Units: within-phase contrasts are read on the trial unit (laser randomised per
 trial); between-phase and dod carry both the trial and the session unit — the
-session interval is the honest one because session type was assigned per session.
+session unit is the right one because session type was assigned per session, but
+with three to six sessions per set its interval is too narrow (an interval meant
+to cover 95 % covers roughly 80 to 90 %): read it as rough.
+
+Seeds: every contrast of an animal resamples with its own seed (``SEED`` + ``SEED_OFFSET``). ``dod``
+subtracts the draws of ``within_masking`` from those of ``within``; with one seed for both, sets with the
+same number of sessions drew the same session positions, which paired the k-th laser session with the k-th
+masking session.
 """
 
 from __future__ import annotations
@@ -30,13 +37,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, Sequence
 
+import numpy as np
 import pandas as pd
 from behav_utils.analysis import DeltaStats, Interaction, compute_delta_stat, compute_interaction
 from behav_utils.data import build_mask, filter_trials, opto_mask
 from behav_utils.stats import PSYCHOMETRIC
 
-__all__ = ['OptoContrasts', 'ppc_contrasts', 'alm_contrasts', 'dod_point',
-           'STATS', 'STATS_RT', 'SENSITIVITY', 'BIAS', 'DUAL_UNITS', 'N_BOOT', 'N_PERM']
+__all__ = ['OptoContrasts', 'ppc_contrasts', 'alm_contrasts', 'dod_point', 'equivalence_verdict', 'VERDICTS',
+           'STATS', 'STATS_RT', 'SENSITIVITY', 'BIAS', 'DUAL_UNITS', 'N_BOOT', 'N_PERM', 'SEED', 'SEED_OFFSET']
 
 
 def contrast_key(label: str, reference: str) -> str:
@@ -52,6 +60,8 @@ SENSITIVITY = ['accuracy', 'hard_accuracy', 'easy_accuracy', 'sigma', 'recency',
 BIAS = ['mu', 'side_bias']
 DUAL_UNITS = ('trials', 'sessions')
 N_BOOT, N_PERM = 1000, 1000
+SEED = 42                      # base resampling seed (behav_utils' default, so `within` keeps its numbers)
+SEED_OFFSET = {'within': 0, 'within_masking': 1, 'between': 2, 'compensation': 3, 'vs_ppc': 4}
 
 
 @dataclass(frozen=True)
@@ -93,9 +103,10 @@ class OptoContrasts:
         return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
-def _delta(phases, names, reference, n_perm, n_boot, units):
-    return compute_delta_stat(phases, names, reference=reference, curve=False,
-                              n_permutations=n_perm, n_bootstrap=n_boot, units=units)
+def _delta(kind, phases, names, reference, n_perm, n_boot, units, seed):
+    """One contrast, resampled with the seed of its ``kind`` (see the module docstring)."""
+    return compute_delta_stat(phases, names, reference=reference, curve=False, n_permutations=n_perm,
+                              n_bootstrap=n_boot, units=units, seed=seed + SEED_OFFSET[kind])
 
 
 def _reference(sessions, laser_off, trial_class: str):
@@ -110,7 +121,7 @@ def _reference(sessions, laser_off, trial_class: str):
 
 def ppc_contrasts(opto, masking, trial_class: str, names: Sequence[str] = STATS, *,
                   n_boot: int = N_BOOT, n_perm: int = N_PERM,
-                  units: Sequence[str] = DUAL_UNITS) -> OptoContrasts:
+                  units: Sequence[str] = DUAL_UNITS, seed: int = SEED) -> OptoContrasts:
     """PPC design. ``n_boot=0`` gives point differences only (the group fold) and no dod."""
     key = contrast_key(trial_class, 'non_opto')
     o_toi, o_off = filter_trials(opto, trial_type=trial_class), filter_trials(opto, trial_type='non_opto')
@@ -119,13 +130,17 @@ def ppc_contrasts(opto, masking, trial_class: str, names: Sequence[str] = STATS,
     o_all, m_all = filter_trials(opto, trial_type='all'), filter_trials(masking, trial_type='all')
     within = within_masking = between = compensation = dod = None
     if o_toi and o_ref:
-        within = _delta({trial_class: o_toi, 'non_opto': o_ref}, names, 'non_opto', n_perm, n_boot, units)
+        within = _delta('within', {trial_class: o_toi, 'non_opto': o_ref}, names, 'non_opto',
+                        n_perm, n_boot, units, seed)
     if m_toi and m_ref:
-        within_masking = _delta({trial_class: m_toi, 'non_opto': m_ref}, names, 'non_opto', n_perm, n_boot, units)
+        within_masking = _delta('within_masking', {trial_class: m_toi, 'non_opto': m_ref}, names,
+                                'non_opto', n_perm, n_boot, units, seed)
     if o_all and m_all:
-        between = _delta({'opto': o_all, 'masking': m_all}, names, 'masking', 0, n_boot, units)
+        between = _delta('between', {'opto': o_all, 'masking': m_all}, names, 'masking',
+                         0, n_boot, units, seed)
     if o_off and m_off:
-        compensation = _delta({'laser_off': o_off, 'masking': m_off}, names, 'masking', 0, n_boot, units)
+        compensation = _delta('compensation', {'laser_off': o_off, 'masking': m_off}, names, 'masking',
+                              0, n_boot, units, seed)
     if n_boot > 0 and within is not None and within_masking is not None:
         dod = compute_interaction(within, within_masking, key, label_a='opto', label_b='masking')
     return OptoContrasts(trial_class, key, within, within_masking, between, compensation, dod, None,
@@ -134,7 +149,7 @@ def ppc_contrasts(opto, masking, trial_class: str, names: Sequence[str] = STATS,
 
 def alm_contrasts(alm, masking, opto, trial_class: str, names: Sequence[str] = STATS_RT, *,
                   n_boot: int = N_BOOT, n_perm: int = N_PERM,
-                  units: Sequence[str] = DUAL_UNITS) -> OptoContrasts:
+                  units: Sequence[str] = DUAL_UNITS, seed: int = SEED) -> OptoContrasts:
     """ALM design: the PPC four plus ALM vs PPC-opto (all trials)."""
     key = contrast_key(trial_class, 'non_opto')
     a_toi, a_off = filter_trials(alm, trial_type=trial_class), filter_trials(alm, trial_type='non_opto')
@@ -144,20 +159,45 @@ def alm_contrasts(alm, masking, opto, trial_class: str, names: Sequence[str] = S
                            filter_trials(opto, trial_type='all'))
     within = within_masking = between = compensation = dod = vs_ppc = None
     if a_toi and a_ref:
-        within = _delta({trial_class: a_toi, 'non_opto': a_ref}, names, 'non_opto', n_perm, n_boot, units)
+        within = _delta('within', {trial_class: a_toi, 'non_opto': a_ref}, names, 'non_opto',
+                        n_perm, n_boot, units, seed)
     if m_toi and m_ref:
-        within_masking = _delta({trial_class: m_toi, 'non_opto': m_ref}, names, 'non_opto', n_perm, n_boot, units)
+        within_masking = _delta('within_masking', {trial_class: m_toi, 'non_opto': m_ref}, names,
+                                'non_opto', n_perm, n_boot, units, seed)
     if a_all and m_all:
-        between = _delta({'alm': a_all, 'masking': m_all}, names, 'masking', 0, n_boot, units)
+        between = _delta('between', {'alm': a_all, 'masking': m_all}, names, 'masking',
+                         0, n_boot, units, seed)
     if a_off and m_off:
-        compensation = _delta({'laser_off': a_off, 'masking': m_off}, names, 'masking', 0, n_boot, units)
+        compensation = _delta('compensation', {'laser_off': a_off, 'masking': m_off}, names, 'masking',
+                              0, n_boot, units, seed)
     if n_boot > 0 and within is not None and within_masking is not None:
         dod = compute_interaction(within, within_masking, key, label_a='alm', label_b='masking')
     if a_all and o_all:
-        vs_ppc = _delta({'alm': a_all, 'opto': o_all}, names, 'opto', 0, n_boot, units)
+        vs_ppc = _delta('vs_ppc', {'alm': a_all, 'opto': o_all}, names, 'opto', 0, n_boot, units, seed)
     return OptoContrasts(trial_class, key, within, within_masking, between, compensation, dod, vs_ppc,
                          labels={'between': 'alm_vs_masking', 'compensation': 'laser_off_vs_masking',
                                  'vs_ppc': 'alm_vs_opto'})
+
+
+VERDICTS = ('within margin', 'effect', 'unclear', 'no interval')
+
+
+def equivalence_verdict(ci_lo: float, ci_hi: float, margin: float) -> str:
+    """Read an interval of a difference against an equivalence margin set in advance.
+
+    ``'within margin'``: the whole interval lies inside ±margin, so any effect is smaller than the margin.
+    ``'effect'``: the interval excludes zero and is not inside the margin. ``'unclear'``: neither; these data
+    cannot tell. ``'no interval'``: a bound is missing (no resampling, or too few trials).
+
+    With a 95 % interval this is a little stricter than the usual equivalence test, which uses 90 %.
+    """
+    if not (np.isfinite(ci_lo) and np.isfinite(ci_hi)):
+        return 'no interval'
+    if -margin <= ci_lo and ci_hi <= margin:
+        return 'within margin'
+    if ci_lo > 0 or ci_hi < 0:
+        return 'effect'
+    return 'unclear'
 
 
 def dod_point(r: OptoContrasts) -> pd.Series:

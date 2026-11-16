@@ -272,12 +272,33 @@ def resolve_run(report: str, cohort: str, run: str = 'latest', root: Path | None
     return d
 
 
+def environment_lines() -> list:
+    """The Python environment as ``name==version`` lines (every installed distribution, sorted), under two
+    comment lines naming the Python version and the platform. What ``start_run`` writes to
+    ``environment.txt``."""
+    import sys
+    from importlib import metadata
+
+    packages = {}
+    for dist in metadata.distributions():
+        name = dist.metadata['Name'] if dist.metadata else None
+        if name:
+            packages[name.lower()] = f'{name}=={dist.version}'
+    return [f'# python {sys.version.split()[0]}', f'# {platform.platform()}',
+            *(packages[k] for k in sorted(packages))]
+
+
 def start_run(report: str, cohort: str, run_id: str | None = None, *, fast: bool = False,
               label: str | None = None, root: Path | None = None) -> Path:
-    """Create (or reopen) a run directory with a logs/ folder and point `latest` at it."""
+    """Create (or reopen) a run directory with a logs/ folder and point `latest` at it. A new run also gets
+    ``environment.txt``: every installed package with its version (``environment_lines``), so the environment
+    that produced the run can be rebuilt. Reopening a run leaves the file as it is."""
     rid = run_id or new_run_id(fast=fast, label=label)
     d = run_dir(report, cohort, rid, root)
     (d / 'logs').mkdir(parents=True, exist_ok=True)
+    env = d / 'environment.txt'
+    if not env.exists():
+        env.write_text('\n'.join(environment_lines()) + '\n')
     mark_latest(d)
     return d
 

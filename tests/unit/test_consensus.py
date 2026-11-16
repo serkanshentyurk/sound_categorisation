@@ -229,3 +229,43 @@ class TestVoteCountsAndContested:
         summary = compute_consensus_summary(df.reset_index())
         assert 'contested calls (a significant vote against the call): 1' in summary
 
+
+
+
+class TestReportedMethods:
+    """The single-session representation is listed beside the votes and never counted."""
+
+    def _run(self, tmp_path, monkeypatch, single=True):
+        t = TestLoadAllAssignments()
+        t._patch(monkeypatch, tmp_path)
+        for method in (('grid_search', None, 'update_matrix'), ('sbi', 'pooled', 'update_matrix')):
+            t._write_method(*method, 'A', 'BE', be_lo=0.10, sc_lo=0.20)
+        if single:
+            t._write_method('sbi', 'single', 'update_matrix', 'A', 'BE', be_lo=0.30, sc_lo=0.10)   # says SC
+        return t
+
+    def test_defaults_vote_with_grid_search_and_pooled_and_report_single(self, tmp_path, monkeypatch):
+        from sound_categorisation.inference.consensus import DEFAULT_METHODS, REPORTED_METHODS
+        assert DEFAULT_METHODS == [('grid_search', None, 'update_matrix'), ('sbi', 'pooled', 'update_matrix')]
+        assert REPORTED_METHODS == [('sbi', 'single', 'update_matrix')]
+        t = self._run(tmp_path, monkeypatch)
+        row = load_all_assignments(t.RUN, t.DIST).set_index('id').loc['A']
+        assert row['Consensus'] == 'BE' and (row['n_sig_BE'], row['n_sig_SC']) == (2, 0)
+        assert not bool(row['contested'])                          # the single network's SC is no vote
+        assert row['SBI-single-UM_lower'] == 'SC' and row['SBI-single-UM_lower_pvalue'] < 0.05
+        assert row['SBI-single-UM_be'] > row['SBI-single-UM_sc']   # its mean held-out errors are there
+        assert 'SBI-single-UM' not in row.index and 'SBI-single-UM_p' not in row.index
+
+    def test_summary_gives_the_mean_held_out_error_of_every_method(self, tmp_path, monkeypatch):
+        t = self._run(tmp_path, monkeypatch)
+        summary = compute_consensus_summary(load_all_assignments(t.RUN, t.DIST))
+        assert 'mean held-out error over animals' in summary
+        line = next(ln for ln in summary.splitlines() if ln.strip().startswith('SBI-single-UM'))
+        assert '[reported, not a vote]' in line and '(0 / 1)' in line
+        assert '[reported' not in next(ln for ln in summary.splitlines() if ln.strip().startswith('GS-UM'))
+
+    def test_a_reported_method_that_was_not_run_adds_no_columns(self, tmp_path, monkeypatch):
+        t = self._run(tmp_path, monkeypatch, single=False)
+        df = load_all_assignments(t.RUN, t.DIST)
+        assert not [c for c in df.columns if c.startswith('SBI-single')]
+        assert load_all_assignments(t.RUN, t.DIST, reported=[]).columns.tolist() == df.columns.tolist()

@@ -3,13 +3,15 @@
 Each network file is read as saved (``amortised.read_network_file``), without rebuilding the
 network, so a mismatch is reported rather than raised. Three groups of rows per network:
 
-    config        stored mode, N, T, burn-in, statistics, design features, simulation count,
-                  training seed and distribution against settings (SBI_REPRESENTATIONS,
-                  SBI_BURN_IN, SBI_STATS, SBI_DESIGN_FEATURES, BASE_SEED) and the file name
+    config        stored mode, N, T, burn-in, statistics, design features, prior variant,
+                  accuracy rule, simulation count, training seed and distribution against
+                  settings (SBI_REPRESENTATIONS, SBI_BURN_IN, SBI_STATS, SBI_DESIGN_FEATURES,
+                  SBI_PRIOR, BASE_SEED) and the file name
     parameters    stored parameter names against the model's current order, and the prior the
-                  network was trained on against the current bounds
-    fingerprint   ``n_draws`` fresh prior draws through the CURRENT simulator at the network's
-                  own configuration; each feature's median against the median stored at
+                  network was trained on against the bounds of the prior in use
+    fingerprint   ``n_draws`` fresh draws from the network's own prior through the CURRENT
+                  simulator at the network's own configuration (its accuracy rule included, as
+                  in training); each feature's median against the median stored at
                   training (``feature_medians``, over every training simulation). z is the
                   difference over the bootstrap SE of the new median; |z| > Z_FLAG flags drift
                   in the model cores, the stimulus sampler or behav_utils' statistics since the
@@ -30,12 +32,19 @@ from typing import Any, Dict, List
 import numpy as np
 import pandas as pd
 
-from sound_categorisation.inference.amortised import read_network_file, trained_prior_bounds
+from sound_categorisation.inference.amortised import network_prior, read_network_file, trained_prior_bounds
 from sound_categorisation.inference.representation import compute_feature_medians, feature_names
-from sound_categorisation.inference.simulator import build_simulator, get_bounds_arrays, get_param_names
+from sound_categorisation.inference.simulator import (
+    accuracy_rule,
+    build_simulator,
+    get_bounds_arrays,
+    get_param_names,
+)
+from sound_categorisation.models import priors
 
 Z_FLAG = 4.0                    # |z| above this flags a feature median (~6e-5 two-sided per feature)
 FINGERPRINT_DRAWS = 5000
+MIN_FINGERPRINT = 20            # fewer simulations than this give no fingerprint (medians too noisy)
 FINGERPRINT_SEED_OFFSET = 500_000   # fingerprint draws use VALIDATION_SEED + this (SBC uses the base)
 _NAME = re.compile(r'^snpe_(?P<rep>[a-z]+)_(?P<model>BE|SC)_(?P<distribution>.+)\.pkl$')
 
@@ -89,7 +98,15 @@ def config_rows(data: Dict[str, Any], network: str) -> List[Dict[str, Any]]:
     spec = SBI_REPRESENTATIONS[name['rep']]
     meta = data.get('training_metadata') or {}
     design = data.get('design_features')
+    try:
+        rule = accuracy_rule(name['rep'], name['distribution'])
+    except ValueError:                       # no session preset for this distribution
+        rule = None
     return [
+        _row(network, 'config', 'prior', network_prior(data), priors.current()),
+        # a file from before the accuracy rule existed was trained without one: stored None
+        _row(network, 'config', 'min_accuracy (accuracy rule)', data.get('min_accuracy'), rule,
+             ok=data.get('min_accuracy') == rule),
         _row(network, 'config', 'model', str(data.get('model', '')).upper(), name['model']),
         _row(network, 'config', 'distribution', data.get('dist_schedule'), name['distribution']),
         _row(network, 'config', 'mode', data.get('mode'), spec['mode']),
@@ -125,27 +142,30 @@ def parameter_rows(data: Dict[str, Any], network: str) -> List[Dict[str, Any]]:
 
 def simulate_features(data: Dict[str, Any], n_draws: int = FINGERPRINT_DRAWS,
                       seed: int | None = None, n_jobs: int = 1) -> np.ndarray:
-    """(n_draws, n_features) observations from the CURRENT simulator at a saved network's own
-    configuration, for prior draws within the bounds it was trained on (current bounds if the
-    file does not record them). Draw i is simulated with seed ``seed + 1 + i``; the default seed
-    is VALIDATION_SEED + FINGERPRINT_SEED_OFFSET, apart from the SBC draws and every training seed."""
+    """Observations from the CURRENT simulator at a saved network's own configuration, for
+    ``n_draws`` draws from the prior variant it was trained on: ``(n_kept, n_features)``, where a
+    network trained with the accuracy rule keeps only the draws that pass it (fewer than
+    ``n_draws``). Draw i is simulated with seed ``seed + 1 + i``; the default seed is
+    VALIDATION_SEED + FINGERPRINT_SEED_OFFSET, apart from the SBC draws and every training seed."""
     from sound_categorisation.settings import VALIDATION_SEED
     seed = VALIDATION_SEED + FINGERPRINT_SEED_OFFSET if seed is None else int(seed)
     model = str(data['model']).lower()
-    sim_fn, _, names = build_simulator(
+    sim_fn, _, _ = build_simulator(
         model, dist_schedule=data['dist_schedule'], N=data['N'], T=data['T'],
         burn_in=int(data['burn_in']), mode=data['mode'], stat_names=data['stat_names'],
-        design_features=tuple(data.get('design_features') or ()))
-    bounds = trained_prior_bounds(data) or get_bounds_arrays(model)
-    lo, hi = (np.asarray(b, dtype=float) for b in bounds)
-    thetas = np.random.default_rng(seed).uniform(lo, hi, size=(n_draws, len(names)))
+        design_features=tuple(data.get('design_features') or ()), prior=network_prior(data),
+        min_accuracy=data.get('min_accuracy'))
+    prior = network_prior(data)
+    thetas = priors.sample_prior(model, prior, n_draws, np.random.default_rng(seed))[1]
     if n_jobs == 1:
         xs = [sim_fn(thetas[i], seed=seed + 1 + i) for i in range(n_draws)]
     else:
         from joblib import Parallel, delayed
         xs = Parallel(n_jobs=n_jobs, batch_size=16)(
             delayed(sim_fn)(thetas[i], seed=seed + 1 + i) for i in range(n_draws))
-    return np.vstack(xs).astype(float)
+    xs = [x for x in xs if x is not None]              # without the draws the accuracy rule rejects
+    n_features = len(feature_names(data['mode'], data['stat_names'], data.get('design_features') or ()))
+    return np.vstack(xs).astype(float) if xs else np.empty((0, n_features))
 
 
 def fingerprint_rows(data: Dict[str, Any], network: str, n_draws: int = FINGERPRINT_DRAWS,
@@ -161,6 +181,10 @@ def fingerprint_rows(data: Dict[str, Any], network: str, n_draws: int = FINGERPR
         return [_row(network, 'fingerprint', 'feature count', len(stored), len(feats))]
     if X is None:
         X = simulate_features(data, n_draws=n_draws, seed=seed, n_jobs=n_jobs)
+    if len(X) < MIN_FINGERPRINT:                       # few draws pass the accuracy rule: no verdict
+        row = _row(network, 'fingerprint', 'draws passing the accuracy rule', len(X),
+                   f'at least {MIN_FINGERPRINT} needed (raise n_draws)')
+        return [{**row, 'ok': None}]
     current = compute_feature_medians(X)
     rng = np.random.default_rng(0)
     boot = np.empty((n_boot, X.shape[1]))

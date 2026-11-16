@@ -33,7 +33,8 @@ from scipy import stats
 
 ALPHA = 0.05
 RULES = (1, 2)                      # min_significant_votes of the two consensus rules reported
-VOTERS = ('GS-UM', 'SBI-pooled-UM', 'SBI-moments-UM')
+VOTERS = ('GS-UM', 'SBI-pooled-UM')         # the methods that vote in the consensus
+REPORTED = ('SBI-single-UM',)               # listed beside them, not counted (consensus.REPORTED_METHODS)
 
 
 # =============================================================================
@@ -155,7 +156,8 @@ def ecdf_table(results: Iterable[Dict], n_points: int = 50, alpha: float = ALPHA
 
 def recovery_draws(results: Iterable[Dict]) -> pd.DataFrame:
     """One row per SBC draw and parameter: truth, posterior median, mean, SD, 5-95 % interval,
-    contraction and z-score."""
+    contraction and z-score. ``scale`` is 'log' for a parameter whose prior is uniform in the
+    logarithm: its values here are natural logarithms (``inference.calibration``)."""
     frames = []
     for res in results:
         if not len(res['ranks']):
@@ -174,6 +176,7 @@ def recovery_draws(results: Iterable[Dict]) -> pd.DataFrame:
                 'contraction': 1 - sd ** 2 / prior_var,
                 'zscore': (res['theta_mean'][:, j] - res['theta_true'][:, j]) / sd,
                 'prior_lo': lo, 'prior_hi': hi,
+                'scale': 'log' if p in (res.get('log_uniform') or ()) else 'linear',
             })
             for k, v in {**_keys(res), 'param': p}.items():
                 df.insert(0, k, v)
@@ -196,12 +199,14 @@ def _recovery_metrics(truth, est, lo, hi) -> Dict[str, float]:
 def recovery_table(draws: pd.DataFrame) -> pd.DataFrame:
     """Per network, session count and parameter: error and bias relative to the prior width,
     R^2 of the posterior median against truth, median contraction, median |z| (about 0.67 for
-    a calibrated Gaussian posterior) and the fraction of draws with |z| > 2."""
+    a calibrated Gaussian posterior) and the fraction of draws with |z| > 2. All on the scale the
+    prior is uniform in (``scale``: 'log' or 'linear')."""
     rows = []
     for key, g in draws.groupby(['rep', 'model', 'n_sessions', 'param'], sort=False):
         m = _recovery_metrics(g['truth'], g['median'], g['prior_lo'].iloc[0], g['prior_hi'].iloc[0])
         z = g['zscore'].abs()
-        rows.append({**dict(zip(['rep', 'model', 'n_sessions', 'param'], key)), **m,
+        rows.append({**dict(zip(['rep', 'model', 'n_sessions', 'param'], key)),
+                     'scale': g['scale'].iloc[0] if 'scale' in g else 'linear', **m,
                      'contraction_median': float(g['contraction'].median()),
                      'abs_z_median': float(z.median()), 'frac_abs_z_gt_2': float((z > 2).mean())})
     return pd.DataFrame(rows)
@@ -218,7 +223,7 @@ def _result_files(run, distribution: str, reps: Sequence[str]):
         yield from sorted((run / 'sbi' / 'update_matrix' / distribution / rep).glob('*.pkl'))
 
 
-def synthetic_truths(run, distribution: str, reps: Sequence[str] = ('pooled', 'moments')) -> pd.DataFrame:
+def synthetic_truths(run, distribution: str, reps: Sequence[str] = ('pooled', 'single')) -> pd.DataFrame:
     """Per synthetic animal: true model and parameters, read from the run's own result files."""
     rows = {}
     for pkl in _result_files(run, distribution, reps):
@@ -231,14 +236,19 @@ def synthetic_truths(run, distribution: str, reps: Sequence[str] = ('pooled', 'm
     return pd.DataFrame(list(rows.values()))
 
 
-def voter_calls(assign: pd.DataFrame, voters: Sequence[str] = VOTERS, alpha: float = ALPHA) -> pd.DataFrame:
-    """Long table, one row per animal and voter: the call (BE / SC when p < alpha, else 'no call')."""
+def voter_calls(assign: pd.DataFrame, voters: Sequence[str] = (*VOTERS, *REPORTED),
+                alpha: float = ALPHA) -> pd.DataFrame:
+    """Long table, one row per animal and voter: the call (BE / SC when p < alpha, else 'no call').
+    A reported method is listed with the call it would have made (its ``_lower`` columns)."""
     rows = []
     for _, r in assign.iterrows():
         for v in voters:
-            if v not in assign:
+            if v in assign:
+                w, p = r.get(v), r.get(f'{v}_p')
+            elif f'{v}_lower' in assign:
+                w, p = r.get(f'{v}_lower'), r.get(f'{v}_lower_pvalue')
+            else:
                 continue
-            w, p = r.get(v), r.get(f'{v}_p')
             called = w if (w in ('BE', 'SC') and pd.notna(p) and p < alpha) else 'no call'
             rows.append({'id': r['id'], 'true_model': r.get('true_model'), 'voter': v, 'called': called})
     return pd.DataFrame(rows)
@@ -314,9 +324,10 @@ def gs_sigma_table(assign: pd.DataFrame, truths: pd.DataFrame, sigma_max: float,
     return pd.DataFrame(rows)
 
 
-def synthetic_recovery_table(run, distribution: str, reps: Sequence[str] = ('pooled', 'moments')) -> pd.DataFrame:
+def synthetic_recovery_table(run, distribution: str, reps: Sequence[str] = ('pooled', 'single')) -> pd.DataFrame:
     """Parameter recovery on the synthetic cohort itself: each animal's saved all-session
-    posterior median from the network of its true model, against its true parameters."""
+    posterior median from the network of its true model, against its true parameters, on the scale
+    the network's prior is uniform in (``scale``)."""
     rows = []
     for rep in reps:
         d = Path(run) / 'sbi' / 'update_matrix' / distribution / rep
@@ -327,12 +338,15 @@ def synthetic_recovery_table(run, distribution: str, reps: Sequence[str] = ('poo
             if r.get('model') != r.get('true_model') or not r.get('posterior'):
                 continue
             post = r['posterior']
+            logs = post.get('log_uniform') or ()
             for p, est in post['point_estimate'].items():
-                per.setdefault((r['true_model'], p), []).append(
-                    (r['true_params'][p], est, *post['prior_bounds'][p]))
-        for (tm, p), vals in per.items():
+                values = (r['true_params'][p], est, *post['prior_bounds'][p])
+                if p in logs:                       # the scale this parameter's prior is uniform in
+                    values = tuple(float(np.log(v)) for v in values)
+                per.setdefault((r['true_model'], p, 'log' if p in logs else 'linear'), []).append(values)
+        for (tm, p, scale), vals in per.items():
             t, e, lo, hi = (np.array(x) for x in zip(*vals))
-            rows.append({'rep': rep, 'true_model': tm, 'param': p,
+            rows.append({'rep': rep, 'true_model': tm, 'param': p, 'scale': scale,
                          **_recovery_metrics(t, e, float(lo[0]), float(hi[0]))})
     return pd.DataFrame(rows)
 
@@ -342,7 +356,7 @@ def synthetic_recovery_table(run, distribution: str, reps: Sequence[str] = ('poo
 # =============================================================================
 
 def real_sigma_table(run, distribution: str, sigma_max: float,
-                     reps: Sequence[str] = ('pooled', 'moments')) -> pd.DataFrame:
+                     reps: Sequence[str] = ('pooled', 'single')) -> pd.DataFrame:
     """Per real animal, representation and fitted model: the posterior median of
     sigma_percep and whether it lies above the grid search's largest value."""
     rows = []

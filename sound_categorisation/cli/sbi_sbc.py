@@ -1,13 +1,14 @@
 #!/usr/bin/env python
 """Calibrate the trained SBI networks: simulation-based calibration (SBC) + coverage.
 
-For each (rep, model, n_sessions) of SBC_GRID this loads ``snpe_{rep}_{model}_{distribution}.pkl``,
-draws SBC_DRAWS_BY_SESSIONS[n_sessions] fresh parameter sets from the prior, simulates
-n_sessions x T trials from each (processed exactly like an animal), conditions, and records the
-rank of the true value among SBI_N_POSTERIOR_SAMPLES_SAVED posterior samples, plus the posterior
-mean, SD, quantiles and the network's acceptance rate (``inference.calibration``). Five sessions
-is an animal's full data; 3 and 2 are the CV halves the same networks condition on inside the
-model comparison.
+For each (rep, n_sessions, model) of SBC_GRID this loads ``snpe_{rep}_{model}_{distribution}.pkl``,
+draws SBC_DRAWS[rep][n_sessions] fresh parameter sets from the network's own prior, simulates
+n_sessions x T trials from each (processed exactly like an animal; for a network trained with the
+accuracy rule, draws are repeated until every session passes it, as in training), conditions, and
+records the rank of the true value among SBI_N_POSTERIOR_SAMPLES_SAVED posterior samples, plus the
+posterior mean, SD, quantiles and the network's acceptance rate (``inference.calibration``). For
+pooled, five sessions is an animal's full data and 3 and 2 are the CV halves the same network
+conditions on inside the model comparison; the single-session network is calibrated on one session.
 
 Writes, into the run it is given (normally the synthetic validation run):
 
@@ -35,12 +36,12 @@ import pickle
 import time
 
 from sound_categorisation.data.paths import build_metadata, snpe_net_path, start_run
-from sound_categorisation.inference.tasks import SBC_GRID
+from sound_categorisation.inference.tasks import SBC_GRID, sbc_case
 from sound_categorisation.settings import (
     DISTRIBUTIONS,
     FAST_SBC_N_DRAWS,
     MODEL_TYPES,
-    SBC_DRAWS_BY_SESSIONS,
+    SBC_DRAWS,
     SBI_N_POSTERIOR_SAMPLES_SAVED,
     SBI_REPRESENTATIONS,
     SBI_TRAIN_REPS,
@@ -48,14 +49,15 @@ from sound_categorisation.settings import (
 )
 
 REPRESENTATIONS = tuple(SBI_REPRESENTATIONS)
-SESSION_COUNTS = tuple(SBC_DRAWS_BY_SESSIONS)
+SESSION_COUNTS = tuple(sorted({n for rep in SBC_DRAWS.values() for n in rep}, reverse=True))
 N_TASKS = SBC_GRID.n
 
 
 def decode_task(task_id):
     """SLURM array index -> (rep, model, n_sessions)."""
     d = SBC_GRID.decode(task_id)
-    return d['rep'], d['model'], int(d['n_sessions'])
+    rep, n_sessions = sbc_case(d['case'])
+    return rep, d['model'], n_sessions
 
 
 def sbc_dir(run, distribution, n_sessions, rep):
@@ -104,9 +106,10 @@ def main(argv=None):
     p.add_argument('--rep', default='all', choices=(*REPRESENTATIONS, 'all'))
     p.add_argument('--model', default='all', choices=(*MODEL_TYPES, 'all'))
     p.add_argument('--n-sessions', default='all', choices=(*[str(n) for n in SESSION_COUNTS], 'all'),
-                   help='local runs: one session count, or all of SBC_DRAWS_BY_SESSIONS')
+                   help='local runs: one session count, or every count of each representation '
+                        '(settings.SBC_DRAWS)')
     p.add_argument('--n-draws', type=int, default=None,
-                   help=f'default per session count: {SBC_DRAWS_BY_SESSIONS}')
+                   help=f'default per representation and session count: {SBC_DRAWS}')
     p.add_argument('--n-posterior-samples', type=int, default=SBI_N_POSTERIOR_SAMPLES_SAVED)
     p.add_argument('--seed', type=int, default=VALIDATION_SEED)
     p.add_argument('--task-id', type=int, default=None, help=f'SLURM array index 0-{N_TASKS - 1}')
@@ -130,14 +133,17 @@ def main(argv=None):
     else:
         reps = tuple(SBI_TRAIN_REPS) if args.rep == 'all' else (args.rep,)
         models = MODEL_TYPES if args.model == 'all' else (args.model,)
-        counts = SESSION_COUNTS if args.n_sessions == 'all' else (int(args.n_sessions),)
-        jobs = [(r, m, n) for r in reps for m in models for n in counts]
+        jobs = [(r, m, n) for r in reps for m in models for n in SBC_DRAWS[r]
+                if args.n_sessions == 'all' or n == int(args.n_sessions)]
+        if not jobs:
+            p.error(f'no representation in {reps} is calibrated at {args.n_sessions} sessions '
+                    f'(settings.SBC_DRAWS: {SBC_DRAWS})')
 
     run = start_run('model_identification', args.cohort, args.run_id, fast=args.fast)
     meta = build_metadata('sbi_sbc', vars(args), run_id=run.name)
     t0 = time.time()
     for rep, model, n_sessions in jobs:
-        n_draws = args.n_draws or (FAST_SBC_N_DRAWS if args.fast else SBC_DRAWS_BY_SESSIONS[n_sessions])
+        n_draws = args.n_draws or (FAST_SBC_N_DRAWS if args.fast else SBC_DRAWS[rep][n_sessions])
         sbc_one(rep, model, args.distribution, sbc_dir(run, args.distribution, n_sessions, rep),
                 n_draws, n_sessions, args.n_posterior_samples, args.seed, meta)
     (run / 'sbc' / args.distribution / 'meta.json').write_text(json.dumps(meta, indent=2, default=str))

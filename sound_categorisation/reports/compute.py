@@ -42,6 +42,7 @@ from sound_categorisation.behaviour.contrasts import (
     ppc_contrasts,
 )
 from sound_categorisation.data.cohort import collect_sessions_alm, collect_sessions_ppc, gather_genotypes
+from sound_categorisation.settings import EQUIVALENCE_MARGINS
 
 __all__ = ['Settings', 'AnimalResult', 'GroupResult', 'compute_animal', 'compute_group', 'DESIGNS',
            'trajectory_distributions']
@@ -67,6 +68,8 @@ class Settings:
     baseline_last_n: int = 5                  # ... its last N sessions ...
     baseline_trials: str = 'non_opto'         # ... on these trials
     bias_rule: BiasRule = BiasRule()          # cohort QC on the trajectory tables (adaptation.BiasRule)
+    margins: Dict[str, float] = field(default_factory=lambda: dict(EQUIVALENCE_MARGINS))
+                                              # equivalence margins per stat (settings.EQUIVALENCE_MARGINS)
 
     @classmethod
     def fast(cls) -> Settings:
@@ -108,6 +111,7 @@ class AnimalResult:
     readouts: Dict[Tuple[str, str], ConditionReadouts] = field(default_factory=dict)   # (phase, trial_type)
     trajectory: Trajectory | None = None                                            # per-session, in order
     n_sessions: Dict[str, int] = field(default_factory=dict)
+    margins: Dict[str, float] = field(default_factory=dict)        # equivalence margins (Settings.margins)
 
     @property
     def tag(self) -> str:
@@ -199,7 +203,7 @@ def compute_animal(experiment, aid: str, distribution: str, trial_class: str, *,
     readouts = _readouts(sessions, trial_class, settings) if settings.readouts else {}
     trajectory = _trajectory(animal, distribution, settings) if design == 'ppc' else None
     return AnimalResult(cohort, aid, genotype, distribution, design, site, trial_class, con, readouts, trajectory,
-                        {k: len(v) for k, v in sessions.items()})
+                        {k: len(v) for k, v in sessions.items()}, dict(settings.margins))
 
 
 # ── group ───────────────────────────────────────────────────────────────────

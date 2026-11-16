@@ -1,4 +1,5 @@
-"""The opto contrasts' reference sets (behaviour/contrasts.py) and the cohort bias rule (adaptation.BiasRule)."""
+"""The opto contrasts (behaviour/contrasts.py): reference sets, seeds and the equivalence verdict; and the cohort
+bias rule (adaptation.BiasRule)."""
 import json
 import warnings
 
@@ -7,10 +8,12 @@ import pytest
 from behav_utils.analysis import shared_trial_count
 from behav_utils.data import filter_trials, select_sessions
 from sound_categorisation.behaviour.adaptation import BiasRule, flag_biased_sessions
-from sound_categorisation.behaviour.contrasts import _reference, ppc_contrasts
+from sound_categorisation.behaviour.contrasts import _reference, equivalence_verdict, ppc_contrasts
 from sound_categorisation.data.cohort import ensure_presets
 from sound_categorisation.data.synthetic import synthetic_experiment
 from sound_categorisation.reports.compute import Settings
+from sound_categorisation.reports.tables import EQUIVALENCE_COLUMNS, equivalence_table
+from sound_categorisation.settings import EQUIVALENCE_MARGINS
 
 
 @pytest.fixture(scope='module')
@@ -54,6 +57,55 @@ def test_compensation_reference_is_the_unflagged_masking_trials(sessions):
     assert ph['masking'].n_trials == _n(filter_trials(masking, trial_type='non_opto'))
     assert ph['masking'].n_trials < _n(filter_trials(masking, trial_type='all'))
     assert ph['laser_off'].n_trials == _n(filter_trials(opto, trial_type='non_opto'))
+
+
+def test_the_two_sides_of_dod_are_resampled_with_different_seeds(sessions):
+    """Given the same sessions as laser and as masking set, one shared seed would draw the same sessions
+    and trials for both sides, and every dod draw would be exactly zero."""
+    opto, _ = sessions
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        r = ppc_contrasts(opto, opto, 'opto', ['accuracy'], n_perm=0, n_boot=30)
+    assert r['dod'].interaction['accuracy'] == 0
+    for unit in ('trials', 'sessions'):
+        assert r['dod'].draws[unit]['accuracy'].abs().max() > 0
+
+
+def test_every_contrast_has_its_own_seed(sessions):
+    opto, masking = sessions
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        r = ppc_contrasts(opto, masking, 'opto', ['accuracy'], n_perm=0, n_boot=5, seed=7)
+    seeds = [r[kind].seed for kind in ('within', 'within_masking', 'between', 'compensation')]
+    assert seeds == [7, 8, 9, 10]
+
+
+def test_equivalence_verdicts():
+    assert equivalence_verdict(-0.03, 0.04, 0.05) == 'within margin'
+    assert equivalence_verdict(0.01, 0.04, 0.05) == 'within margin'      # excludes zero, but smaller than the margin
+    assert equivalence_verdict(0.02, 0.09, 0.05) == 'effect'
+    assert equivalence_verdict(-0.09, -0.06, 0.05) == 'effect'
+    assert equivalence_verdict(-0.02, 0.09, 0.05) == 'unclear'
+    assert equivalence_verdict(float('nan'), 0.01, 0.05) == 'no interval'
+
+
+def test_equivalence_table_reads_the_within_contrast_on_trials():
+    rows = [dict(kind='within', unit='trials', stat='mu', diff=0.02, ci_lo=-0.05, ci_hi=0.08),
+            dict(kind='within', unit='trials', stat='accuracy', diff=-0.08, ci_lo=-0.12, ci_hi=-0.01),
+            dict(kind='within', unit='trials', stat='reaction_time', diff=5.0, ci_lo=-1.0, ci_hi=9.0),   # no margin
+            dict(kind='within', unit='sessions', stat='mu', diff=0.02, ci_lo=-0.2, ci_hi=0.2),           # other unit
+            dict(kind='between', unit='trials', stat='mu', diff=0.3, ci_lo=0.2, ci_hi=0.4)]              # other kind
+    labels = dict(cohort='c', animal='a', genotype='het', distribution='Uniform', site='ppc', trial_class='opto')
+    table = equivalence_table(pd.DataFrame([r | labels for r in rows]), EQUIVALENCE_MARGINS)
+    assert list(table.columns) == EQUIVALENCE_COLUMNS
+    assert dict(zip(table['stat'], table['verdict'])) == {'mu': 'within margin', 'accuracy': 'effect'}
+    assert dict(zip(table['stat'], table['margin'])) == {'mu': 0.10, 'accuracy': 0.05}
+    assert list(equivalence_table(pd.DataFrame(), EQUIVALENCE_MARGINS).columns) == EQUIVALENCE_COLUMNS
+
+
+def test_settings_carry_the_margins():
+    assert Settings().to_dict()['margins'] == EQUIVALENCE_MARGINS
+    assert Settings.fast().margins == EQUIVALENCE_MARGINS
 
 
 def _bias_rows():

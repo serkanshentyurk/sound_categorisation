@@ -10,6 +10,12 @@ finite at the session length you train/condition at (a systematically bad stat
 shows up as a low valid-row count at train time, i.e. a loud failure, rather
 than being silently dropped).
 
+A network belongs to a prior variant (``models.priors``; the one in use when it is trained, recorded
+in its file) and, optionally, to the accuracy rule: only simulations whose every session reaches
+``min_accuracy`` are kept, as every selected real session does. Inside, the density estimator works
+in flat space (a log-uniform parameter as its logarithm); everything that goes in or comes out of
+this class is in the parameters' own units.
+
 This module is the engine only. Model selection lives in
 ``inference.selection`` (held-out UM/CP CV, the same protocol as grid_search).
 """
@@ -27,8 +33,9 @@ except ImportError:
     TORCH_AVAILABLE = False
 
 from sound_categorisation.inference.representation import to_stat_vector
-from sound_categorisation.inference.simulator import build_simulator, wrap_for_sbi
+from sound_categorisation.inference.simulator import build_simulator
 from sound_categorisation.inference.types import ModelType
+from sound_categorisation.models import priors
 
 
 def _as_model(model) -> ModelType:
@@ -53,6 +60,10 @@ class AmortisedSBI:
         design_features: How much data x was built from, appended after the stats
             (defaults to settings.SBI_DESIGN_FEATURES). Networks saved without them load
             with an empty tuple and condition exactly as they were trained.
+        prior: The prior variant (``models.priors``); None = the one in use
+            (``settings.SBI_PRIOR``). A file saved without one is a ``manuscript`` network.
+        min_accuracy: The accuracy rule: train only on simulations whose every session
+            reaches it. None = no rule.
     """
 
     def __init__(
@@ -65,8 +76,12 @@ class AmortisedSBI:
         mode: str = 'pooled',
         stat_names: Sequence[str] | None = None,
         design_features: Sequence[str] | None = None,
+        prior: str | None = None,
+        min_accuracy: float | None = None,
     ):
         self.model = _as_model(model)
+        self.prior_name = priors.resolve(prior)
+        self.min_accuracy = None if min_accuracy is None else float(min_accuracy)
         self.dist_schedule = dist_schedule
         self.N = N
         self.T = T
@@ -85,7 +100,8 @@ class AmortisedSBI:
         self._sim_fn, self._prior, self.param_names = build_simulator(
             self.model, dist_schedule=self.dist_schedule, N=self.N, T=self.T,
             burn_in=self.burn_in, mode=self.mode, stat_names=self.stat_names,
-            design_features=self.design_features,
+            design_features=self.design_features, prior=self.prior_name,
+            min_accuracy=self.min_accuracy,
         )
 
         self._trained_posterior = None
@@ -93,46 +109,125 @@ class AmortisedSBI:
         self._feature_medians = None
         self._prior_bounds = None        # {'low': [...], 'high': [...]} the network was trained on
 
+    # ── The prior this network belongs to ───────────────────────────────────
+
+    def bounds(self):
+        """(low, high) arrays of this network's prior, in the parameters' own units."""
+        return priors.bounds_arrays(self.model.value, self.prior_name)
+
+    def sample_prior(self, n: int, rng: np.random.Generator) -> np.ndarray:
+        """``n`` parameter draws from this network's prior, ``(n, n_params)``, own units."""
+        return priors.sample_prior(self.model.value, self.prior_name, n, rng)[1]
+
     # ── Training ─────────────────────────────────────────────────────────────
+
+    SIM_CHUNK = 5_000          # most prior draws simulated in one round
+
+    def simulate_training_set(self, n_keep: int, seed: int = 42, n_jobs: int = -1,
+                              max_draws: int | None = None, show_progress: bool = True):
+        """Draw from the prior and simulate until ``n_keep`` simulations are kept.
+
+        Draw ``i`` (0-based) takes its parameters from one stream (``default_rng(seed)``) and is
+        simulated with seed ``seed + i``; the training set is the first ``n_keep`` draws, in draw
+        order, that the accuracy rule keeps (all of them without the rule). The result therefore
+        does not depend on ``n_jobs`` or on how the draws are split into rounds.
+
+        Returns ``(theta, x, n_drawn, n_passed)``: ``theta`` ``(n_keep, n_params)`` in the
+        parameters' own units, ``x`` ``(n_keep, n_features)``, how many draws were simulated and
+        how many of those passed (the last round may pass a few more than are kept). Raises if
+        ``max_draws`` (default ``settings.SBI_MAX_DRAWS``) is reached first.
+        """
+        import time as _time
+        if max_draws is None:
+            from sound_categorisation.settings import SBI_MAX_DRAWS
+            max_draws = SBI_MAX_DRAWS
+        seed = int(seed or 0)
+        rng = np.random.default_rng(seed)
+        kept_theta, kept_x, n_kept, n_passed, n_drawn, t0 = [], [], 0, 0, 0, _time.time()
+        while n_kept < n_keep:
+            if n_drawn >= max_draws:
+                raise RuntimeError(
+                    f'{self.model.value.upper()}: {n_kept:,} of {n_keep:,} simulations kept after '
+                    f'{n_drawn:,} prior draws (accuracy rule >= {self.min_accuracy}); '
+                    'raise max_draws / settings.SBI_MAX_DRAWS or lower n_simulations')
+            if self.min_accuracy is None:
+                want = n_keep - n_kept                       # every draw is kept: none is wasted
+            else:                                            # enough to finish at the rate so far
+                rate = n_passed / n_drawn if n_drawn else 1.0
+                want = max(int(np.ceil(1.1 * (n_keep - n_kept) / max(rate, 0.02))), 64)
+            chunk = int(min(want, self.SIM_CHUNK, max_draws - n_drawn))
+            thetas = self.sample_prior(chunk, rng)
+            if n_jobs == 1:
+                xs = [self._sim_fn(thetas[i], seed=seed + n_drawn + i) for i in range(chunk)]
+            else:
+                from joblib import Parallel, delayed, parallel_config
+
+                # one thread per worker: the job's thread count is meant for the density estimator,
+                # and workers that each took all of it would oversubscribe the cores
+                with parallel_config(backend='loky', inner_max_num_threads=1):
+                    xs = Parallel(n_jobs=n_jobs, batch_size=16)(
+                        delayed(self._sim_fn)(thetas[i], seed=seed + n_drawn + i) for i in range(chunk))
+            n_drawn += chunk
+            for theta, x in zip(thetas, xs):
+                if x is None:
+                    continue
+                n_passed += 1
+                if n_kept < n_keep:
+                    kept_theta.append(theta)
+                    kept_x.append(np.asarray(x, dtype=float))
+                    n_kept += 1
+            if show_progress:
+                print(f'    {n_drawn:,} drawn, {n_passed:,} passed ({100 * n_passed / n_drawn:.1f}%), '
+                      f'{n_kept:,} of {n_keep:,} kept, {(_time.time() - t0) / 60:.1f} min', flush=True)
+        if n_jobs != 1:
+            # hand the cores back before the density estimator trains, and leave no worker behind
+            from joblib.externals.loky import get_reusable_executor
+            get_reusable_executor().shutdown(wait=True)
+        return np.vstack(kept_theta), np.vstack(kept_x), n_drawn, n_passed
 
     def train(
         self,
         n_simulations: int = 50_000,
         seed: int = 42,
         show_progress: bool = True,
+        n_jobs: int = -1,
+        max_draws: int | None = None,
     ):
-        """Train the amortised posterior estimator via SNPE."""
+        """Train the amortised posterior estimator via SNPE on ``n_simulations`` kept simulations
+        (``simulate_training_set``)."""
         if not TORCH_AVAILABLE:
             raise ImportError('torch required for SBI training')
 
         import time as _time
 
         from sbi.inference import SNPE
-        from sbi.utils import process_simulator
 
         if self._prior is None:
             raise RuntimeError(
                 'No prior (sbi/torch unavailable when the simulator was built).')
 
         if show_progress:
+            rule = 'none' if self.min_accuracy is None else f'every session >= {self.min_accuracy:g}'
             print(f'Training AmortisedSBI [{self.model.value.upper()}] '
-                  f'({n_simulations:,} sims, schedule={self.dist_schedule}, '
+                  f'({n_simulations:,} sims kept, schedule={self.dist_schedule}, '
                   f'N={self.N}, T={self.T}, mode={self.mode}, '
-                  f'design={list(self.design_features)})')
+                  f'design={list(self.design_features)}, prior={self.prior_name}, '
+                  f'accuracy rule: {rule})')
 
         if seed is not None:
             torch.manual_seed(seed)
             np.random.seed(seed)
 
-        prior = self._prior
-        sbi_sim = wrap_for_sbi(self._sim_fn, base_seed=(seed or 0))
-        sbi_sim = process_simulator(sbi_sim, prior, is_numpy_simulator=False)
-
         t0 = _time.time()
-        theta = prior.sample((n_simulations,))
         if show_progress:
-            print(f'  Simulating {n_simulations:,} datasets...')
-        x = sbi_sim(theta)
+            print(f'  Simulating until {n_simulations:,} datasets are kept...')
+        theta_np, x_np, n_drawn, n_passed = self.simulate_training_set(
+            n_simulations, seed=(seed or 0), n_jobs=n_jobs, max_draws=max_draws,
+            show_progress=show_progress)
+        t_sim = _time.time() - t0
+        if show_progress:
+            print(f'  Simulated in {t_sim / 60:.1f} min: {n_drawn:,} draws, {n_passed:,} passed '
+                  f'({100 * n_passed / n_drawn:.1f}%), {n_simulations:,} kept')
 
         # Median-impute non-finite features instead of dropping simulations:
         # learn per-column medians here and store them so condition() imputes
@@ -140,7 +235,6 @@ class AmortisedSBI:
         # (compute_feature_medians raises) -- that stat is unusable at this N/T
         # and must leave the stat set.
         from sound_categorisation.inference.representation import compute_feature_medians, impute_with_medians
-        x_np = x.detach().cpu().numpy().astype(float)
         try:
             medians = compute_feature_medians(x_np)
         except ValueError as e:
@@ -155,29 +249,40 @@ class AmortisedSBI:
             print(f'  median-imputed {int(bad_cells.sum())} non-finite cells '
                   f'across {n_bad_rows} sims ({frac:.1f}%); kept all {n_simulations:,}')
         x = torch.as_tensor(x_np, dtype=torch.float32)
+        # the density estimator sees flat space, where this network's prior is a uniform box
+        theta = torch.as_tensor(priors.to_flat(self.model.value, self.prior_name, theta_np),
+                                dtype=torch.float32)
 
-        inference_obj = SNPE(prior=prior)
+        inference_obj = SNPE(prior=self._prior)
         inference_obj.append_simulations(theta, x)
         if show_progress:
             print('  Training neural density estimator...')
+        t1 = _time.time()
         density_est = inference_obj.train(show_train_summary=show_progress)
         posterior = inference_obj.build_posterior(density_est)
+        t_fit = _time.time() - t1
 
         dt = _time.time() - t0
         if show_progress:
+            print(f'  Density estimator trained in {t_fit / 60:.1f} min')
             print(f'  Done in {dt / 60:.1f} min')
 
-        from sound_categorisation.inference.simulator import get_bounds_arrays
-        lo, hi = get_bounds_arrays(self.model)
+        lo, hi = self.bounds()
         self._trained_posterior = posterior
         self._prior_bounds = {'low': lo.tolist(), 'high': hi.tolist()}
         self._training_metadata = {
             'n_simulations': n_simulations,
             'n_valid': n_valid,
+            'n_drawn': int(n_drawn),
+            'pass_rate': float(n_passed / n_drawn),
             'seed': seed,
             'dist_schedule': self.dist_schedule,
             'N': self.N, 'T': self.T, 'mode': self.mode,
             'design_features': list(self.design_features),
+            'prior': self.prior_name,
+            'min_accuracy': self.min_accuracy,
+            'simulation_time': t_sim,
+            'fit_time': t_fit,
             'training_time': dt,
         }
         return posterior
@@ -199,18 +304,22 @@ class AmortisedSBI:
             'stat_names': self.stat_names,
             'design_features': list(self.design_features),
             'param_names': list(self.param_names),
+            'prior': self.prior_name,
+            'log_uniform': list(priors.log_uniform_params(self.model.value, self.prior_name)),
+            'min_accuracy': self.min_accuracy,
             'prior_bounds': self._prior_bounds,
             'trained_posterior': self._trained_posterior,
             'training_metadata': self._training_metadata,
             'feature_medians': self._feature_medians,
-            '_version': 6,
+            '_version': 7,
         }
         with open(path, 'wb') as f:
             pickle.dump(save_data, f)
 
     @classmethod
     def load(cls, path) -> 'AmortisedSBI':
-        """Load a trained AmortisedSBI. Rebuilds simulator/prior fresh.
+        """Load a trained AmortisedSBI. Rebuilds simulator/prior fresh, for the prior variant and
+        accuracy rule the file records (a file from before they existed: ``manuscript``, no rule).
 
         Raises if the saved parameter names differ from the model's current order: the
         network's output columns would otherwise be relabelled silently.
@@ -222,6 +331,7 @@ class AmortisedSBI:
             N=data['N'], T=data['T'], burn_in=data['burn_in'],
             mode=data['mode'], stat_names=data['stat_names'],
             design_features=tuple(data.get('design_features') or ()),
+            prior=network_prior(data), min_accuracy=data.get('min_accuracy'),
         )
         saved_names = data.get('param_names')
         if saved_names is not None and list(saved_names) != list(obj.param_names):
@@ -265,6 +375,13 @@ class AmortisedSBI:
                           'predates them (retrain) unless intended.', stacklevel=2)
             self._warned_design = True
 
+        if self.prior_name != priors.current() and not getattr(self, '_warned_prior', False):
+            import warnings
+            warnings.warn(f"network trained on the '{self.prior_name}' prior; the prior in use is "
+                          f"'{priors.current()}': this is an earlier network unless intended.",
+                          stacklevel=2)
+            self._warned_prior = True
+
         x = to_stat_vector(sessions, mode=self.mode, stat_names=self.stat_names,
                            design_features=self.design_features)
         x = np.asarray(x, dtype=float)
@@ -307,15 +424,20 @@ class AmortisedSBI:
     LEAK_BATCH = 20_000
 
     def _sample_within_prior(self, obs, n_samples: int):
+        """``n_samples`` posterior samples inside the prior box, in the parameters' own units, and
+        the acceptance rate. The flow samples flat space; the box is this network's own prior."""
+        samples, rate = self._sample_flat(obs, n_samples)
+        return priors.from_flat(self.model.value, self.prior_name, samples), rate
+
+    def _sample_flat(self, obs, n_samples: int):
         import torch as _torch
 
-        from sound_categorisation.inference.simulator import get_bounds_arrays
-        lo, hi = get_bounds_arrays(self.model)
+        lo, hi = priors.flat_bounds(self.model.value, self.prior_name)
         flow = getattr(self._trained_posterior, 'posterior_estimator', None)
         if flow is None:
             # unknown sbi internals: fall back to sbi's own (unbudgeted) sampler
             samples = self._trained_posterior.sample((n_samples,), x=obs, show_progress_bars=False)
-            return samples.numpy(), float('nan')
+            return np.asarray(samples.numpy(), dtype=float), float('nan')
         cond = obs.reshape(1, -1)
         accepted, proposed, last = [], 0, None
         n_acc = 0
@@ -351,12 +473,14 @@ class AmortisedSBI:
 
     @property
     def simulator(self):
-        """The simulator callable theta -> x, matching this net's config."""
+        """The simulator callable theta -> x, matching this net's config (theta in the parameters'
+        own units; None for a draw this net's accuracy rule rejects)."""
         return self._sim_fn
 
     @property
     def prior(self):
-        """The sbi prior (BoxUniform; None if sbi/torch unavailable)."""
+        """The sbi prior: a BoxUniform over this net's prior in flat space (None if sbi/torch
+        unavailable)."""
         return self._prior
 
 
@@ -373,8 +497,15 @@ def read_network_file(path) -> Dict[str, Any]:
         return pickle.load(f)
 
 
+def network_prior(data: Dict[str, Any]) -> str:
+    """The prior variant a saved network was trained on. Files from before the variants existed
+    (mid-November 2026) were trained on the ``manuscript`` ranges."""
+    return data.get('prior') or 'manuscript'
+
+
 def trained_prior_bounds(data: Dict[str, Any]):
-    """(low, high) arrays of the prior a saved network was trained on, or None.
+    """(low, high) arrays of the prior a saved network was trained on, in the parameters' own
+    units, or None.
 
     Networks saved from Nov 2026 store them; older ones keep them only inside the
     pickled sbi posterior (a BoxUniform), which is read here when available.

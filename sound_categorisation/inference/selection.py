@@ -118,8 +118,10 @@ def condition_posterior(sessions: List, net, n_samples: int = 1000) -> Dict[str,
     """The one all-session conditioning that is saved per animal.
 
     Returns ``{'posterior_samples': (n_samples, n_params), 'param_names',
-    'point_estimate', 'prior_bounds': {name: (lo, hi)}, 'acceptance_rate'}``,
-    or None when the observation is degenerate. ``acceptance_rate`` is the
+    'point_estimate', 'prior_bounds': {name: (lo, hi)}, 'prior', 'log_uniform',
+    'acceptance_rate'}``, or None when the observation is degenerate. Samples, estimates and
+    bounds are in the parameters' own units; ``prior`` is the network's prior variant and
+    ``log_uniform`` the parameters it draws uniformly in the logarithm. ``acceptance_rate`` is the
     fraction of flow proposals inside the prior box (see
     ``AmortisedSBI._sample_within_prior``); near 0 means the net puts almost
     no mass on these data -- flag such animals. ``posterior_samples`` is None for a net whose
@@ -128,14 +130,18 @@ def condition_posterior(sessions: List, net, n_samples: int = 1000) -> Dict[str,
     cond = _safe_condition_full(net, sessions, n_samples)
     if cond is None:
         return None
-    from sound_categorisation.inference.simulator import get_bounds_arrays
-    lo, hi = get_bounds_arrays(net.model)
+    from sound_categorisation.models import priors
+    prior_name = getattr(net, 'prior_name', None) or 'manuscript'      # a stub or an early network
+    key = getattr(net.model, 'value', net.model)
+    lo, hi = priors.bounds_arrays(key, prior_name)
     names = list(cond['param_names'])
     return {
         'posterior_samples': cond.get('posterior_samples'),
         'param_names': names,
         'point_estimate': dict(cond['point_estimate']),
         'prior_bounds': {n: (float(lo[i]), float(hi[i])) for i, n in enumerate(names)},
+        'prior': prior_name,
+        'log_uniform': list(priors.log_uniform_params(key, prior_name)),
         'acceptance_rate': cond.get('acceptance_rate'),
     }
 

@@ -50,13 +50,39 @@ def test_scripts_use_the_grids():
 
 
 def test_sbc_grid():
+    """One task per (representation at one session count, model); the counts differ by
+    representation (pooled: full data and the CV halves; single: one session)."""
     import sound_categorisation.cli.sbi_sbc as S
-    from sound_categorisation.inference.tasks import SBC_GRID
-    from sound_categorisation.settings import MODEL_TYPES, SBC_DRAWS_BY_SESSIONS, SBI_TRAIN_REPS
-    assert SBC_GRID.names == ('rep', 'model', 'n_sessions')
-    assert SBC_GRID.n == len(SBI_TRAIN_REPS) * len(MODEL_TYPES) * len(SBC_DRAWS_BY_SESSIONS) == 12
+    from sound_categorisation.inference.tasks import SBC_CASES, SBC_GRID, sbc_case
+    from sound_categorisation.settings import MODEL_TYPES, SBC_DRAWS, SBI_TRAIN_REPS
+    assert SBC_GRID.names == ('case', 'model')
+    assert SBC_CASES == ('pooled/5', 'pooled/3', 'pooled/2', 'single/1')
+    assert SBC_GRID.n == len(SBC_CASES) * len(MODEL_TYPES) == 8
+    seen = set()
     for i in range(SBC_GRID.n):
         assert SBC_GRID.encode(**SBC_GRID.decode(i)) == i
         rep, model, n = S.decode_task(i)
-        assert (rep, model) == tuple(SBC_GRID.decode(i).values())[:2] and n in SBC_DRAWS_BY_SESSIONS
+        assert (rep, n) == sbc_case(SBC_GRID.decode(i)['case']) and model in MODEL_TYPES
+        assert rep in SBI_TRAIN_REPS and n in SBC_DRAWS[rep]
+        seen.add((rep, model, n))
+    assert len(seen) == SBC_GRID.n
 
+
+def test_settings_of_the_representations_agree():
+    """The session counts a network is calibrated and conditioned at lie inside what it trains on."""
+    from sound_categorisation.settings import (
+        MODEL_ID_MIN_SESSIONS,
+        SBC_DRAWS,
+        SBI_REPRESENTATIONS,
+        SBI_SINGLE_T,
+        SBI_TRAIN_REPS,
+        SBI_TRAIN_T,
+    )
+    assert SBI_TRAIN_REPS == ('pooled', 'single') and set(SBI_TRAIN_REPS) <= set(SBC_DRAWS)
+    lo, hi = SBI_REPRESENTATIONS['pooled']['N']
+    assert all(lo <= n <= hi for n in SBC_DRAWS['pooled'])
+    assert lo <= MODEL_ID_MIN_SESSIONS // 2 and hi >= 5          # a CV half, and an animal's full data
+    assert SBI_REPRESENTATIONS['single']['N'] == 1 and set(SBC_DRAWS['single']) == {1}
+    assert SBI_REPRESENTATIONS['single']['T'] == SBI_SINGLE_T
+    assert SBI_SINGLE_T[0] <= SBI_TRAIN_T[0] // 2                # half of the shortest selected session
+    assert SBI_REPRESENTATIONS['pooled']['accuracy_rule'] and not SBI_REPRESENTATIONS['single']['accuracy_rule']

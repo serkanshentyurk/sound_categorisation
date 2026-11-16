@@ -29,8 +29,6 @@ jobs:
         run: pytest tests/unit -q
       - name: Project end-to-end (report pipeline on synthetic data, pinned reference)
         run: pytest tests/e2e -q
-      - name: Project fit tests (skip without torch; exit 5 = nothing collected is fine)
-        run: pytest tests/fit -q || [ $? -eq 5 ]
       - name: Synthetic runs for the notebooks
         run: sc-make-synthetic-run --results /tmp/sc_results --data /tmp/sc_data
       - name: Notebooks execute against the synthetic runs
@@ -39,3 +37,26 @@ jobs:
           SC_RESULTS_ROOT: /tmp/sc_results
           SC_DATA_ROOT: /tmp/sc_data
         run: pytest --nbmake notebooks/00_*.ipynb notebooks/1*.ipynb notebooks/2*.ipynb -q
+
+  # The SBI path (training a network, conditioning on data) needs torch and sbi, which the job above does not
+  # install. CPU-only torch keeps the download small; the tests train tiny networks.
+  fit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install with CPU-only torch and sbi
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[dev,fit]"
+      - name: Versions
+        run: python -c "import torch, sbi; print('torch', torch.__version__, '| sbi', sbi.__version__)"
+      - name: SBI fit tests
+        run: pytest tests/fit -q
+      # every stage of the model-identification chain on tiny networks, with a check after each
+      - name: Smoke run of the chain
+        run: sc-smoke --dir /tmp/sc_smoke --n-simulations 200 --n-per-model 1 --sbc-draws 2 --fingerprint-draws 150

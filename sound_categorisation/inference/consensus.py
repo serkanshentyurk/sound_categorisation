@@ -18,7 +18,12 @@ Methods (configurable):
     ('sbi', rep, ft)          -> SBI-{rep}-UM / -CP  dir: <run>/sbi/<ft>/<distribution>/<rep>
 
 DEFAULT_METHODS is the current run: update matrix only (the conditional-psychometric
-target is not fitted now), grid search plus the two trained SBI representations.
+target is not fitted now), grid search plus the pooled SBI representation. REPORTED_METHODS are
+listed in the same table but do not vote: the single-session SBI representation, whose held-out
+error comes from half-session update matrices (exploratory). Their columns are
+``{label}_be`` / ``{label}_sc`` (mean held-out error per model), ``{label}_lower`` (the model with
+the lower error) and ``{label}_lower_pvalue``. The rule counts a column ``K`` that has a sibling
+``K_p``; these names give it none, so a reported method cannot vote. Until mid-November 2026 the moments representation was a third vote.
 
 Consensus rule (configurable):
     1. Collect significant (p < alpha) BE/SC votes across methods.
@@ -63,7 +68,9 @@ Method = Tuple[str, str | None, str]
 DEFAULT_METHODS: List[Method] = [
     ('grid_search', None, 'update_matrix'),
     ('sbi', 'pooled', 'update_matrix'),
-    ('sbi', 'moments', 'update_matrix'),
+]
+REPORTED_METHODS: List[Method] = [
+    ('sbi', 'single', 'update_matrix'),
 ]
 
 
@@ -122,6 +129,7 @@ def load_all_assignments(
     experiment: Optional['ExperimentData'] = None,
     alpha: float = 0.05,
     min_significant_votes: int = 1,
+    reported: List[Method] | None = None,
 ) -> pd.DataFrame:
     """Load each method's BE/SC call and compute a consensus per animal.
 
@@ -132,20 +140,27 @@ def load_all_assignments(
         experiment: If given, animals present in it but absent from results are
             still listed (an all-missing row -> 'Unclear').
         alpha, min_significant_votes: consensus-rule parameters.
+        reported: methods listed without voting; defaults to REPORTED_METHODS (pass ``[]`` for
+            none). A reported method with no results in the run adds no columns.
 
     Returns:
         One row per animal: 'id', then per method '{label}', '{label}_p',
-        '{label}_be', '{label}_sc'; 'true_model' if any method carried ground
+        '{label}_be', '{label}_sc' ('_be' / '_sc': the mean held-out error per model); per
+        reported method '{label}_be', '{label}_sc', '{label}_lower', '{label}_lower_pvalue';
+        'true_model' if any method carried ground
         truth; 'Consensus'; 'n_sig_BE' / 'n_sig_SC' (significant votes per model);
         'contested' (a BE/SC call with at least one significant vote for the other model);
         and 'consensus_correct' when truth is known (NaN for an animal that was not
         called: Unclear / Split).
     """
     methods = methods or DEFAULT_METHODS
+    reported = REPORTED_METHODS if reported is None else reported
+    reported = [m for m in reported if m not in methods]
 
     per_method = {}                 # label -> {animal_id: (winner, p, be, sc)}
     true_model_by_animal = {}
-    for source, rep, ft in methods:
+    not_voting = set()
+    for source, rep, ft in [*methods, *reported]:
         label = _method_label(source, rep, ft)
         cv = load_cv_results(_method_dir(source, rep, ft, run, distribution))
         comp = cv.comparison
@@ -157,6 +172,10 @@ def load_all_assignments(
                 tm = r.get('true_model')
                 if tm in ('BE', 'SC'):
                     true_model_by_animal[r['animal_id']] = tm
+        if (source, rep, ft) in reported:
+            if not rows:
+                continue                              # not run: no columns
+            not_voting.add(label)
         per_method[label] = rows
 
     ids = set().union(*[set(d) for d in per_method.values()]) if per_method else set()
@@ -172,8 +191,12 @@ def load_all_assignments(
         row = {'id': aid}
         for label, rows in per_method.items():
             winner, p, be, sc = rows.get(aid, (None, np.nan, np.nan, np.nan))
-            row[label] = winner
-            row[f'{label}_p'] = p
+            if label in not_voting:                   # listed, never counted (no '{label}' / '_p' pair)
+                row[f'{label}_lower'] = winner
+                row[f'{label}_lower_pvalue'] = p
+            else:
+                row[label] = winner
+                row[f'{label}_p'] = p
             row[f'{label}_be'] = be
             row[f'{label}_sc'] = sc
         if has_truth:
@@ -214,4 +237,15 @@ def compute_consensus_summary(assign_df: pd.DataFrame) -> str:
         lines.append(f'called (BE or SC): {len(called)}/{int(with_truth.sum())} animals with known truth')
         if len(called):
             lines.append(f'correct among called: {int(called.sum())}/{len(called)} ({called.mean():.2f})')
+    labels = [c[:-3] for c in assign_df.columns if c.endswith('_be') and f'{c[:-3]}_sc' in assign_df]
+    if labels:
+        lines.append('mean held-out error over animals (BE / SC; lower for BE / SC in n animals):')
+        for label in labels:
+            be, sc = assign_df[f'{label}_be'], assign_df[f'{label}_sc']
+            if be.isna().all() and sc.isna().all():
+                lines.append(f'  {label}: no results in this run')
+                continue
+            role = '' if label in assign_df else '  [reported, not a vote]'
+            lines.append(f'  {label}: {be.mean():.5f} / {sc.mean():.5f}  '
+                         f'({int((be < sc).sum())} / {int((sc < be).sum())}){role}')
     return '\n'.join(lines)

@@ -30,6 +30,7 @@ Inside each `<distribution>/<design>_<trials>/` folder:
 | `pdf/<animal>_….pdf` | one animal, all pages: psychometric curves, update matrices, every contrast, the session trajectory |
 | `pdf/group_….pdf` | all animals folded together: WT vs HET on every contrast, group curves, group trajectory |
 | `<animal>/contrasts.csv` | every number behind that animal's contrast pages |
+| `<animal>/equivalence.csv` | the laser effect read against margins set in advance: within margin, effect or unclear, per statistic |
 | `<animal>/trajectory.csv` | one row per session, in the order they were run |
 | `<animal>/readouts.npz` | the fitted curves and matrices (arrays) |
 | `group/group_rows.csv` | the per-animal numbers that went into each WT-vs-HET test |
