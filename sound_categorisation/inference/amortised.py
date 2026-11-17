@@ -16,6 +16,11 @@ in its file) and, optionally, to the accuracy rule: only simulations whose every
 in flat space (a log-uniform parameter as its logarithm); everything that goes in or comes out of
 this class is in the parameters' own units.
 
+``train(training_set=path)`` saves the simulations to ``path`` before the density estimator trains,
+and reads them back instead of simulating when the file holds a set made with the same settings
+(``inference.training_sets``): the restart point of a training run, and the networks' training
+distribution for later analyses.
+
 This module is the engine only. Model selection lives in
 ``inference.selection`` (held-out UM/CP CV, the same protocol as grid_search).
 """
@@ -32,8 +37,9 @@ try:
 except ImportError:
     TORCH_AVAILABLE = False
 
-from sound_categorisation.inference.representation import to_stat_vector
+from sound_categorisation.inference.representation import feature_names, to_stat_vector
 from sound_categorisation.inference.simulator import build_simulator
+from sound_categorisation.inference.training_sets import config_changes, read_training_set, save_training_set
 from sound_categorisation.inference.types import ModelType
 from sound_categorisation.models import priors
 
@@ -123,6 +129,34 @@ class AmortisedSBI:
 
     SIM_CHUNK = 5_000          # most prior draws simulated in one round
 
+    def training_config(self, n_simulations: int, seed: int | None) -> Dict[str, Any]:
+        """Everything that shapes this network's training set for ``n_simulations`` kept and
+        ``seed``: a saved set is reused only when this is unchanged (``inference.training_sets``)."""
+        low, high = self.bounds()
+        return {
+            'model': self.model.value,
+            'prior': self.prior_name,
+            'prior_low': low.tolist(),
+            'prior_high': high.tolist(),
+            'log_uniform': list(priors.log_uniform_params(self.model.value, self.prior_name)),
+            'param_names': list(self.param_names),
+            'min_accuracy': self.min_accuracy,
+            'dist_schedule': self.dist_schedule,
+            'N': self.N, 'T': self.T, 'burn_in': self.burn_in, 'mode': self.mode,
+            'stat_names': list(self.stat_names),
+            'design_features': list(self.design_features),
+            'n_simulations': int(n_simulations),
+            'seed': int(seed or 0),
+        }
+
+    def training_set_changes(self, path, n_simulations: int, seed: int | None) -> List[str]:
+        """How a training set saved at ``path`` differs from the one this network would make for
+        ``n_simulations`` and ``seed``: the configuration keys that changed, or [] when they are
+        the same or nothing is saved there."""
+        if path is None or not Path(path).exists():
+            return []
+        return config_changes(read_training_set(path).config, self.training_config(n_simulations, seed))
+
     def simulate_training_set(self, n_keep: int, seed: int = 42, n_jobs: int = -1,
                               max_draws: int | None = None, show_progress: bool = True):
         """Draw from the prior and simulate until ``n_keep`` simulations are kept.
@@ -192,9 +226,16 @@ class AmortisedSBI:
         show_progress: bool = True,
         n_jobs: int = -1,
         max_draws: int | None = None,
+        training_set=None,
     ):
         """Train the amortised posterior estimator via SNPE on ``n_simulations`` kept simulations
-        (``simulate_training_set``)."""
+        (``simulate_training_set``).
+
+        ``training_set``: a file path (``data.paths.snpe_training_set_path``). When the file holds
+        a set made with the same settings (``training_config``), it is read instead of simulating;
+        when there is none, the simulations are saved there before the density estimator trains.
+        A file made with other settings is refused before anything is simulated: move it aside.
+        """
         if not TORCH_AVAILABLE:
             raise ImportError('torch required for SBI training')
 
@@ -205,6 +246,11 @@ class AmortisedSBI:
         if self._prior is None:
             raise RuntimeError(
                 'No prior (sbi/torch unavailable when the simulator was built).')
+        changed = self.training_set_changes(training_set, n_simulations, seed)
+        if changed:
+            raise FileExistsError(
+                f'{training_set} holds a training set made with other settings ({", ".join(changed)}); '
+                'move it aside to simulate afresh.')
 
         if show_progress:
             rule = 'none' if self.min_accuracy is None else f'every session >= {self.min_accuracy:g}'
@@ -219,15 +265,41 @@ class AmortisedSBI:
             np.random.seed(seed)
 
         t0 = _time.time()
-        if show_progress:
-            print(f'  Simulating until {n_simulations:,} datasets are kept...')
-        theta_np, x_np, n_drawn, n_passed = self.simulate_training_set(
-            n_simulations, seed=(seed or 0), n_jobs=n_jobs, max_draws=max_draws,
-            show_progress=show_progress)
-        t_sim = _time.time() - t0
-        if show_progress:
-            print(f'  Simulated in {t_sim / 60:.1f} min: {n_drawn:,} draws, {n_passed:,} passed '
-                  f'({100 * n_passed / n_drawn:.1f}%), {n_simulations:,} kept')
+        saved_to = None if training_set is None else Path(training_set)
+        reused = saved_to is not None and saved_to.exists()
+        if reused:
+            saved = read_training_set(training_set)
+            theta_np, x_np, n_drawn, n_passed = saved.theta, saved.x, saved.n_drawn, saved.n_passed
+            t_sim = float(saved.meta['simulation_time'])       # what the simulations cost when made
+            if show_progress:
+                print(f'  Reusing the training set in {training_set} (simulated {saved.meta["created_utc"]} '
+                      f'in {t_sim / 60:.1f} min): {n_drawn:,} draws, {n_passed:,} passed '
+                      f'({100 * n_passed / n_drawn:.1f}%), {n_simulations:,} kept')
+        else:
+            if show_progress:
+                print(f'  Simulating until {n_simulations:,} datasets are kept...')
+            theta_np, x_np, n_drawn, n_passed = self.simulate_training_set(
+                n_simulations, seed=(seed or 0), n_jobs=n_jobs, max_draws=max_draws,
+                show_progress=show_progress)
+            t_sim = _time.time() - t0
+            if show_progress:
+                print(f'  Simulated in {t_sim / 60:.1f} min: {n_drawn:,} draws, {n_passed:,} passed '
+                      f'({100 * n_passed / n_drawn:.1f}%), {n_simulations:,} kept')
+            if training_set is not None:
+                try:
+                    save_training_set(
+                        training_set, theta_np, x_np, config=self.training_config(n_simulations, seed),
+                        param_names=self.param_names,
+                        feature_names=feature_names(self.mode, self.stat_names, self.design_features),
+                        n_drawn=n_drawn, n_passed=n_passed, simulation_time=t_sim)
+                    if show_progress:
+                        print(f'  Training set saved -> {training_set}')
+                except (OSError, ValueError) as e:
+                    # the simulations are in memory: train on them rather than lose them
+                    import warnings
+                    warnings.warn(f'could not save the training set to {training_set} ({e}); training '
+                                  'goes on without a restart point', stacklevel=2)
+                    saved_to = None
 
         # Median-impute non-finite features instead of dropping simulations:
         # learn per-column medians here and store them so condition() imputes
@@ -266,6 +338,8 @@ class AmortisedSBI:
         if show_progress:
             print(f'  Density estimator trained in {t_fit / 60:.1f} min')
             print(f'  Done in {dt / 60:.1f} min')
+        if reused:
+            dt += t_sim         # the network's whole cost: the saved simulations, then this run
 
         lo, hi = self.bounds()
         self._trained_posterior = posterior
@@ -284,6 +358,8 @@ class AmortisedSBI:
             'simulation_time': t_sim,
             'fit_time': t_fit,
             'training_time': dt,
+            'training_set': None if saved_to is None else saved_to.name,   # file name, beside the network
+            'training_set_reused': bool(reused),
         }
         return posterior
 

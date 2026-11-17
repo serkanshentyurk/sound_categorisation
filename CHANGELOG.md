@@ -3,6 +3,17 @@
 
 ## Unreleased
 
+- **Training sets saved beside the networks** (agreed 17 November 2026). `sc-sbi-train` writes each network's
+  simulations to `snpe_<rep>_<model>_<dist>_training.npz` (`inference/training_sets.py`: plain numpy, `theta` in
+  the parameters' own units, `x` as simulated, and a JSON `meta` with the configuration, draws and passes) as soon
+  as they are done, before the density estimator trains. Run again with the same settings, a task reads them back
+  instead of simulating (`AmortisedSBI.train(training_set=...)`; the network records `training_set_reused`): the
+  checkpoint training lacked. A set made with other settings (model, prior and its bounds, accuracy rule,
+  schedule, N, T, burn-in, representation, statistics, design features, number kept, seed) is refused before
+  anything is simulated; `--overwrite` simulates afresh and replaces it. A set that cannot be written is a
+  warning, not a failure. The sets also give the model classifier the networks' own training distribution
+  without simulating again. `sc-smoke` checks every set and retrains one network from its set. Archive a network
+  with its set (`snpe_*`).
 - **Training structure for the retrain** (agreed 16 November 2026). What changes for the networks:
   - *Prior:* every model fit uses one prior variant, `settings.SBI_PRIOR = 'learning'`: the networks, the grid
     search grid, synthetic cohorts, calibration draws. A network records its variant (`prior` in the file; a file
@@ -30,8 +41,8 @@
     worker (the job's thread count used to reach every worker), shuts the worker pool down before the density
     estimator trains, and the log gives draws, passed, kept and the simulation and training times separately.
     The training set does not depend on the number of workers.
-- `slurm/sbi_train.sh`: time limit 4 days (was 2; the partition allows 10). A task has no checkpoint, and the
-  pooled BE network's upper estimate is 30 h.
+- `slurm/sbi_train.sh`: time limit 4 days (was 2; the partition allows 10). The pooled BE network's upper
+  estimate is 30 h.
 - **`sc-smoke` / `sbatch slurm/smoke.sh`** (`cli/smoke.py`): the whole chain, small, in a scratch folder (its own
   data and results roots), with a check after each stage; ends with `SMOKE PASSED` or the failed check. For use
   after a change to the fitting code and before submitting real jobs.

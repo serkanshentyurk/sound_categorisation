@@ -28,7 +28,7 @@ sound_categorisation/                 ← repo root (pyproject.toml, config.yaml
 │   ├── behaviour/                    contrasts (OptoContrasts, ppc/alm_contrasts), adaptation (switches, trajectory)
 │   ├── models/                       BE and SC generative models (also as behav_utils models), perception,
 │   │                                 simulation, traces
-│   ├── inference/                    amortised SBI, simulator, representation, selection, grid_search,
+│   ├── inference/                    amortised SBI (+ saved training sets), simulator, representation, selection, grid_search,
 │   │                                 cv_utils, fold_utils, consensus, tasks (TaskGrid for every SLURM array)
 │   ├── features/                     SBI feature-selection diagnostics
 │   ├── reports/                      compute → tables → figures → PDF → summary (+ README, CLI)

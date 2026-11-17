@@ -50,7 +50,8 @@ behaviour/
 models/              BE (boundary-estimation) and SC (statistical-categorisation) generative models;
                      (simulate.py: as behav_utils models, BoundaryEstimation and StatisticalCategorisation;
                      priors.py: the prior variants manuscript / learning, docs/prior_variants.md)
-inference/           amortised SBI (types, simulator, representation, selection, amortised),
+inference/           amortised SBI (types, simulator, representation, selection, amortised, training_sets:
+                     a network's simulations saved beside it),
                      grid_search (CV over model parameters, held-out UM / conditional-psychometric MSE),
                      cv_utils (CV result schema), fold_utils (block-aware folds), consensus (GS + SBI votes),
                      tasks (TaskGrid: TRAIN_GRID, CONDITION_GRID, SBC_GRID, gs_grid), calibration (SBC),
@@ -110,7 +111,7 @@ p = 0.016, so per-animal consistency carries the argument.
 ## The model-identification chain
 
 ```
-sc-sbi-train    TRAIN_GRID (4 tasks)    simulate BE/SC → train one amortised network per (rep, model, distribution)
+sc-sbi-train    TRAIN_GRID (4 tasks)    simulate BE/SC → save the training set → train one amortised network per (rep, model, distribution)
 sc-sbi-condition      CONDITION_GRID (4)      condition each animal's expert data → posterior + held-out MSE
 sc-grid-search       gs_grid(animals, seeds) grid search CV per (animal, model, seed) → partials → --gather
 sc-consensus                            GS + SBI calls → assignments.csv, summary.txt

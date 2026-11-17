@@ -13,8 +13,10 @@
 # no saving from giving failing draws up early): pooled BE (100k kept, about 700k drawn) 30 h;
 # pooled SC (100k kept, about 170k drawn) 10 h; single BE / SC (200k, one session each) 12 h.
 # The log gives draws, passed, kept and the simulation and training times separately.
-# The time limit is 4 days (the partition allows 10): a task has no checkpoint, so one that ran out
-# of time would lose its simulations, and a task that finishes early gives its node back.
+# The time limit is 4 days (the partition allows 10); a task that finishes early gives its node back.
+# Each task saves its simulations beside the network (snpe_<rep>_<model>_<dist>_training.npz) before
+# the density estimator trains: a task that stops after that point is resubmitted as it was and reads
+# them back. One that stops while simulating loses them.
 # Check the chain first:  sbatch slurm/smoke.sh
 # Submit via:  bash slurm/submit.sh sbi-train [sc-sbi-train args]
 set -euo pipefail

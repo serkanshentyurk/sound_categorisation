@@ -17,6 +17,7 @@ pytest.importorskip('sbi')
 from behav_utils.data import session_from_arrays  # noqa: E402
 from sound_categorisation.data.stimuli import sample_distribution  # noqa: E402
 from sound_categorisation.inference import AmortisedSBI  # noqa: E402
+from sound_categorisation.inference.training_sets import read_training_set  # noqa: E402
 from sound_categorisation.inference.types import ModelType, get_default_param_configs  # noqa: E402
 from sound_categorisation.models.simulate import simulate_choices  # noqa: E402
 
@@ -266,6 +267,63 @@ class TestPriorVariantAndAccuracyRule:
         assert res['theta_true'][:, 2].max() < 0                    # log eta_learning
 
 
+def _no_simulating(*args, **kwargs):
+    raise AssertionError('simulated again')
+
+
+class TestTrainingSet:
+    """The simulations are saved before the density estimator trains; a run started again with the
+    same settings reads them back instead of simulating."""
+
+    def test_saved_before_the_density_estimator_trains(self, tmp_path, monkeypatch):
+        import sbi.inference
+
+        def stop(self, *args, **kwargs):
+            raise RuntimeError('density estimator stopped')
+        monkeypatch.setattr(sbi.inference.SNPE, 'train', stop)
+        net, path = _new_net(), tmp_path / 'set.npz'
+        with pytest.raises(RuntimeError, match='density estimator stopped'):
+            net.train(n_simulations=200, seed=3, show_progress=False, training_set=path)
+        saved = read_training_set(path)
+        assert saved.theta.shape == (200, len(BE_NAMES)) and saved.param_names == BE_NAMES
+        assert net.training_set_changes(path, 200, 3) == [] and saved.n_drawn == 200
+
+    def test_a_restart_reads_the_simulations_back(self, tmp_path, monkeypatch):
+        path = tmp_path / 'set.npz'
+        first = _new_net()
+        first.train(n_simulations=200, seed=3, show_progress=False, training_set=path)
+        monkeypatch.setattr(AmortisedSBI, 'simulate_training_set', _no_simulating)
+        again = _new_net()
+        again.train(n_simulations=200, seed=3, show_progress=False, training_set=path)
+        m1, m2 = first._training_metadata, again._training_metadata
+        assert not m1['training_set_reused'] and m2['training_set_reused'] and m2['training_set'] == 'set.npz'
+        assert (m2['n_drawn'], m2['simulation_time']) == (m1['n_drawn'], m1['simulation_time'])
+        assert m2['training_time'] >= m2['simulation_time']
+        np.testing.assert_array_equal(again._feature_medians, first._feature_medians)
+        out = again.condition(_be_sessions(seed0=60), n_samples=100)
+        assert out['posterior_samples'].shape == (100, len(BE_NAMES))
+
+    def test_a_set_made_with_other_settings_is_refused_before_simulating(self, tmp_path, monkeypatch):
+        path = tmp_path / 'set.npz'
+        _new_net().train(n_simulations=200, seed=3, show_progress=False, training_set=path)
+        monkeypatch.setattr(AmortisedSBI, 'simulate_training_set', _no_simulating)
+        with pytest.raises(FileExistsError, match='seed'):
+            _new_net().train(n_simulations=200, seed=4, show_progress=False, training_set=path)
+        with pytest.raises(FileExistsError, match='n_simulations'):
+            _new_net().train(n_simulations=300, seed=3, show_progress=False, training_set=path)
+
+    def test_a_set_that_cannot_be_saved_does_not_stop_training(self, tmp_path, monkeypatch):
+        from sound_categorisation.inference import amortised
+
+        def fail(*args, **kwargs):
+            raise OSError('disk full')
+        monkeypatch.setattr(amortised, 'save_training_set', fail)
+        net = _new_net()
+        with pytest.warns(UserWarning, match='could not save the training set'):
+            net.train(n_simulations=200, seed=3, show_progress=False, training_set=tmp_path / 'set.npz')
+        assert net.posterior is not None and net._training_metadata['training_set'] is None
+
+
 class TestTrainCommand:
     """sc-sbi-train on a scratch data root: the four networks of the array, small."""
 
@@ -291,3 +349,28 @@ class TestTrainCommand:
         monkeypatch.setitem(SBI_REPRESENTATIONS['single'], 'T', (100, 300))
         with pytest.raises(FileExistsError, match='different representation'):
             sbi_train.main(['--fast', '--rep', 'single', '--model', 'SC'])
+
+    def test_each_network_has_its_training_set_and_a_restart_reads_it_back(self, tmp_path, monkeypatch):
+        monkeypatch.setenv('SC_DATA_ROOT', str(tmp_path))
+        from sound_categorisation.cli import sbi_train
+        from sound_categorisation.data.paths import snpe_net_path, snpe_training_set_path
+        from sound_categorisation.inference.amortised import read_network_file
+        monkeypatch.setattr(sbi_train, 'FAST_SBI_N_SIMULATIONS', 200)
+        args = ['--fast', '--rep', 'single', '--model', 'SC']
+        sbi_train.main(args)
+        network, saved = snpe_net_path('single', 'SC', 'uniform'), snpe_training_set_path('single', 'SC', 'uniform')
+        assert read_training_set(saved).theta.shape == (200, 4)
+        assert read_network_file(network)['training_metadata']['training_set'] == saved.name
+
+        network.unlink()                                   # as if the job had stopped after simulating
+        simulate = AmortisedSBI.simulate_training_set
+        monkeypatch.setattr(AmortisedSBI, 'simulate_training_set', _no_simulating)
+        sbi_train.main(args)
+        assert read_network_file(network)['training_metadata']['training_set_reused']
+
+        with pytest.raises(FileExistsError, match='seed'):  # another seed: refused before simulating
+            sbi_train.main([*args, '--seed', '7'])
+        monkeypatch.setattr(AmortisedSBI, 'simulate_training_set', simulate)
+        sbi_train.main([*args, '--seed', '7', '--overwrite'])
+        assert read_training_set(saved).config['seed'] == 7
+        assert not read_network_file(network)['training_metadata']['training_set_reused']

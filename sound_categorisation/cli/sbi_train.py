@@ -30,6 +30,14 @@ networks went to ``snpe_networks/2026-10/``, the ones trained on the manuscript 
 to ``snpe_networks/2026-11-manuscript/``) or pass ``--overwrite``. The check runs before any
 simulation.
 
+Each network's simulations are saved beside it, ``snpe_{rep}_{model}_{distribution}_training.npz``
+(``inference.training_sets``), as soon as they are done and before the density estimator trains.
+Training has no other checkpoint: a task that stops after simulating is run again as it was, and
+reads its simulations back instead of simulating (only when every setting that shapes them, seed
+and number kept included, is unchanged). A saved set made with other settings is refused like a
+network: move it aside with its network (``snpe_*``) or pass ``--overwrite``, which simulates afresh
+and replaces it.
+
 The heavy import (``AmortisedSBI``, which pulls in torch + sbi) is deferred into
 ``train_one`` so that ``--count`` and argument parsing run on a login node
 without loading torch.
@@ -54,7 +62,7 @@ from __future__ import annotations
 import argparse
 import time
 
-from sound_categorisation.data.paths import snpe_net_path
+from sound_categorisation.data.paths import snpe_net_path, snpe_training_set_path
 from sound_categorisation.inference.simulator import accuracy_rule
 from sound_categorisation.inference.tasks import TRAIN_GRID
 from sound_categorisation.settings import (
@@ -113,7 +121,10 @@ def train_one(rep, model, distribution, n_simulations=None, seed=BASE_SEED,
     SBI_REPRESENTATIONS (used by --fast and --n-simulations): the number of simulations kept.
     The network is trained on the prior in use (settings.SBI_PRIOR) and, for a representation
     with ``accuracy_rule``, on simulations passing the session filter's minimum accuracy.
-    Refuses to replace a network trained with a different representation unless ``overwrite``.
+    Its simulations are saved beside it before the density estimator trains, and read back
+    instead of simulating when a set made with the same settings is already there.
+    Refuses to replace a network trained with a different representation, or a training set made
+    with other settings, unless ``overwrite`` (which then simulates afresh).
     """
     if rep not in SBI_REPRESENTATIONS:
         raise ValueError(f'Unknown rep {rep!r}; choose from {REPRESENTATIONS}.')
@@ -152,11 +163,22 @@ def train_one(rep, model, distribution, n_simulations=None, seed=BASE_SEED,
         design_features=SBI_DESIGN_FEATURES,
         min_accuracy=min_accuracy,
     )
-    net.train(n_simulations=n_sims, seed=seed, show_progress=show_progress)
+    training_set = snpe_training_set_path(rep, model, distribution)
+    changed = net.training_set_changes(training_set, n_sims, seed)
+    if changed and not overwrite:
+        raise FileExistsError(
+            f'{training_set} holds a training set made with other settings ({", ".join(changed)}). '
+            'Move it aside with its network (e.g. into snpe_networks/<yyyy-mm>/) or pass --overwrite.')
+    if changed:
+        print(f'[train] --overwrite: replacing {training_set} (other settings: {", ".join(changed)})')
+        training_set.unlink()
+    net.train(n_simulations=n_sims, seed=seed, show_progress=show_progress, training_set=training_set)
 
     net.save(out)
+    meta = net._training_metadata
+    how = 'reused' if meta['training_set_reused'] else 'saved' if meta['training_set'] else 'NOT saved (see the warning)'
     print(f'[train] {rep}/{model}/{distribution}: saved -> {out} '
-          f'({(time.time() - t0) / 60:.1f} min)')
+          f'({(time.time() - t0) / 60:.1f} min); training set {how}: {training_set.name}')
     return out
 
 
@@ -180,7 +202,8 @@ def main(argv=None):
                    help=f'Keep {FAST_SBI_N_SIMULATIONS} sims to check the pipeline runs. Set '
                         'SC_DATA_ROOT to a scratch folder first (slurm/smoke.sh does).')
     p.add_argument('--overwrite', action='store_true',
-                   help='replace an existing network even if its representation differs')
+                   help='replace an existing network even if its representation differs, and a saved '
+                        'training set made with other settings (simulated afresh)')
     p.add_argument('--print-array', action='store_true', help='print the SLURM --array range and exit')
     p.add_argument('--count', action='store_true',
                    help='Print the number of array tasks and exit.')

@@ -142,6 +142,12 @@ def snpe_net_path(rep: str, model: str, distribution: str) -> Path:
     return snpe_networks_dir() / f'snpe_{rep}_{model}_{distribution}.pkl'
 
 
+def snpe_training_set_path(rep: str, model: str, distribution: str) -> Path:
+    """The saved training set beside a network (``inference.training_sets``):
+    'snpe_{rep}_{model}_{distribution}_training.npz'. Archive it with its network (``snpe_*``)."""
+    return snpe_networks_dir() / f'snpe_{rep}_{model}_{distribution}_training.npz'
+
+
 # =============================================================================
 # RESULTS: one root, one layout, one run id
 #

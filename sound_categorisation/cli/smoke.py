@@ -5,7 +5,9 @@ Trains the networks of the training array with a few hundred simulations each, m
 synthetic cohort with known truth, and runs each later stage on it through the same commands a real
 run uses:
 
-    sc-sbi-train            the networks of the array (settings.SBI_TRAIN_REPS x BE / SC)
+    sc-sbi-train            the networks of the array (settings.SBI_TRAIN_REPS x BE / SC), each with
+                            its training set saved beside it; then once more for one network whose
+                            file is gone, which must read its simulations back (the restart)
     sc-make-synthetic-cohort
     sc-sbi-condition        held-out errors and the saved posteriors
     sc-grid-search          the tiny grid
@@ -15,7 +17,7 @@ run uses:
     sc-validation-tables
 
 After each stage it checks what the stage wrote: that the networks carry the prior in use, their
-session and trial ranges and their accuracy rule; that posteriors are in the parameters' own units
+session and trial ranges and their accuracy rule, and have their training sets beside them; that posteriors are in the parameters' own units
 inside that prior; that calibration results are in flat space; that the tables have their columns.
 It ends with ``SMOKE PASSED`` or stops at the first check that fails.
 
@@ -71,9 +73,10 @@ def _done(t0: float):
 
 def check_networks(check, n_simulations: int) -> None:
     """Every network of the array exists and carries the current settings."""
-    from sound_categorisation.data.paths import snpe_net_path
+    from sound_categorisation.data.paths import snpe_net_path, snpe_training_set_path
     from sound_categorisation.inference.amortised import network_prior, read_network_file
     from sound_categorisation.inference.simulator import accuracy_rule
+    from sound_categorisation.inference.training_sets import read_training_set
     from sound_categorisation.settings import MODEL_TYPES, SBI_PRIOR, SBI_REPRESENTATIONS, SBI_TRAIN_REPS
 
     print('[smoke] rep     model  kept   drawn  pass%  simulate  train')
@@ -95,9 +98,38 @@ def check_networks(check, n_simulations: int) -> None:
             check(meta['n_drawn'] >= n_simulations and 0 < meta['pass_rate'] <= 1, f'{name}: draws {meta}')
             check((rule is None) == (meta['n_drawn'] == n_simulations),
                   f'{name}: {meta["n_drawn"]} draws for {n_simulations} kept, rule {rule}')
+            saved = snpe_training_set_path(rep, model, DISTRIBUTION)
+            check(saved.exists() and meta['training_set'] == saved.name and not meta['training_set_reused'],
+                  f'{name}: training set {saved} (network records {meta.get("training_set")!r})')
+            ts = read_training_set(saved)
+            check(ts.theta.shape == (n_simulations, len(data['param_names'])) and len(ts.x) == n_simulations,
+                  f'{name}: training set theta {ts.theta.shape}, x {ts.x.shape}')
+            check(ts.config['prior'] == SBI_PRIOR and ts.config['min_accuracy'] == rule
+                  and ts.n_drawn == meta['n_drawn'], f'{name}: training set {ts.config}, {ts.n_drawn} drawn')
             print(f'[smoke] {rep:<7} {model:<5} {meta["n_simulations"]:>5} {meta["n_drawn"]:>7} '
                   f'{100 * meta["pass_rate"]:>5.1f}  {meta["simulation_time"] / 60:>6.1f} m '
                   f'{meta["fit_time"] / 60:>5.1f} m')
+
+
+def check_restart(check, n_simulations: int) -> None:
+    """A training run that stopped after simulating, run again: with the first network of the array
+    gone (as if its density estimator had not finished), sc-sbi-train reads its simulations back."""
+    from sound_categorisation.cli import sbi_train
+    from sound_categorisation.data.paths import snpe_net_path
+    from sound_categorisation.inference.amortised import read_network_file
+    from sound_categorisation.settings import MODEL_TYPES, SBI_TRAIN_REPS
+
+    rep, model = SBI_TRAIN_REPS[0], MODEL_TYPES[0]
+    path = snpe_net_path(rep, model, DISTRIBUTION)
+    before = read_network_file(path)['training_metadata']
+    path.unlink()
+    sbi_train.main(['--n-simulations', str(n_simulations), '--rep', rep, '--model', model])
+    check(path.exists(), f'{path} was not written on the restart')
+    after = read_network_file(path)['training_metadata']
+    check(after['training_set_reused'], f'{rep}/{model}: the restart simulated again')
+    check(after['n_drawn'] == before['n_drawn'] and after['simulation_time'] == before['simulation_time'],
+          f'{rep}/{model}: the restart records {after["n_drawn"]} draws, the first run {before["n_drawn"]}')
+    print(f'[smoke] {rep}/{model} retrained from its saved training set in {after["fit_time"] / 60:.1f} min')
 
 
 def check_conditioning(check, run: Path, n_animals: int) -> None:
@@ -229,6 +261,10 @@ def run(directory, n_simulations: int = 500, n_per_model: int = 2, sbc_draws: in
         t0 = _stage(f'sc-sbi-train: {n_simulations} kept simulations per network')
         sbi_train.main(['--n-simulations', str(n_simulations)])
         check_networks(check, n_simulations)
+        _done(t0)
+
+        t0 = _stage('sc-sbi-train again with one network lost: its training set is read back')
+        check_restart(check, n_simulations)
         _done(t0)
 
         t0 = _stage(f'sc-make-synthetic-cohort: {n_per_model} BE + {n_per_model} SC animals')

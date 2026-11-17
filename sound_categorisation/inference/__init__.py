@@ -25,6 +25,7 @@ Module structure:
     simulator.py      -- build_simulator, theta_to_params, get_param_names,
                           get_bounds_arrays, wrap_for_sbi
     amortised.py      -- AmortisedSBI (SNPE engine)
+    training_sets.py  -- a network's simulations on disk (the restart point; no torch)
     selection.py      -- condition_sbi (held-out CV; comparison in cv_utils)
 """
 

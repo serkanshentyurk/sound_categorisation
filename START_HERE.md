@@ -167,8 +167,9 @@ shared with the switch report.
 ### Model identification (cluster)
 
 The SBI networks are trained once (`bash slurm/submit.sh sbi-train`) and kept in
-`$BEHAV_DATA_DIR/Processed/snpe_networks/`; a network trained with a different representation is not overwritten
-(move it into a dated subfolder first). After any change to the fitting code, run the whole chain small first:
+`$BEHAV_DATA_DIR/Processed/snpe_networks/`, each with its training set beside it (`..._training.npz`, the
+simulations it was trained on: a restart reads them back instead of simulating); a network trained with a
+different representation is not overwritten (move it and its training set, `snpe_*`, into a dated subfolder first). After any change to the fitting code, run the whole chain small first:
 `sbatch slurm/smoke.sh` (or `sc-smoke` on a laptop with torch); its log ends with `SMOKE PASSED`. How far the networks and the calls can be trusted is a separate validation
 run on a synthetic cohort (`docs/runs.md`, "SBI validation"; notebook 91). A model-identification run:
 
