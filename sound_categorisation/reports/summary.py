@@ -28,6 +28,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.backends.backend_pdf import PdfPages
 
+from sound_categorisation.data.cohort import LASER_TYPES
 from sound_categorisation.reports.tables import normalise_site
 
 __all__ = ['load_tables', 'uniform_page', 'hard_page', 'overall_page', 'write_summary']
@@ -35,7 +36,6 @@ __all__ = ['load_tables', 'uniform_page', 'hard_page', 'overall_page', 'write_su
 GENO_COL = {'wt': '#2ca02c', 'het': '#d62728'}
 GENO_LABEL = {'wt': 'WT (light only)', 'het': 'HET (PPC silenced)'}
 DIST_COL = {'Hard-A': '#1f77b4', 'Hard-B': '#ff7f0e', 'Uniform': '#7f7f7f'}
-LASER_TYPES = ('opto', 'alm_control_uni', 'alm_control_bi')
 
 
 # ── loading ─────────────────────────────────────────────────────────────────

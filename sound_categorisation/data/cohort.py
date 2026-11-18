@@ -33,11 +33,12 @@ from sound_categorisation.settings import MODEL_ID_MIN_SESSIONS
 __all__ = ['load_experiment_any', 'gather_genotypes', 'collect_sessions_ppc',
            'collect_sessions_alm', 'ensure_presets', 'SITE_TYPE', 'GENOTYPES', 'CONTROL_TYPES',
            'AnimalRecord', 'load_animals', 'select_animals', 'is_synthetic_cohort',
-           'preset_min_accuracy']
+           'preset_min_accuracy', 'LASER_TYPES']
 
 GENOTYPES = ('wt', 'het')
 SITE_TYPE = {'uni': 'alm_control_uni', 'bi': 'alm_control_bi'}
 CONTROL_TYPES = ('masking', 'washout', 'alm_control_uni', 'alm_control_bi')
+LASER_TYPES = ('opto', 'alm_control_uni', 'alm_control_bi')     # sessions with the laser on at the tissue
 
 
 def ensure_presets(config_path: Path | None = None) -> None:

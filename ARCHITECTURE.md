@@ -27,6 +27,8 @@ data/
                      folder or over ssh (find + tar), shown animals' whole history, timestamps kept
   synthetic.py       synthetic ExperimentData with the real designs' shape (the e2e tests' data)
 behaviour/
+  timescale.py       how long the criterion remembers the distribution: a leaky integrator fitted to the
+                     session criterion (memory N, drift, gain), the shift with the drift taken out
   light_artefact.py  LightArtefact: light-on − light-off per light-carrying session set (ppc_opto, ppc_sham,
                      alm_uni, alm_bi) with the SDT view, P(B) per bin, the ppc_sham − alm site interaction
   contrasts.py       OptoContrasts = the contrasts of the opto design, as typed library results:
@@ -62,11 +64,12 @@ reports/             compute.py  AnimalResult / GroupResult / Settings (no matpl
                      tables.py   to_tables, group_tables, readout_arrays, write_result / read_result
                      figures.py  one function per page; pdf.py  per-animal and group PDFs
                      summary.py  the four-page summary; switches.py  the switch-adaptation report
+                     timescale.py  the timescale report (tables + PDF)
                      light_artefact.py  the light-artefact report (tables, per-animal + group PDFs, fold)
                      daily_tracker.py   the daily tracker's self-contained HTML page
                      readme.py   the generated results README
                      cli.py      `python -m sound_categorisation.reports` / `sc-reports`
-plotting/            project plotters (CV, opto swarms, assignment, SBI diagnostics, daily tracker)
+plotting/            project plotters (CV, opto swarms, assignment, SBI diagnostics, daily tracker, timescale)
 cli/                 entry points (pyproject [project.scripts]): sc-reports, sc-export-snapshot, sc-update,
                      sc-fetch, sc-make-synthetic-cohort, sc-make-synthetic-run, sc-new-run, sc-smoke, sc-sbi-train,
                      sc-sbi-condition, sc-sbi-sbc, sc-sbi-check, sc-sbi-range, sc-grid-search, sc-consensus,

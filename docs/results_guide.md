@@ -139,6 +139,20 @@ mostly flagged and lean the same way on A and B days sticks to one side; it is m
 (Uniform, each Hard block in order, all A, all B) — one curve per mouse and the mean, plus the paired PSE per
 mouse for each A/B block pair — first without the biased animals, then with everyone.
 
+## 5b. The timescale report (both cohorts)
+
+`timescale/<cohort>/` asks one question of both designs: over how many trials does the criterion average
+the stimulus distribution? It fits a running average (each trial the criterion moves 1/N of the way to the
+ideal observer's criterion for the current distribution) through each animal's sessions in order, from its
+first Hard session to its last, and reports the memory N with a 95 % interval. In the blocked design the
+criterion moves, so N is estimated; with the daily alternation there is no swing to fit, so the data give
+only a minimum ("at least N trials", the interval open upwards). One N explains both if a day is too short
+to move the criterion much and a block is long enough. The fit includes a slow drift per session, and
+`shifts.csv` gives the Hard-A − Hard-B difference with that drift taken out (the Hard-B blocks came first,
+so drift alone would favour Hard-A). For the opto cohort the main fit uses only the masking days, which had
+no light; the laser-day variants are checks. Page 1 of `timescale.pdf` is the memory per animal, the rest
+one animal per page with its sessions and the fit.
+
 ## 6. What is deliberately not shown
 
 The summary pages leave out post-laser contrasts for Hard, the delta of deltas, the update matrices and the

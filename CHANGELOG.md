@@ -3,6 +3,18 @@
 
 ## Unreleased
 
+- **Timescale analysis** (thesis plan, analysis 6; agreed 18 November 2026). `behaviour/timescale.py`: a leaky
+  integrator (each trial the criterion moves 1/N of the way to the normative PSE of the current distribution)
+  run through each animal's sessions from its first Hard session to its last, back to back, and fitted to the
+  session criterion (`pse_fixed`) with an offset and a drift per session: the memory N with a 95 % F-profile
+  interval, the gain fixed at 1 and free (the check that a partial shift is not read as a slow one). The
+  Hard-A − Hard-B shift with the drift taken out (t interval). Variants for the opto Hard phase: `main` fits
+  the masking days only; `laser_off` and `all_trials` add the laser days with a constant for them, as checks.
+  The intervals were chosen by simulation: about 95 % coverage at 6 to 20 sessions, where a chi-square
+  likelihood-ratio interval and a session bootstrap covered 86 to 93 %. `sc-reports timescale --cohort C`
+  writes `timescale/<cohort>/<run_id>/` (sessions, fits, shifts, profiles, PDF); `plotting/timescale.py`
+  draws the session criterion and the memory per animal; notebook `13_timescale` the chapter 3 figure. The
+  synthetic runs include a timescale run. `LASER_TYPES` moved to `data/cohort.py`.
 - **Training sets saved beside the networks** (agreed 17 November 2026). `sc-sbi-train` writes each network's
   simulations to `snpe_<rep>_<model>_<dist>_training.npz` (`inference/training_sets.py`: plain numpy, `theta` in
   the parameters' own units, `x` as simulated, and a JSON `meta` with the configuration, draws and passes) as soon
