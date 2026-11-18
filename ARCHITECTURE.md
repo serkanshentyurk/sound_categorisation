@@ -27,8 +27,6 @@ data/
                      folder or over ssh (find + tar), shown animals' whole history, timestamps kept
   synthetic.py       synthetic ExperimentData with the real designs' shape (the e2e tests' data)
 behaviour/
-  timescale.py       how long the criterion remembers the distribution: a leaky integrator fitted to the
-                     session criterion (memory N, drift, gain), the shift with the drift taken out
   light_artefact.py  LightArtefact: light-on − light-off per light-carrying session set (ppc_opto, ppc_sham,
                      alm_uni, alm_bi) with the SDT view, P(B) per bin, the ppc_sham − alm site interaction
   contrasts.py       OptoContrasts = the contrasts of the opto design, as typed library results:
@@ -44,9 +42,15 @@ behaviour/
                      Every contrast resamples with its own seed (SEED + SEED_OFFSET), so the two sides of dod
                      never draw the same sessions. equivalence_verdict reads an interval against a margin
                      set in advance (settings.EQUIVALENCE_MARGINS); the report writes equivalence.csv.
-  adaptation.py      compute_trajectory(animal, distributions) -> Trajectory: one row per session in order;
-                     compute_switches / SwitchResult: block-level adaptation after a distribution switch;
-                     BiasRule, session_bias_checks (per session), flag_biased_sessions (per animal)
+  adaptation.py      how fast the criterion follows the distribution, measured one way everywhere: the
+                     criterion as the 50 % point with slope and lapses fixed at the expert-Uniform fit
+                     (pinned_pse; a fit at the ±1 edge is missing), its curve in running 50-trial windows
+                     (criterion_curve), convergence from the criterion before the switch (0) to the normative
+                     one (1), unclipped, and convergence_100_300; switches combined weighted by span
+                     (pool_convergence). compute_trajectory(animal, distributions) -> Trajectory: one row per
+                     session in order (the battery); compute_switches / SwitchResult: every switch into a Hard
+                     distribution, a block of days or one day of the alternation (hard_design decides;
+                     the switch report); BiasRule, bias_sessions: the one bias check every report uses
   daily_tracker.py   DailyTracker: per-day rows, condition summaries (pooled and mean, light separately),
                      flags, move-on marks; settings from config.yaml's custom.daily_tracker block
 models/              BE (boundary-estimation) and SC (statistical-categorisation) generative models;
@@ -63,13 +67,12 @@ features/            feature_diagnostics: which summary statistics carry BE/SC i
 reports/             compute.py  AnimalResult / GroupResult / Settings (no matplotlib)
                      tables.py   to_tables, group_tables, readout_arrays, write_result / read_result
                      figures.py  one function per page; pdf.py  per-animal and group PDFs
-                     summary.py  the four-page summary; switches.py  the switch-adaptation report
-                     timescale.py  the timescale report (tables + PDF)
+                     summary.py  the four-page summary; switches.py  the switch-adaptation report (both designs)
                      light_artefact.py  the light-artefact report (tables, per-animal + group PDFs, fold)
                      daily_tracker.py   the daily tracker's self-contained HTML page
                      readme.py   the generated results README
                      cli.py      `python -m sound_categorisation.reports` / `sc-reports`
-plotting/            project plotters (CV, opto swarms, assignment, SBI diagnostics, daily tracker, timescale)
+plotting/            project plotters (CV, opto swarms, assignment, SBI diagnostics, daily tracker)
 cli/                 entry points (pyproject [project.scripts]): sc-reports, sc-export-snapshot, sc-update,
                      sc-fetch, sc-make-synthetic-cohort, sc-make-synthetic-run, sc-new-run, sc-smoke, sc-sbi-train,
                      sc-sbi-condition, sc-sbi-sbc, sc-sbi-check, sc-sbi-range, sc-grid-search, sc-consensus,

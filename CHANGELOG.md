@@ -3,18 +3,42 @@
 
 ## Unreleased
 
-- **Timescale analysis** (thesis plan, analysis 6; agreed 18 November 2026). `behaviour/timescale.py`: a leaky
-  integrator (each trial the criterion moves 1/N of the way to the normative PSE of the current distribution)
-  run through each animal's sessions from its first Hard session to its last, back to back, and fitted to the
-  session criterion (`pse_fixed`) with an offset and a drift per session: the memory N with a 95 % F-profile
-  interval, the gain fixed at 1 and free (the check that a partial shift is not read as a slow one). The
-  Hard-A − Hard-B shift with the drift taken out (t interval). Variants for the opto Hard phase: `main` fits
-  the masking days only; `laser_off` and `all_trials` add the laser days with a constant for them, as checks.
-  The intervals were chosen by simulation: about 95 % coverage at 6 to 20 sessions, where a chi-square
-  likelihood-ratio interval and a session bootstrap covered 86 to 93 %. `sc-reports timescale --cohort C`
-  writes `timescale/<cohort>/<run_id>/` (sessions, fits, shifts, profiles, PDF); `plotting/timescale.py`
-  draws the session criterion and the memory per animal; notebook `13_timescale` the chapter 3 figure. The
-  synthetic runs include a timescale run. `LASER_TYPES` moved to `data/cohort.py`.
+- **One adaptation measure for both Hard designs; the timescale analysis removed** (agreed 18 November 2026).
+  `behaviour/adaptation.py` measures how fast the criterion follows the distribution one way for the switch
+  report and the battery: the criterion is the 50 % point with slope and lapses fixed at the expert-Uniform fit
+  (`pinned_pse`; a fit that ends at the ±1 edge of the stimulus range is missing), its curve in running 50-trial
+  windows every 10 trials (`criterion_curve`), convergence from the criterion over the last 250 trials before the
+  switch (0) to the normative one at the expert-Uniform sigma (1), unclipped, and one number per switch,
+  `convergence_100_300` (windows centred on trials 100-300, inside the first day). A mouse's switches of one kind
+  are combined weighted by |normative − before| (`pool_convergence`); in simulation the plain mean of the ratios
+  read a half shift as 0.42 and no shift as −0.13, this gives 0.49 and 0.01.
+  - Fixed: the switch report's shape-fixed methods (`pinned`, `pinned_running`) set the fitted location parameter
+    of each window against a 50 % point before the switch; with unequal lapses no change then read anywhere from
+    −0.97 to +0.75 on the behaviour1 switches. Both sides are now 50 % points with one shape per animal (the expert-Uniform fit,
+    no longer a 250-trial pre-switch fit, whose upper lapse reached its 0.5 bound in some mice).
+  - Fixed: `toward_pre` (overnight) was signed by the end-of-session value it is measured from, so noise alone
+    made it positive (+0.06 to +0.20 in simulation at these mice's noise; the clean behaviour1 mice read +0.12).
+    It is now signed by the direction of the switch, and pairs at the edge are missing. Notebook 12's overnight
+    panel counted the sum of the values as a number of pairs; it counts pairs.
+  - The switch report handles the daily alternation: `hard_design` per animal (median run of days on one
+    distribution ≥ 3 → blocked); in the daily design each day of ≥ 100 trials is a switch, masking days kept, a
+    laser day measured on laser-off trials (its own and the day before's); `switch_kind` = first / novel / return
+    for blocks, first day / laser day / masking day / mixed day for days. New tables `animals.csv` (one number per
+    animal and kind) and `bias.csv`; a speed page per design (the curve with 95 % t intervals over mice, the number
+    per mouse, and for blocks where the Hard-A → Hard-B block ends, the switch the slow upward drift works
+    against). The manuscript recipe stays for comparison, with the normative criterion at the expert-Uniform sigma.
+  - One bias check, `bias_sessions` (every Hard session on laser-off trials, `BiasRule`), used by the switch
+    report and the battery (`compute_trajectory(bias=True)`, `Trajectory.bias`); each report used to apply the rule
+    to its own sessions, and mice near its 50 % line came out differently.
+  - Battery trajectory on the same measure: curves in 50-trial windows with the shape fixed (they were 100-trial
+    free fits measured from the previous session's whole-session PSE); `baseline_pse` is the criterion over the
+    previous session's last 250 trials; new columns `pse_pinned`, `pse_last250`, `convergence_100_300`, `span`;
+    `convergence_final` is over the session's last 250 trials. The per-animal trajectory page shows
+    `convergence_100_300`, summary row 6 the 50 % point.
+  - Removed: `behaviour/timescale.py`, `plotting/timescale.py`, `reports/timescale.py`, `sc-reports timescale` and
+    its tests (the session-level memory model could not pin the memory down: 2 of 16 mice). Notebook `13_timescale`
+    is replaced by `13_adaptation_speed` (Fig 3.6 from one switch run per cohort). The synthetic switch run holds
+    the blocked and the daily animals.
 - **Training sets saved beside the networks** (agreed 17 November 2026). `sc-sbi-train` writes each network's
   simulations to `snpe_<rep>_<model>_<dist>_training.npz` (`inference/training_sets.py`: plain numpy, `theta` in
   the parameters' own units, `x` as simulated, and a JSON `meta` with the configuration, draws and passes) as soon

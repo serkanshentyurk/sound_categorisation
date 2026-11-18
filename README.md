@@ -25,7 +25,7 @@ sound_categorisation/                 ← repo root (pyproject.toml, config.yaml
 │   ├── data/                         cohort (experiment, genotypes, session sets, AnimalRecord),
 │   │                                 snapshot (export/load, behav_utils store), stimuli (Hard-A/B densities,
 │   │                                 RigDistribution, normative PSE), paths
-│   ├── behaviour/                    contrasts (OptoContrasts, ppc/alm_contrasts), adaptation (switches, trajectory), timescale
+│   ├── behaviour/                    contrasts (OptoContrasts, ppc/alm_contrasts), adaptation (switches, trajectory, bias check)
 │   ├── models/                       BE and SC generative models (also as behav_utils models), perception,
 │   │                                 simulation, traces
 │   ├── inference/                    amortised SBI (+ saved training sets), simulator, representation, selection, grid_search,
@@ -49,6 +49,7 @@ Install: [SETUP.md](SETUP.md). Then, on the laptop:
 ```bash
 sc-fetch snapshot
 sc-reports switch-adaptation --cohort behaviour1-cohort
+sc-reports switch-adaptation --cohort opto1-cohort
 sc-reports battery
 ```
 

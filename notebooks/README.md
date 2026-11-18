@@ -16,7 +16,7 @@ on the Hard phases.
 | `10_expert_behaviour` | expert Uniform behaviour without light: psychometrics, history effects, update matrices, all mice | the snapshot (computes point estimates) |
 | `11_model_identification` | BE or SC per animal (descriptive): the all-mice run, synthetic recovery as the check | `model_identification/<cohort>/latest` |
 | `12_switch_adaptation` | the criterion after a distribution switch (blocks): shift, convergence (Fig. 5C), overnight, did it follow the distribution | `switch_adaptation/<cohort>/latest` |
-| `13_timescale` | how long the criterion remembers the distribution: one running average for the blocks and the daily alternation, the memory per mouse, the block shift with the drift taken out | `timescale/<cohort>/latest` for both cohorts, `switch_adaptation/<cohort>/latest` (overnight) |
+| `13_adaptation_speed` | how fast the criterion follows the distribution in both designs (chapter 3, Fig 3.6): the steadied Fig. 5C curve for blocks and days, one number per mouse (trials 100–300), where the Hard-A → Hard-B block ends, overnight | `switch_adaptation/<cohort>/latest` for both cohorts |
 | `20_opto_expert` | PPC inactivation in experts, the light itself (light-artefact report), ALM specificity, WT vs HET, equivalence | `opto_contrasts/…/latest`, `light_artefact/…/latest` |
 | `21_opto_hard` | opto on the Hard phases and the per-session trajectory (no adaptation to disrupt) | `opto_contrasts/<cohort>/latest` |
 | `90_sbi_feature_selection` | appendix: choosing the SBI summary-statistic vector (simulates; slow; cached) | nothing |
@@ -32,8 +32,7 @@ model-identification run from the cluster first.
 sc-fetch snapshot
 sc-reports battery
 sc-reports switch-adaptation --cohort behaviour1-cohort
-sc-reports timescale --cohort behaviour1-cohort
-sc-reports timescale --cohort opto1-cohort
+sc-reports switch-adaptation --cohort opto1-cohort
 sc-fetch results model_identification/all-mice
 jupyter lab notebooks/
 ```

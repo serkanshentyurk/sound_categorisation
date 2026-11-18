@@ -103,12 +103,15 @@ def test_readouts_and_trajectory_present_when_enabled(exp):
     arrays = readout_arrays(r)
     assert any(k.endswith('__um') for k in arrays)
     t = to_tables(r)['trajectory']
-    assert {'order', 'distribution', 'phase', 'session_type', 'pse', 'pse_fixed', 'pse_tau', 'delta_from_prev', 'convergence_final'} <= set(t.columns)
+    assert {'order', 'distribution', 'phase', 'session_type', 'pse', 'pse_fixed', 'pse_pinned', 'pse_tau', 'delta_from_prev',
+            'baseline_pse', 'convergence_100_300', 'convergence_final', 'span', 'flagged', 'biased_animal'} <= set(t.columns)
     assert set(t['distribution']) == {'Hard-A', 'Hard-B'} and (t['phase'] == 'Hard-A').all()
     assert list(t['order']) == sorted(t['order'])                      # acquisition order
     assert (t['session_type'].iloc[0] == 'opto') and (t['session_type'].iloc[-1] == 'masking')   # laser half first
     curves = to_tables(r)['trajectory_curves']
     assert len(curves) and curves['trial'].max() <= 200                # trial index within a session
+    assert curves.groupby('session_idx')['trial'].diff().dropna().eq(10).all()     # running windows, every 10 trials
+    assert r.trajectory.bias is not None and set(r.trajectory.bias['to_distribution']) == {'Hard-A', 'Hard-B'}
 
 
 def test_group_fold(exp):
@@ -161,30 +164,43 @@ def test_summary_pages_draw(exp, tmp_path):
 
 
 def test_switches_pipeline(exp, tmp_path):
-    """Blocked animals: qualifying switches, transition labels, table schema, summary pages."""
+    """Blocked and daily animals: switches, labels, table schema, the shared bias check, summary pages."""
     import matplotlib
     matplotlib.use('Agg')
-    from sound_categorisation.behaviour.adaptation import compute_switches
+    from sound_categorisation.behaviour.adaptation import bias_sessions, compute_switches
     from sound_categorisation.reports.switches import compute_switches_cohort, run_switches, switch_tables
     res = compute_switches(exp.animals['SB00'], min_block_trials=300, max_trials=800)
     assert [r.to_distribution for r in res] == ['Hard-B', 'Hard-A', 'Hard-B', 'Hard-A']
     assert [r.transition for r in res] == ['first', 'novel', 'return', 'return']
+    assert {r.design for r in res} == {'blocked'} and [r.switch_kind for r in res] == [r.transition for r in res]
     r = res[1]
     assert set(r.convergence['method']) == {'manuscript', 'pinned', 'pinned_running'}
     assert (r.convergence['trial'] >= 1).all()
     assert r.convergence.loc[r.convergence['method'] == 'manuscript', 'convergence_clipped'].dropna().between(0, 1).all()
-    assert {'pse_tau', 'trials_to_criterion', 'plateau', 'pse_shape_daic'} <= set(r.dynamics.index)
+    assert {'pse_tau', 'trials_to_criterion', 'plateau', 'pse_shape_daic', 'convergence_100_300', 'convergence_final',
+            'span'} <= set(r.dynamics.index)
     assert len(r.sessions) == r.n_sessions_after and len(r.overnight) == r.n_sessions_after - 1
+    days = compute_switches(exp.animals['ST00'])
+    assert {r.design for r in days} == {'daily'} and len(days) == 12 and all(r.n_sessions_after == 1 for r in days)
+    assert [r.switch_kind for r in days] == ['first day'] + ['laser day'] * 5 + ['mixed day'] + ['masking day'] * 5
+    assert {r.trials for r in days if r.switch_kind == 'laser day'} == {'non_opto'}
+    assert {r.trials for r in days if r.switch_kind == 'masking day'} == {'all'}
     g = compute_switches_cohort(exp, ['SB00', 'SB01', 'ST00'], cohort='synthetic', min_block_trials=300, max_trials=800)
-    assert g.animals == ['SB00', 'SB01']                      # ST00 has no blocks
+    assert g.animals == ['SB00', 'SB01', 'ST00'] and g.designs == {'SB00': 'blocked', 'SB01': 'blocked', 'ST00': 'daily'}
     T = switch_tables(g)
-    assert set(T) == {'switches', 'pre_post', 'convergence', 'sessions', 'overnight', 'psychometrics', 'psychometric_curves'}
-    assert {'animal', 'switch_idx', 'transition', 'stat', 'value'} <= set(T['switches'].columns)
+    assert set(T) == {'switches', 'pre_post', 'convergence', 'sessions', 'overnight', 'psychometrics', 'psychometric_curves',
+                      'bias', 'animals'}
+    assert {'animal', 'switch_idx', 'transition', 'design', 'switch_kind', 'trials', 'stat', 'value'} <= set(T['switches'].columns)
+    assert set(T['pre_post']['animal']) == {'SB00', 'SB01'}                  # before/after per block: blocks only
+    assert {'masking day', 'laser day'} <= set(T['animals'].loc[T['animals']['animal'] == 'ST00', 'switch_kind'])
+    one = bias_sessions(exp.animals['ST00'])                                   # the one bias check, as the report has it
+    assert T['bias'].loc[T['bias']['animal'] == 'ST00', 'flagged'].tolist() == one['flagged'].tolist()
     from sound_categorisation.data.paths import start_run
     run = start_run('switch_adaptation', 'synthetic', root=tmp_path)
-    out = run_switches(exp, ['SB00', 'SB01'], run, 'synthetic', min_block_trials=300, max_trials=800)
+    out = run_switches(exp, ['SB00', 'SB01', 'ST00'], run, 'synthetic', min_block_trials=300, max_trials=800)
     assert out == run / 'switches'
     assert (out / 'summary_switches.pdf').exists() and (out / 'pdf' / 'SB00_switches.pdf').exists()
+    assert (out / 'bias.csv').exists() and (out / 'animals.csv').exists()
 
 
 def test_bias_rule_flags_distribution_independent_bias():

@@ -64,20 +64,18 @@ def equivalence_table(contrasts: pd.DataFrame, margins: Dict[str, float]) -> pd.
     return out[EQUIVALENCE_COLUMNS].reset_index(drop=True)
 
 
-def _qc(sessions: pd.DataFrame, rule=None) -> pd.DataFrame:
-    """Apply the cohort QC rule (adaptation.flag_biased_sessions, ``rule`` = the trajectory's BiasRule)
-    to a trajectory frame."""
-    if not len(sessions) or 'pse_fixed' not in sessions:
+def _qc(sessions: pd.DataFrame, bias: pd.DataFrame | None) -> pd.DataFrame:
+    """The cohort QC on a trajectory frame: ``flagged`` per session and ``biased_animal`` from the one bias
+    check (``adaptation.bias_sessions``, carried as ``Trajectory.bias``), the same list the switch report
+    uses. Sessions it does not cover (Uniform) are not flagged."""
+    if not len(sessions):
         return sessions
-    from sound_categorisation.behaviour.adaptation import flag_biased_sessions
-    hard = sessions[sessions['distribution'].isin(['Hard-A', 'Hard-B'])]
-    if not len(hard):
+    if bias is None or not len(bias):
         return sessions.assign(flagged=False, biased_animal=False)
-    f = flag_biased_sessions(hard.rename(columns={'distribution': 'to_distribution'}), rule)
-    out = sessions.copy()
-    out['flagged'] = f['flagged'].reindex(out.index).fillna(False).astype(bool)
-    out['biased_animal'] = out['animal'].map(f.groupby('animal')['biased_animal'].first()).fillna(False).astype(bool)
-    return out
+    flags = bias.set_index('session_idx')['flagged'].astype(bool)
+    biased = bool(bias['biased_animal'].astype(bool).iloc[0])
+    return sessions.assign(flagged=sessions['session_idx'].map(flags).fillna(False).astype(bool),
+                           biased_animal=biased)
 
 
 def _labels(r: AnimalResult) -> dict:
@@ -133,7 +131,7 @@ def to_tables(r: AnimalResult) -> Dict[str, pd.DataFrame]:
         'levels': levels,
         'equivalence': equivalence_table(contrasts, r.margins),
         'trajectory': (_qc(tr.sessions.assign(expert_pse=tr.baseline_pse, sigma=tr.sigma, **tlab),
-                           getattr(tr, 'bias_rule', None))
+                           getattr(tr, 'bias', None))
                        if tr is not None else pd.DataFrame()),
         'trajectory_curves': tr.curves.assign(**tlab) if tr is not None else pd.DataFrame(),
     }
@@ -143,7 +141,7 @@ def group_tables(g: GroupResult) -> Dict[str, pd.DataFrame]:
     lab = {'cohort': g.cohort, 'distribution': g.distribution, 'site': site_label(g.design, g.site), 'trial_class': g.trial_class}
     tlab = {k: v for k, v in lab.items() if k != 'distribution'} | {'phase': g.distribution}
     sess = [_qc(tr.sessions.assign(animal=aid, genotype=g.by_animal.get(aid, 'unknown'), expert_pse=tr.baseline_pse,
-                                   sigma=tr.sigma, **tlab), getattr(tr, 'bias_rule', None))
+                                   sigma=tr.sigma, **tlab), getattr(tr, 'bias', None))
             for aid, tr in g.trajectories.items()]
     curves = [tr.curves.assign(animal=aid, genotype=g.by_animal.get(aid, 'unknown'), **tlab)
               for aid, tr in g.trajectories.items()]

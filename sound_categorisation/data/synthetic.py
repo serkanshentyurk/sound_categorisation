@@ -79,11 +79,11 @@ def synthetic_experiment(n_animals=4, seed=0, n_trials=180) -> ExperimentData:
 
 def write_synthetic_runs(results_root, data_root, *, with_model_id: bool = True) -> dict:
     """Build the runs the notebooks and CI read, from synthetic data only: an ``opto_contrasts`` run
-    (fast on every animal, one full condition) and its summary, a ``switch_adaptation``, a
-    ``light_artefact`` and a ``timescale`` run, and — with ``with_model_id`` — a synthetic cohort, a fast
-    grid search and its consensus under ``model_identification/synthetic_uniform``. Returns the run
-    directories. ``sc-make-synthetic-run`` is the CLI; ``SC_NB_SYNTHETIC=1`` makes the notebooks read
-    these instead of the real cohorts.
+    (fast on every animal, one full condition) and its summary, a ``switch_adaptation`` run (the blocked
+    and the daily animals together) and a ``light_artefact`` run, and — with ``with_model_id`` — a
+    synthetic cohort, a fast grid search and its consensus under ``model_identification/synthetic_uniform``.
+    Returns the run directories. ``sc-make-synthetic-run`` is the CLI; ``SC_NB_SYNTHETIC=1`` makes the
+    notebooks read these instead of the real cohorts.
     """
     import os
     from types import SimpleNamespace
@@ -115,14 +115,11 @@ def write_synthetic_runs(results_root, data_root, *, with_model_id: bool = True)
     run_group(exp, ids, 'Hard-A', 'opto', 'ppc', None, a, full, per)
     write_summary(run, 'synthetic')
     srun = start_run('switch_adaptation', 'synthetic', fast=True, root=results_root)
-    run_switches(exp, ['SB00', 'SB01'], srun, 'synthetic', min_block_trials=300, max_trials=800)
+    run_switches(exp, ids, srun, 'synthetic', min_block_trials=300, max_trials=800)
     from sound_categorisation.reports.light_artefact import run_light_artefact
     lrun = start_run('light_artefact', 'synthetic', fast=True, root=results_root)
     run_light_artefact(exp, ids, lrun, 'synthetic', 'Uniform', fast=True)
-    from sound_categorisation.reports.timescale import run_timescale
-    trun = start_run('timescale', 'synthetic', fast=True, root=results_root)
-    run_timescale(exp, ids, trun, 'synthetic')
-    out = {'opto_contrasts': run, 'switch_adaptation': srun, 'light_artefact': lrun, 'timescale': trun}
+    out = {'opto_contrasts': run, 'switch_adaptation': srun, 'light_artefact': lrun}
 
     if with_model_id:
         from sound_categorisation.cli import consensus, grid_search, make_synthetic_cohort

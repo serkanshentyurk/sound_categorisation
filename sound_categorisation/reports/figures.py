@@ -191,7 +191,8 @@ def _trajectory_axis(ax, sess: pd.DataFrame, y: str, colour_by_dist=True, label=
 
 
 def trajectory_page(r: AnimalResult, title: str):
-    """Per session in order: PSE, delta from previous session, tau, convergence; laser/masking boundary marked."""
+    """Per session in order: PSE, delta from previous session, tau, convergence over trials 100-300; laser/masking
+    boundary marked."""
     tr = r.trajectory
     fig, axes = plt.subplots(2, 2, figsize=(11, 7))
     if tr is None or not len(tr.sessions):
@@ -204,7 +205,8 @@ def trajectory_page(r: AnimalResult, title: str):
               ('delta_from_prev', 'PSE change from the previous day (switch amplitude)'),
               ('pse_tau_fixed', 'τ per session: trials for the within-session PSE to move ~63% of the way to its endpoint\n'
                                 '(exponential fit, shape pinned; × = did not plateau within the session)'),
-              ('convergence_final', 'convergence at session end: 0 = previous day\'s PSE, 1 = normative PSE')]
+              ('convergence_100_300', 'convergence over trials 100-300: 0 = the criterion at the end of the previous day, '
+                                      '1 = normative\n(shape fixed, running 50-trial windows, unclipped)')]
     for ax, (y, lab) in zip(axes.ravel(), panels):
         if y not in sess:
             ax.set_visible(False)
@@ -223,7 +225,7 @@ def trajectory_page(r: AnimalResult, title: str):
             cens = sess.get('pse_censored_fixed', pd.Series(dtype=float)) == 1
             if cens.any():
                 ax.plot(sess.loc[cens, 'order'], sess.loc[cens, 'pse_tau_fixed'], 'x', color='k', ms=7, label='censored')
-        if y == 'convergence_final':
+        if y == 'convergence_100_300':
             ax.axhline(1, color='crimson', ls='--', lw=0.8, label='normative')
             ax.set_ylim(-3, 3)
         ax.set_xticks(sess['order'])

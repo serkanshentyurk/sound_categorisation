@@ -3,8 +3,8 @@ Report pipeline: compute → tables (+ readouts, meta) → figures → PDF.
 
     sc-reports opto-contrasts     --distribution Hard-A --trial-class opto [--level animal|group|both]
     sc-reports opto-contrasts     --all                        # the whole battery into one run
-    sc-reports switch-adaptation --cohort behaviour1-cohort
-    sc-reports timescale         --cohort behaviour1-cohort   # and --cohort opto1-cohort
+    sc-reports switch-adaptation --cohort behaviour1-cohort   # blocks of days
+    sc-reports switch-adaptation --cohort opto1-cohort        # the daily alternation of the opto Hard phase
     sc-reports summary                               # pages from the latest opto run
     sc-reports battery                               # fast check → full battery → summary
 

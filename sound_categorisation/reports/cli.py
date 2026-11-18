@@ -10,8 +10,7 @@ and points ``<report>/<cohort>/latest`` at itself.
     sc-reports opto-contrasts   --distribution Hard-A [--trial-class opto|post_opto] [--site ppc|alm_uni|alm_bi]
                                 [--level animal|group|both] [--animals SS15 SS16] [--fast]
     sc-reports opto-contrasts   --all [--fast] [--limit N]    # PPC × 3 distributions × 2 trial classes + ALM uni/bi
-    sc-reports switch-adaptation --cohort behaviour1-cohort
-    sc-reports timescale        --cohort behaviour1-cohort | opto1-cohort   # memory of the criterion
+    sc-reports switch-adaptation --cohort behaviour1-cohort | opto1-cohort   # blocks of days | the daily alternation
     sc-reports light-artefact   [--distribution Uniform] [--fast]   # what the light does on its own, per site
     sc-reports summary          [--run latest|<run_id>]      # summary pages from an opto-contrasts run
     sc-reports battery          [--limit N] [--fast] [--skip S…] [--only S]
@@ -205,15 +204,6 @@ def cmd_switch_adaptation(a):
     run_switches(experiment, ids, run, a.cohort, meta=_meta(a))
 
 
-# ── the timescale report ─────────────────────────────────────────────────────
-
-def cmd_timescale(a):
-    from sound_categorisation.reports.timescale import run_timescale
-    experiment, ids, _ = _load(a)
-    run = _open_run('timescale', a)
-    print(f'timescale/{a.cohort}/{a.run_id}: {len(ids)} animals -> {run}')
-    run_timescale(experiment, ids, run, a.cohort, meta=_meta(a))
-
 
 # ── the light-artefact report ────────────────────────────────────────────────
 
@@ -311,14 +301,10 @@ def build_parser() -> argparse.ArgumentParser:
     so.add_argument('--jobs', type=int, default=1, help='animals computed at once (default 1; e.g. your number of cores)')
     so.set_defaults(fn=cmd_opto_contrasts)
 
-    sw = sub.add_parser('switch-adaptation', help='switch adaptation across blocks (pre-opto cohorts)')
+    sw = sub.add_parser('switch-adaptation', help='how fast the criterion follows the distribution: blocks of days, or '
+                                                  'the daily alternation of the opto Hard phase')
     common(sw)
     sw.set_defaults(fn=cmd_switch_adaptation)
-
-    st = sub.add_parser('timescale', help='memory of the criterion: a leaky integrator on the session PSE '
-                                          '(blocked switches, daily alternation)')
-    common(st)
-    st.set_defaults(fn=cmd_timescale)
 
     sl = sub.add_parser('light-artefact', help='light-on vs light-off on every light-carrying session set, per site')
     common(sl)

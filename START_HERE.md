@@ -111,10 +111,12 @@ ssh keys set up (ask in `#ithpc`).
 
 ```bash
 sc-reports switch-adaptation --cohort behaviour1-cohort
+sc-reports switch-adaptation --cohort opto1-cohort
 caffeinate -i sc-reports battery --jobs 6
 ```
 
-The switch report takes minutes. The battery takes about six hours one animal at a time; `--jobs 6` runs six
+The switch report takes minutes per cohort (blocks of days for `behaviour1-cohort`, the daily alternation for
+`opto1-cohort`). The battery takes about six hours one animal at a time; `--jobs 6` runs six
 animals at once (use your number of cores minus two) and gives the same numbers. `caffeinate -i` only keeps
 the Mac awake. Results land in `<repo>/results/`, one folder per run; `latest` points at the newest. Then
 open the notebooks:
@@ -162,7 +164,7 @@ Every number it uses (the 14 days, the five sessions, the flag thresholds, the m
 `behaviour_rig/TRAINING.md`) is in `config.yaml`, block `custom.daily_tracker`, with a comment on each. To change
 one: edit it, commit, then run `sc-update` on the PC that runs the tracker. The page's last section lists
 the values it used. The side-bias thresholds are `BiasRule`'s in `sound_categorisation/behaviour/adaptation.py`,
-shared with the switch report.
+shared with the switch report and the battery (which use one bias check, `bias_sessions`).
 
 ### Model identification (cluster)
 

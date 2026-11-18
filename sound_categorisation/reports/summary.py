@@ -240,13 +240,14 @@ def hard_page(T: dict, cohort: str, distribution: str):
             ax.set_ylabel('ΔPSE (switch amplitude)', fontsize=9)
     for c, geno in enumerate(('wt', 'het')):
         ax = fig.add_subplot(gs[4, 2 + c])
-        _trajectory_panel(ax, hard, 'pse_fixed', geno, f'6  {geno.upper()}: PSE per session, slope and lapses fixed at Uniform values')
+        _trajectory_panel(ax, hard, 'pse_pinned', geno, f'6  {geno.upper()}: criterion per session, slope and lapses fixed at Uniform values')
         if c == 0:
-            ax.set_ylabel('PSE, shape pinned', fontsize=9)
+            ax.set_ylabel('criterion, shape fixed', fontsize=9)
     fig.text(0.5, 0.045, 'Rows 4–6: one thin line per mouse, thick = genotype mean; blue dot = Hard-A day, orange = Hard-B day; '
              'dotted line = last opto session | first masking session.\nRow 5 is the day-to-day switch amplitude (a tracking mouse '
-             'alternates sign). Row 6 refits the PSE with slope and lapses held at the mouse\'s Uniform values, so only the '
-             'criterion moves. Dotted thin lines = animals flagged BIASED by the cohort QC rule (see the switches report); the mean includes them.', ha='center', va='top', fontsize=8, color='0.3')
+             'alternates sign). Row 6 refits the criterion (the 50 % point) with slope and lapses held at the mouse\'s expert-Uniform values, '
+             'so only the criterion moves; a fit at the ±1 edge is left out. Dotted thin lines = animals flagged BIASED by the one bias check '
+             '(adaptation.bias_sessions, as in the switch report); the mean includes them.', ha='center', va='top', fontsize=8, color='0.3')
     handles = [plt.Line2D([], [], marker='o', ls='', color=c, label=d) for d, c in DIST_COL.items() if d != 'Uniform']
     fig.legend(handles=handles, loc='lower right', ncol=2, frameon=False, fontsize=8, bbox_to_anchor=(0.98, 0.005))
     _legend(fig)

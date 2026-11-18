@@ -61,13 +61,13 @@ class Settings:
     n_perm: int = N_PERM
     units: Tuple[str, ...] = DUAL_UNITS
     readouts: bool = True          # psychometric curves + update matrices per condition
-    trajectory: bool = True        # per-session trajectory + adaptation (pse_dynamics per session)
+    trajectory: bool = True        # per-session trajectory + adaptation (criterion curve, pse_dynamics per session)
     curve_bootstrap: int = 200     # bootstrap draws for the psychometric-curve band
     sigma: float | None = None  # sigma for the normative PSE; None = the animal's own psychometric sigma
     baseline_preset: str = 'expert_uniform'   # expert-Uniform baseline of the trajectory (expert_reference) ...
     baseline_last_n: int = 5                  # ... its last N sessions ...
     baseline_trials: str = 'non_opto'         # ... on these trials
-    bias_rule: BiasRule = BiasRule()          # cohort QC on the trajectory tables (adaptation.BiasRule)
+    bias_rule: BiasRule = BiasRule()          # cohort QC (adaptation.BiasRule, applied by adaptation.bias_sessions)
     margins: Dict[str, float] = field(default_factory=lambda: dict(EQUIVALENCE_MARGINS))
                                               # equivalence margins per stat (settings.EQUIVALENCE_MARGINS)
 
@@ -152,9 +152,11 @@ def _trajectory(animal, distribution: str, s: Settings) -> Trajectory | None:
     if not s.trajectory:
         return None
     try:
+        # bias=True: the one bias check (adaptation.bias_sessions) travels with the trajectory, so the
+        # report tables flag the same animals as the switch report
         return compute_trajectory(animal, trajectory_distributions(distribution), sigma=s.sigma,
                                   baseline_preset=s.baseline_preset, baseline_last_n=s.baseline_last_n,
-                                  baseline_trials=s.baseline_trials, bias_rule=s.bias_rule)
+                                  baseline_trials=s.baseline_trials, bias_rule=s.bias_rule, bias=True)
     except Exception as exc:                          # never let one animal kill the batch
         import warnings
         warnings.warn(f'{getattr(animal, "animal_id", "?")}: trajectory ({distribution}) failed: {exc}', stacklevel=2)

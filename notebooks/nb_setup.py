@@ -63,7 +63,6 @@ def open_run(report: str, cohort: str, run: str = RUN) -> Path:
         hint = {'opto_contrasts': f'sc-reports opto-contrasts --all --cohort {cohort}   (or sc-reports battery)',
                 'switch_adaptation': f'sc-reports switch-adaptation --cohort {cohort}',
                 'light_artefact': f'sc-reports light-artefact --cohort {cohort}',
-                'timescale': f'sc-reports timescale --cohort {cohort}',
                 'model_identification': 'slurm/submit.sh grid-search / condition, then sc-consensus (see docs/runs.md)'}[report]
         raise FileNotFoundError(f'{e}\nNo {report} run for cohort {cohort!r}. Create one with:\n    {hint}'
                                 + ('\n(or set SC_NB_SYNTHETIC=1 after sc-make-synthetic-run)' if not SYNTHETIC else ''))
@@ -130,8 +129,8 @@ def load_readouts(run: Path, animal: str, distribution: str, site: str = 'ppc', 
 
 
 def load_switches(run: Path) -> dict:
-    """The switch-adaptation tables: switches, pre_post, convergence, sessions, overnight,
-    psychometrics, psychometric_curves."""
+    """The switch-adaptation tables: switches, convergence, sessions, overnight, animals, bias, psychometrics,
+    psychometric_curves, and pre_post (blocked switches only)."""
     d = run / 'switches'
     return {f.stem: pd.read_csv(f) for f in sorted(d.glob('*.csv'))}
 
