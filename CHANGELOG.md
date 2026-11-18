@@ -29,6 +29,10 @@
     `switches.block_table`; `meta.json` records `criterion_shape: phase`.
   - `compute_switch(shape=…)` is now `expert_shape=…` (the Uniform phase's shape); the switch report's
     `sessions.csv` drops `pse_fixed` (the bias check's column lives in `bias.csv`).
+  - The blocked before/after page counts only the blocks whose PSEs lie inside ±1, as `block_convergence` does
+    (the others drawn dotted and named), and puts each number on its own title line (they ran into each other).
+    First real runs on this measure (b194525): days, masking 0.41 [−0.04, 0.85], laser 0.24 [−0.15, 0.62] over
+    six mice (0.39 and 0.24 with the expert shape); blocks unchanged (whole-block fits do not use the shape).
   - Notebook 13 (Fig 3.6) shows days by `convergence_100_300` and blocks by `block_convergence`; its curve panel
     shows the days alone (on the real tables the blocked curve swung between −1 and 2 and hid them); notebook 21,
     START_HERE and the notebooks README reword the claim: the opto mice followed the daily switch partly at most,

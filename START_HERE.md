@@ -295,7 +295,7 @@ manuscript; ask Serkan or Athena Akrami for the current draft.
   shifts the criterion in WT animals, and the side bias in both genotypes (notebook 20).
 - Adaptation (notebook 13): in the daily Hard-A/B alternation (opto1, six clean mice) the criterion followed
   partly at most — on masking days about 0.4 of the way to the new normative criterion over trials 100–300,
-  with a 95 % interval from about 0 to 0.8; two mice went most of the way. In the blocks (behaviour1, five clean
+  with a 95 % interval from about 0 to 0.85; two mice went most of the way. In the blocks (behaviour1, five clean
   mice, whole-block fits) one mouse followed every switch by about the normative amount, two partly, one until
   its last block went one-sided and one the wrong way; Hard-A → Hard-B, which the slow upward drift works
   against, is the switch that tells following from drift. The post-shift prediction could not be tested

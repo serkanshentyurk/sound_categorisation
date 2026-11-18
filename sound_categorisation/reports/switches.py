@@ -712,15 +712,17 @@ def psychometrics_combined_page(T: Dict[str, pd.DataFrame], cohort: str, exclude
 
 
 def pre_post_page(T: Dict[str, pd.DataFrame], cohort: str, clean: bool = True):
-    """Blocked switches, per transition type: PSE before the switch vs at the end of the block, one line per mouse,
-    normative dashed."""
+    """Blocked switches, per transition type: the PSE of the previous phase against that of the whole new block
+    (pooled 4-parameter fits), one line per mouse, normative dashed. The numbers in each title use the blocks whose
+    PSEs lie inside the stimulus range, as ``block_convergence`` does; a block outside it is drawn dotted."""
     pp = _subset(T['pre_post'], T, clean)
     trs = [t for t in ('first', 'novel', 'return') if t in set(pp['transition'])]
-    fig, axes = plt.subplots(1, max(len(trs), 1), figsize=(4.2 * max(len(trs), 1), 4.4), squeeze=False)
+    fig, axes = plt.subplots(1, max(len(trs), 1), figsize=(4.2 * max(len(trs), 1), 5.0), squeeze=False)
     for ax, tr in zip(axes[0], trs):
         d = pp[pp['transition'] == tr].dropna(subset=['pse_pre', 'pse_post'])
-        for r in d.itertuples():
-            ax.plot([0, 1], [r.pse_pre, r.pse_post], '-', color='0.6', lw=0.8)
+        inside = ((d['pse_pre'].abs() <= 1) & (d['pse_post'].abs() <= 1)).to_numpy()
+        for r, ok in zip(d.itertuples(), inside):
+            ax.plot([0, 1], [r.pse_pre, r.pse_post], '-' if ok else ':', color='0.6', lw=0.8)
             ax.annotate(str(r.animal).replace('SS', ''), (1, r.pse_post), textcoords='offset points', xytext=(4, 0), fontsize=6, color='0.4', va='center')
         ax.plot([0] * len(d), d['pse_pre'], 'o', color='0.3', ms=5)
         for dist, c in DIST_COL.items():
@@ -728,17 +730,22 @@ def pre_post_page(T: Dict[str, pd.DataFrame], cohort: str, clean: bool = True):
             ax.plot([1] * m.sum(), d.loc[m, 'pse_post'], 'o', color=c, ms=5)
             if m.any():
                 ax.hlines(d.loc[m, 'normative_pse'].mean(), 0.85, 1.15, colors=c, linestyles='--', lw=1)
-        if len(d):
-            ax.errorbar([0, 1], [d['pse_pre'].mean(), d['pse_post'].mean()], yerr=[d['pse_pre'].sem(), d['pse_post'].sem()],
+        title = f"{tr}: {' / '.join(sorted(set(d['from_distribution'])))} → {' / '.join(sorted(set(d['to_distribution'])))}"
+        ok = d[inside]
+        if len(ok):
+            ax.errorbar([0, 1], [ok['pse_pre'].mean(), ok['pse_post'].mean()], yerr=[ok['pse_pre'].sem(), ok['pse_post'].sem()],
                         color='k', marker='s', ms=6, capsize=3, lw=1.5, zorder=4)
-            delta = (d['pse_post'] - d['pse_pre'])
+            delta = ok['pse_post'] - ok['pse_pre']
             # direction of the switch: the sign of the normative shift (the criterion should rise into Hard-A)
-            direction = (np.sign(d['normative_shift']).to_numpy() if 'normative_shift' in d
-                         else np.where(d['to_distribution'] == 'Hard-A', 1.0, -1.0))
+            direction = (np.sign(ok['normative_shift']).to_numpy() if 'normative_shift' in ok
+                         else np.where(ok['to_distribution'] == 'Hard-A', 1.0, -1.0))
             with_switch = np.sign(delta.to_numpy()) == direction
-            share = f", share of the normative shift {d['block_convergence'].mean():+.2f}" if 'block_convergence' in d else ''
-            ax.set_title(f"{tr}: {' / '.join(sorted(set(d['from_distribution'])))} → {' / '.join(sorted(set(d['to_distribution'])))}\n"
-                         f"Δ = {delta.mean():+.2f}{share}, moved with the switch in {int(with_switch.sum())}/{len(d)}", fontsize=9)
+            title += f"\nΔ = {delta.mean():+.2f}, moved with the switch in {int(with_switch.sum())}/{len(ok)}"
+            if 'block_convergence' in ok:
+                title += f"\nshare of the normative shift {pd.to_numeric(ok['block_convergence'], errors='coerce').mean():+.2f}"
+        if (~inside).any():
+            title += '\noutside ±1, not counted: ' + ', '.join(str(a).replace('SS', '') for a in d.loc[~inside, 'animal'])
+        ax.set_title(title, fontsize=9)
         ax.axhline(0, color='0.8', lw=0.7)
         ax.set_xticks([0, 1])
         ax.set_xticklabels(['before the switch\n(previous phase, pooled)', 'after the switch\n(whole block, pooled)'], fontsize=8)
@@ -746,9 +753,10 @@ def pre_post_page(T: Dict[str, pd.DataFrame], cohort: str, clean: bool = True):
         ax.set_ylim(-1, 1.3)
         ax.spines[['top', 'right']].set_visible(False)
     axes[0, 0].set_ylabel('PSE (4-parameter fit on pooled trials)')
-    fig.suptitle(f'{cohort} — criterion before and after each switch, {_subset_label(T, clean)}. '
-                 'Pre = the previous phase pooled (Uniform: its last 5 sessions), post = the whole new block pooled. Dashed = normative PSE (colour = distribution)', fontsize=10)
-    fig.tight_layout()
+    fig.suptitle(f'{cohort} — criterion before and after each switch, {_subset_label(T, clean)}.\n'
+                 'Pre = the previous phase pooled (Uniform: its last 5 sessions), post = the whole new block pooled. '
+                 'Dashed = normative PSE (colour = distribution); dotted = a PSE outside ±1, not counted', fontsize=10)
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
     return fig
 
 
