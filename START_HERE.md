@@ -196,6 +196,13 @@ To look at it on the laptop:
 sc-fetch results model_identification/all-mice
 ```
 
+The noise floor that notebook 11 puts the held-out errors over is computed on the laptop from the snapshot
+(minutes), once per cohort, and for the synthetic validation cohort too (it adds the true model's score):
+
+```bash
+sc-noise-floor --cohort all-mice
+```
+
 Every command, its options and what it writes: [docs/runs.md](docs/runs.md).
 
 ## New animals

@@ -14,7 +14,7 @@ on the Hard phases.
 |---|---|---|
 | `00_data_and_task` | what is in the snapshot; the task from the trials | the snapshot (no run) |
 | `10_expert_behaviour` | expert Uniform behaviour without light: psychometrics, history effects, update matrices, all mice | the snapshot (computes point estimates) |
-| `11_model_identification` | BE or SC per animal (descriptive): the all-mice run, synthetic recovery as the check | `model_identification/<cohort>/latest` |
+| `11_model_identification` | BE or SC per animal (descriptive): the all-mice run, synthetic recovery as the check; each model's held-out error over the noise floor, beside a no-learning reference (absolute fit) | `model_identification/<cohort>/latest`, `noise_floor/<cohort>/latest` |
 | `12_switch_adaptation` | the criterion after a distribution switch (blocks): shift, convergence (Fig. 5C), overnight, did it follow the distribution | `switch_adaptation/<cohort>/latest` |
 | `13_adaptation_speed` | whether and how fast the criterion follows the distribution in both designs (chapter 3, Fig 3.6): the steadied Fig. 5C curve for days, one number per mouse (days: trials 100–300; blocks: the whole block's share of the normative shift, by direction), the blocks switch by switch, overnight | `switch_adaptation/<cohort>/latest` for both cohorts |
 | `20_opto_expert` | PPC inactivation in experts, the light itself (light-artefact report), ALM specificity, WT vs HET, equivalence | `opto_contrasts/…/latest`, `light_artefact/…/latest` |

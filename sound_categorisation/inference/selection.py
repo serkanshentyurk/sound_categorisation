@@ -39,7 +39,7 @@ Reuses (no metric reimplemented):
     models.simulate.simulate_choices                 params -> choices
 """
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 from behav_utils.data import pool_arrays, session_from_arrays
@@ -65,7 +65,31 @@ def _block_ids(sessions: List) -> np.ndarray:
     return np.repeat(np.arange(len(sizes)), sizes)
 
 
-def _empirical_target(pooled: Dict[str, np.ndarray], fit_target: str, n_bins: int):
+def fold_sessions(sessions: List, n_folds: int = 2) -> List[Tuple[List, List]]:
+    """The block-level CV folds over ``sessions`` as ``(train, test)`` session lists: the split the
+    multi-session conditioning and the grid search score on (``split_folds_by_block``, one block per
+    session; with two folds, the first sessions against the last: 5 sessions -> first 3, last 2)."""
+    block_ids = _block_ids(sessions)
+    return [([sessions[int(b)] for b in np.unique(block_ids[train])],
+             [sessions[int(b)] for b in np.unique(block_ids[test])])
+            for train, test in split_folds_by_block(block_ids, n_folds)]
+
+
+def session_halves(session, session_idx: int):
+    """``(first half, second half)`` of a session's trials, each as a session: the split the
+    single-session conditioning scores on. None when the session is too short to split (< 8 trials)."""
+    a = session.get_arrays()
+    stim, ch, cat = a['stimuli'], a['choices'], a['categories']
+    n = len(stim)
+    if n < 8:
+        return None
+    mid = n // 2
+    return (session_from_arrays(stim[:mid], ch[:mid], cat[:mid], session_idx=session_idx),
+            session_from_arrays(stim[mid:], ch[mid:], cat[mid:], session_idx=session_idx))
+
+
+def empirical_target(pooled: Dict[str, np.ndarray], fit_target: str, n_bins: int):
+    """The animal's held-out matrix: update (or conditional-psychometric) matrix of ``pooled``'s own choices."""
     um, cm, _ = fit_update_matrix(
         pooled['stimuli'], pooled['choices'], correct=pooled['correct'],
         n_bins=n_bins, trial_filter='post_correct',
@@ -75,19 +99,26 @@ def _empirical_target(pooled: Dict[str, np.ndarray], fit_target: str, n_bins: in
     return um if fit_target == 'update_matrix' else cm
 
 
-def _simulated_target(model, params: Dict[str, float],
-                      pooled: Dict[str, np.ndarray], fit_target: str,
-                      n_bins: int, burn_in: int, seed: int):
-    sim_ch = simulate_choices(
-        model, params, pooled['stimuli'], pooled['categories'],
-        burn_in=burn_in, seed=seed)
+def target_from_choices(choices: np.ndarray, pooled: Dict[str, np.ndarray], fit_target: str, n_bins: int):
+    """The matrix of simulated ``choices`` made on ``pooled``'s trials: scored by the task, with the animal's
+    no-response trials left out, as a fit's held-out matrix is computed."""
     um, cm, _ = fit_update_matrix(
-        pooled['stimuli'], sim_ch, correct=score_choices(sim_ch, pooled['truth'], pooled['task']),
+        pooled['stimuli'], choices, correct=score_choices(choices, pooled['truth'], pooled['task']),
         n_bins=n_bins, trial_filter='post_correct',
         no_response=pooled['no_response'],
         not_blockstart=pooled['prev_has_prev'],
     )
     return um if fit_target == 'update_matrix' else cm
+
+
+def simulated_target(model, params: Dict[str, float],
+                     pooled: Dict[str, np.ndarray], fit_target: str,
+                     n_bins: int, burn_in: int, seed: int):
+    """A fit's held-out matrix: ``model`` with ``params`` simulated once on ``pooled``'s stimuli."""
+    sim_ch = simulate_choices(
+        model, params, pooled['stimuli'], pooled['categories'],
+        burn_in=burn_in, seed=seed)
+    return target_from_choices(sim_ch, pooled, fit_target, n_bins)
 
 
 def _safe_condition(net, sessions: List, n_posterior_samples: int
@@ -154,17 +185,10 @@ def _condition_multi(sessions, net, model, fit_target, n_folds,
         raise ValueError(f'Need >= 2 sessions for CV, got {len(sessions)}')
 
     burn_in = getattr(net, 'burn_in', 1000)
-    block_ids = _block_ids(sessions)
-    folds = split_folds_by_block(block_ids, n_folds)
-
     fold_data = []
-    for train_mask, test_mask in folds:
-        train_blocks = np.unique(block_ids[train_mask])
-        test_blocks = np.unique(block_ids[test_mask])
-        train_sessions = [sessions[int(b)] for b in train_blocks]
-        test_sessions = [sessions[int(b)] for b in test_blocks]
+    for train_sessions, test_sessions in fold_sessions(sessions, n_folds):
         test_pooled = pool_arrays(test_sessions)
-        emp = _empirical_target(test_pooled, fit_target, n_bins)
+        emp = empirical_target(test_pooled, fit_target, n_bins)
         fold_data.append((train_sessions, test_pooled, emp))
 
     # One all-session conditioning -> stable recovered params (recovery plot). The caller
@@ -181,8 +205,8 @@ def _condition_multi(sessions, net, model, fit_target, n_folds,
             if theta is None:
                 fold_errs = []
                 break
-            sim = _simulated_target(model, theta, test_pooled,
-                                    fit_target, n_bins, burn_in, rep_seed)
+            sim = simulated_target(model, theta, test_pooled,
+                                   fit_target, n_bins, burn_in, rep_seed)
             fold_errs.append(float(matrix_error(emp, sim)))
         if not fold_errs:
             continue
@@ -203,18 +227,13 @@ def _condition_single(sessions, net, model, fit_target,
     burn_in = getattr(net, 'burn_in', 1000)
     results = []
     for si, session in enumerate(sessions):
+        halves = session_halves(session, si)
+        if halves is None:              # too short to split into two usable halves
+            continue
         a = session.get_arrays()
         stim, ch, cat = a['stimuli'], a['choices'], a['categories']
-        n = len(stim)
-        if n < 8:                       # too short to split into two usable halves
-            continue
-        mid = n // 2
-
-        def _half(lo, hi, stim=stim, ch=ch, cat=cat, si=si):
-            return session_from_arrays(
-                stim[lo:hi], ch[lo:hi], cat[lo:hi], session_idx=si)
-
-        half_a, half_b, full = _half(0, mid), _half(mid, n), _half(0, n)
+        half_a, half_b = halves
+        full = session_from_arrays(stim, ch, cat, session_idx=si)
 
         # Conditioning must stay in-distribution for all three; skip on any NaN.
         theta_a = _safe_condition(net, [half_a], n_posterior_samples)
@@ -224,14 +243,14 @@ def _condition_single(sessions, net, model, fit_target,
             continue
 
         pooled_a, pooled_b = pool_arrays([half_a]), pool_arrays([half_b])
-        emp_a = _empirical_target(pooled_a, fit_target, n_bins)
-        emp_b = _empirical_target(pooled_b, fit_target, n_bins)
+        emp_a = empirical_target(pooled_a, fit_target, n_bins)
+        emp_b = empirical_target(pooled_b, fit_target, n_bins)
         sess_seed = seed + si
         # condition on A -> predict B, condition on B -> predict A, then mean.
-        sim_on_b = _simulated_target(model, theta_a, pooled_b,
-                                     fit_target, n_bins, burn_in, sess_seed)
-        sim_on_a = _simulated_target(model, theta_b, pooled_a,
-                                     fit_target, n_bins, burn_in, sess_seed)
+        sim_on_b = simulated_target(model, theta_a, pooled_b,
+                                    fit_target, n_bins, burn_in, sess_seed)
+        sim_on_a = simulated_target(model, theta_b, pooled_a,
+                                    fit_target, n_bins, burn_in, sess_seed)
         err = 0.5 * (float(matrix_error(emp_b, sim_on_b)) +
                      float(matrix_error(emp_a, sim_on_a)))
         if not np.isfinite(err):

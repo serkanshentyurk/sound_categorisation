@@ -3,6 +3,20 @@
 
 ## Unreleased
 
+- **Noise floor for the held-out error** (thesis analysis 1, agreed 18 November 2026). `sc-noise-floor --cohort C`
+  (`inference/noise_floor.py`, `plotting/noise_floor.py`) writes `noise_floor/<cohort>/<run_id>/`: per animal, the
+  update-matrix error between the two halves the fits are scored on (sessions 1–3 against 4–5; each session's first
+  half against its second for the single network), a no-learning reference (the animal's psychometric with no
+  trial history, fitted on one half and scored on the other like a fit) and, on a synthetic cohort, the true
+  model scored the same way. A fit is scored on one simulation of itself, as noisy as the held-out half, so a
+  correct model scores about the floor, not half of it as the plan had said: on 44 simulated mice (five sessions
+  of 250–500 trials) the true model averaged 1.03 times the floor, 0.76–1.35 for 80 % of them; with its matrix
+  averaged over simulations it would be 0.56. Within a session the no-learning reference sits barely above the
+  floor (about 1.05 times on four simulated mice), so half-sessions hardly separate any model from no learning.
+  Notebook 11 §5 draws each model's held-out error over the floor. `inference/selection.py` now names the fits'
+  splits and scoring for reuse (`fold_sessions`, `session_halves`, `empirical_target`, `target_from_choices`,
+  `simulated_target`; conditioning unchanged), and `sc-make-synthetic-run` adds the synthetic floor run.
+
 - **Each phase's own shape for the criterion; blocks judged by their whole-block fit** (agreed 18 November 2026).
   - The criterion is fitted with the slope and lapses of its phase, not the expert-Uniform ones: one 4-parameter
     fit on the phase's pooled trials (`phase_shape`), a phase being a block of days or, in the daily alternation,

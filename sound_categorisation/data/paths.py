@@ -162,7 +162,8 @@ def snpe_training_set_path(rep: str, model: str, distribution: str) -> Path:
 # resolve_run(), never by a hard-coded path.
 # =============================================================================
 
-REPORTS = ('opto_contrasts', 'switch_adaptation', 'light_artefact', 'model_identification', 'feature_selection')
+REPORTS = ('opto_contrasts', 'switch_adaptation', 'light_artefact', 'model_identification', 'feature_selection',
+           'noise_floor')
 
 
 def results_root() -> Path:

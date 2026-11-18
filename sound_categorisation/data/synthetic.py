@@ -81,7 +81,8 @@ def write_synthetic_runs(results_root, data_root, *, with_model_id: bool = True)
     """Build the runs the notebooks and CI read, from synthetic data only: an ``opto_contrasts`` run
     (fast on every animal, one full condition) and its summary, a ``switch_adaptation`` run (the blocked
     and the daily animals together) and a ``light_artefact`` run, and — with ``with_model_id`` — a
-    synthetic cohort, a fast grid search and its consensus under ``model_identification/synthetic_uniform``.
+    synthetic cohort, a fast grid search and its consensus under ``model_identification/synthetic_uniform``, and its
+    noise floor (``noise_floor/synthetic_uniform``).
     Returns the run directories. ``sc-make-synthetic-run`` is the CLI; ``SC_NB_SYNTHETIC=1`` makes the
     notebooks read these instead of the real cohorts.
     """
@@ -133,5 +134,7 @@ def write_synthetic_runs(results_root, data_root, *, with_model_id: bool = True)
         grid_search.main(base + ['--gather'])
         consensus.main(['--cohort', 'synthetic_uniform', '--distribution', 'uniform', '--run-id', mrun.name])
         out['model_identification'] = mrun
+        from sound_categorisation.cli import noise_floor
+        out['noise_floor'] = noise_floor.main(['--cohort', 'synthetic_uniform', '--repeats', '2'])
     print('synthetic runs ->', results_root)
     return out

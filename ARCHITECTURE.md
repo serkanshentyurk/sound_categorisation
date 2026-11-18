@@ -65,7 +65,9 @@ inference/           amortised SBI (types, simulator, representation, selection,
                      cv_utils (CV result schema), fold_utils (block-aware folds), consensus (GS + SBI votes),
                      tasks (TaskGrid: TRAIN_GRID, CONDITION_GRID, SBC_GRID, gs_grid), calibration (SBC),
                      network_check (saved networks against the current code), validation (thesis tables),
-                     prior_range (each animal's statistics against the models' simulated range)
+                     prior_range (each animal's statistics against the models' simulated range),
+                     noise_floor (per animal, the held-out error two halves of its own data give, on the
+                     splits the fits are scored on, and a no-learning reference: the absolute-fit scale)
 features/            feature_diagnostics: which summary statistics carry BE/SC identity and parameters
 reports/             compute.py  AnimalResult / GroupResult / Settings (no matplotlib)
                      tables.py   to_tables, group_tables, readout_arrays, write_result / read_result
@@ -75,11 +77,11 @@ reports/             compute.py  AnimalResult / GroupResult / Settings (no matpl
                      daily_tracker.py   the daily tracker's self-contained HTML page
                      readme.py   the generated results README
                      cli.py      `python -m sound_categorisation.reports` / `sc-reports`
-plotting/            project plotters (CV, opto swarms, assignment, SBI diagnostics, daily tracker)
+plotting/            project plotters (CV, opto swarms, assignment, SBI diagnostics, daily tracker, noise floor)
 cli/                 entry points (pyproject [project.scripts]): sc-reports, sc-export-snapshot, sc-update,
                      sc-fetch, sc-make-synthetic-cohort, sc-make-synthetic-run, sc-new-run, sc-smoke, sc-sbi-train,
                      sc-sbi-condition, sc-sbi-sbc, sc-sbi-check, sc-sbi-range, sc-grid-search, sc-consensus,
-                     sc-validation-tables, sc-feature-selection, sc-daily-tracker
+                     sc-validation-tables, sc-noise-floor, sc-feature-selection, sc-daily-tracker
 slurm/               env.sh (module, conda env, threads; sourced by every job and by load-env), the job
                      scripts, submit.sh (array size from inference/tasks.py)
 ```
