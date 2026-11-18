@@ -5,17 +5,25 @@ the switch report), and the cohort QC (``BiasRule``, ``bias_sessions``).
 
 How fast the criterion moves is measured one way everywhere (manuscript Fig. 5C, made steadier):
 
-    criterion    the 50 % point of the psychometric (the lapse-corrected PSE) with sigma and lapses fixed
-                 at the animal's expert-Uniform fit, so only the criterion is fitted (``pinned_pse``). A fit
-                 that ends at ±1, the edge of the stimulus range, is not a measurement (the mouse chose
-                 mostly one side, so its 50 % point is off the scale) and counts as missing.
+    criterion    the 50 % point of the psychometric (the lapse-corrected PSE) with sigma and lapses fixed,
+                 so only the criterion is fitted (``pinned_pse``). The shape is the phase's own: one
+                 4-parameter fit on the pooled trials of the phase (``phase_shape``), where a phase is a
+                 block of days, or in the daily alternation every day of one distribution and session type
+                 (``phase_shapes``); the Uniform phase takes the expert-Uniform fit. Slope and lapses do
+                 change between phases in some mice, and one shape for all of them shows that change as a
+                 criterion shift. A fit that ends at ±1, the edge of the stimulus range, is not a
+                 measurement (the mouse chose mostly one side, so its 50 % point is off the scale) and
+                 counts as missing.
     curve        that criterion in running 50-trial windows, every 10 trials (``criterion_curve``)
     before       the criterion over the last 250 trials before the switch (the previous day's end, in a
-                 daily alternation); the expert-Uniform PSE before the first session of a trajectory
+                 daily alternation), with the previous phase's shape; the expert-Uniform PSE before the
+                 first session of a trajectory
     convergence  (criterion − before) / (normative − before): 0 = where it was, 1 = the normative criterion
                  of the new distribution at the animal's expert-Uniform sigma; not clipped (``convergence``)
     one number   ``convergence_100_300``: the mean over windows centred on trials 100-300 after the switch,
-                 inside the first day, so the slow drift across days hardly enters
+                 inside the first day, so the slow drift across days hardly enters. It is the result for
+                 the daily alternation (five or six days per mouse and kind); a block of days is judged by
+                 its whole-block fit instead (the switch report's ``block_convergence``).
 
 A switch is either a block of days (the pre-opto cohorts: Uniform → Hard-B → Hard-A → …) or one day of
 the daily alternation (the opto Hard phase: A B A B …, six laser days then six masking days);
@@ -24,16 +32,19 @@ the daily alternation (the opto Hard phase: A B A B …, six laser days then six
     tr = compute_trajectory(animal, distributions=('Hard-A', 'Hard-B'))
     tr.sessions      one row per session in acquisition order: order, session_id, session_idx, date,
                      distribution, session_type, n_trials, <pooled stats>, pse_fixed (the criterion
-                     parameter with the shape fixed, for the QC), pse_pinned (its 50 % point),
-                     pse_last250, <pse_dynamics> and the same with `_fixed` (shape fixed),
+                     parameter with the expert-Uniform shape: the bias check's), pse_pinned (the criterion,
+                     with the phase's shape), shape_sigma, shape_lapse_low, shape_lapse_high (that shape),
+                     pse_last250, <pse_dynamics> and the same with `_fixed` (the phase's shape),
                      prev_distribution, prev_pse, baseline_pse (the criterion before the session),
                      normative_pse, convergence_100_300, convergence_final, delta_from_prev
     tr.curves        the criterion within each session in running windows, with its convergence
     sw = compute_switches(animal)          # one SwitchResult per switch into a Hard distribution
 
-Pass ``sigma`` to compute the normative criterion at another sigma (e.g. an SBI posterior); the shape the
-criterion is fitted with stays the expert-Uniform one. ``delta_from_prev`` = PSE(this session) −
-PSE(previous session), both free fits on the whole session: the A–B amplitude of the alternation.
+Pass ``sigma`` to compute the normative criterion at another sigma (e.g. an SBI posterior); the shapes the
+criterion is fitted with do not change. ``delta_from_prev`` = PSE(this session) − PSE(previous session),
+both free fits on the whole session: the A–B amplitude of the alternation. The bias check (``BiasRule``)
+keeps the expert-Uniform shape: it is a coarse screen (|criterion| > 0.4), and a fixed reference keeps the
+mice it excludes independent of how each phase's shape is fitted.
 """
 
 from __future__ import annotations
@@ -60,6 +71,7 @@ from scipy.stats import norm
 from sound_categorisation.data.stimuli import compute_normative_pse
 
 __all__ = ['Trajectory', 'compute_trajectory', 'expert_reference', 'TRAJECTORY_STATS', 'pinned_pse',
+           'phase_shape', 'phase_shapes', 'block_convergence', 'MIN_CONV_SPAN',
            'criterion_curve', 'convergence', 'mean_convergence', 'pool_convergence', 'CURVE_WINDOW', 'CURVE_STEP', 'EARLY_TRIALS',
            'SwitchResult', 'compute_switch', 'compute_switches', 'SWITCH_METHODS', 'hard_design',
            'flag_biased_sessions', 'BiasRule', 'bias_sessions', 'BIAS_COLUMNS', 'compute_phase_curves', 'animal_switches',
@@ -140,7 +152,8 @@ def _pse_from_params(mu, sigma, lo, hi) -> float:
 
 def pinned_pse(arrays: TrialArrays, shape) -> float:
     """The criterion: the 50 % point of the psychometric (lapse-corrected PSE) with sigma and lapses fixed at
-    ``shape`` = (sigma, lapse_low, lapse_high), so only the criterion is fitted.
+    ``shape`` = (sigma, lapse_low, lapse_high), so only the criterion is fitted. The reports pass the shape of
+    the phase the trials belong to (``phase_shape``).
 
     Missing (NaN) with fewer than 50 trials, without a usable shape, or when the fit ends at ±1, the edge
     of the stimulus range: the mouse chose mostly one side, its 50 % point is off the scale, and there is
@@ -197,11 +210,62 @@ def pool_convergence(values, spans) -> float:
     return float((v[ok] * w[ok]).sum() / w[ok].sum()) if ok.any() else np.nan
 
 
+def block_convergence(delta, normative_from, normative_to):
+    """How far a whole block moved, as a share of how far the normative criterion moved: ``delta`` (the block's
+    pooled PSE − the previous phase's pooled PSE, both 4-parameter fits) / (``normative_to`` − ``normative_from``).
+    1 = moved with the distribution by the normative amount, 0 = did not move, < 0 = moved the other way. The
+    denominator is fixed by the design (about 0.1 for Uniform → Hard, 0.2 between the Hard distributions), so
+    unlike ``convergence`` it cannot blow up when the criterion already sat near the new normative one. NaN where
+    the normative criterion moves less than ``MIN_CONV_SPAN``. Numbers or arrays."""
+    d, f, t = (np.asarray(x, float) for x in (delta, normative_from, normative_to))
+    shift = t - f
+    with np.errstate(invalid='ignore', divide='ignore'):
+        out = np.where(np.abs(shift) >= MIN_CONV_SPAN, d / shift, np.nan)
+    return float(out) if out.ndim == 0 else out
+
+
 def _distribution(session) -> str | None:
     try:
         return session.distribution
     except Exception:
         return None
+
+
+def _session_type(session) -> str:
+    return str(getattr(session, 'session_type', '') or '')
+
+
+def phase_shape(sessions, trials: str = 'all') -> tuple:
+    """(sigma, lapse_low, lapse_high) of one 4-parameter fit on the pooled ``trials`` of ``sessions`` (thousands of
+    trials for a block, hundreds per day pooled over the days of a daily phase): the shape a phase's criterion is
+    fitted with (module notes). NaN without trials."""
+    phase = filter_trials(list(sessions), trial_type=trials)
+    if not phase:
+        return (np.nan,) * 3
+    r = compute_phase_stats(phase, ['sigma', 'lapse_low', 'lapse_high']).pooled
+    return float(r['sigma']), float(r['lapse_low']), float(r['lapse_high'])
+
+
+def phase_shapes(sessions, design: str, *, trials: str = 'all', expert=(np.nan,) * 3) -> dict:
+    """session_idx → the shape its criterion is fitted with, for ``sessions`` in order. A Hard session takes the
+    ``phase_shape`` of its phase: its session type within its block (``design='blocked'``; a block is a run of
+    consecutive sessions on one distribution), or its distribution and session type over all the sessions
+    (``'daily'``: the alternation's days of one kind pooled). Any other session (Uniform) takes ``expert``, the
+    expert-Uniform shape."""
+    groups, out, run, prev = {}, {}, 0, None
+    for s in sessions:
+        d = _distribution(s)
+        if d != prev:
+            run += 1
+        prev = d
+        if d not in HARD:
+            out[s.session_idx] = tuple(expert)
+            continue
+        groups.setdefault((d if design == 'daily' else run, _session_type(s)), []).append(s)
+    for members in groups.values():
+        shape = phase_shape(members, trials)
+        out.update({s.session_idx: shape for s in members})
+    return out
 
 
 def compute_trajectory(
@@ -225,7 +289,8 @@ def compute_trajectory(
 
     Each session is a switch from the one before: its criterion curve starts from the criterion over the
     previous session's last 250 trials (the expert-Uniform PSE before the first session), and its
-    convergence runs from there to the normative criterion of its own distribution (module notes).
+    convergence runs from there to the normative criterion of its own distribution (module notes). Each
+    session's criterion is fitted with its phase's shape (``phase_shapes``; the design from ``hard_design``).
 
     Args:
         animal:        AnimalData.
@@ -238,9 +303,10 @@ def compute_trajectory(
         window, step:  the curve's running windows (default 50 trials, every 10).
         baseline_preset, baseline_last_n, baseline_trials:
                        the expert-Uniform reference (``expert_reference``): the last ``baseline_last_n``
-                       sessions of the preset, on these trials; it gives the shape every criterion is fitted
-                       with and the criterion before the first session. With the default preset, opto-cohort
-                       references come mostly from laser sessions (masking is excluded); see the report README.
+                       sessions of the preset, on these trials; it gives the criterion before the first
+                       session, the sigma of the normative criterion, the shape of the Uniform phase and the
+                       bias check's ``pse_fixed``. With the default preset, opto-cohort references come mostly
+                       from laser sessions (masking is excluded); see the report README.
         bias_rule:     the cohort QC carried with the result (``BiasRule()`` if None).
         bias:          also attach ``bias_sessions(animal, bias_rule)`` (``Trajectory.bias``), the one bias
                        check every report uses.
@@ -248,7 +314,7 @@ def compute_trajectory(
     aid = getattr(animal, 'animal_id', '?')
     base_pse, base_sigma, base_lo, base_hi = expert_reference(animal, preset=baseline_preset,
                                                               last_n=baseline_last_n, trials=baseline_trials)
-    shape = (base_sigma, base_lo, base_hi)
+    expert = (base_sigma, base_lo, base_hi)
     sigma = float(sigma) if sigma is not None else base_sigma
     rule = bias_rule if bias_rule is not None else BiasRule()
 
@@ -256,6 +322,8 @@ def compute_trajectory(
     for d in distributions:
         sessions += select_sessions(animal, distribution=d)
     sessions = sorted({s.session_idx: s for s in sessions}.values(), key=lambda s: s.session_idx)
+    design = hard_design(animal) if any(d in HARD for d in distributions) else 'none'
+    shapes = phase_shapes(sessions, design, trials=trials, expert=expert)
 
     rows, curve_frames = [], []
     prev_pse, prev_dist = base_pse, 'Uniform'
@@ -263,17 +331,19 @@ def compute_trajectory(
     for order, s in enumerate(sessions):
         phase = filter_trials([s], trial_type=trials)
         dist = _distribution(s)
+        shape = shapes.get(s.session_idx, expert)
         norm = float(compute_normative_pse(dist, sigma)) if (dist and np.isfinite(sigma)) else np.nan
         row = {'order': order, 'session_id': s.session_id, 'session_idx': s.session_idx,
                'date': getattr(s, 'date', None), 'distribution': dist, 'session_type': s.session_type,
                'n_trials': 0, 'prev_distribution': prev_dist, 'prev_pse': prev_pse,
-               'baseline_pse': before, 'normative_pse': norm, 'convergence_100_300': np.nan}
+               'baseline_pse': before, 'normative_pse': norm, 'convergence_100_300': np.nan,
+               'shape_sigma': shape[0], 'shape_lapse_low': shape[1], 'shape_lapse_high': shape[2]}
         end = np.nan
         if phase:
             arrays = TrialArrays.from_sessions(phase)
             row['n_trials'] = arrays.n_responded
             row.update(compute_stats(arrays, list(stats), strict=False).to_dict())
-            row['pse_fixed'] = pse_fixed(arrays, *shape)
+            row['pse_fixed'] = pse_fixed(arrays, *expert)         # the bias check's: expert-Uniform shape
             row['pse_pinned'] = pinned_pse(arrays, shape)
             valid = arrays.valid()
             end = pinned_pse(valid.take(np.arange(valid.n_trials)[-PRE_TRIALS:]), shape)
@@ -315,12 +385,12 @@ def compute_trajectory(
 #   post = non-overlapping 50-trial bins across the block's sessions, up to 3000 trials,
 #          4-parameter fit per bin, convergence = 1 - (pse_bin - norm)/(pse_pre - norm), clipped [0, 1]
 # Reproduced as method='manuscript', for comparison. method='pinned' is the module's criterion
-# (``pinned_pse``: shape fixed at the expert-Uniform fit, 50 % point, edge = missing) per bin, unclipped,
-# from the same criterion over the last 250 trials before the switch; 'pinned_running' is the curve
-# (``criterion_curve``: running 50-trial windows, step 10), the one the reports and the thesis use. The
-# normative PSE is the constant-sigma observer at the animal's expert-Uniform sigma, for every method
-# (the manuscript used a per-subject stimulus-dependent-noise normative model fitted on Uniform data,
-# whose midpoints we do not have).
+# (``pinned_pse``: the 50 % point with the shape fixed at the phase's fit, edge = missing) per bin, unclipped,
+# from the same criterion over the last 250 trials before the switch (with the previous phase's shape);
+# 'pinned_running' is the curve (``criterion_curve``: running 50-trial windows, step 10), the one the reports
+# and the thesis use. The normative PSE is the constant-sigma observer at the animal's expert-Uniform sigma,
+# for every method (the manuscript used a per-subject stimulus-dependent-noise normative model fitted on
+# Uniform data, whose midpoints we do not have).
 
 SWITCH_PRE_TRIALS = PRE_TRIALS
 SWITCH_BIN = 50
@@ -345,17 +415,18 @@ class SwitchResult:
     n_trials_before: int
     n_trials_after: int
     n_sessions_after: int
-    pre: pd.Series                    # last SWITCH_PRE_TRIALS trials: mu, sigma, lapse_low, lapse_high, pse (4-parameter), pse_pinned
+    pre: pd.Series                    # last SWITCH_PRE_TRIALS trials: mu, sigma, lapse_low, lapse_high, pse (4-parameter), pse_pinned; shape_sigma, shape_lapse_low, shape_lapse_high (the previous phase's shape)
     normative_pse: float
     convergence: pd.DataFrame         # CONVERGENCE_COLUMNS: method, bin, trial, pse, convergence, convergence_clipped, span, n
-    dynamics: pd.Series               # PSE_DYNAMICS (shape fixed) on the block + trials_to_criterion, plateau, convergence_100_300, pse_post, convergence_final
-    sessions: pd.DataFrame            # per session in the block: order_in_block, session_idx, session_type, n_trials, pse, pse_fixed, pse_pinned, accuracy, ...
+    dynamics: pd.Series               # PSE_DYNAMICS (the phase's shape) on the block + trials_to_criterion, plateau, convergence_100_300, pse_post, convergence_final, shape_sigma, shape_lapse_low, shape_lapse_high
+    sessions: pd.DataFrame            # per session in the block: order_in_block, session_idx, session_type, n_trials, pse, pse_pinned, accuracy, ...
     overnight: pd.DataFrame           # per consecutive session pair: pse_end, pse_start_next, delta, toward_pre, session_idx, next_session_idx
     design: str = 'blocked'           # 'blocked' (a block of days) | 'daily' (one day of the alternation)
     switch_kind: str = ''             # blocked: the transition; daily: 'first day', 'laser day', '<type> day' or 'mixed day'
     trials: str = 'all'               # the trials measured: 'all', or 'non_opto' (laser-off) for a laser day
     session_type: str = ''            # the first session after the switch
     prev_session_type: str = ''       # the last session before it
+    normative_from: float = np.nan    # the normative criterion of the distribution before the switch
 
     @property
     def labels(self) -> dict:
@@ -367,7 +438,8 @@ class SwitchResult:
     def to_rows(self) -> pd.DataFrame:
         base = self.labels
         rows = [{**base, 'stat': f'pre_{k}', 'value': float(v)} for k, v in self.pre.items()]
-        rows += [{**base, 'stat': 'normative_pse', 'value': self.normative_pse}]
+        rows += [{**base, 'stat': 'normative_pse', 'value': self.normative_pse},
+                 {**base, 'stat': 'normative_from', 'value': self.normative_from}]
         rows += [{**base, 'stat': k, 'value': float(v)} for k, v in self.dynamics.items()]
         rows += [{**base, 'stat': 'n_trials_before', 'value': self.n_trials_before},
                  {**base, 'stat': 'n_trials_after', 'value': self.n_trials_after},
@@ -442,6 +514,23 @@ def hard_design(animal, *, stage: str = 'Full_Task_Cont', exclude_types=None) ->
     return 'blocked' if np.median(runs) >= BLOCKED_RUN else 'daily'
 
 
+def _phase_sessions(sessions: list, switch: dict, design: str, side: str) -> list | None:
+    """The sessions of the phase on ``side`` ('before' | 'after') of ``switch``, whose pooled fit gives the shape
+    the criterion there is fitted with: the block itself (blocked), or every day in ``sessions`` with that day's
+    distribution and session type (daily). None for a phase that is not Hard: the Uniform phase takes the
+    expert-Uniform shape."""
+    block = block_before(sessions, switch) if side == 'before' else block_after(sessions, switch)
+    if not block:
+        return None
+    day = block[-1] if side == 'before' else block[0]
+    dist = _distribution(day)
+    if dist not in HARD:
+        return None
+    if design != 'daily':
+        return block
+    return [s for s in sessions if _distribution(s) == dist and _session_type(s) == _session_type(day)]
+
+
 def compute_switch(
     animal,
     sessions: list,
@@ -449,7 +538,7 @@ def compute_switch(
     *,
     transition: str,
     design: str = 'blocked',
-    shape: tuple | None = None,
+    expert_shape: tuple | None = None,
     sigma: float | None = None,
     trials: str = 'all',
     max_trials: int = SWITCH_MAX_TRIALS,
@@ -461,15 +550,21 @@ def compute_switch(
     """Adaptation after one switch (module notes): across the whole block of days (``design='blocked'``)
     or across the one day that follows it (``design='daily'``).
 
-    ``shape`` = (sigma, lapse_low, lapse_high) every criterion is fitted with, from ``expert_reference`` if
-    None; ``sigma`` (default the shape's) gives the normative criterion. ``trials`` ('all' | 'non_opto')
-    selects the trials on both sides of the switch. None when either side has no trials.
+    The criterion after the switch is fitted with the new phase's shape and the criterion before it with the
+    previous phase's (``phase_shape`` on ``trials``: the whole block, or the design's days of that distribution
+    and session type pooled); a Uniform phase takes ``expert_shape`` = (sigma, lapse_low, lapse_high), from
+    ``expert_reference`` if None. ``sigma`` (default the expert-Uniform one) gives the normative criterion.
+    ``trials`` ('all' | 'non_opto') selects the trials on both sides of the switch. None when either side has
+    no trials.
     """
     aid = getattr(animal, 'animal_id', '?')
-    if shape is None:
-        _, s0, l0, h0 = expert_reference(animal)
-        shape = (s0, l0, h0)
-    sigma = shape[0] if sigma is None else float(sigma)
+    expert = tuple(expert_shape) if expert_shape is not None else tuple(expert_reference(animal)[1:])
+    sigma = expert[0] if sigma is None else float(sigma)
+
+    def shape_of(side):
+        members = _phase_sessions(sessions, switch, design, side)
+        return expert if members is None else phase_shape(members, trials)
+    shape_before, shape = shape_of('before'), shape_of('after')
     before_sessions, after_sessions = block_before(sessions, switch), block_after(sessions, switch)
     if design == 'daily':
         after_sessions = after_sessions[:1]          # one day: the next day is the next switch
@@ -481,13 +576,14 @@ def compute_switch(
     session_type = str(getattr(after_sessions[0], 'session_type', '') or '')
     prev_session_type = str(getattr(before_sessions[-1], 'session_type', '') or '')
 
-    # ── before the switch: the manuscript's 4-parameter fit, and the criterion ──
+    # ── before the switch: the manuscript's 4-parameter fit, and the criterion (previous phase's shape) ──
     A_pre = TrialArrays.from_sessions(before).valid()
     A_pre = A_pre.take(np.arange(A_pre.n_trials)[-pre_trials:])
     mu0, sig0, lo0, hi0, pse0 = _fit4(A_pre.stimulus, A_pre.choice)
-    pre_pinned = pinned_pse(A_pre, shape)
+    pre_pinned = pinned_pse(A_pre, shape_before)
     pre = pd.Series({'mu': mu0, 'sigma': sig0, 'lapse_low': lo0, 'lapse_high': hi0, 'pse': pse0,
-                     'pse_pinned': pre_pinned}, dtype=float)
+                     'pse_pinned': pre_pinned, 'shape_sigma': shape_before[0], 'shape_lapse_low': shape_before[1],
+                     'shape_lapse_high': shape_before[2]}, dtype=float)
     norm_pse = float(compute_normative_pse(to, sigma)) if np.isfinite(sigma) else np.nan
     norm_from = float(compute_normative_pse(frm, sigma)) if np.isfinite(sigma) else np.nan
 
@@ -523,7 +619,7 @@ def compute_switch(
                      'convergence_clipped': clipped(c), 'span': span, 'n': bin_size})
     conv_df = pd.DataFrame(rows, columns=CONVERGENCE_COLUMNS)
 
-    # ── the block (or day) as a whole, shape fixed ───────────────────────
+    # ── the block (or day) as a whole, the phase's shape ─────────────────
     dyn = dict(zip(PSE_DYNAMICS, fit_pse_dynamics(A, shape=shape)))
     pr = conv_df[conv_df['method'] == 'pinned_running']
     reached = pr.loc[pr['convergence'] >= criterion, 'trial']
@@ -535,6 +631,7 @@ def compute_switch(
     A_full = TrialArrays.from_sessions(after).valid()
     dyn['pse_post'] = pinned_pse(A_full.take(np.arange(A_full.n_trials)[-pre_trials:]), shape)
     dyn['convergence_final'] = convergence(dyn['pse_post'], pre_pinned, norm_pse)
+    dyn.update(shape_sigma=shape[0], shape_lapse_low=shape[1], shape_lapse_high=shape[2])
     dynamics = pd.Series(dyn, dtype=float)
 
     # ── per session within the block, and overnight pairs ────────────────
@@ -548,9 +645,8 @@ def compute_switch(
         a_s = TrialArrays.from_sessions([s]).valid()
         st = compute_stats(a_s, ['pse', 'accuracy', 'hard_accuracy', 'recency', 'win_stay', 'lose_shift', *PSYCHOMETRIC],
                            strict=False)
-        srows.append({'order_in_block': k, 'session_idx': s.session_idx,
-                      'session_type': str(getattr(s, 'session_type', '') or ''), 'n_trials': a_s.n_trials,
-                      'pse_fixed': pse_fixed(a_s, *shape), 'pse_pinned': pinned_pse(a_s, shape), **st.to_dict()})
+        srows.append({'order_in_block': k, 'session_idx': s.session_idx, 'session_type': _session_type(s),
+                      'n_trials': a_s.n_trials, 'pse_pinned': pinned_pse(a_s, shape), **st.to_dict()})
         start_pse = pinned_pse(a_s.take(np.arange(min(OVERNIGHT_TRIALS, a_s.n_trials))), shape)
         end_pse = pinned_pse(a_s.take(np.arange(a_s.n_trials)[-OVERNIGHT_TRIALS:]), shape)
         if prev_idx is not None:
@@ -565,7 +661,8 @@ def compute_switch(
                         int(sum(len(s.trials.choice) for s in after_sessions)), len(after_sessions), pre, norm_pse,
                         conv_df, dynamics, sessions_df, overnight, design=design,
                         switch_kind=_switch_kind(design, transition, session_type, prev_session_type),
-                        trials=trials, session_type=session_type, prev_session_type=prev_session_type)
+                        trials=trials, session_type=session_type, prev_session_type=prev_session_type,
+                        normative_from=norm_from)
 
 
 def animal_switches(animal, *, stage: str = 'Full_Task_Cont', exclude_types=None,
@@ -600,17 +697,16 @@ def compute_switches(animal, *, stage: str = 'Full_Task_Cont', exclude_types=Non
     ``design`` ('blocked' | 'daily'; ``hard_design`` if None) decides what a switch is: the start of a block
     of at least ``min_block_trials`` trials, or each day of at least ``min_day_trials``. In the daily design a
     laser day is measured on laser-off trials (its own and the day before's: ``trials='non_opto'``), every
-    other switch on all trials. Every criterion is fitted with the animal's expert-Uniform shape. ``kw``
-    goes to ``compute_switch``.
+    other switch on all trials. Every criterion is fitted with the shape of its phase (``compute_switch``).
+    ``kw`` goes to ``compute_switch``.
     """
     design = design or hard_design(animal, stage=stage, exclude_types=exclude_types)
     if design == 'none':
         return []
     sessions, switches = design_switches(animal, design, stage=stage, exclude_types=exclude_types,
                                          min_block_trials=min_block_trials, min_day_trials=min_day_trials)
-    if 'shape' not in kw:
-        _, s0, l0, h0 = expert_reference(animal)
-        kw['shape'] = (s0, l0, h0)
+    if kw.get('expert_shape') is None:
+        kw['expert_shape'] = tuple(expert_reference(animal)[1:])
     out, seen = [], []
     for k, sw in enumerate(switches):
         seen.append(sw['from_distribution'])
@@ -671,7 +767,7 @@ def flag_biased_sessions(sessions: pd.DataFrame, rule: BiasRule | None = None) -
     """Add ``flagged`` (per session) and ``biased_animal`` (per animal) to a sessions table.
 
     ``sessions`` needs columns animal, to_distribution, pse_fixed, lapse_low, lapse_high, accuracy
-    (the switch report's sessions.csv). ``rule`` defaults to ``BiasRule()``.
+    (as ``bias_sessions`` builds them). ``rule`` defaults to ``BiasRule()``.
     """
     r = rule if rule is not None else BiasRule()
     s = sessions.copy()

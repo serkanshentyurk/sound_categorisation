@@ -100,13 +100,15 @@ One row per session of the phase (Hard-A and Hard-B together, since the phase al
 acquisition order (`order`). `distribution` and `session_type` are the session's own; `phase` is the folder.
 Per session on all trials: the stats above, `pse` (lapse-corrected PSE, all four parameters free), the
 `pse_dynamics` fit (`pse_start`, `pse_end`, `pse_final`, `pse_tau`, `pse_trials_to_90`, `pse_censored`,
-`pse_shape_daic` = AIC(exponential) - AIC(step), `pse_step_switch`) and the same with `_fixed` (shape fixed).
-The criterion, measured as in the switch report (`behaviour/adaptation.py`): `pse_pinned` is the 50 % point
-with sigma and lapses fixed at the animal's expert-Uniform fit, missing when the fit ends at ±1 (the mouse chose
-mostly one side); `pse_fixed` is that fit's location parameter, used by the bias check. `baseline_pse` is the
-criterion before the session (over the previous session's last 250 trials; the expert-Uniform PSE before the
-first), `normative_pse` the normative criterion at the animal's own `sigma`, `pse_last250` the criterion over
-the session's last 250 trials. `convergence_100_300` = the mean over trials 100-300 of (criterion - baseline_pse)
+`pse_shape_daic` = AIC(exponential) - AIC(step), `pse_step_switch`) and the same with `_fixed` (shape fixed at
+the session's phase). The criterion, measured as in the switch report (`behaviour/adaptation.py`): `pse_pinned`
+is the 50 % point with sigma and lapses fixed at the fit of the session's phase — all the days of its
+distribution and session type pooled, in the daily alternation (its block, for blocks) — given as
+`shape_sigma`, `shape_lapse_low`, `shape_lapse_high`; missing when the fit ends at ±1 (the mouse chose mostly
+one side). `pse_fixed` is the location parameter with the expert-Uniform shape, used by the bias check only.
+`baseline_pse` is the criterion before the session (over the previous session's last 250 trials, with that
+session's shape; the expert-Uniform PSE before the first), `normative_pse` the normative criterion at the
+animal's expert-Uniform `sigma`, `pse_last250` the criterion over the session's last 250 trials. `convergence_100_300` = the mean over trials 100-300 of (criterion - baseline_pse)
 / (normative_pse - baseline_pse), not clipped; `convergence_final` the same at the session's end; `span` =
 |normative_pse - baseline_pse|, the weight when sessions are combined. `prev_pse` is the previous session's
 `pse` and `delta_from_prev` = pse - prev_pse (the day-to-day amplitude). `flagged` and `biased_animal` come
@@ -118,8 +120,8 @@ Caveats that apply to every trajectory number: one session (~500 trials) at sigm
 +/-0.1 and tau only loosely; `pse_censored` = 1 means the fit did not plateau within the session; |shape_daic| < 2
 is no evidence either way.
 
-The expert-Uniform baseline (`expert_pse`, and the sigma and lapses used for `pse_fixed` and `normative_pse`)
-comes from the `expert_uniform` preset: Uniform sessions except masking, washout and ALM, the last half of them,
+The expert-Uniform baseline (`expert_pse`, the sigma of `normative_pse`, and the sigma and lapses used for
+`pse_fixed` and for the Uniform phase) comes from the `expert_uniform` preset: Uniform sessions except masking, washout and ALM, the last half of them,
 accuracy >= 0.70, then the last 5, laser-off trials only. For the opto cohort these are mostly laser sessions.
 The plan was to take the baseline from masking sessions only; that is not done yet. `Settings.baseline_*`
 changes it.
@@ -129,36 +131,53 @@ changes it.
 How fast the criterion follows a change of distribution, in both Hard designs: each switch into Hard-A or Hard-B
 is the start of a block of at least 1000 trials (pre-opto cohorts; short excursions folded into their
 neighbours) or, in the daily alternation (opto Hard phase), each day (`design` = blocked | daily, decided per
-animal by the median run of days on one distribution). Measured one way: the criterion with sigma and lapses
-fixed at the animal's expert-Uniform fit, as its 50 % point, in running 50-trial windows; 0 = the criterion over
-the last 250 trials before the switch, 1 = the normative criterion at the animal's expert-Uniform σ; not clipped;
-a window at the ±1 edge is missing. In the daily design a laser day is measured on laser-off trials (its own and
-the day before's; `trials` = non_opto). `switch_kind`: blocks — the transition (first = Uniform→Hard, novel,
-return); days — first day, laser day (after a laser day), masking day (after a masking day) or mixed day.
+animal by the median run of days on one distribution). The curve: the criterion with sigma and lapses fixed at
+the fit of its phase (one 4-parameter fit on the phase's pooled trials: the block, or every day of one
+distribution and session type in the daily alternation; the Uniform phase takes the expert-Uniform fit), as its
+50 % point, in running 50-trial windows; 0 = the criterion over the last 250 trials before the switch (with the
+previous phase's shape), 1 = the normative criterion at the animal's expert-Uniform σ; not clipped; a window at
+the ±1 edge is missing. One shape for every phase would show a change of slope or lapses between phases as a
+criterion shift (up to 0.09 in the blocked mice). In the daily design a laser day is measured on laser-off
+trials (its own and the day before's; `trials` = non_opto). `switch_kind`: blocks — the transition (first =
+Uniform→Hard, novel, return); days — first day, laser day (after a laser day), masking day (after a masking day)
+or mixed day.
+
+The result per mouse depends on the design. Days: `convergence_100_300`, the curve averaged over trials 100-300,
+five or six days of one kind combined. Blocks: `block_convergence` = (the block's pooled PSE − the previous
+phase's) / (the normative shift), from 4-parameter fits on thousands of trials: 1 = moved with the distribution by
+the normative amount, 0 = did not move. A mouse has one block switch of each kind, the distance to go can be
+0.01-0.06 and a 50-trial window moves by 0.3-0.6, so the curve's numbers do not hold for one block. A slow
+upward drift of the criterion across days adds to Hard-B → Hard-A and works against Hard-A → Hard-B, so a mouse
+that moves with Hard-A → Hard-B does so despite it.
 
 `switches.csv`: one row per animal × switch × stat — `pre_*` (last 250 trials before the switch: the
-4-parameter fit, and `pre_pse_pinned`, the criterion), `normative_pse`, the `pse_dynamics` fit on the block
-(shape fixed), `trials_to_criterion` (first running window at ≥ 80 % convergence), `plateau` (mean over the
-last third), `convergence_100_300` (mean over windows centred on trials 100-300), `pse_post` and
-`convergence_final` (the last 250 trials of the block or day), `span` (|normative - before|). `animals.csv`: one
-number per animal × kind of switch — its switches combined weighted by span (the distance moved over the
-distance to go, summed), which the plain mean of ratios is not: a switch with almost nothing to converge to
-would swamp it. `convergence.csv`: one row per animal × switch × method × window — `manuscript` (4-parameter
-fit per 50-trial bin, `convergence_clipped` to [0, 1], the Fig. 5C recipe, for comparison), `pinned` (the
-criterion per bin), `pinned_running` (the curve the pages and the thesis use). `sessions.csv`: per session in
-the block. `overnight.csv`: the criterion over the last 100 trials of a session vs the first 100 of the next;
-`toward_pre` signs the change by the direction of the switch (> 0 = back towards the previous distribution).
-`psychometrics.csv` / `psychometric_curves.csv`: one 4-parameter fit per animal × phase (the pre-switch Uniform
-block, each block in order for the blocked design, all Hard-A / all Hard-B pooled). `bias.csv`: the one bias
-check — every Hard session on laser-off trials, `flagged` when |criterion| > 0.4, a lapse > 0.3 or accuracy
-< 0.6, and `biased_animal` when more than half are flagged leaning the same way on Hard-A and Hard-B (settings
-in `adaptation.BiasRule`); `sessions.csv` carries the same flags. `pre_post.csv` (blocks): the criterion over
-the last 250 trials before each switch vs the last 250 of the block, and the block-pooled 4-parameter PSEs.
-Pages of `summary_switches.pdf`, in order: the bias check; psychometrics by phase (clean animals); how fast the
-criterion moves, one page per design (curves with 95 % t intervals over mice, one number per mouse, and for
-blocks where the Hard-A → Hard-B block ends — the slow upward drift works against that switch); for blocks the
-PSE before/after each switch, the manuscript recipe and speed/shape/overnight/drift by transition; then the
-same for all animals. `pdf/<animal>_switches.pdf`: convergence per switch; psychometrics by phase.
+4-parameter fit, `pre_pse_pinned`, the criterion, and `pre_shape_*`, the previous phase's shape),
+`normative_pse`, `normative_from` (before the switch), the `pse_dynamics` fit on the block (the phase's shape,
+`shape_*`), `trials_to_criterion` (first running window at ≥ 80 % convergence), `plateau` (mean over the last
+third), `convergence_100_300` (mean over windows centred on trials 100-300), `pse_post` and `convergence_final`
+(the last 250 trials of the block or day), `span` (|normative - before|). `animals.csv`: one number per animal ×
+kind of switch — days: `convergence_100_300` and `convergence_final`, the days combined weighted by span (the
+distance moved over the distance to go, summed), which the plain mean of ratios is not: a switch with almost
+nothing to converge to would swamp it; blocks: `block_convergence` (the mean over the kind's switches), the
+curve's numbers left empty. `convergence.csv`: one row per animal × switch × method × window — `manuscript`
+(4-parameter fit per 50-trial bin, `convergence_clipped` to [0, 1], the Fig. 5C recipe, for comparison),
+`pinned` (the criterion per bin), `pinned_running` (the curve the pages and the thesis use). `sessions.csv`: per
+session in the block. `overnight.csv`: the criterion over the last 100 trials of a session vs the first 100 of
+the next; `toward_pre` signs the change by the direction of the switch (> 0 = back towards the previous
+distribution). `psychometrics.csv` / `psychometric_curves.csv`: one 4-parameter fit per animal × phase (the
+pre-switch Uniform block, each block in order for the blocked design, all Hard-A / all Hard-B pooled).
+`bias.csv`: the one bias check — every Hard session on laser-off trials, `flagged` when |criterion| > 0.4 (the
+location with the expert-Uniform shape), a lapse > 0.3 or accuracy < 0.6, and `biased_animal` when more than
+half are flagged leaning the same way on Hard-A and Hard-B (settings in `adaptation.BiasRule`); `sessions.csv`
+carries the same flags. `pre_post.csv` (blocks): the block-pooled 4-parameter PSEs before (`pse_pre`; the last
+5 Uniform sessions before the first switch) and after (`pse_post`), `delta`, `normative_from`, `normative_pse`,
+`normative_shift`, `block_convergence` (empty when either PSE lies outside ±1, the stimulus range: the mouse chose
+mostly one side), and the criterion over the last 250 trials on each side.
+Pages of `summary_switches.pdf`, in order: the bias check; psychometrics by phase (clean animals); one page per
+design (the curves: for days with 95 % t intervals over mice, for blocks the mean alone, a description; one number per mouse: days
+`convergence_100_300`, blocks `block_convergence` by direction); for blocks the PSE before/after each switch,
+the manuscript recipe and speed/shape/overnight/drift by transition; then the same for all animals.
+`pdf/<animal>_switches.pdf`: convergence per switch; psychometrics by phase.
 
 ## Reading the summary pages
 

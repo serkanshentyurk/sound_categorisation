@@ -3,6 +3,38 @@
 
 ## Unreleased
 
+- **Each phase's own shape for the criterion; blocks judged by their whole-block fit** (agreed 18 November 2026).
+  - The criterion is fitted with the slope and lapses of its phase, not the expert-Uniform ones: one 4-parameter
+    fit on the phase's pooled trials (`phase_shape`), a phase being a block of days or, in the daily alternation,
+    every day of one distribution and session type (`phase_shapes`; laser days on laser-off trials); the Uniform
+    phase keeps the expert-Uniform fit, and the criterion before a switch takes the previous phase's shape. Some
+    blocked mice change their lapses between phases (SS05: lower lapse 0.20 in Hard-A, upper 0.20 in Hard-B), and
+    one shape for every phase read that as a criterion shift: −0.09 on SS05's Hard-A − Hard-B, −0.08 on SS09's first
+    switch, −0.04 on SS07; 0.02 or less in the opto mice. In simulation with SS05's shapes the expert shape reads
+    Hard-A − Hard-B as −0.235 against a true −0.162; each phase's shape reads −0.148 (six seeds). The cost is
+    precision: Hard stimuli sit near the boundary and pin the lapses down loosely, so a phase's shape carries its
+    own error. In simulation of opto-like mice (lapses the same in every phase, 400 trials a day, 40 mice per
+    case) neither rule is biased, and the per-mouse spread of `convergence_100_300` (robust SD) goes from 0.16 to
+    0.19 on masking days at half-following, 0.09 to 0.13 at full following, 0.30 to 0.45 on laser days with no
+    following. For the opto mice the old shape's bias was 0.02 or less, so for days the two rules are close; for
+    blocks the bias was the larger error. The shapes are
+    in `trajectory.csv` (`shape_*`) and `switches.csv` (`pre_shape_*`, `shape_*`). The bias check keeps the
+    expert-Uniform shape (a coarse |criterion| > 0.4 screen; the excluded mice do not move with the method).
+  - Blocks: the result per mouse is `block_convergence` (`pre_post.csv`, `animals.csv`): the whole block's pooled
+    PSE − the previous phase's, over the normative shift, from 4-parameter fits on thousands of trials; empty when
+    either PSE lies outside ±1. The curve's `convergence_100_300` and `convergence_final` are no longer given per
+    mouse for blocks (one switch per kind, spans of 0.01–0.06 against window noise of 0.3–0.6 put them between
+    −3.6 and +7.8); the curve stays as a description (the mean over mice, no interval). The blocked speed page shows
+    `block_convergence` by direction, Hard-A → Hard-B being the switch the slow upward drift works against. `SwitchResult.normative_from`;
+    `switches.block_table`; `meta.json` records `criterion_shape: phase`.
+  - `compute_switch(shape=…)` is now `expert_shape=…` (the Uniform phase's shape); the switch report's
+    `sessions.csv` drops `pse_fixed` (the bias check's column lives in `bias.csv`).
+  - Notebook 13 (Fig 3.6) shows days by `convergence_100_300` and blocks by `block_convergence`; its curve panel
+    shows the days alone (on the real tables the blocked curve swung between −1 and 2 and hid them); notebook 21,
+    START_HERE and the notebooks README reword the claim: the opto mice followed the daily switch partly at most,
+    and in the blocks one clean mouse followed, two partly, one until one-sided, one the wrong way.
+  - `reports/summary.py` skips header-only CSVs when gathering tables (pandas' FutureWarning on empty frames).
+
 - **One adaptation measure for both Hard designs; the timescale analysis removed** (agreed 18 November 2026).
   `behaviour/adaptation.py` measures how fast the criterion follows the distribution one way for the switch
   report and the battery: the criterion is the 50 % point with slope and lapses fixed at the expert-Uniform fit

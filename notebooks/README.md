@@ -16,9 +16,9 @@ on the Hard phases.
 | `10_expert_behaviour` | expert Uniform behaviour without light: psychometrics, history effects, update matrices, all mice | the snapshot (computes point estimates) |
 | `11_model_identification` | BE or SC per animal (descriptive): the all-mice run, synthetic recovery as the check | `model_identification/<cohort>/latest` |
 | `12_switch_adaptation` | the criterion after a distribution switch (blocks): shift, convergence (Fig. 5C), overnight, did it follow the distribution | `switch_adaptation/<cohort>/latest` |
-| `13_adaptation_speed` | how fast the criterion follows the distribution in both designs (chapter 3, Fig 3.6): the steadied Fig. 5C curve for blocks and days, one number per mouse (trials 100–300), where the Hard-A → Hard-B block ends, overnight | `switch_adaptation/<cohort>/latest` for both cohorts |
+| `13_adaptation_speed` | whether and how fast the criterion follows the distribution in both designs (chapter 3, Fig 3.6): the steadied Fig. 5C curve for days, one number per mouse (days: trials 100–300; blocks: the whole block's share of the normative shift, by direction), the blocks switch by switch, overnight | `switch_adaptation/<cohort>/latest` for both cohorts |
 | `20_opto_expert` | PPC inactivation in experts, the light itself (light-artefact report), ALM specificity, WT vs HET, equivalence | `opto_contrasts/…/latest`, `light_artefact/…/latest` |
-| `21_opto_hard` | opto on the Hard phases and the per-session trajectory (no adaptation to disrupt) | `opto_contrasts/<cohort>/latest` |
+| `21_opto_hard` | opto on the Hard phases and the per-session trajectory (partial adaptation at most to disrupt) | `opto_contrasts/<cohort>/latest` |
 | `90_sbi_feature_selection` | appendix: choosing the SBI summary-statistic vector (simulates; slow; cached) | nothing |
 | `91_sbi_validation` | appendix: SBI networks against the current code, calibration and coverage, parameter and model recovery (synthetic cohort, both consensus rules), the real animals' σ and calls | `model_identification/synthetic_uniform_k50/latest` (`tables/`, `network_check/`) |
 | `dev/` | model explorers, not maintained against the current API | — |

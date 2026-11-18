@@ -192,7 +192,13 @@ def test_switches_pipeline(exp, tmp_path):
                       'bias', 'animals'}
     assert {'animal', 'switch_idx', 'transition', 'design', 'switch_kind', 'trials', 'stat', 'value'} <= set(T['switches'].columns)
     assert set(T['pre_post']['animal']) == {'SB00', 'SB01'}                  # before/after per block: blocks only
+    assert {'normative_from', 'normative_shift', 'block_convergence'} <= set(T['pre_post'].columns)
     assert {'masking day', 'laser day'} <= set(T['animals'].loc[T['animals']['animal'] == 'ST00', 'switch_kind'])
+    an = T['animals']                                                         # the result for each design, the other left empty
+    assert an.loc[an['design'] == 'blocked', ['convergence_100_300', 'convergence_final']].isna().all().all()
+    assert an.loc[an['design'] == 'daily', 'block_convergence'].isna().all()
+    assert an.loc[(an['design'] == 'daily') & (an['switch_kind'] == 'masking day'), 'convergence_100_300'].notna().all()
+    assert {'pre_shape_sigma', 'shape_sigma', 'normative_from'} <= set(T['switches']['stat'])
     one = bias_sessions(exp.animals['ST00'])                                   # the one bias check, as the report has it
     assert T['bias'].loc[T['bias']['animal'] == 'ST00', 'flagged'].tolist() == one['flagged'].tolist()
     from sound_categorisation.data.paths import start_run

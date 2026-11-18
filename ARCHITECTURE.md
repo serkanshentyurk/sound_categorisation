@@ -43,11 +43,14 @@ behaviour/
                      never draw the same sessions. equivalence_verdict reads an interval against a margin
                      set in advance (settings.EQUIVALENCE_MARGINS); the report writes equivalence.csv.
   adaptation.py      how fast the criterion follows the distribution, measured one way everywhere: the
-                     criterion as the 50 % point with slope and lapses fixed at the expert-Uniform fit
-                     (pinned_pse; a fit at the ±1 edge is missing), its curve in running 50-trial windows
-                     (criterion_curve), convergence from the criterion before the switch (0) to the normative
-                     one (1), unclipped, and convergence_100_300; switches combined weighted by span
-                     (pool_convergence). compute_trajectory(animal, distributions) -> Trajectory: one row per
+                     criterion as the 50 % point with slope and lapses fixed at the fit of its phase
+                     (pinned_pse with phase_shape / phase_shapes: a block, or the days of one distribution
+                     and session type; Uniform takes the expert-Uniform fit; a fit at the ±1 edge is missing),
+                     its curve in running 50-trial windows (criterion_curve), convergence from the criterion
+                     before the switch (0) to the normative one (1), unclipped, and convergence_100_300 (the
+                     result for days); switches combined weighted by span (pool_convergence);
+                     block_convergence, a whole block's move as a share of the normative shift (the result
+                     for blocks). compute_trajectory(animal, distributions) -> Trajectory: one row per
                      session in order (the battery); compute_switches / SwitchResult: every switch into a Hard
                      distribution, a block of days or one day of the alternation (hard_design decides;
                      the switch report); BiasRule, bias_sessions: the one bias check every report uses

@@ -109,10 +109,12 @@ Instead of pooling the six Hard-A sessions, these rows show every session in the
   Hard-B days. If the animals were tracking the daily switch, blue and orange would alternate up and down.
 - **Row 5** — the change in PSE from the previous day: the size of each switch. A tracking animal alternates
   sign day by day.
-- **Row 6** — the criterion again (the 50 % point), but fitted with the curve's slope and lapses held fixed at
-  the animal's Uniform values, so only the criterion can move. This is the steadier estimate when sessions are
-  short and noisy. A session where the fit ends at the edge of the stimulus range (the mouse chose mostly one
-  side) has no value here.
+- **Row 6** — the criterion again (the 50 % point), but fitted with the curve's slope and lapses held fixed, so
+  only the criterion can move. The slope and lapses are those of the day's kind: all the animal's days of that
+  distribution and session type pooled (Hard-A masking days, say), because some mice change their lapses between
+  the distributions, and one shape for all of them would show that as a criterion shift. This is the steadier
+  estimate when sessions are short and noisy. A session where the fit ends at the edge of the stimulus range (the
+  mouse chose mostly one side) has no value here.
 - The dotted vertical line is where the laser sessions end and the masking sessions begin.
 
 Two further numbers in `trajectory.csv` are **not** on the summary pages because they turned out to be
@@ -132,21 +134,29 @@ animals lived in each distribution for many sessions (Uniform → Hard-B → Har
 is the start of a block; in the opto cohort's Hard phase the distribution alternated every day, so each day is a
 switch (laser days measured on their laser-off trials). After each switch the criterion moves from where it was
 (0: over the last 250 trials before the switch) towards the value an ideal observer would adopt (1). The criterion
-is fitted with the curve's slope and lapses held at the animal's Uniform values, in running 50-trial windows, and
-not clipped; a window where the fit ends at the edge of the stimulus range (the mouse chose mostly one side) is
-left out. One number per mouse and kind of switch, `convergence_100_300`, averages trials 100–300 after the
-switch: inside the first day, so the slow drift of the criterion across days hardly enters. A mouse's switches
-of one kind are combined weighted by how far there was to go, so a switch with almost nothing to converge to
-cannot swamp the average.
+is fitted with the curve's slope and lapses held at those of its phase — the block, or all the days of one
+distribution and session type — in running 50-trial windows, and not clipped; a window where the fit ends at the
+edge of the stimulus range (the mouse chose mostly one side) is left out. Holding one shape (the Uniform one) for
+every phase would read a change of lapses between phases as a criterion shift: up to 0.09 in the blocked mice.
+
+The one number per mouse and kind of switch depends on the design. For days, `convergence_100_300` averages
+trials 100–300 after the switch: inside the first day, so the slow drift of the criterion across days hardly
+enters; a mouse's five or six days of one kind are combined weighted by how far there was to go, so a day with
+almost nothing to converge to cannot swamp the average. For blocks, `block_convergence` compares the whole
+block's PSE with the previous phase's (each a 4-parameter fit on thousands of trials) and divides by how far the
+ideal observer's criterion moved: 1 = moved by the normative amount, 0 = did not move. The curve's numbers do not
+hold for one block: a mouse has one switch of each kind, the distance still to go can be 0.01–0.06, and a
+50-trial window moves by 0.3–0.6 either way. A block whose PSE lies outside the stimulus range is not a
+measurement and is left empty.
 
 Page 1 is the bias check (`bias.csv`): every animal's Hard sessions in order, with accuracy, the criterion and
 lapses, and a flag where the psychometric has collapsed. An animal whose Hard sessions are mostly flagged and lean
 the same way on A and B days sticks to one side; it is marked BIASED, and the same list is used by every report.
-Then the psychometrics by phase without the biased animals. Then, one page per design, how fast the criterion
-moves: the curve after a switch per kind of switch (mean over mice with a 95 % interval), the one number per
-mouse, and for blocks where the Hard-A → Hard-B block ends — the criterion drifts slowly upwards across days,
-which works against that switch, so a mouse that ends above 0 there moved with the distribution despite the
-drift. For blocks there follow the criterion before and after each switch, the manuscript's recipe (a full
+Then the psychometrics by phase without the biased animals. Then one page per design: the curve after a switch
+per kind of switch (mean over mice, with a 95 % interval for days; for blocks the mean alone, a description) and the one number per mouse —
+for blocks by direction of switch. The criterion drifts slowly upwards across days, which works against
+Hard-A → Hard-B, so a mouse above 0 there moved with the distribution despite the drift. For blocks there follow
+the criterion before and after each switch, the manuscript's recipe (a full
 4-parameter fit on each 50-trial bin, clipped to 0–1, as Fig. 5C did; the clipping pushes noisy bins upward), and
 per switch τ, trials to 80 %, the plateau, gradual-vs-step, the overnight change and the drift within a block.
 The overnight change is signed by the direction of the switch (> 0 = back towards the previous distribution);

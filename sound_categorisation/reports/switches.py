@@ -6,15 +6,27 @@ Switch report: how fast the criterion follows a change of stimulus distribution,
 
 Per animal, ``adaptation.compute_switches``: every switch into a Hard distribution, which is the start of a
 block of at least 1000 trials or, in the daily alternation, each day (``adaptation.hard_design`` decides per
-animal), measured one way: the criterion with the shape fixed at the animal's expert-Uniform fit, in running
-50-trial windows, 0 = the criterion before the switch, 1 = the normative criterion, not clipped. In the daily
-design a laser day is measured on laser-off trials. The manuscript's Fig. 5C recipe stays beside it for
-comparison. ``bias.csv`` is ``adaptation.bias_sessions``, the one bias check every report uses.
+animal), measured one way: the criterion with slope and lapses fixed at the fit of its phase (the block, or
+the days of one distribution and session type), in running 50-trial windows, 0 = the criterion before the
+switch, 1 = the normative criterion, not clipped. In the daily design a laser day is measured on laser-off
+trials. The manuscript's Fig. 5C recipe stays beside it for comparison. ``bias.csv`` is
+``adaptation.bias_sessions``, the one bias check every report uses.
+
+One number per mouse and kind of switch (``animals.csv``), by design:
+    daily    ``convergence_100_300``: the curve averaged over trials 100-300 of the day, a mouse's five or six
+             days of one kind combined weighted by span.
+    blocked  ``block_convergence``: the whole block's 4-parameter fit against the previous phase's, as a share
+             of the normative shift (``adaptation.block_convergence``); empty when either PSE lies outside the
+             stimulus range (the mouse chose mostly one side). A mouse has one switch of each kind, the
+             distance to go can be 0.01-0.06 and a 50-trial window moves by 0.3-0.6, so the curve's numbers do not
+             hold for one block; the curve stays as a description. A slow drift of the criterion across days
+             adds to Hard-B → Hard-A and works against Hard-A → Hard-B, so the latter is the check that drift
+             cannot fake.
 
 Writes into ``<run>/switches/``: switches.csv, convergence.csv, sessions.csv, overnight.csv, pre_post.csv
-(blocks), psychometrics.csv, psychometric_curves.csv, bias.csv, animals.csv (one number per animal and kind
-of switch: ``convergence_100_300``), per-animal PDFs and summary_switches.pdf. Notebook 13 draws chapter 3's
-Fig 3.6 from one run per cohort.
+(blocks: the pooled fits before and after, ``block_convergence``), psychometrics.csv, psychometric_curves.csv,
+bias.csv, animals.csv, per-animal PDFs and summary_switches.pdf. Notebook 13 draws chapter 3's Fig 3.6 from
+one run per cohort.
 """
 
 from __future__ import annotations
@@ -40,6 +52,7 @@ from sound_categorisation.behaviour.adaptation import (
     BiasRule,
     SwitchResult,
     bias_sessions,
+    block_convergence,
     compute_phase_curves,
     compute_switches,
     design_switches,
@@ -49,17 +62,19 @@ from sound_categorisation.behaviour.adaptation import (
 from sound_categorisation.reports.tables import write_result
 
 __all__ = ['SwitchesResult', 'compute_switches_cohort', 'switch_tables', 'switches_summary', 'run_switches',
-           'pooled_curve', 't_interval', 'LEVEL', 'DAY_KINDS', 'BLOCK_KINDS']
+           'pooled_curve', 't_interval', 'block_table', 'LEVEL', 'DAY_KINDS', 'BLOCK_KINDS', 'DIRECTIONS']
 
 LEVEL = 0.95
 BLOCK_KINDS = ('first', 'novel', 'return')          # blocked design: switch_kind = the transition
 DAY_KINDS = ('masking day', 'laser day')            # daily design: the two kinds the summary compares
+DIRECTIONS = ('Uniform → Hard-B', 'Hard-B → Hard-A', 'Hard-A → Hard-B')   # blocked switches, in schedule order
 TRANS_COL = {'first': '#7f7f7f', 'novel': '#1f77b4', 'return': '#ff7f0e'}
 KIND_COL = {**TRANS_COL, 'masking day': '#2ca02c', 'laser day': '#d62728', 'first day': '#7f7f7f',
             'mixed day': '#9467bd'}
+DIRECTION_COL = dict(zip(DIRECTIONS, ('#7f7f7f', '#1f77b4', '#ff7f0e')))
 METHOD_TITLE = {'manuscript': 'manuscript method: 4-parameter fit per 50-trial bin, clipped to [0, 1]',
-                'pinned': 'shape fixed (only the criterion fitted per 50-trial bin), unclipped',
-                'pinned_running': 'shape fixed, running 50-trial windows (step 10), unclipped'}
+                'pinned': "shape fixed at the phase's fit (only the criterion fitted per 50-trial bin), unclipped",
+                'pinned_running': "shape fixed at the phase's fit, running 50-trial windows (step 10), unclipped"}
 SWITCH_LABELS = ['animal', 'switch_idx', 'from_distribution', 'to_distribution', 'transition', 'design',
                  'switch_kind', 'trials', 'session_type', 'prev_session_type']
 
@@ -142,19 +157,31 @@ def _wide(sw: pd.DataFrame) -> pd.DataFrame:
     return sw.groupby(SWITCH_LABELS + ['stat'], dropna=False)['value'].first().unstack('stat').reset_index()
 
 
-def _animal_summary(sw: pd.DataFrame, bias: pd.DataFrame) -> pd.DataFrame:
-    """One row per animal × design × kind of switch: the switches combined by ``pool_convergence``."""
-    cols = ['animal', 'design', 'switch_kind', 'n_switches', 'convergence_100_300', 'convergence_final', 'biased_animal']
+def _animal_summary(sw: pd.DataFrame, bias: pd.DataFrame, pre_post: pd.DataFrame | None = None) -> pd.DataFrame:
+    """One row per animal × design × kind of switch, the result for its design (module notes): daily, the curve's
+    ``convergence_100_300`` and ``convergence_final``, the days combined by ``pool_convergence``; blocked, the
+    mean ``block_convergence`` of the kind's switches (from ``pre_post``), the curve's numbers left empty."""
+    cols = ['animal', 'design', 'switch_kind', 'n_switches', 'convergence_100_300', 'convergence_final',
+            'block_convergence', 'biased_animal']
     w = _wide(sw)
     if not len(w):
         return pd.DataFrame(columns=cols)
     for c in ('convergence_100_300', 'convergence_final', 'span'):
         if c not in w:
             w[c] = np.nan
-    rows = [{'animal': a, 'design': d, 'switch_kind': k, 'n_switches': len(g),
-             'convergence_100_300': pool_convergence(g['convergence_100_300'], g['span']),
-             'convergence_final': pool_convergence(g['convergence_final'], g['span'])}
-            for (a, d, k), g in w.groupby(['animal', 'design', 'switch_kind'])]
+    pp = pre_post if pre_post is not None and len(pre_post) else pd.DataFrame(columns=['animal', 'switch_idx', 'block_convergence'])
+    rows = []
+    for (a, d, k), g in w.groupby(['animal', 'design', 'switch_kind']):
+        row = {'animal': a, 'design': d, 'switch_kind': k, 'n_switches': len(g), 'convergence_100_300': np.nan,
+               'convergence_final': np.nan, 'block_convergence': np.nan}
+        if d == 'blocked':
+            b = pd.to_numeric(pp.loc[(pp['animal'] == a) & pp['switch_idx'].isin(g['switch_idx']), 'block_convergence'],
+                              errors='coerce').dropna()
+            row['block_convergence'] = float(b.mean()) if len(b) else np.nan
+        else:
+            row['convergence_100_300'] = pool_convergence(g['convergence_100_300'], g['span'])
+            row['convergence_final'] = pool_convergence(g['convergence_final'], g['span'])
+        rows.append(row)
     out = pd.DataFrame(rows)
     biased = bias.groupby('animal')['biased_animal'].first().astype(bool) if len(bias) else pd.Series(dtype=bool)
     out['biased_animal'] = out['animal'].map(biased).fillna(False).astype(bool)
@@ -174,8 +201,8 @@ def switch_tables(g: SwitchesResult) -> Dict[str, pd.DataFrame]:
             over.append(r.overnight.assign(**key))
     bias = g.bias.assign(**lab) if len(g.bias) else pd.DataFrame(columns=BIAS_COLUMNS + ['cohort'])
     sw = _cat(rows)
-    # pre/post per blocked switch: the block-pooled 4-parameter fits (robust) and the criterion over the
-    # last 250 trials on each side (shape fixed)
+    # pre/post per blocked switch: the block-pooled 4-parameter fits (all four parameters free: the result for
+    # blocks) and the criterion over the last 250 trials on each side (each phase's shape)
     pre_post = pd.DataFrame()
     blocked = sw[sw['design'] == 'blocked'] if len(sw) else sw
     if len(blocked) and len(g.phase_params):
@@ -184,18 +211,24 @@ def switch_tables(g: SwitchesResult) -> Dict[str, pd.DataFrame]:
         pp = pv[keys].copy()
         pp['pse_pre_last250'] = pv.get('pre_pse_pinned')
         pp['pse_post_last250'] = pv.get('pse_post')
+        pp['normative_from'] = pv.get('normative_from', np.nan)
         pp['normative_pse'] = pv.get('normative_pse')
         P = g.phase_params
         pooled = {(r.animal, int(r.order)): r.pse for r in P.itertuples()}   # order 0 = Uniform ref, k = switch k-1's block
-        pp['pse_pre'] = [pooled.get((a, int(k))) for a, k in zip(pp['animal'], pp['switch_idx'])]
-        pp['pse_post'] = [pooled.get((a, int(k) + 1)) for a, k in zip(pp['animal'], pp['switch_idx'])]
+        pp['pse_pre'] = [pooled.get((a, int(k)), np.nan) for a, k in zip(pp['animal'], pp['switch_idx'])]
+        pp['pse_post'] = [pooled.get((a, int(k) + 1), np.nan) for a, k in zip(pp['animal'], pp['switch_idx'])]
         pp['delta'] = pp['pse_post'] - pp['pse_pre']
+        pp['normative_shift'] = pp['normative_pse'] - pp['normative_from']
+        # a PSE outside the stimulus range (the mouse chose mostly one side) is not a measurement, as for the windows
+        inside = (pp['pse_pre'].abs() <= 1) & (pp['pse_post'].abs() <= 1)
+        pp['block_convergence'] = np.where(inside, block_convergence(pp['delta'], pp['normative_from'], pp['normative_pse']),
+                                           np.nan)
         pre_post = pp.assign(**lab)
     return {'switches': sw, 'pre_post': pre_post, 'convergence': _cat(conv),
             'sessions': _with_flags(_cat(sess), bias), 'overnight': _cat(over),
             'psychometrics': g.phase_params.assign(**lab) if len(g.phase_params) else pd.DataFrame(),
             'psychometric_curves': g.phase_curves.assign(**lab) if len(g.phase_curves) else pd.DataFrame(),
-            'bias': bias, 'animals': _animal_summary(sw, bias).assign(**lab)}
+            'bias': bias, 'animals': _animal_summary(sw, bias, pre_post).assign(**lab)}
 
 
 # ── group statistics (read tables only) ─────────────────────────────────────
@@ -231,6 +264,20 @@ def _group_curve(conv: pd.DataFrame) -> pd.DataFrame:
     per = pooled_curve(conv)
     rows = [(t, *t_interval(g['convergence'])) for t, g in per.groupby('trial')]
     return pd.DataFrame(rows, columns=['trial', 'mean', 'lo', 'hi', 'n'])
+
+
+def block_table(pre_post: pd.DataFrame) -> pd.DataFrame:
+    """The result for blocks: per mouse and direction of switch ('Uniform → Hard-B', …), the mean
+    ``block_convergence`` of its switches in that direction; columns animal, direction, n_switches,
+    block_convergence, directions in ``DIRECTIONS`` order (any other after them)."""
+    cols = ['animal', 'direction', 'n_switches', 'block_convergence']
+    if not len(pre_post) or 'block_convergence' not in pre_post:
+        return pd.DataFrame(columns=cols)
+    d = pre_post.assign(direction=pre_post['from_distribution'] + ' → ' + pre_post['to_distribution'],
+                        block_convergence=pd.to_numeric(pre_post['block_convergence'], errors='coerce'))
+    out = d.groupby(['animal', 'direction'])['block_convergence'].agg(n_switches='size', block_convergence='mean').reset_index()
+    rank = out['direction'].map({k: i for i, k in enumerate(DIRECTIONS)}).fillna(len(DIRECTIONS))
+    return out.assign(_rank=rank).sort_values(['_rank', 'animal']).reset_index(drop=True)[cols]
 
 
 # ── figures (read tables only) ──────────────────────────────────────────────
@@ -314,7 +361,7 @@ def convergence_page(T: Dict[str, pd.DataFrame], cohort: str, clean: bool = True
                  'normative = constant-σ observer at each mouse\'s expert-Uniform σ; mean ± 95 % t interval over mice', fontsize=10)
     fig.text(0.5, 0.01, 'The point at trial 1 is the pre-switch value and is 0 by definition (as in the manuscript). Each bin is clipped '
              'to [0, 1] before averaging; with noisy 50-trial fits this alone puts a bin near 0.5, so the level of the first fitted bin '
-             'is not an adaptation measure. The measure the report uses (shape fixed, unclipped) is on the speed page.',
+             "is not an adaptation measure. The report's measures (the phase's shape, unclipped; whole-block fits for blocks) are on the speed page.",
              ha='center', va='bottom', fontsize=8, color='0.3', wrap=True)
     fig.tight_layout(rect=(0, 0.07, 1, 1))
     return fig
@@ -335,17 +382,16 @@ def _dots(ax, i, values, colour):
 
 
 def speed_page(T: Dict[str, pd.DataFrame], cohort: str, design: str, clean: bool = True):
-    """How fast the criterion moves, the report's measure: the criterion with the shape fixed in running 50-trial
-    windows, 0 = before the switch, 1 = normative, unclipped. Each mouse's switches of one kind combined
-    (weighted by span), then mean ± 95 % t interval over mice; per mouse the mean over trials 100-300 (grey
-    band); for blocks, where the Hard-A → Hard-B block ends (drift works against it)."""
-    kinds = BLOCK_KINDS if design == 'blocked' else DAY_KINDS
+    """Whether and how fast the criterion follows the distribution (module notes). Left: the criterion after the
+    switch with each phase's shape, running 50-trial windows, 0 = before the switch, 1 = normative, unclipped;
+    a mouse's switches of one kind combined (weighted by span), then mean ± 95 % t interval over mice. Right, the
+    one number per mouse: for days the mean over trials 100-300 (grey band); for blocks the whole-block fit as a
+    share of the normative shift, by direction, Hard-A → Hard-B being the switch drift works against."""
+    blocked = design == 'blocked'
+    kinds = BLOCK_KINDS if blocked else DAY_KINDS
     conv = _subset(T['convergence'], T, clean)
     conv = conv[(conv['method'] == 'pinned_running') & (conv['design'] == design)]
-    an = _subset(T['animals'], T, clean)
-    an = an[an['design'] == design]
-    ncols = 3 if design == 'blocked' else 2
-    fig, axes = plt.subplots(1, ncols, figsize=(5.4 * ncols, 4.8), squeeze=False)
+    fig, axes = plt.subplots(1, 2, figsize=(11.6, 4.8), squeeze=False)
     axes = axes[0]
     ax = axes[0]
     for kind in kinds:
@@ -353,53 +399,62 @@ def speed_page(T: Dict[str, pd.DataFrame], cohort: str, design: str, clean: bool
         if not len(gc):
             continue
         c = KIND_COL.get(kind, '0.3')
-        ax.plot(gc['trial'], gc['mean'], color=c, lw=2, label=f'{kind} (n = {int(gc["n"].max())} mice)')
-        ax.fill_between(gc['trial'], gc['lo'], gc['hi'], color=c, alpha=0.15, lw=0)
-    ax.axvspan(100, 300, color='0.93', zorder=0)
+        ax.plot(gc['trial'], gc['mean'], color=c, lw=2 if not blocked else 1.4, label=f'{kind} (n = {int(gc["n"].max())} mice)')
+        if not blocked:                    # one switch of each kind per mouse: an interval would fill the panel
+            ax.fill_between(gc['trial'], gc['lo'], gc['hi'], color=c, alpha=0.15, lw=0)
+    if not blocked:
+        ax.axvspan(100, 300, color='0.93', zorder=0)
     ax.axhline(1, ls='--', color='k', lw=0.9)
     ax.axhline(0, color='0.6', lw=0.8)
     ax.set_xscale('log')
-    ax.set_xlim(20, 3000 if design == 'blocked' else 600)
-    ax.xaxis.set_major_locator(FixedLocator([25, 50, 100, 300, 1000, 3000] if design == 'blocked' else [25, 50, 100, 200, 400]))
+    ax.set_xlim(20, 3000 if blocked else 600)
+    ax.xaxis.set_major_locator(FixedLocator([25, 50, 100, 300, 1000, 3000] if blocked else [25, 50, 100, 200, 400]))
     ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f'{v:g}'))
     ax.xaxis.set_minor_formatter(NullFormatter())
     ax.set_ylim(-1, 2)
     ax.set_xlabel('trials after the switch (window centre, log scale)')
     ax.set_ylabel('convergence  (0 = before the switch, 1 = normative)')
-    ax.set_title('criterion after the switch, mean ± 95 % t interval over mice', fontsize=9)
+    ax.set_title('criterion after the switch, mean over mice\n(a description: one switch of each kind per mouse)'
+                 if blocked else 'criterion after the switch, mean ± 95 % t interval over mice', fontsize=9)
     ax.legend(frameon=False, fontsize=8, loc='upper left')
     ax = axes[1]
-    for i, kind in enumerate(kinds):
-        n = _dots(ax, i, an.loc[an['switch_kind'] == kind, 'convergence_100_300'], KIND_COL.get(kind, '0.3'))
-        ax.text(i, -0.95, f'n = {n}', ha='center', fontsize=8, color='0.4')
-    ax.set_xticks(range(len(kinds)))
-    ax.set_xticklabels(kinds)
+    if blocked:
+        bt = _subset(block_table(T.get('pre_post', pd.DataFrame())), T, clean)
+        groups = [k for k in DIRECTIONS if k in set(bt['direction'])] + sorted(set(bt['direction']) - set(DIRECTIONS))
+        for i, k in enumerate(groups):
+            n = _dots(ax, i, bt.loc[bt['direction'] == k, 'block_convergence'], DIRECTION_COL.get(k, '0.3'))
+            ax.text(i, -0.95, f'n = {n}', ha='center', fontsize=8, color='0.4')
+        ax.set_xticks(range(len(groups)))
+        ax.set_xticklabels([k.replace(' → ', ' →\n') + ('\n(drift works against)' if k == 'Hard-A → Hard-B' else '')
+                            for k in groups], fontsize=8)
+        ax.set_ylabel('share of the normative shift\n(block PSE − previous phase PSE)')
+        ax.set_title('whole-block fits (4 parameters free), one number per mouse;\nbar = mean, line = 95 % t interval', fontsize=9)
+        v = bt['block_convergence'].to_numpy(float)
+        v = v[np.isfinite(v)]
+        lims = (min(-1.0, v.min() - 0.3), max(2.0, v.max() + 0.3)) if v.size else (-1.0, 2.0)
+    else:
+        an = _subset(T['animals'], T, clean)
+        an = an[an['design'] == design]
+        for i, kind in enumerate(kinds):
+            n = _dots(ax, i, an.loc[an['switch_kind'] == kind, 'convergence_100_300'], KIND_COL.get(kind, '0.3'))
+            ax.text(i, -0.95, f'n = {n}', ha='center', fontsize=8, color='0.4')
+        ax.set_xticks(range(len(kinds)))
+        ax.set_xticklabels(kinds)
+        ax.set_ylabel('convergence over trials 100-300')
+        ax.set_title('one number per mouse; bar = mean, line = 95 % t interval', fontsize=9)
+        lims = (-1.0, 2.0)
     ax.axhline(1, ls='--', color='k', lw=0.9)
     ax.axhline(0, color='0.6', lw=0.8)
-    ax.set_ylim(-1, 2)
-    ax.set_ylabel('convergence over trials 100-300')
-    ax.set_title('one number per mouse; bar = mean, line = 95 % t interval', fontsize=9)
-    if design == 'blocked':
-        ax = axes[2]
-        w = _subset(_wide(T['switches']), T, clean)
-        ab = w[(w['design'] == 'blocked') & (w['from_distribution'] == 'Hard-A') & (w['to_distribution'] == 'Hard-B')]
-        per = [pool_convergence(g['convergence_final'], g['span']) for _, g in ab.groupby('animal')] if len(ab) else []
-        n = _dots(ax, 0, per, TRANS_COL['return'])
-        ax.set_xticks([0])
-        ax.set_xticklabels([f'Hard-A → Hard-B\n(n = {n} mice)'])
-        ax.axhline(1, ls='--', color='k', lw=0.9)
-        ax.axhline(0, color='0.6', lw=0.8)
-        ax.set_xlim(-1, 1)
-        ax.set_ylabel('convergence over the last 250 trials of the block')
-        ax.set_title('where the block ends; the slow upward drift works against\n'
-                     'this switch, so > 0 is evidence, ≈ 0 is not', fontsize=9)
+    ax.set_ylim(*lims)
+    for t in ax.texts:                                    # the n labels sit at the bottom
+        t.set_y(lims[0] + 0.05)
     for ax in axes:
         ax.spines[['top', 'right']].set_visible(False)
-    what = 'blocks of days' if design == 'blocked' else 'the daily alternation (laser days on laser-off trials)'
-    fig.suptitle(f'{cohort} — how fast the criterion follows the distribution: {what}; {_subset_label(T, clean)}.\n'
-                 'Criterion with the shape fixed at the expert-Uniform fit, running 50-trial windows, unclipped; '
-                 'a mouse\'s switches of one kind combined weighted by |normative − before|', fontsize=10)
-    fig.tight_layout()
+    what = 'blocks of days' if blocked else 'the daily alternation (laser days on laser-off trials)'
+    fig.suptitle(f'{cohort} — does the criterion follow the distribution: {what}; {_subset_label(T, clean)}.\n'
+                 'Curve: the criterion with slope and lapses fixed at the fit of its phase, running 50-trial windows, unclipped;\n'
+                 "a mouse's switches of one kind combined weighted by |normative − before|", fontsize=10)
+    fig.tight_layout(rect=(0, 0, 1, 0.9))
     return fig
 
 
@@ -428,7 +483,7 @@ def dynamics_page(T: Dict[str, pd.DataFrame], cohort: str, clean: bool = True):
         if col not in sw:
             sw[col] = np.nan
     fig, axes = plt.subplots(2, 3, figsize=(15, 8.5))
-    _swarm(axes[0, 0], sw, 'pse_tau', 'τ (trials) — exponential fit on the block, shape fixed', logy=True)
+    _swarm(axes[0, 0], sw, 'pse_tau', "τ (trials) — exponential fit on the block, the block's shape", logy=True)
     axes[0, 0].set_title('speed of the criterion shift (log)', fontsize=10)
     _swarm(axes[0, 1], sw, 'trials_to_criterion', 'trials to reach 80 % convergence (running windows)', logy=True)
     axes[0, 1].set_title('trials to criterion', fontsize=10)
@@ -467,7 +522,7 @@ def dynamics_page(T: Dict[str, pd.DataFrame], cohort: str, clean: bool = True):
         ax.axhline(0, color='0.6', lw=0.8)
         ax.legend(frameon=False, fontsize=8)
     ax.set_xlabel('session within the block')
-    ax.set_ylabel('criterion (shape fixed) − first session of the block')
+    ax.set_ylabel("criterion (the block's shape) − first session of the block")
     ax.set_title('within-block drift, session by session', fontsize=10)
     ax.spines[['top', 'right']].set_visible(False)
     fig.suptitle(f'{cohort} — blocked switches by transition, {_subset_label(T, clean)} (first = Uniform→Hard-B, novel = Hard-B→Hard-A, '
@@ -506,7 +561,7 @@ def animal_pages(results: List[SwitchResult], aid: str) -> list:
             ax = axes[row, 1]
             s = r.sessions
             if len(s):
-                ax.plot(s['order_in_block'], s['pse_pinned'], 'o-', color='#d62728', ms=4, label='criterion, shape fixed')
+                ax.plot(s['order_in_block'], s['pse_pinned'], 'o-', color='#d62728', ms=4, label="criterion, the phase's shape")
                 ax.plot(s['order_in_block'], s['pse'], 's--', color='0.5', ms=3, label='PSE, 4-parameter')
             ax.axhline(r.pre['pse_pinned'], color='0.3', ls=':', label='before the switch')
             ax.axhline(r.normative_pse, color='crimson', ls='--', label='normative')
@@ -535,7 +590,7 @@ def qc_page(T: Dict[str, pd.DataFrame], cohort: str):
         for dist, c in DIST_COL.items():
             m = (d['to_distribution'] == dist).to_numpy()
             ax.scatter(x[m], d.loc[m, 'accuracy'], s=14, color=c, label=dist if m.any() else None, zorder=3)
-        ax.plot(x, d['pse_fixed'].clip(-1.0, 1.0), '-', color='0.4', lw=1, label='criterion (shape fixed)')
+        ax.plot(x, d['pse_fixed'].clip(-1.0, 1.0), '-', color='0.4', lw=1, label='criterion (expert-Uniform shape)')
         ax.axhline(0.4, color='0.85', lw=0.6, ls='--')
         ax.axhline(-0.4, color='0.85', lw=0.6, ls='--')
         ax.axhline(0, color='0.85', lw=0.6)
@@ -677,11 +732,13 @@ def pre_post_page(T: Dict[str, pd.DataFrame], cohort: str, clean: bool = True):
             ax.errorbar([0, 1], [d['pse_pre'].mean(), d['pse_post'].mean()], yerr=[d['pse_pre'].sem(), d['pse_post'].sem()],
                         color='k', marker='s', ms=6, capsize=3, lw=1.5, zorder=4)
             delta = (d['pse_post'] - d['pse_pre'])
-            # direction of the switch: +1 when the new distribution is Hard-A (criterion should rise), -1 for Hard-B
-            direction = np.where(d['to_distribution'] == 'Hard-A', 1.0, -1.0)
+            # direction of the switch: the sign of the normative shift (the criterion should rise into Hard-A)
+            direction = (np.sign(d['normative_shift']).to_numpy() if 'normative_shift' in d
+                         else np.where(d['to_distribution'] == 'Hard-A', 1.0, -1.0))
             with_switch = np.sign(delta.to_numpy()) == direction
+            share = f", share of the normative shift {d['block_convergence'].mean():+.2f}" if 'block_convergence' in d else ''
             ax.set_title(f"{tr}: {' / '.join(sorted(set(d['from_distribution'])))} → {' / '.join(sorted(set(d['to_distribution'])))}\n"
-                         f"Δ = {delta.mean():+.2f}, moved with the switch in {int(with_switch.sum())}/{len(d)}", fontsize=9)
+                         f"Δ = {delta.mean():+.2f}{share}, moved with the switch in {int(with_switch.sum())}/{len(d)}", fontsize=9)
         ax.axhline(0, color='0.8', lw=0.7)
         ax.set_xticks([0, 1])
         ax.set_xticklabels(['before the switch\n(previous phase, pooled)', 'after the switch\n(whole block, pooled)'], fontsize=8)
@@ -731,7 +788,7 @@ def run_switches(experiment, animals: Sequence[str], run: Path, cohort: str, met
     (out / 'pdf').mkdir(parents=True, exist_ok=True)
     T = switch_tables(g)
     write_result(out, T, None, {**(meta or {}), 'animals': g.animals, 'designs': g.designs, 'kind': 'switches',
-                                'bias_rule': asdict(rule)})
+                                'criterion_shape': 'phase', 'bias_rule': asdict(rule)})
     for aid, results in g.results.items():
         with PdfPages(out / 'pdf' / f'{aid}_switches.pdf') as pdf:
             figs = animal_pages(results, aid) + ([psychometrics_animal_page(T, aid)] if len(T['psychometrics']) else [])

@@ -293,9 +293,13 @@ manuscript; ask Serkan or Athena Akrami for the current draft.
   is only partly shown: against margins set in advance, about 2 of 5 HET animals are within the margin for the
   criterion, accuracy and lapses, and every HET animal is unclear for the history statistics. Light alone
   shifts the criterion in WT animals, and the side bias in both genotypes (notebook 20).
-- Adaptation: the daily Hard-A/B alternation (opto1) produced none. The blocked switches (behaviour1) show a
-  partial shift, about half the ideal size, which the order of the blocks may partly explain. The opto cohort
-  did not adapt, so the post-shift prediction could not be tested.
+- Adaptation (notebook 13): in the daily Hard-A/B alternation (opto1, six clean mice) the criterion followed
+  partly at most — on masking days about 0.4 of the way to the new normative criterion over trials 100–300,
+  with a 95 % interval from about 0 to 0.8; two mice went most of the way. In the blocks (behaviour1, five clean
+  mice, whole-block fits) one mouse followed every switch by about the normative amount, two partly, one until
+  its last block went one-sided and one the wrong way; Hard-A → Hard-B, which the slow upward drift works
+  against, is the switch that tells following from drift. The post-shift prediction could not be tested
+  cleanly on either design.
 - Model identification on all mice (October 2026 run): 12 BE, 3 SC, 4 unclear; a description of the animals,
   too few for a BE/SC split of the opto effects. Superseded in Nov 2026: the networks were conditioned on CV halves
   (2–3 sessions) outside their 4–6-session training design, so they are retrained with the amount of data as an

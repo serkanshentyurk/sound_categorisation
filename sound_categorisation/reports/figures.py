@@ -204,9 +204,9 @@ def trajectory_page(r: AnimalResult, title: str):
     panels = [('pse', 'criterion (PSE) fitted per session, all trials'),
               ('delta_from_prev', 'PSE change from the previous day (switch amplitude)'),
               ('pse_tau_fixed', 'τ per session: trials for the within-session PSE to move ~63% of the way to its endpoint\n'
-                                '(exponential fit, shape pinned; × = did not plateau within the session)'),
+                                "(exponential fit, the phase's shape; × = did not plateau within the session)"),
               ('convergence_100_300', 'convergence over trials 100-300: 0 = the criterion at the end of the previous day, '
-                                      '1 = normative\n(shape fixed, running 50-trial windows, unclipped)')]
+                                      "1 = normative\n(the phase's shape, running 50-trial windows, unclipped)")]
     for ax, (y, lab) in zip(axes.ravel(), panels):
         if y not in sess:
             ax.set_visible(False)

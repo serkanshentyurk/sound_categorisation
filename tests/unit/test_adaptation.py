@@ -1,6 +1,7 @@
 """The adaptation measure shared by the switch report and the battery (behaviour/adaptation.py): the criterion as
-the 50 % point with the shape fixed, missing at the edge, convergence that reads 0 for no shift and 1 for a full
-one, switches combined by span, the overnight sign, the two Hard designs, and the one bias check."""
+the 50 % point with the shape fixed at its phase's fit, missing at the edge, convergence that reads 0 for no shift
+and 1 for a full one, switches combined by span, the whole-block share of the normative shift, the overnight sign,
+the two Hard designs, and the one bias check."""
 
 from datetime import date, timedelta
 
@@ -10,22 +11,30 @@ import pytest
 from behav_utils.data import AnimalData, SessionData, SessionMetadata, TrialArrays, TrialData
 from scipy.stats import norm
 from sound_categorisation.behaviour.adaptation import (
+    HARD,
     _pse_from_params,
     bias_sessions,
+    block_convergence,
     compute_switches,
     compute_trajectory,
     convergence,
     criterion_curve,
+    expert_reference,
     hard_design,
     mean_convergence,
+    phase_shape,
     pinned_pse,
     pool_convergence,
     pse_fixed,
 )
 from sound_categorisation.data.cohort import ensure_presets
+from sound_categorisation.data.stimuli import sample_distribution
 from sound_categorisation.reports.tables import _qc
 
 SHAPE = (0.4, 0.05, 0.2)        # unequal lapses: the 50 % point sits ~0.1 above the location parameter
+# a mouse whose lapses change between phases (SS05's pooled fits, rounded): Uniform, Hard-A, Hard-B
+U_SHAPE, A_SHAPE, B_SHAPE = (0.45, 0.15, 0.03), (0.31, 0.20, 0.03), (0.46, 0.11, 0.20)
+SHAPE_COLUMNS = ['shape_sigma', 'shape_lapse_low', 'shape_lapse_high']
 
 
 def _arrays(mu, n, rng, shape=SHAPE):
@@ -53,6 +62,27 @@ def _animal(schedule, n=300, sigma=0.3, lapses=(0.03, 0.08), seed=0):
                                     metadata=SessionMetadata(fields={'stage': 'Full_Task_Cont', 'distribution': dist}),
                                     trials=trials, session_type=stype))
     return AnimalData(animal_id='X', sessions=sessions, metadata={'genotype': 'wt'})
+
+
+def _phase_animal(schedule, n=400, seed=0):
+    """An animal whose sessions follow ``schedule`` = [(distribution, session_type, mu, shape), ...], with the
+    stimuli drawn from the distribution itself (the shape bias depends on where the stimuli fall)."""
+    ensure_presets()
+    rng = np.random.default_rng(seed)
+    sessions = []
+    for k, (dist, stype, mu, (sigma, lo, hi)) in enumerate(schedule):
+        s, c = sample_distribution(n, dist, rng=rng)
+        c = np.asarray(c, float)
+        p = lo + (1 - lo - hi) * norm.cdf((s - mu) / sigma)
+        ch = (rng.random(n) < p).astype(float)
+        trials = TrialData(trial_number=np.arange(n), stimulus=s, category=c, choice=ch, outcome=(ch == c).astype(float),
+                           correct=(ch == c), abort=np.zeros(n, bool),
+                           opto_on=rng.random(n) < (0.3 if stype in ('opto', 'masking') else 0.0),
+                           reaction_time=np.full(n, 300.0))
+        sessions.append(SessionData(session_id=f'{stype}{k}', session_idx=k, date=date(2024, 1, 1) + timedelta(days=k),
+                                    metadata=SessionMetadata(fields={'stage': 'Full_Task_Cont', 'distribution': dist}),
+                                    trials=trials, session_type=stype))
+    return AnimalData(animal_id='P', sessions=sessions, metadata={'genotype': 'wt'})
 
 
 def test_the_criterion_is_the_50_percent_point_not_the_location():
@@ -94,6 +124,64 @@ def test_switches_are_pooled_by_span():
     assert pool_convergence([1.0, 0.0], [0.3, 0.01]) == pytest.approx(0.3 / 0.31)
     assert pool_convergence([1.0, np.nan, 5.0], [0.2, 0.2, 0.0]) == pytest.approx(1.0)  # missing and zero span left out
     assert np.isnan(pool_convergence([np.nan], [0.2]))
+
+
+def test_a_block_is_judged_by_its_share_of_the_normative_shift():
+    assert block_convergence(-0.1, 0.0, -0.1) == pytest.approx(1.0)                    # Uniform → Hard-B, all the way
+    assert block_convergence(-0.05, 0.1, -0.1) == pytest.approx(0.25)                   # Hard-A → Hard-B, a quarter
+    assert block_convergence(0.1, 0.1, -0.1) == pytest.approx(-0.5)                     # the other way
+    assert np.isnan(block_convergence(0.1, 0.0, 0.01))                                  # the normative criterion hardly moves
+    np.testing.assert_allclose(block_convergence(np.array([0.2, 0.0]), np.array([-0.1, -0.1]), np.array([0.1, 0.1])), [1.0, 0.0])
+
+
+def test_each_block_is_fitted_with_its_own_shape():
+    """Lapses that change between blocks, the criterion's location fixed (SS05's pattern). With each block's shape
+    the 50 % point is read right; one shape for every block (the expert-Uniform fit, as before) reads the lapse
+    change as a criterion shift of ~0.08 between Hard-A and Hard-B."""
+    mu = 0.15
+    schedule = ([('Uniform', 'regular', mu, U_SHAPE)] * 6 + [('Hard-A', 'regular', mu, A_SHAPE)] * 8
+                + [('Hard-B', 'regular', mu, B_SHAPE)] * 8)
+    truth = _pse_from_params(mu, *A_SHAPE) - _pse_from_params(mu, *B_SHAPE)              # the 50 % point moves with the lapses
+    own, one = [], []
+    for seed in range(11, 17):                     # one mouse's B-block lapses are fitted to ±0.06; pool six
+        animal = _phase_animal(schedule, seed=seed)
+        tr = compute_trajectory(animal, HARD, dynamics=False, curves=False).sessions.groupby('distribution')['pse_pinned'].mean()
+        own.append(tr['Hard-A'] - tr['Hard-B'])
+        expert = tuple(expert_reference(animal)[1:])
+        old = {d: np.mean([pinned_pse(TrialArrays.from_sessions([s]), expert) for s in animal.sessions
+                           if s.distribution == d]) for d in HARD}
+        one.append(old['Hard-A'] - old['Hard-B'])
+    se = np.std(own, ddof=1) / np.sqrt(len(own))
+    assert abs(np.mean(own) - truth) < 3 * se and np.mean(one) - truth < -0.05
+    assert hard_design(animal) == 'blocked'
+    ab = [r for r in compute_switches(animal, max_trials=800) if r.from_distribution == 'Hard-A'][0]
+    block = {d: [s for s in animal.sessions if s.distribution == d] for d in HARD}
+    np.testing.assert_allclose(ab.pre[SHAPE_COLUMNS].to_numpy(float), phase_shape(block['Hard-A']))   # before: Hard-A's
+    np.testing.assert_allclose(ab.dynamics[SHAPE_COLUMNS].to_numpy(float), phase_shape(block['Hard-B']))
+
+
+def test_a_daily_phase_pools_the_days_of_one_kind():
+    """The daily alternation: a day's criterion is fitted with the shape of all days of its distribution and session
+    type pooled (laser days on laser-off trials), the day before's with that day's kind; the Uniform phase before the
+    first day takes the expert-Uniform fit. The battery's trajectory uses the same phases."""
+    U = [('Uniform', 'regular', 0.0, U_SHAPE)] * 6
+    kind = [(d, t, 0.0, A_SHAPE if d == 'Hard-A' else B_SHAPE) for t in ('opto', 'masking') for d in HARD * 3]
+    animal = _phase_animal(U + kind, n=300, seed=12)
+
+    def pooled(dist, stype, trials):
+        return phase_shape([s for s in animal.sessions if s.distribution == dist and s.session_type == stype], trials)
+    days = compute_switches(animal)
+    assert hard_design(animal) == 'daily' and days[0].switch_kind == 'first day'
+    np.testing.assert_allclose(days[0].pre[SHAPE_COLUMNS].to_numpy(float), expert_reference(animal)[1:])
+    np.testing.assert_allclose(days[0].dynamics[SHAPE_COLUMNS].to_numpy(float), pooled('Hard-A', 'opto', 'non_opto'))
+    np.testing.assert_allclose(days[1].pre[SHAPE_COLUMNS].to_numpy(float), pooled('Hard-A', 'opto', 'non_opto'))
+    np.testing.assert_allclose(days[1].dynamics[SHAPE_COLUMNS].to_numpy(float), pooled('Hard-B', 'opto', 'non_opto'))
+    m = [r for r in days if r.switch_kind == 'masking day' and r.to_distribution == 'Hard-A'][0]
+    np.testing.assert_allclose(m.pre[SHAPE_COLUMNS].to_numpy(float), pooled('Hard-B', 'masking', 'all'))
+    np.testing.assert_allclose(m.dynamics[SHAPE_COLUMNS].to_numpy(float), pooled('Hard-A', 'masking', 'all'))
+    tr = compute_trajectory(animal, HARD, dynamics=False, curves=False).sessions
+    s = tr[(tr['distribution'] == 'Hard-A') & (tr['session_type'] == 'masking')]
+    np.testing.assert_allclose(s[SHAPE_COLUMNS].to_numpy(float), np.tile(pooled('Hard-A', 'masking', 'all'), (len(s), 1)))
 
 
 def test_the_designs_are_told_apart_by_runs_of_days():
