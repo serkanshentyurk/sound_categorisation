@@ -179,9 +179,28 @@ def test_a_daily_phase_pools_the_days_of_one_kind():
     m = [r for r in days if r.switch_kind == 'masking day' and r.to_distribution == 'Hard-A'][0]
     np.testing.assert_allclose(m.pre[SHAPE_COLUMNS].to_numpy(float), pooled('Hard-B', 'masking', 'all'))
     np.testing.assert_allclose(m.dynamics[SHAPE_COLUMNS].to_numpy(float), pooled('Hard-A', 'masking', 'all'))
-    tr = compute_trajectory(animal, HARD, dynamics=False, curves=False).sessions
-    s = tr[(tr['distribution'] == 'Hard-A') & (tr['session_type'] == 'masking')]
-    np.testing.assert_allclose(s[SHAPE_COLUMNS].to_numpy(float), np.tile(pooled('Hard-A', 'masking', 'all'), (len(s), 1)))
+    tr = compute_trajectory(animal, HARD, dynamics=False).sessions.sort_values('order').reset_index(drop=True)
+    for dist, stype, trials in (('Hard-A', 'masking', 'all'), ('Hard-B', 'opto', 'non_opto')):
+        s = tr[(tr['distribution'] == dist) & (tr['session_type'] == stype)]
+        np.testing.assert_allclose(s[SHAPE_COLUMNS].to_numpy(float), np.tile(pooled(dist, stype, trials), (len(s), 1)))
+    assert len(days) == len(tr)                    # every day is a switch: the k-th switch is the k-th session
+    for k, r in enumerate(days):                   # the same number for a day in both reports (laser days too)
+        if r.switch_kind in ('laser day', 'masking day'):
+            assert r.dynamics['convergence_100_300'] == pytest.approx(tr.loc[k, 'convergence_100_300'], nan_ok=True)
+
+
+def test_laser_days_are_measured_on_laser_off_trials():
+    """A laser that pushes every laser-on trial to one side does not move the measured criterion: the trajectory,
+    like the switch report, measures a laser day on its laser-off trials (``measured_trials``)."""
+    U = [('Uniform', 'regular', 0.0, U_SHAPE)] * 6
+    animal = _phase_animal(U + [(d, 'opto', 0.0, A_SHAPE) for d in HARD * 3], seed=21)
+    for s in animal.sessions:
+        if s.session_type == 'opto':
+            s.trials.choice[s.trials.opto_on] = 1.0                                       # every laser trial to B
+    truth = _pse_from_params(0.0, *A_SHAPE)
+    auto = compute_trajectory(animal, HARD, dynamics=False, curves=False).sessions['pse_pinned'].mean()
+    every = compute_trajectory(animal, HARD, trials='all', dynamics=False, curves=False).sessions['pse_pinned'].mean()
+    assert abs(auto - truth) < 0.05 and every < truth - 0.1
 
 
 def test_the_designs_are_told_apart_by_runs_of_days():

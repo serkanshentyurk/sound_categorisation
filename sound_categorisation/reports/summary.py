@@ -237,18 +237,19 @@ def hard_page(T: dict, cohort: str, distribution: str):
             ax.set_ylabel('PSE (all trials)', fontsize=9)
     for c, geno in enumerate(('wt', 'het')):
         ax = fig.add_subplot(gs[4, c])
-        _trajectory_panel(ax, hard, 'delta_from_prev', geno, f'5  {geno.upper()}: PSE change from the previous day')
+        _trajectory_panel(ax, hard, 'delta_from_prev', geno, f'5  {geno.upper()}: PSE change\nfrom the previous day')
         if c == 0:
             ax.set_ylabel('ΔPSE (switch amplitude)', fontsize=9)
     for c, geno in enumerate(('wt', 'het')):
         ax = fig.add_subplot(gs[4, 2 + c])
-        _trajectory_panel(ax, hard, 'pse_pinned', geno, f"6  {geno.upper()}: criterion per session, slope and lapses fixed at the phase's fit")
+        _trajectory_panel(ax, hard, 'pse_pinned', geno, f"6  {geno.upper()}: criterion per session\n(slope and lapses fixed at the phase's fit)")
         if c == 0:
             ax.set_ylabel("criterion, the phase's shape", fontsize=9)
-    fig.text(0.5, 0.045, 'Rows 4–6: one thin line per mouse, thick = genotype mean; blue dot = Hard-A day, orange = Hard-B day; '
+    fig.text(0.5, 0.05, 'Rows 4–6: one thin line per mouse, thick = genotype mean; blue dot = Hard-A day, orange = Hard-B day; '
              'dotted line = last opto session | first masking session.\nRow 5 is the day-to-day switch amplitude (a tracking mouse '
              'alternates sign). Row 6 refits the criterion (the 50 % point) with slope and lapses held at the fit of the day\'s phase '
-             '(its distribution and session type, days pooled), so only the criterion moves; a fit at the ±1 edge is left out. Dotted thin lines = animals flagged BIASED by the one bias check '
+             '(its distribution and session type, days pooled), so only the criterion moves;\na laser day is measured on its '
+             'laser-off trials; a fit at the ±1 edge is left out. Dotted thin lines = animals flagged BIASED by the one bias check '
              '(adaptation.bias_sessions, as in the switch report); the mean includes them.', ha='center', va='top', fontsize=8, color='0.3')
     handles = [plt.Line2D([], [], marker='o', ls='', color=c, label=d) for d, c in DIST_COL.items() if d != 'Uniform']
     fig.legend(handles=handles, loc='lower right', ncol=2, frameon=False, fontsize=8, bbox_to_anchor=(0.98, 0.005))

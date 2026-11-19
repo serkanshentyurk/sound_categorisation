@@ -71,7 +71,7 @@ from scipy.stats import norm
 from sound_categorisation.data.stimuli import compute_normative_pse
 
 __all__ = ['Trajectory', 'compute_trajectory', 'expert_reference', 'TRAJECTORY_STATS', 'pinned_pse',
-           'phase_shape', 'phase_shapes', 'block_convergence', 'MIN_CONV_SPAN',
+           'phase_shape', 'phase_shapes', 'measured_trials', 'block_convergence', 'MIN_CONV_SPAN',
            'criterion_curve', 'convergence', 'mean_convergence', 'pool_convergence', 'CURVE_WINDOW', 'CURVE_STEP', 'EARLY_TRIALS',
            'SwitchResult', 'compute_switch', 'compute_switches', 'SWITCH_METHODS', 'hard_design',
            'flag_biased_sessions', 'BiasRule', 'bias_sessions', 'BIAS_COLUMNS', 'compute_phase_curves', 'animal_switches',
@@ -235,6 +235,13 @@ def _session_type(session) -> str:
     return str(getattr(session, 'session_type', '') or '')
 
 
+def measured_trials(session) -> str:
+    """The trials a session's criterion is measured on: laser-off trials on a laser day, so the laser's effect on
+    the trial it is on stays out ('non_opto'), all trials on any other day ('all'). One rule for the switch report
+    and the trajectory."""
+    return 'non_opto' if _is_laser(_session_type(session)) else 'all'
+
+
 def phase_shape(sessions, trials: str = 'all') -> tuple:
     """(sigma, lapse_low, lapse_high) of one 4-parameter fit on the pooled ``trials`` of ``sessions`` (thousands of
     trials for a block, hundreds per day pooled over the days of a daily phase): the shape a phase's criterion is
@@ -251,7 +258,8 @@ def phase_shapes(sessions, design: str, *, trials: str = 'all', expert=(np.nan,)
     ``phase_shape`` of its phase: its session type within its block (``design='blocked'``; a block is a run of
     consecutive sessions on one distribution), or its distribution and session type over all the sessions
     (``'daily'``: the alternation's days of one kind pooled). Any other session (Uniform) takes ``expert``, the
-    expert-Uniform shape."""
+    expert-Uniform shape. ``trials='auto'`` fits each phase on the trials its sessions are measured on
+    (``measured_trials``: laser-off on laser days)."""
     groups, out, run, prev = {}, {}, 0, None
     for s in sessions:
         d = _distribution(s)
@@ -262,8 +270,8 @@ def phase_shapes(sessions, design: str, *, trials: str = 'all', expert=(np.nan,)
             out[s.session_idx] = tuple(expert)
             continue
         groups.setdefault((d if design == 'daily' else run, _session_type(s)), []).append(s)
-    for members in groups.values():
-        shape = phase_shape(members, trials)
+    for members in groups.values():              # one session type per group, so one trial rule
+        shape = phase_shape(members, measured_trials(members[0]) if trials == 'auto' else trials)
         out.update({s.session_idx: shape for s in members})
     return out
 
@@ -273,7 +281,7 @@ def compute_trajectory(
     distributions: Sequence[str] = ('Hard-A', 'Hard-B'),
     *,
     stats: Sequence[str] = TRAJECTORY_STATS,
-    trials: str = 'all',
+    trials: str = 'auto',
     sigma: float | None = None,
     dynamics: bool = True,
     curves: bool = True,
@@ -296,7 +304,9 @@ def compute_trajectory(
         animal:        AnimalData.
         distributions: which distributions' sessions to include (all session types).
         stats:         scalar stats computed per session on ``trials``.
-        trials:        'all' (default) or 'non_opto'.
+        trials:        'auto' (default): each session on the trials it is measured on (``measured_trials``:
+                       laser-off trials on a laser day, all trials otherwise), as the switch report; or 'all'
+                       or 'non_opto' for every session.
         sigma:         psychometric sigma for the normative PSE; from the expert-Uniform fit if None.
         dynamics:      also fit ``pse_dynamics`` per session (exponential vs step).
         curves:        compute the criterion curve within each session (and ``convergence_100_300``).
@@ -329,7 +339,7 @@ def compute_trajectory(
     prev_pse, prev_dist = base_pse, 'Uniform'
     before = base_pse                      # the criterion just before the next session
     for order, s in enumerate(sessions):
-        phase = filter_trials([s], trial_type=trials)
+        phase = filter_trials([s], trial_type=measured_trials(s) if trials == 'auto' else trials)
         dist = _distribution(s)
         shape = shapes.get(s.session_idx, expert)
         norm = float(compute_normative_pse(dist, sigma)) if (dist and np.isfinite(sigma)) else np.nan
@@ -695,9 +705,9 @@ def compute_switches(animal, *, stage: str = 'Full_Task_Cont', exclude_types=Non
     """Every switch of one animal into a Hard distribution, in order, with transition labels.
 
     ``design`` ('blocked' | 'daily'; ``hard_design`` if None) decides what a switch is: the start of a block
-    of at least ``min_block_trials`` trials, or each day of at least ``min_day_trials``. In the daily design a
-    laser day is measured on laser-off trials (its own and the day before's: ``trials='non_opto'``), every
-    other switch on all trials. Every criterion is fitted with the shape of its phase (``compute_switch``).
+    of at least ``min_block_trials`` trials, or each day of at least ``min_day_trials``. A laser day is measured
+    on laser-off trials (``measured_trials``; its own and the day before's), every other switch on all trials,
+    as in the trajectory. Every criterion is fitted with the shape of its phase (``compute_switch``).
     ``kw`` goes to ``compute_switch``.
     """
     design = design or hard_design(animal, stage=stage, exclude_types=exclude_types)
@@ -714,8 +724,7 @@ def compute_switches(animal, *, stage: str = 'Full_Task_Cont', exclude_types=Non
             continue
         tr = _transition(seen[:-1] + [sw['from_distribution']], sw['to_distribution'], first=(k == 0))
         day = block_after(sessions, sw)[0]
-        trials = 'non_opto' if design == 'daily' and _is_laser(str(getattr(day, 'session_type', '') or '')) else 'all'
-        r = compute_switch(animal, sessions, sw, transition=tr, design=design, trials=trials, **kw)
+        r = compute_switch(animal, sessions, sw, transition=tr, design=design, trials=measured_trials(day), **kw)
         if r is not None:
             out.append(r)
     return out

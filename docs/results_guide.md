@@ -125,7 +125,7 @@ uninformative at this cohort's trial counts and noise levels (they are on the pe
   means it never settled ("censored").
 - **convergence** — on a scale from 0 (the criterion at the end of yesterday's session) to 1 (the criterion an
   ideal observer would adopt for today's distribution): `convergence_100_300` over trials 100–300 of the day,
-  `convergence_final` over its last 250 trials. It is the switch report's measure (§5), here per day.
+  `convergence_final` over its last 250 trials. It is the switch report's measure (§5), here per day, laser days on their laser-off trials as there.
 
 ## 5. The switch report (both Hard designs)
 

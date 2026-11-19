@@ -98,7 +98,8 @@ laser-off trials of opto sessions, `compensation/masking` = unflagged trials of 
 
 One row per session of the phase (Hard-A and Hard-B together, since the phase alternates them), in
 acquisition order (`order`). `distribution` and `session_type` are the session's own; `phase` is the folder.
-Per session on all trials: the stats above, `pse` (lapse-corrected PSE, all four parameters free), the
+Per session on the trials it is measured on (a laser day on its laser-off trials, every other day on all
+trials, as in the switch report): the stats above, `pse` (lapse-corrected PSE, all four parameters free), the
 `pse_dynamics` fit (`pse_start`, `pse_end`, `pse_final`, `pse_tau`, `pse_trials_to_90`, `pse_censored`,
 `pse_shape_daic` = AIC(exponential) - AIC(step), `pse_step_switch`) and the same with `_fixed` (shape fixed at
 the session's phase). The criterion, measured as in the switch report (`behaviour/adaptation.py`): `pse_pinned`

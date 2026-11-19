@@ -3,6 +3,13 @@
 
 ## Unreleased
 
+- **Laser days in the trajectory on laser-off trials.** `compute_trajectory` measured every session on all trials,
+  so a laser day's criterion and the shape of the laser days included the laser-on trials, while the switch
+  report measures a laser day on its laser-off trials, as the docs said both did. On the opto cohort's battery
+  (6fd4a93) the two reports agreed exactly on masking days and differed on laser days by a median 0.26 in a day's
+  convergence. One rule now (`adaptation.measured_trials`: laser-off trials on a laser day, all trials otherwise),
+  the trajectory's default (`trials='auto'`) and the switch report's; the shapes of a laser phase are fitted on
+  the same trials. The battery's trajectory pages need a rerun; its contrasts are untouched.
 - **Noise floor for the held-out error** (thesis analysis 1, agreed 18 November 2026). `sc-noise-floor --cohort C`
   (`inference/noise_floor.py`, `plotting/noise_floor.py`) writes `noise_floor/<cohort>/<run_id>/`: per animal, the
   update-matrix error between the two halves the fits are scored on (sessions 1–3 against 4–5; each session's first
