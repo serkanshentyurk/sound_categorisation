@@ -260,7 +260,7 @@ Every results folder has a `meta.json` (run id, command, snapshot, settings, ver
 
 1. The project [README](README.md), then [docs/runs.md](docs/runs.md) and
    [docs/results_guide.md](docs/results_guide.md).
-2. The notebooks, in order: `00` → `10` → `11` → `12` → `20` → `21` ([notebooks/README.md](notebooks/README.md)).
+2. The notebooks, in order: `00` → `10` → `11` → `12` → `13` → `20` → `21` ([notebooks/README.md](notebooks/README.md)).
 3. [ARCHITECTURE.md](ARCHITECTURE.md), before changing code.
 4. For experiments, the `behaviour_rig` documents: README and INSTRUCTIONS first, then TRAINING,
    PARAMETERS, HARDWARE, ZAPIT, SURGERY and PERFUSION.
@@ -327,8 +327,10 @@ manuscript; ask Serkan or Athena Akrami for the current draft.
   cleanly on either design.
 - Model identification on all mice (October 2026 run): 12 BE, 3 SC, 4 unclear; a description of the animals,
   too few for a BE/SC split of the opto effects. Superseded in Nov 2026: the networks were conditioned on CV halves
-  (2–3 sessions) outside their 4–6-session training design, so they are retrained with the amount of data as an
-  input and the run is redone, with a validation run (notebook 91).
-- Not done: the learning phase (state-space models), imaging. Networks for the Hard distributions and the
-  single-session representation are not planned: the opto cohort's Hard sessions all carry light, the blocked
-  shift is partial and may be drift, and a single-session voter cannot reach p < 0.05 with ≤ 5 sessions.
+  (2–3 sessions) outside their 4–6-session training design, so they are retrained under a wider prior
+  (`learning`) with the amount of data as an input, and the run is redone, with a validation run on 100 BE + 100 SC
+  synthetic mice (notebook 91).
+- Not done: the learning phase (state-space models), disRNN, imaging. Networks for the Hard distributions are not
+  planned: the Hard sessions are to be predicted from the Uniform fits instead. The single-session network is
+  trained beside the pooled one but does not vote, since a single-session voter cannot reach p < 0.05 with ≤ 5
+  sessions; its per-session fits are exploratory.
