@@ -210,8 +210,9 @@ def uniform_page(T: dict, cohort: str):
             ax.scatter(sess['order'], [k] * len(sess), c=np.where(laser, GENO_COL[geno], '0.75'), s=28, marker='s')
         ax.set_yticks(range(k + 1))
         ax.set_yticklabels(u.sort_values(['genotype', 'animal'])['animal'].unique(), fontsize=7)
-        ax.set_xlabel('session order (coloured = laser sessions, grey = masking)', fontsize=8)
-    ax.set_title('6  Session order per mouse\n(coloured = opto block, grey = masking block)', fontsize=8.5, loc='left')
+        ax.set_xlabel('Uniform session, in order', fontsize=8)
+    ax.set_title('6  Uniform sessions per mouse, in order\n(coloured = laser at PPC or ALM; grey = no laser: regular, masking, washout)',
+                 fontsize=8.5, loc='left')
     ax.spines[['top', 'right']].set_visible(False)
     _legend(fig)
     fig.suptitle(f'{cohort} — Expert Uniform · laser at PPC', fontsize=13, y=0.995)
@@ -234,7 +235,7 @@ def hard_page(T: dict, cohort: str, distribution: str):
         ax = fig.add_subplot(gs[3, 2 * c:2 * c + 2])
         _trajectory_panel(ax, hard, 'pse', geno, f'4  {geno.upper()}: PSE fitted per session (slope and lapses free)')
         if c == 0:
-            ax.set_ylabel('PSE (all trials)', fontsize=9)
+            ax.set_ylabel('PSE', fontsize=9)
     for c, geno in enumerate(('wt', 'het')):
         ax = fig.add_subplot(gs[4, c])
         _trajectory_panel(ax, hard, 'delta_from_prev', geno, f'5  {geno.upper()}: PSE change\nfrom the previous day')
@@ -246,11 +247,12 @@ def hard_page(T: dict, cohort: str, distribution: str):
         if c == 0:
             ax.set_ylabel("criterion, the phase's shape", fontsize=9)
     fig.text(0.5, 0.05, 'Rows 4–6: one thin line per mouse, thick = genotype mean; blue dot = Hard-A day, orange = Hard-B day; '
-             'dotted line = last opto session | first masking session.\nRow 5 is the day-to-day switch amplitude (a tracking mouse '
-             'alternates sign). Row 6 refits the criterion (the 50 % point) with slope and lapses held at the fit of the day\'s phase '
-             '(its distribution and session type, days pooled), so only the criterion moves;\na laser day is measured on its '
-             'laser-off trials; a fit at the ±1 edge is left out. Dotted thin lines = animals flagged BIASED by the one bias check '
-             '(adaptation.bias_sessions, as in the switch report); the mean includes them.', ha='center', va='top', fontsize=8, color='0.3')
+             'dotted line = last opto session | first masking session; a laser day is measured on its laser-off trials.\n'
+             'Row 5 is the day-to-day switch amplitude (a tracking mouse alternates sign). Row 6 refits the criterion (the 50 % '
+             'point) with slope and lapses held at the fit of the day\'s phase (its distribution and session type, days pooled),\n'
+             'so only the criterion moves; a fit at the ±1 edge is left out. Dotted thin lines = animals flagged BIASED by the one '
+             'bias check (adaptation.bias_sessions, as in the switch report); the mean includes them.', ha='center', va='top',
+             fontsize=8, color='0.3')
     handles = [plt.Line2D([], [], marker='o', ls='', color=c, label=d) for d, c in DIST_COL.items() if d != 'Uniform']
     fig.legend(handles=handles, loc='lower right', ncol=2, frameon=False, fontsize=8, bbox_to_anchor=(0.98, 0.005))
     _legend(fig)
@@ -261,24 +263,26 @@ def hard_page(T: dict, cohort: str, distribution: str):
 def overall_page(T: dict, cohort: str):
     df, gt = T['contrasts'], T['group_tests']
     fig = plt.figure(figsize=(16, 9))
-    gs = fig.add_gridspec(2, 4, hspace=0.5, wspace=0.35)
+    gs = fig.add_gridspec(2, 4, hspace=0.6, wspace=0.35, top=0.86)
     for k, dist in enumerate(('Uniform', 'Hard-A', 'Hard-B')):
         ax = fig.add_subplot(gs[0, k])
         _dots(ax, _sel(df, distribution=dist, kind='within', stat='mu'), ylabel='Δ μ, laser − no-laser trials' if k == 0 else '')
-        ax.set_title(f'{dist}: opto sessions, laser-on − laser-off trials', fontsize=10, loc='left')
+        ax.set_title(f'{dist}: opto sessions,\nlaser-on − laser-off trials', fontsize=10, loc='left')
         _ptxt(ax, _group_p(gt, site='ppc', distribution=dist, trial_class='opto', kind='within', stat='mu'))
         ax = fig.add_subplot(gs[1, k])
         _dots(ax, _sel(df, distribution=dist, kind='between', stat='mu'), ylabel='Δ μ, laser − masking sessions' if k == 0 else '')
-        ax.set_title(f'{dist}: opto sessions − masking sessions (all trials)', fontsize=10, loc='left')
+        ax.set_title(f'{dist}: opto − masking sessions,\nall trials', fontsize=10, loc='left')
         _ptxt(ax, _group_p(gt, site='ppc', distribution=dist, trial_class='opto', kind='between', stat='mu'))
     ax = fig.add_subplot(gs[0, 3])
     _dots(ax, _sel(df, site='alm_bi', distribution='Uniform', stat='accuracy'), ylabel='Δ accuracy', label_animals=False)
-    ax.set_title('ALM bilateral sessions: laser-on − laser-off, accuracy', fontsize=10, loc='left')
+    ax.set_title('ALM bilateral sessions, accuracy:\nlaser-on − laser-off trials', fontsize=10, loc='left')
     ax = fig.add_subplot(gs[1, 3])
     _dots(ax, _sel(df, distribution='Uniform', trial_class='post_opto', kind='within', stat='mu'), ylabel='Δ μ', label_animals=False)
-    ax.set_title('Uniform opto sessions: post-laser trials − other laser-off trials, μ', fontsize=10, loc='left')
+    ax.set_title('Uniform opto sessions, μ: post-laser\n− other laser-off trials', fontsize=10, loc='left')
     _legend(fig)
-    fig.suptitle(f'{cohort} — overall: change in criterion μ per mouse (positive = shifted toward A).   Top row: only opto sessions, laser-on − laser-off trials.   Bottom row: opto sessions − masking sessions, no trial filtering', fontsize=11, y=0.995)
+    fig.suptitle(f'{cohort} — overall: change in criterion μ per mouse (positive = shifted toward A)\nTop row: only opto '
+                 'sessions, laser-on − laser-off trials.   Bottom row: opto sessions − masking sessions, no trial filtering',
+                 fontsize=11, y=0.995)
     return fig
 
 

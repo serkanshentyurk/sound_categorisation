@@ -16,6 +16,11 @@
   every mouse, since model identification is descriptive. The synthetic runs add the post-laser condition on Uniform
   (every statistic, with intervals) and a blocked-update run with prior draws in place of fits.
 - `cv_utils.read_cv_result` reads a saved fit on a machine without torch (moved from `prior_range`, which uses it).
+- Summary pages: the overall page's panel titles ran into each other (now two lines each, and the page title too);
+  the session-order panel on the Uniform page said grey = masking, but grey is every Uniform session without the
+  laser (regular, masking, washout) and coloured is the laser at PPC or ALM; the Hard pages' PSE axis said
+  "all trials", which stopped being true when laser days moved to their laser-off trials. Labels only:
+  `sc-reports summary` redraws them from the tables.
 - Notebooks: `open_run` gave a `KeyError` instead of its message for a report it had no hint for, so notebook 11 §5
   stopped when the validation cohort had no noise-floor run; every report now has a hint.
 - **`no_learning` renamed `no_history`** in `noise_floor.csv`, `noise_floor_sessions.csv`, `floor_ratios` and the plot: the
