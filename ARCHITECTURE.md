@@ -68,6 +68,9 @@ inference/           amortised SBI (types, simulator, representation, selection,
                      prior_range (each animal's statistics against the models' simulated range),
                      noise_floor (per animal, the held-out error two halves of its own data give, on the
                      splits the fits are scored on, and a no-history reference: the absolute-fit scale)
+                     blocked_update (each animal's fitted models on its own opto sessions, learning blocked
+                     on laser trials or not: the effect complete blocking would have on the trial after a laser
+                     trial, read against the observed post-laser delta-of-deltas)
 features/            feature_diagnostics: which summary statistics carry BE/SC identity and parameters
 reports/             compute.py  AnimalResult / GroupResult / Settings (no matplotlib)
                      tables.py   to_tables, group_tables, readout_arrays, write_result / read_result
@@ -77,11 +80,13 @@ reports/             compute.py  AnimalResult / GroupResult / Settings (no matpl
                      daily_tracker.py   the daily tracker's self-contained HTML page
                      readme.py   the generated results README
                      cli.py      `python -m sound_categorisation.reports` / `sc-reports`
-plotting/            project plotters (CV, opto swarms, assignment, SBI diagnostics, daily tracker, noise floor)
+plotting/            project plotters (CV, opto swarms, assignment, SBI diagnostics, daily tracker, noise floor,
+                     blocked update)
 cli/                 entry points (pyproject [project.scripts]): sc-reports, sc-export-snapshot, sc-update,
                      sc-fetch, sc-make-synthetic-cohort, sc-make-synthetic-run, sc-new-run, sc-smoke, sc-sbi-train,
                      sc-sbi-condition, sc-sbi-sbc, sc-sbi-check, sc-sbi-range, sc-grid-search, sc-consensus,
-                     sc-validation-tables, sc-noise-floor, sc-feature-selection, sc-daily-tracker
+                     sc-validation-tables, sc-noise-floor, sc-blocked-update, sc-feature-selection,
+                     sc-daily-tracker
 slurm/               env.sh (module, conda env, threads; sourced by every job and by load-env), the job
                      scripts, submit.sh (array size from inference/tasks.py)
 ```
@@ -92,7 +97,8 @@ slurm/               env.sh (module, conda env, threads; sourced by every job an
 <results root>/<report>/<cohort>/<run_id>/...      results_root(): <repo>/results, or $BEHAV_DATA_DIR/Processed/results on the cluster
 <results root>/<report>/<cohort>/latest            symlink (+ latest.txt) to the newest run
 ```
-`report` ∈ `opto_contrasts`, `switch_adaptation`, `light_artefact`, `model_identification`; `run_id` = `YYYY-MM-DD_HHMM_<sha7>`,
+`report` ∈ `paths.REPORTS` (`opto_contrasts`, `switch_adaptation`, `light_artefact`, `model_identification`,
+`feature_selection`, `noise_floor`, `blocked_update`); `run_id` = `YYYY-MM-DD_HHMM_<sha7>`,
 `_fast` for reduced runs. Every producer calls `paths.start_run` and stamps run id, argv and git state into
 its `meta.json`; every consumer (`sc-reports summary`, `sc-consensus`, the notebooks) resolves a run with
 `paths.resolve_run(report, cohort, 'latest' | run_id)`. On the cluster the run id is created once by

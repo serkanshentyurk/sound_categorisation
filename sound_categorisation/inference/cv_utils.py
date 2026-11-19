@@ -206,6 +206,32 @@ def save_cv_result(
         pickle.dump(payload, f)
 
 
+class _Placeholder:
+    """Stands in for an object whose module is not installed (see ``read_cv_result``)."""
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def __setstate__(self, state):
+        pass
+
+
+class _TolerantUnpickler(pickle.Unpickler):
+    def find_class(self, module, name):
+        try:
+            return super().find_class(module, name)
+        except ImportError:
+            return _Placeholder
+
+
+def read_cv_result(path) -> dict:
+    """One result written by ``save_cv_result``, readable on a machine without torch or sbi: a result saved on the
+    cluster carries network metadata that may hold torch objects, and anything whose module cannot be imported
+    becomes a placeholder. The numbers (errors, parameters, posterior samples) are plain."""
+    with open(path, 'rb') as f:
+        return _TolerantUnpickler(f).load()
+
+
 def load_cv_results(results_dir) -> CVResults:
     """
     Load a directory of CV result pickles into tidy DataFrames.

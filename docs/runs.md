@@ -52,6 +52,12 @@ what it would copy.
 Common options: `--cohort` (default `opto1-cohort`), `--snapshot`, `--config`, `--root`, `--run-id`
 (write into an existing run), `--fast` (few draws, scalar stats, no readouts), `--limit N`, `--animals`.
 
+## Silenced-trial memory (laptop; `sc-blocked-update`)
+
+| command | computes | inputs | writes | time |
+|---|---|---|---|---|
+| `sc-blocked-update --fits <cohort>/<run_id> [--cohort C] [--opto-run latest\|<id>] [--draws N] [--jobs N] [--animals …]` | whether a silenced trial is remembered on the next one. For each animal, each of its fitted models (BE and SC: the first N samples of the pooled network's saved posterior, default 50) is run on the animal's own Uniform opto sessions twice, learning from every trial and not learning on laser trials, with the same random numbers; blocked − normal on the post-laser contrast (the trial after a laser trial against the other laser-off trials) is the effect complete blocking would have on recency, win-stay and lose-shift. It is read against the animal's observed post-laser delta-of-deltas (opto − masking sessions) with the equivalence margins: too weak to test, not fully blocked, consistent with blocking, beyond blocking, unclear. The light is off during feedback, so complete blocking is an upper bound. An animal without a fit or without Uniform opto sessions is left out and named | the snapshot, a model-identification run's SBI posteriors, the cohort's opto-contrasts run with the post-laser condition | `blocked_update/<cohort>/<run_id>/{predicted.csv, summary.csv, sessions.csv, meta.json}` | upper estimate 1.5 h on one core for 8 animals and 50 draws; `--jobs N` divides it by about N |
+
 ## Data
 
 | command | computes | inputs | writes | time |
@@ -59,7 +65,7 @@ Common options: `--cohort` (default `opto1-cohort`), `--snapshot`, `--config`, `
 | `sc-export-snapshot [--check-only]` | the experiment every analysis loads, as a behav_utils store (run it on the cluster); prints where behav_utils 1.0 can give another number than 0.10 on these data | the session CSVs in `$BEHAV_DATA_DIR/Raw`, via `config.yaml` | `<data root>/behaviour/snapshots/sound_cat_store/` | minutes |
 | `sc-make-synthetic-cohort --distribution D [--name N] [--n-per-model K]` | a synthetic cohort with known BE/SC ground truth | — | `<data root>/synthetic_cohorts/<name>.pkl` | seconds |
 | `sc-new-run --report R --cohort C [--fast] [--label L]` | an empty run directory (+ `logs/`), prints the id | — | `<R>/<C>/<run_id>/` | instant |
-| `sc-make-synthetic-run --results DIR --data DIR [--no-model-id]` | synthetic opto, switch and model-identification runs in the real layout, for the notebooks and CI | — | `DIR/opto_contrasts/synthetic/…`, `switch_adaptation/synthetic/…`, `light_artefact/synthetic/…`, `model_identification/synthetic_uniform/…` | minutes |
+| `sc-make-synthetic-run --results DIR --data DIR [--no-model-id]` | synthetic opto, switch, blocked-update (prior draws in place of fits) and model-identification runs in the real layout, for the notebooks and CI | — | `DIR/opto_contrasts/synthetic/…`, `switch_adaptation/synthetic/…`, `light_artefact/synthetic/…`, `blocked_update/synthetic/…`, `model_identification/synthetic_uniform/…`, `noise_floor/synthetic_uniform/…` | minutes |
 
 ## Feature selection (laptop; `sc-feature-selection`)
 
@@ -116,6 +122,7 @@ run id when none is given and prints it; Slurm logs go to `<run>/logs/`. `C` is 
 | `sc-reports summary` | the opto run it is given (`latest` by default) |
 | `sc-consensus` | one `model_identification` run, one distribution |
 | notebooks | a run's tables via `nb_setup.open_run` → `paths.resolve_run(report, cohort, 'latest')`; `SC_NB_SYNTHETIC=1` reads the synthetic runs |
+| `sc-blocked-update` | a model-identification run's saved posteriors (`--fits`) and the cohort's opto-contrasts run (`--opto-run`) |
 | `tests/e2e/` | nothing on disk; it builds the synthetic experiment, runs the pipeline into `tmp_path` and compares against `tests/e2e/reference/` |
 
 ## Not yet here

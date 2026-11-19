@@ -203,6 +203,15 @@ The noise floor that notebook 11 puts the held-out errors over is computed on th
 sc-noise-floor --cohort all-mice
 ```
 
+Whether a silenced trial is remembered on the next one (notebook 20, section 7) runs each animal's fitted BE and SC
+models on its own opto sessions, with and without learning on laser trials. It reads the saved SBI posteriors of a
+model-identification run (fetch it first) and the post-laser condition of the latest battery, on the laptop:
+
+```bash
+sc-fetch results model_identification/all-mice/<run id>
+sc-blocked-update --fits all-mice/<run id> --jobs 4
+```
+
 Every command, its options and what it writes: [docs/runs.md](docs/runs.md).
 
 ## New animals

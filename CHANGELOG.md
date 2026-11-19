@@ -3,6 +3,21 @@
 
 ## Unreleased
 
+- **Is a silenced trial remembered on the next one?** (thesis analysis 4, agreed 18 November 2026).
+  `sc-blocked-update --fits all-mice/<run id>` (`inference/blocked_update.py`, `plotting/blocked_update.py`) runs
+  each animal's fitted BE and SC models (the first 50 samples of the pooled network's saved posterior) on its own
+  Uniform opto sessions twice, learning from every trial and not learning on laser trials
+  (`laser_blocks_update`), with the same random numbers; blocked − normal on the post-laser contrast is the effect
+  complete blocking would have on recency, win-stay and lose-shift. It is read against the animal's observed
+  post-laser delta-of-deltas from the battery (opto − masking sessions) and the equivalence margins: too weak to
+  test, not fully blocked, consistent with blocking, beyond blocking, unclear. Masking sessions are not simulated:
+  nothing is silenced there, so the two runs would be the same and that term cancels. Writes
+  `blocked_update/<cohort>/<run_id>/{predicted, summary, sessions}.csv`; notebook 20 §7 draws it. Both models for
+  every mouse, since model identification is descriptive. The synthetic runs add the post-laser condition on Uniform
+  (every statistic, with intervals) and a blocked-update run with prior draws in place of fits.
+- `cv_utils.read_cv_result` reads a saved fit on a machine without torch (moved from `prior_range`, which uses it).
+- Notebooks: `open_run` gave a `KeyError` instead of its message for a report it had no hint for, so notebook 11 §5
+  stopped when the validation cohort had no noise-floor run; every report now has a hint.
 - **`no_learning` renamed `no_history`** in `noise_floor.csv`, `noise_floor_sessions.csv`, `floor_ratios` and the plot: the
   reference's curve is fitted on choices the animal made while updating, so it carries the average of that updating;
   it lacks only the dependence on the previous trial, which is what the update matrix measures. Rerun

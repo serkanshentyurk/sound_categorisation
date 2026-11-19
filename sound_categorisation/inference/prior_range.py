@@ -19,13 +19,13 @@ The training set of a network with the accuracy rule is the passing set here.
 
 from __future__ import annotations
 
-import pickle
 from pathlib import Path
 from typing import Any, Dict, List, Sequence
 
 import numpy as np
 import pandas as pd
 
+from sound_categorisation.inference.cv_utils import read_cv_result
 from sound_categorisation.inference.representation import feature_names, to_stat_vector
 from sound_categorisation.inference.simulator import simulate_sessions
 from sound_categorisation.models.priors import PRIOR_VARIANTS, resolve, sample_prior
@@ -277,28 +277,6 @@ def recognised_rows(rep: str, X_by_model: Dict[str, np.ndarray], passing_by_mode
 # THE SAVED POSTERIORS' ACCEPTANCE RATES
 # =============================================================================
 
-class _Placeholder:
-    """Stands in for an object whose module is not installed (see ``_TolerantUnpickler``)."""
-
-    def __init__(self, *args, **kwargs):
-        pass
-
-    def __setstate__(self, state):
-        pass
-
-
-class _TolerantUnpickler(pickle.Unpickler):
-    """Reads a result saved on the cluster on a machine without torch or sbi. The saved result carries
-    network metadata that may hold torch objects; anything whose module cannot be imported becomes a
-    placeholder. The acceptance rate itself is a plain number."""
-
-    def find_class(self, module, name):
-        try:
-            return super().find_class(module, name)
-        except ImportError:
-            return _Placeholder
-
-
 def read_acceptance(result_dir, animal_id: str, model: str, prior: str | None = None) -> float:
     """The acceptance rate ``sc-sbi-condition`` saved with an animal's posterior
     (``<result_dir>/<animal>_<MODEL>.pkl``): the share of the network's samples that fell inside
@@ -312,8 +290,7 @@ def read_acceptance(result_dir, animal_id: str, model: str, prior: str | None = 
     if not path.exists():
         return float('nan')
     try:
-        with open(path, 'rb') as f:
-            result = _TolerantUnpickler(f).load()
+        result = read_cv_result(path)
         posterior = (result or {}).get('posterior') or {}
         rate = posterior.get('acceptance_rate')
         if prior is not None and (posterior.get('prior') or 'manuscript') != prior:

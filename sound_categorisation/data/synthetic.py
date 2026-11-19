@@ -77,10 +77,30 @@ def synthetic_experiment(n_animals=4, seed=0, n_trials=180) -> ExperimentData:
     return exp
 
 
+def _blocked_update_run(exp, ids, opto_run: Path, results_root: Path) -> Path:
+    """A ``blocked_update`` run on the synthetic animals. They have no model fits, so two draws from each model's
+    prior stand in for the posterior: it checks the pipeline, it says nothing about the animals."""
+    from sound_categorisation.cli.blocked_update import write_run
+    from sound_categorisation.data.paths import start_run
+    from sound_categorisation.inference.blocked_update import MODELS
+    from sound_categorisation.models.priors import sample_prior
+
+    rng = np.random.default_rng(0)
+    draws = {}
+    for aid in ids:
+        for model in MODELS:
+            names, thetas = sample_prior(model, None, 2, rng)
+            draws[(aid, model)] = [dict(zip(names, map(float, t))) for t in thetas]
+    brun = start_run('blocked_update', 'synthetic', fast=True, root=results_root)
+    write_run(brun, exp, ids, draws, opto_run, burn_in=200, args={'fits': 'two prior draws per model (synthetic)'})
+    return brun
+
+
 def write_synthetic_runs(results_root, data_root, *, with_model_id: bool = True) -> dict:
     """Build the runs the notebooks and CI read, from synthetic data only: an ``opto_contrasts`` run
-    (fast on every animal, one full condition) and its summary, a ``switch_adaptation`` run (the blocked
-    and the daily animals together) and a ``light_artefact`` run, and — with ``with_model_id`` — a
+    (fast on every animal, one full condition, the post-laser condition on Uniform with intervals) and its summary,
+    a ``switch_adaptation`` run (the blocked and the daily animals together), a ``light_artefact`` run, a
+    ``blocked_update`` run (prior draws in place of fits), and — with ``with_model_id`` — a
     synthetic cohort, a fast grid search and its consensus under ``model_identification/synthetic_uniform``, and its
     noise floor (``noise_floor/synthetic_uniform``).
     Returns the run directories. ``sc-make-synthetic-run`` is the CLI; ``SC_NB_SYNTHETIC=1`` makes the
@@ -114,6 +134,9 @@ def write_synthetic_runs(results_root, data_root, *, with_model_id: bool = True)
     full = Settings(n_boot=20, n_perm=20, curve_bootstrap=10)   # the slow pages once, on one animal
     per = run_animal(exp, ids[:1], 'Hard-A', 'opto', 'ppc', None, a, full)
     run_group(exp, ids, 'Hard-A', 'opto', 'ppc', None, a, full, per)
+    post = Settings(n_boot=20, n_perm=20, readouts=False, trajectory=False, curve_bootstrap=0)
+    per = run_animal(exp, ids, 'Uniform', 'post_opto', 'ppc', None, a, post)    # every stat, with intervals
+    run_group(exp, ids, 'Uniform', 'post_opto', 'ppc', None, a, post, per)
     write_summary(run, 'synthetic')
     srun = start_run('switch_adaptation', 'synthetic', fast=True, root=results_root)
     run_switches(exp, ids, srun, 'synthetic', min_block_trials=300, max_trials=800)
@@ -121,6 +144,7 @@ def write_synthetic_runs(results_root, data_root, *, with_model_id: bool = True)
     lrun = start_run('light_artefact', 'synthetic', fast=True, root=results_root)
     run_light_artefact(exp, ids, lrun, 'synthetic', 'Uniform', fast=True)
     out = {'opto_contrasts': run, 'switch_adaptation': srun, 'light_artefact': lrun}
+    out['blocked_update'] = _blocked_update_run(exp, ids, run, results_root)
 
     if with_model_id:
         from sound_categorisation.cli import consensus, grid_search, make_synthetic_cohort

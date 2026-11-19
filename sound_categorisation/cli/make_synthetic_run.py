@@ -5,8 +5,9 @@ Build synthetic runs for the notebooks and CI — no data, no cluster, a few min
     SC_NB_SYNTHETIC=1 SC_RESULTS_ROOT=/tmp/sc_results SC_DATA_ROOT=/tmp/sc_data jupyter lab notebooks/
 
 Writes ``opto_contrasts/synthetic`` (with its summary), ``switch_adaptation/synthetic`` (blocked and daily
-animals), ``light_artefact/synthetic`` and (unless --no-model-id) ``model_identification/synthetic_uniform`` and
-``noise_floor/synthetic_uniform`` under --results, in exactly the layout real runs use.
+animals), ``light_artefact/synthetic``, ``blocked_update/synthetic`` (prior draws in place of fits) and (unless
+--no-model-id) ``model_identification/synthetic_uniform`` and ``noise_floor/synthetic_uniform`` under --results, in
+exactly the layout real runs use.
 """
 
 from __future__ import annotations

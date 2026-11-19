@@ -163,7 +163,7 @@ def snpe_training_set_path(rep: str, model: str, distribution: str) -> Path:
 # =============================================================================
 
 REPORTS = ('opto_contrasts', 'switch_adaptation', 'light_artefact', 'model_identification', 'feature_selection',
-           'noise_floor')
+           'noise_floor', 'blocked_update')
 
 
 def results_root() -> Path:
