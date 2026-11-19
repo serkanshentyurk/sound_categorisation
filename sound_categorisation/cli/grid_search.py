@@ -202,7 +202,7 @@ def gather_results(out_dir, distribution, n_seeds=None):
         if short:
             print(f'WARNING: {len(short)} (animal, model) pairs have fewer than {n_seeds} seeds: '
                   + ', '.join(f'{a}/{m}={n}' for (a, m), n in sorted(short.items())))
-            print('  -> sc-grid-search ... --print-missing lists the array indices to resubmit')
+            print('  -> bash slurm/submit.sh grid-search ... --run-id ID --missing resubmits their tasks')
     return out_paths
 
 
@@ -233,7 +233,8 @@ def main(argv=None):
     p.add_argument('--print-array', action='store_true', help='print the SLURM --array range and exit')
     p.add_argument('--gather', action='store_true', help='combine partials into finals')
     p.add_argument('--print-missing', action='store_true',
-                   help='print the comma-separated array indices with no partial yet (needs --run-id) and exit')
+                   help="print the array indices with no partial yet as a SLURM --array list ('0-3,7'), or "
+                        "'none', and exit (needs --run-id; slurm/submit.sh ... --missing resubmits them)")
     p.add_argument('--count', action='store_true',
                    help='print the array size (n_animals*n_models*n_seeds) and exit')
     p.add_argument('--n-jobs', type=int, default=1,
@@ -278,7 +279,9 @@ def main(argv=None):
             p.error('--print-missing needs --run-id')
         run = start_run('model_identification', label, args.run_id, fast=args.fast)
         out_dir = model_id_dir(run, 'grid_search', args.fit_target, args.distribution)
-        print(','.join(str(t) for t in missing_task_ids(out_dir, records, n_seeds)))
+        from sound_categorisation.inference.tasks import slurm_array
+        missing = missing_task_ids(out_dir, records, n_seeds)
+        print(slurm_array(missing) if missing else 'none')
         return
     if args.count:
         print(len(records) * len(MODELS) * n_seeds)

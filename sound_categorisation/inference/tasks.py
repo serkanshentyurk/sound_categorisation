@@ -24,7 +24,8 @@ from sound_categorisation.settings import (
     SBI_TRAIN_REPS,
 )
 
-__all__ = ['TaskGrid', 'TRAIN_GRID', 'CONDITION_GRID', 'SBC_CASES', 'SBC_GRID', 'sbc_case', 'gs_grid']
+__all__ = ['TaskGrid', 'TRAIN_GRID', 'CONDITION_GRID', 'SBC_CASES', 'SBC_GRID', 'sbc_case', 'gs_grid',
+           'slurm_array']
 
 
 @dataclass(frozen=True)
@@ -95,3 +96,16 @@ def sbc_case(case: str) -> Tuple[str, int]:
 def gs_grid(animals: Sequence[str], n_seeds: int, models: Sequence[str] = ('BE', 'SC')) -> TaskGrid:
     """Grid search: one job per (animal, model, seed)."""
     return TaskGrid.of(animal=tuple(animals), model=tuple(models), seed=tuple(range(n_seeds)))
+
+
+def slurm_array(task_ids) -> str:
+    """Task ids as a SLURM ``--array`` list: runs of consecutive ids as ranges, joined by commas
+    (``[0, 1, 2, 3, 7, 9, 10]`` -> ``'0-3,7,9-10'``), so a long list of tasks to resubmit stays short."""
+    ids = sorted({int(t) for t in task_ids})
+    parts, start = [], None
+    for i, t in enumerate(ids):
+        start = t if start is None else start
+        if i + 1 == len(ids) or ids[i + 1] != t + 1:
+            parts.append(str(t) if start == t else f'{start}-{t}')
+            start = None
+    return ','.join(parts)

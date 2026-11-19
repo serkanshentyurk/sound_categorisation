@@ -182,7 +182,16 @@ bash slurm/submit.sh grid-search --cohort all-mice --distribution uniform --fit-
 bash slurm/submit.sh sbi-condition --cohort all-mice --distribution uniform --run-id $RUN
 ```
 
-When the jobs have finished:
+When the jobs have finished, resubmit any grid-search task that left no partial (a time limit or a node failure;
+`sacct -j <job id> -X` shows TIMEOUT or NODE_FAIL, and `--gather` names the short pairs). It prints "nothing to
+resubmit" when every task is there:
+
+```bash
+load-env
+bash slurm/submit.sh grid-search --cohort all-mice --distribution uniform --fit-target update_matrix --run-id $RUN --missing
+```
+
+When those have finished too:
 
 ```bash
 load-env

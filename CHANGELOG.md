@@ -3,6 +3,12 @@
 
 ## Unreleased
 
+- **Grid search: a 12-hour limit, and one command to resubmit unfinished tasks.** On the learning-prior grid a task
+  took a median 1.4 h (BE) and 2.4 h (SC), 90 % of them under 4 and 5 h. The 6-hour limit stopped 9 of the 608
+  all-mice tasks (SC fits of SS20, SS21 and SS23) and 56 of the first thousand synthetic ones, so
+  `slurm/grid_search.sh` now asks for 12 h. `bash slurm/submit.sh grid-search ... --run-id ID --missing` resubmits
+  the tasks of a run that left no partial (a time limit, a node failure). `sc-grid-search --print-missing` now prints
+  them as SLURM ranges ('0-3,7', `tasks.slurm_array`), or 'none', so thousands of tasks stay a short `--array`.
 - **Is a silenced trial remembered on the next one?** (thesis analysis 4, agreed 18 November 2026).
   `sc-blocked-update --fits all-mice/<run id>` (`inference/blocked_update.py`, `plotting/blocked_update.py`) runs
   each animal's fitted BE and SC models (the first 50 samples of the pooled network's saved posterior) on its own

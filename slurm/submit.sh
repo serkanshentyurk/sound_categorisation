@@ -12,6 +12,10 @@
 # Grid-search arrays are throttled to GS_ARRAY_THROTTLE concurrent tasks (default 150):
 #   GS_ARRAY_THROTTLE=100 bash slurm/submit.sh grid-search ...
 #
+# Tasks of a grid-search run that left no partial (a time limit, a node failure) are resubmitted with --missing,
+# once none of that run's tasks is still queued or running (they would run twice):
+#   bash slurm/submit.sh grid-search --cohort C --distribution uniform --fit-target update_matrix --run-id ID --missing
+#
 # C is a synthetic cohort or a cohort name from config.yaml (e.g. opto1-cohort). grid-search / sbi-condition:
 # without --run-id a new run is created under model_identification/<cohort> and its id is printed; pass that
 # id to the other stages and to --gather / sc-consensus so they share the run:
@@ -30,6 +34,16 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 stage="${1:?sbi-train|sbi-condition|sbi-sbc|sbi-check|grid-search}"; shift
+missing=0
+args=()
+for a in "$@"; do
+  if [ "$a" = --missing ]; then missing=1; else args+=("$a"); fi
+done
+set -- ${args[@]+"${args[@]}"}
+if [ "$missing" = 1 ] && ! { [ "$stage" = grid-search ] && printf '%s\n' "$@" | grep -qx -- '--run-id'; }; then
+  echo "--missing resubmits the unfinished tasks of an existing grid-search run: give grid-search and --run-id" >&2
+  exit 1
+fi
 export OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1   # the login node caps threads
 case "$stage" in
   sbi-train)     cmd=sc-sbi-train;     sh=slurm/sbi_train.sh ;;
@@ -65,11 +79,21 @@ PY
   mkdir -p "$logdir"
 fi
 
-# --print-array may print progress first (grid search loads the cohort: snapshot and cohort lines), so keep
-# only its last line, and stop if that is not an array range
-range="$("$cmd" --print-array "$@" ${extra[@]+"${extra[@]}"} | tail -n 1)"
-if ! [[ "$range" =~ ^[0-9]+-[0-9]+$ ]]; then
-  echo "could not read an array range from $cmd --print-array (last line: '$range')" >&2
+# --print-array and --print-missing may print progress first (grid search loads the cohort: snapshot and cohort
+# lines), so keep only the last line, and stop if that is not an array range or list
+if [ "$missing" = 1 ]; then
+  range="$("$cmd" --print-missing "$@" | tail -n 1)"
+  if [ "$range" = none ]; then
+    echo "nothing to resubmit: every task of this run has its partial"
+    exit 0
+  fi
+  pattern='^[0-9][0-9,-]*$'
+else
+  range="$("$cmd" --print-array "$@" ${extra[@]+"${extra[@]}"} | tail -n 1)"
+  pattern='^[0-9]+-[0-9]+$'
+fi
+if ! [[ "$range" =~ $pattern ]]; then
+  echo "could not read the array from $cmd (last line: '$range')" >&2
   exit 1
 fi
 if [ "$stage" = grid-search ]; then range="${range}%${GS_ARRAY_THROTTLE:-150}"; fi

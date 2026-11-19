@@ -1,7 +1,7 @@
 """sound_categorisation.inference.tasks — one task-index convention for every SLURM array."""
 
 import pytest
-from sound_categorisation.inference.tasks import CONDITION_GRID, TRAIN_GRID, TaskGrid, gs_grid
+from sound_categorisation.inference.tasks import CONDITION_GRID, TRAIN_GRID, TaskGrid, gs_grid, slurm_array
 
 
 def test_decode_encode_roundtrip():
@@ -86,3 +86,10 @@ def test_settings_of_the_representations_agree():
     assert SBI_REPRESENTATIONS['single']['T'] == SBI_SINGLE_T
     assert SBI_SINGLE_T[0] <= SBI_TRAIN_T[0] // 2                # half of the shortest selected session
     assert SBI_REPRESENTATIONS['pooled']['accuracy_rule'] and not SBI_REPRESENTATIONS['single']['accuracy_rule']
+
+
+def test_tasks_to_resubmit_as_a_short_array_list():
+    """--print-missing gives sbatch ranges, so thousands of unfinished tasks stay a short --array argument."""
+    assert slurm_array([10, 9, 7, 3, 2, 1, 0, 3]) == '0-3,7,9-10'
+    assert slurm_array([5]) == '5' and slurm_array([]) == ''
+    assert slurm_array(range(1033, 6400)) == '1033-6399'
