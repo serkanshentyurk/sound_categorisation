@@ -26,7 +26,7 @@ def _tick(v, _):
     lead = round(v / 10 ** np.floor(np.log10(v)), 6)
     return f'{v:g}' if lead in (1, 2, 3, 5) else ''
 
-STYLE = {'no_learning': dict(marker='x', color='0.45', ms=6, label='no learning'),
+STYLE = {'no_history': dict(marker='x', color='0.45', ms=6, label='no history'),
          'true_model': dict(marker='+', color='k', ms=8, label='true model'),
          'BE': dict(marker='o', color=COLOURS['BE'], ms=5, label='BE'),
          'SC': dict(marker='s', color=COLOURS['SC'], ms=5, label='SC')}
@@ -42,7 +42,7 @@ def plot_noise_floor(ratios: pd.DataFrame, *, band: tuple | None = None, ax=None
     if band is not None:
         ax.axhspan(*band, color='0.92', zorder=0, lw=0)
     ax.axhline(1.0, color='k', lw=1, label='floor')
-    shift = {k: v for k, v in zip(('no_learning', 'true_model', 'BE', 'SC'), (-0.18, -0.06, 0.06, 0.18))}
+    shift = {k: v for k, v in zip(('no_history', 'true_model', 'BE', 'SC'), (-0.18, -0.06, 0.06, 0.18))}
     for col, style in STYLE.items():
         if col in d and d[col].notna().any():
             ax.plot(x + shift[col], d[col], ls='', **style)

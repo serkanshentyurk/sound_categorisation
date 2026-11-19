@@ -3,6 +3,11 @@
 
 ## Unreleased
 
+- **`no_learning` renamed `no_history`** in `noise_floor.csv`, `noise_floor_sessions.csv`, `floor_ratios` and the plot: the
+  reference's curve is fitted on choices the animal made while updating, so it carries the average of that updating;
+  it lacks only the dependence on the previous trial, which is what the update matrix measures. Rerun
+  `sc-noise-floor`. First real run (all-mice, 6fd4a93): the no-history reference scores a median 1.20 times the floor
+  on the session split, above 1.35 in 6 of 19 mice, and 1.11 within sessions (above 1.35 in 4).
 - **Laser days in the trajectory on laser-off trials.** `compute_trajectory` measured every session on all trials,
   so a laser day's criterion and the shape of the laser days included the laser-on trials, while the switch
   report measures a laser day on its laser-off trials, as the docs said both did. On the opto cohort's battery
@@ -13,13 +18,13 @@
 - **Noise floor for the held-out error** (thesis analysis 1, agreed 18 November 2026). `sc-noise-floor --cohort C`
   (`inference/noise_floor.py`, `plotting/noise_floor.py`) writes `noise_floor/<cohort>/<run_id>/`: per animal, the
   update-matrix error between the two halves the fits are scored on (sessions 1–3 against 4–5; each session's first
-  half against its second for the single network), a no-learning reference (the animal's psychometric with no
-  trial history, fitted on one half and scored on the other like a fit) and, on a synthetic cohort, the true
+  half against its second for the single network), a no-history reference (the animal's psychometric fitted on
+  one half and scored on the other like a fit, with no dependence on the previous trial) and, on a synthetic cohort, the true
   model scored the same way. A fit is scored on one simulation of itself, as noisy as the held-out half, so a
   correct model scores about the floor, not half of it as the plan had said: on 44 simulated mice (five sessions
   of 250–500 trials) the true model averaged 1.03 times the floor, 0.76–1.35 for 80 % of them; with its matrix
-  averaged over simulations it would be 0.56. Within a session the no-learning reference sits barely above the
-  floor (about 1.05 times on four simulated mice), so half-sessions hardly separate any model from no learning.
+  averaged over simulations it would be 0.56. Within a session the no-history reference sits barely above the
+  floor (about 1.05 times on four simulated mice), so half-sessions hardly separate any model from one without history.
   Notebook 11 §5 draws each model's held-out error over the floor. `inference/selection.py` now names the fits'
   splits and scoring for reuse (`fold_sessions`, `session_halves`, `empirical_target`, `target_from_choices`,
   `simulated_target`; conditioning unchanged), and `sc-make-synthetic-run` adds the synthetic floor run.

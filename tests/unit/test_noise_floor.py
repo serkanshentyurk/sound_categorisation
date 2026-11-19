@@ -50,16 +50,16 @@ def test_the_halves_are_the_fits_halves():
     assert row['within']['floor'] == pytest.approx(d['floor'].mean()) and row['within']['n_parts'] == 5
 
 
-def test_no_learning_scores_the_floor_without_history_and_misses_history():
-    """Without trial history the no-learning reference is the right model, so it scores about the floor; with a
+def test_the_no_history_reference_scores_the_floor_without_history_and_misses_it():
+    """Without trial history the no-history reference is the right model, so it scores about the floor; with a
     strong pull towards the previous stimulus it misses it by far."""
     ratios = []
     for seed in range(4):
         rows, _ = animal_noise_floor(_animal(seed=seed), splits=('session',), repeats=4)
-        ratios.append(rows[0]['no_learning'] / rows[0]['floor'])
+        ratios.append(rows[0]['no_history'] / rows[0]['floor'])
     assert 0.6 < np.mean(ratios) < 1.5
     rows, _ = animal_noise_floor(_animal(seed=9, history=0.4), splits=('session',), repeats=4)
-    assert rows[0]['no_learning'] / rows[0]['floor'] > 3
+    assert rows[0]['no_history'] / rows[0]['floor'] > 3
 
 
 def test_a_correct_model_scores_about_the_floor():
@@ -83,12 +83,12 @@ def test_a_correct_model_scores_about_the_floor():
 
 
 def test_ratios_put_each_model_over_the_floor():
-    table = pd.DataFrame({'animal': ['A', 'B'], 'split': 'session', 'floor': [0.02, 0.01], 'no_learning': [0.04, 0.01],
+    table = pd.DataFrame({'animal': ['A', 'B'], 'split': 'session', 'floor': [0.02, 0.01], 'no_history': [0.04, 0.01],
                           'true_model': np.nan})
     comparison = pd.DataFrame({'animal_id': ['A', 'B'], 'be_mean': [0.03, 0.02], 'sc_mean': [0.02, 0.05]})
     r = floor_ratios(table, model_errors(comparison), 'session').set_index('animal')
     assert r.loc['A', 'BE'] == pytest.approx(1.5) and r.loc['B', 'SC'] == pytest.approx(5.0)
-    assert r.loc['A', 'no_learning'] == pytest.approx(2.0) and 'true_model' not in r
+    assert r.loc['A', 'no_history'] == pytest.approx(2.0) and 'true_model' not in r
     assert true_model_band(table) is None
 
 

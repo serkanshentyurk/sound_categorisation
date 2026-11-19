@@ -1,5 +1,5 @@
 """
-The noise floor of the held-out update-matrix error, and a no-learning reference, per animal (thesis analysis 1).
+The noise floor of the held-out update-matrix error, and a no-history reference, per animal (thesis analysis 1).
 
 A fit is scored on held-out data: its update matrix, from one simulation on the held-out trials, against the
 held-out update matrix (``selection``, ``grid_search``). The floor is the same error between the two halves of the
@@ -9,8 +9,10 @@ model scores about the floor itself: on 44 simulated mice (22 BE, 22 SC; five se
 model, scored this way, averaged 1.03 times the floor (0.76-1.35 for 80 % of them). A model's error over the floor
 reads: about 1, as good as a model with fixed parameters can be on these data; well above 1, it misses something.
 
-The no-learning reference is a model without trial history: the animal's psychometric (4 parameters) fitted on one
-half and simulated on the other, scored like a fit. A model's error sits between the floor and it.
+The no-history reference is the animal's psychometric (4 parameters) fitted on one half and simulated on the other
+with no dependence on the previous trial, scored like a fit. Its curve is fitted on choices made while the animal
+updated, so it carries the average result of that updating; what it lacks is what the update matrix measures (each
+conditional curve minus the main curve), so its expected matrix is zero. A model's error sits between the floor and it.
 
 The splits are the ones the fits are scored on:
     session  the two-fold session split (``selection.fold_sessions``: the first three of five sessions against the
@@ -44,11 +46,11 @@ from sound_categorisation.settings import SBI_BURN_IN
 __all__ = ['animal_noise_floor', 'noise_floor_table', 'model_errors', 'floor_ratios', 'true_model_band', 'REPEATS',
            'SPLITS', 'FLOOR_COLUMNS', 'SESSION_COLUMNS']
 
-REPEATS = 16                 # simulations averaged per held-out half for no_learning and true_model
+REPEATS = 16                 # simulations averaged per held-out half for no_history and true_model
 SPLITS = ('session', 'within')
-FLOOR_COLUMNS = ['animal', 'split', 'floor', 'no_learning', 'true_model', 'true_model_name', 'n_parts',
+FLOOR_COLUMNS = ['animal', 'split', 'floor', 'no_history', 'true_model', 'true_model_name', 'n_parts',
                  'n_trials_a', 'n_trials_b', 'sessions_a', 'sessions_b']
-SESSION_COLUMNS = ['animal', 'rep', 'session_idx', 'n_trials_a', 'n_trials_b', 'floor', 'no_learning', 'true_model']
+SESSION_COLUMNS = ['animal', 'rep', 'session_idx', 'n_trials_a', 'n_trials_b', 'floor', 'no_history', 'true_model']
 
 
 def _part(sessions: List, fit_target: str, n_bins: int):
@@ -67,7 +69,7 @@ def _mean(values) -> float:
     return float(v.mean()) if v.size else np.nan
 
 
-def _no_learning_prob(train, stimuli: np.ndarray) -> np.ndarray | None:
+def _no_history_prob(train, stimuli: np.ndarray) -> np.ndarray | None:
     """P(B) on ``stimuli`` from the psychometric of ``train``'s responded trials alone: no trial history."""
     ok = ~np.asarray(train['no_response'], bool)
     p = fit_psychometric(np.asarray(train['stimuli'])[ok], np.asarray(train['choices'])[ok])
@@ -78,13 +80,13 @@ def _no_learning_prob(train, stimuli: np.ndarray) -> np.ndarray | None:
 
 def _scores(a, b, *, fit_target: str, n_bins: int, repeats: int, seed: int, truth) -> Dict[str, float]:
     """``a``, ``b`` = (pooled, matrix) of the two halves. The floor, and the mean over both directions (fit on one
-    half, scored on the other) of the no-learning reference and, with ``truth`` = (model, params), the true model,
+    half, scored on the other) of the no-history reference and, with ``truth`` = (model, params), the true model,
     each the mean error of ``repeats`` single simulations."""
-    out = {'floor': float(matrix_error(a[1], b[1])), 'no_learning': np.nan, 'true_model': np.nan}
+    out = {'floor': float(matrix_error(a[1], b[1])), 'no_history': np.nan, 'true_model': np.nan}
     nl, tm = [], []
     for k, ((train, _), (test, held_out)) in enumerate(((a, b), (b, a))):
         rng = np.random.default_rng(seed + k)
-        prob = _no_learning_prob(train, test['stimuli'])
+        prob = _no_history_prob(train, test['stimuli'])
         errs = [] if prob is None else [
             matrix_error(held_out, target_from_choices((rng.random(len(prob)) < prob).astype(float), test,
                                                        fit_target, n_bins))
@@ -95,7 +97,7 @@ def _scores(a, b, *, fit_target: str, n_bins: int, repeats: int, seed: int, trut
             tm.append(_mean([matrix_error(held_out, simulated_target(model, params, test, fit_target, n_bins,
                                                                      SBI_BURN_IN, seed + 1000 * k + r))
                              for r in range(repeats)]))
-    out['no_learning'] = float(np.mean(nl))          # NaN if either direction has none, as a fit's fold mean
+    out['no_history'] = float(np.mean(nl))          # NaN if either direction has none, as a fit's fold mean
     if truth is not None:
         out['true_model'] = float(np.mean(tm))
     return out
@@ -135,7 +137,7 @@ def animal_noise_floor(sessions: Sequence, *, animal: str = '', truth=None, spli
         d = d[d['floor'].notna()]               # every mean over the same sessions: those with a floor
         if len(d):
             rows.append({'animal': animal, 'split': 'within',
-                         **{c: float(d[c].mean()) for c in ('floor', 'no_learning', 'true_model')},
+                         **{c: float(d[c].mean()) for c in ('floor', 'no_history', 'true_model')},
                          'true_model_name': name, 'n_parts': len(d), 'n_trials_a': int(d['n_trials_a'].sum()),
                          'n_trials_b': int(d['n_trials_b'].sum()), 'sessions_a': '', 'sessions_b': ''})
     return rows, session_rows
@@ -173,10 +175,10 @@ def model_errors(comparison: pd.DataFrame) -> pd.DataFrame:
 
 
 def floor_ratios(table: pd.DataFrame, errors: pd.DataFrame | None = None, split: str = 'session') -> pd.DataFrame:
-    """Per animal on ``split``: the floor, and the no-learning reference, the true model (where there is one)
+    """Per animal on ``split``: the floor, and the no-history reference, the true model (where there is one)
     and each model in ``errors`` (``model_errors``) divided by it. 1 = the floor."""
     t = table[table['split'] == split].set_index('animal')
-    out = pd.DataFrame({'floor': t['floor'], 'no_learning': t['no_learning'] / t['floor']})
+    out = pd.DataFrame({'floor': t['floor'], 'no_history': t['no_history'] / t['floor']})
     if t['true_model'].notna().any():
         out['true_model'] = t['true_model'] / t['floor']
     if errors is not None and len(errors):

@@ -1,5 +1,5 @@
 """
-The noise floor of the held-out update-matrix error, and a no-learning reference, per animal (``inference.noise_floor``).
+The noise floor of the held-out update-matrix error, and a no-history reference, per animal (``inference.noise_floor``).
 
     sc-noise-floor --cohort all-mice
     sc-noise-floor --cohort synthetic_uniform_learning_k100 --jobs 6
@@ -7,7 +7,7 @@ The noise floor of the held-out update-matrix error, and a no-learning reference
 Takes each animal's sessions exactly as the fits do (``cohort.select_animals``, preset ``model_id_<distribution>``)
 and writes ``noise_floor/<cohort>/<run_id>/``:
 
-    noise_floor.csv           one row per animal and split: floor, no_learning, true_model (synthetic cohorts),
+    noise_floor.csv           one row per animal and split: floor, no_history, true_model (synthetic cohorts),
                               trials per half, and for the session split the sessions in each half
     noise_floor_sessions.csv  the within-session split, one row per session (rep = the session's position, as
                               the single-session conditioning numbers its reps)
@@ -54,7 +54,7 @@ def main(argv=None):
                                           'splits': a.splits, 'repeats': a.repeats, 'fit_target': a.fit_target},
                           run_id=run.name)
     (run / 'meta.json').write_text(json.dumps(meta, indent=2, default=str))
-    summary = table.groupby('split')[['floor', 'no_learning', 'true_model']].median()
+    summary = table.groupby('split')[['floor', 'no_history', 'true_model']].median()
     print(summary.round(4).to_string())
     print(f'-> {run}')
     return run

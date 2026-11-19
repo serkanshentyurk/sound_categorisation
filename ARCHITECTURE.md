@@ -67,7 +67,7 @@ inference/           amortised SBI (types, simulator, representation, selection,
                      network_check (saved networks against the current code), validation (thesis tables),
                      prior_range (each animal's statistics against the models' simulated range),
                      noise_floor (per animal, the held-out error two halves of its own data give, on the
-                     splits the fits are scored on, and a no-learning reference: the absolute-fit scale)
+                     splits the fits are scored on, and a no-history reference: the absolute-fit scale)
 features/            feature_diagnostics: which summary statistics carry BE/SC identity and parameters
 reports/             compute.py  AnimalResult / GroupResult / Settings (no matplotlib)
                      tables.py   to_tables, group_tables, readout_arrays, write_result / read_result
