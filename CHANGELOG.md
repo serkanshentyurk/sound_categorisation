@@ -3,6 +3,21 @@
 
 ## Unreleased
 
+- **Which fitted model predicts the Hard sessions?** (thesis analysis 3, agreed 20 November 2026).
+  `sc-hard-predictions --fits all-mice/<run id> --cohort C` (`inference/hard_predictions.py`,
+  `plotting/hard_predictions.py`): each animal runs from its fitted Uniform sessions (the fit run's
+  `sessions/uniform.csv`) straight into its Hard sessions, from its first switch into Hard to its last Hard session;
+  what lies between (SS08's and SS13's toggles, the opto mice's Uniform masking and laser sessions) is left out and
+  listed in `sessions.csv`. For each model and draw of its posterior (default 200), a copy of the animal plays that
+  span in one continuous run, carrying what it learnt from day to day; on laser trials it learns as on any other or
+  not at all (`--laser-learning`, both by default where there are laser trials). The animal and every copy go
+  through the switch report's own computation; which sessions enter is fixed to the animal's, and the Uniform
+  reference is one fit on the fitted sessions for both, so observed values can differ a little from the switch
+  report's. Scored by the observed value's percentile among the predictions and its CRPS, summed per model over the
+  animals, the animals the bias check keeps and flags apart. Writes `hard_predictions/<cohort>/<run_id>/`;
+  notebook 11 §6 draws it (the former §6 is now §7). The synthetic runs add a Hard-prediction run with prior draws
+  in place of fits. `reports.switches.animal_switch_result` is one animal's part of `compute_switches_cohort`, with
+  the bias check optional; the switch report's tables are unchanged.
 - **Grid search: a 12-hour limit, and one command to resubmit unfinished tasks.** On the learning-prior grid a task
   took a median 1.4 h (BE) and 2.4 h (SC), 90 % of them under 4 and 5 h. The 6-hour limit stopped 9 of the 608
   all-mice tasks (SC fits of SS20, SS21 and SS23) and 56 of the first thousand synthetic ones, so

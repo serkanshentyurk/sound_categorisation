@@ -96,11 +96,37 @@ def _blocked_update_run(exp, ids, opto_run: Path, results_root: Path) -> Path:
     return brun
 
 
+def _hard_predictions_run(exp, results_root: Path, ids=('ST00', 'ST01', 'SB00')) -> Path:
+    """A ``hard_predictions`` run on two daily animals and one blocked animal. They have no model fits, so two draws
+    from each model's prior stand in for the posterior and the regular Uniform sessions for the fitted ones; blocks
+    are shorter than real ones, so the switch report's synthetic settings apply. It checks the pipeline, it says
+    nothing about the animals."""
+    from sound_categorisation.cli.hard_predictions import write_run
+    from sound_categorisation.data.paths import start_run
+    from sound_categorisation.inference.hard_predictions import MODELS
+    from sound_categorisation.models.priors import sample_prior
+
+    rng = np.random.default_rng(1)
+    draws = {}
+    for aid in ids:
+        for model in MODELS:
+            names, thetas = sample_prior(model, None, 2, rng)
+            draws[(aid, model)] = [dict(zip(names, map(float, t))) for t in thetas]
+    fitted = {aid: [s for s in exp.animals[aid].sessions if s.session_type == 'regular' and s.distribution == 'Uniform']
+              for aid in ids}
+    hrun = start_run('hard_predictions', 'synthetic', fast=True, root=results_root)
+    write_run(hrun, exp, list(ids), draws, fitted, burn_in=200,
+              switch_kw={'min_block_trials': 300, 'max_trials': 800},
+              args={'fits': 'two prior draws per model (synthetic)'})
+    return hrun
+
+
 def write_synthetic_runs(results_root, data_root, *, with_model_id: bool = True) -> dict:
     """Build the runs the notebooks and CI read, from synthetic data only: an ``opto_contrasts`` run
     (fast on every animal, one full condition, the post-laser condition on Uniform with intervals) and its summary,
     a ``switch_adaptation`` run (the blocked and the daily animals together), a ``light_artefact`` run, a
-    ``blocked_update`` run (prior draws in place of fits), and — with ``with_model_id`` — a
+    ``blocked_update`` run and a ``hard_predictions`` run (prior draws in place of fits), and — with
+    ``with_model_id`` — a
     synthetic cohort, a fast grid search and its consensus under ``model_identification/synthetic_uniform``, and its
     noise floor (``noise_floor/synthetic_uniform``).
     Returns the run directories. ``sc-make-synthetic-run`` is the CLI; ``SC_NB_SYNTHETIC=1`` makes the
@@ -145,6 +171,7 @@ def write_synthetic_runs(results_root, data_root, *, with_model_id: bool = True)
     run_light_artefact(exp, ids, lrun, 'synthetic', 'Uniform', fast=True)
     out = {'opto_contrasts': run, 'switch_adaptation': srun, 'light_artefact': lrun}
     out['blocked_update'] = _blocked_update_run(exp, ids, run, results_root)
+    out['hard_predictions'] = _hard_predictions_run(exp, results_root)
 
     if with_model_id:
         from sound_categorisation.cli import consensus, grid_search, make_synthetic_cohort

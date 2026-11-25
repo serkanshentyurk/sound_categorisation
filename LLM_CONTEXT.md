@@ -168,8 +168,9 @@ accuracy rule), which votes with the grid search, and single-session, reported b
 per-session fits (`SBI_TRAIN_REPS`). On them the all-mice run (`all-mice/2026-11-17_2256_195866b`) and an SBI
 validation run on 100 BE + 100 SC synthetic mice shaped like the real ones (`synthetic_uniform_learning_k100`:
 real-run seeds and repeats, SBC, network check; notebook 91) are redone. Primary consensus rule: more
-significant votes (≥ 1), contested calls flagged; the two-vote rule reported alongside. Still to do: the
-per-animal model classifier, the Hard-block and daily-alternation predictions from the Uniform fits, disRNN.
+significant votes (≥ 1), contested calls flagged; the two-vote rule reported alongside. The Hard-block and
+daily-alternation predictions from the Uniform fits are built (`sc-hard-predictions`), not yet run on real fits.
+Still to do: the per-animal model classifier, disRNN.
 Optional: the learning phase (state-space models). Not planned: Hard-distribution and moments networks (both
 still train by name, e.g. `sc-sbi-train --rep moments`).
 Next-cohort design (blocked distributions, interleaved session types, opsin-negative light control at

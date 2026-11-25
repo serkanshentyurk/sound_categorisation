@@ -221,6 +221,15 @@ sc-fetch results model_identification/all-mice/<run id>
 sc-blocked-update --fits all-mice/<run id> --jobs 4
 ```
 
+Which fitted model predicts the Hard sessions (notebook 11, section 6) runs each animal's fitted BE and SC models
+continuously from its fitted Uniform sessions through its Hard sessions, one cohort at a time. It needs the same
+fetched model-identification run; with 200 draws it takes several hours on the laptop:
+
+```bash
+sc-hard-predictions --fits all-mice/<run id> --cohort behaviour1-cohort --jobs 8
+sc-hard-predictions --fits all-mice/<run id> --cohort opto1-cohort --jobs 8
+```
+
 Every command, its options and what it writes: [docs/runs.md](docs/runs.md).
 
 ## New animals

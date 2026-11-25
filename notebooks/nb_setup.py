@@ -66,6 +66,7 @@ def open_run(report: str, cohort: str, run: str = RUN) -> Path:
                 'model_identification': 'slurm/submit.sh grid-search / condition, then sc-consensus (see docs/runs.md)',
                 'noise_floor': f'sc-noise-floor --cohort {cohort}',
                 'blocked_update': f'sc-blocked-update --cohort {cohort} --fits all-mice/<model-identification run id>',
+                'hard_predictions': f'sc-hard-predictions --cohort {cohort} --fits all-mice/<model-identification run id>',
                 }.get(report, 'see docs/runs.md')
         raise FileNotFoundError(f'{e}\nNo {report} run for cohort {cohort!r}. Create one with:\n    {hint}'
                                 + ('\n(or set SC_NB_SYNTHETIC=1 after sc-make-synthetic-run)' if not SYNTHETIC else ''))

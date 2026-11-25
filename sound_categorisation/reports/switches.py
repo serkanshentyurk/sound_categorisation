@@ -61,7 +61,8 @@ from sound_categorisation.behaviour.adaptation import (
 )
 from sound_categorisation.reports.tables import write_result
 
-__all__ = ['SwitchesResult', 'compute_switches_cohort', 'switch_tables', 'switches_summary', 'run_switches',
+__all__ = ['SwitchesResult', 'animal_switch_result', 'compute_switches_cohort', 'switch_tables', 'switches_summary',
+           'run_switches',
            'pooled_curve', 't_interval', 'block_table', 'LEVEL', 'DAY_KINDS', 'BLOCK_KINDS', 'DIRECTIONS']
 
 LEVEL = 0.95
@@ -104,30 +105,40 @@ def _cat(frames) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
+def animal_switch_result(animal, design: str | None = None, *, bias_rule=None, bias: bool = True, **kw) -> tuple:
+    """One animal's part of ``compute_switches_cohort``: ``(design, switches, phase psychometrics, phase curves,
+    bias check)``. ``design`` defaults to ``hard_design``; ``bias=False`` leaves the bias check out (an empty table);
+    ``kw`` goes to ``compute_switches``. An animal without switches into a Hard distribution gives an empty list and
+    empty tables."""
+    design = design or hard_design(animal)
+    res = compute_switches(animal, design=design, **kw)
+    if not res:
+        return design, [], pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+    sessions, switches = design_switches(animal, design,
+                                         min_block_trials=kw.get('min_block_trials', SWITCH_MIN_BLOCK),
+                                         min_day_trials=kw.get('min_day_trials', DAY_MIN_TRIALS))
+    switches = [s for s in switches if s['to_distribution'] in HARD]
+    p, c = compute_phase_curves(animal, sessions, switches, per_block=(design == 'blocked'),
+                                trials='all' if design == 'blocked' else 'non_opto')
+    b = bias_sessions(animal, bias_rule) if bias else pd.DataFrame()
+    return design, res, p, c, b
+
+
 def compute_switches_cohort(experiment, animals: Sequence[str], *, cohort: str = '', bias_rule=None,
                             **kw) -> SwitchesResult:
-    """Every animal's switches, phase psychometrics and bias check. ``kw`` goes to ``compute_switches``
-    (``min_block_trials``, ``min_day_trials``, ``max_trials``, …). An animal that fails is left out with a
-    warning; one without switches into a Hard distribution is skipped."""
+    """Every animal's switches, phase psychometrics and bias check (``animal_switch_result``). ``kw`` goes to
+    ``compute_switches`` (``min_block_trials``, ``min_day_trials``, ``max_trials``, …). An animal that fails is
+    left out with a warning; one without switches into a Hard distribution is skipped."""
     out, params, curves, bias, designs = {}, [], [], [], {}
     for aid in animals:
         if aid not in experiment.animals:
             continue
-        animal = experiment.animals[aid]
         try:
-            design = hard_design(animal)
-            res = compute_switches(animal, design=design, **kw)
-            if not res:
-                continue
-            sessions, switches = design_switches(animal, design,
-                                                 min_block_trials=kw.get('min_block_trials', SWITCH_MIN_BLOCK),
-                                                 min_day_trials=kw.get('min_day_trials', DAY_MIN_TRIALS))
-            switches = [s for s in switches if s['to_distribution'] in HARD]
-            p, c = compute_phase_curves(animal, sessions, switches, per_block=(design == 'blocked'),
-                                        trials='all' if design == 'blocked' else 'non_opto')
-            b = bias_sessions(animal, bias_rule)
+            design, res, p, c, b = animal_switch_result(experiment.animals[aid], bias_rule=bias_rule, **kw)
         except Exception as exc:                          # one animal must not kill the batch
             warnings.warn(f'{aid}: switches failed: {exc!r}', stacklevel=2)
+            continue
+        if not res:
             continue
         out[aid] = res
         params.append(p)
