@@ -3,10 +3,12 @@ that the model carries what it learnt from session to session, that a copy keeps
 the mouse's own choices measures exactly like the mouse, the scores and totals, the laser variants, jobs, and
 sc-hard-predictions writing its tables."""
 
+from dataclasses import replace
+
 import numpy as np
 import pandas as pd
 import pytest
-from behav_utils.data import session_from_arrays
+from behav_utils.data import SessionMetadata, session_from_arrays
 from sound_categorisation.data.synthetic import synthetic_experiment
 from sound_categorisation.inference.blocked_update import posterior_path
 from sound_categorisation.inference.cv_utils import save_cv_result
@@ -180,6 +182,26 @@ def test_learning_off_on_laser_trials_matters_only_where_there_are_laser_trials(
     off = animal_predictions(mouse, design, n, 'BE', [BE_LEARNS], laser_learning=False, burn_in=100, **SWITCH_KW)
     assert list(on[0].columns) == PREDICTED_COLUMNS and list(on[1].columns) == TRAJECTORY_COLUMNS
     assert not np.allclose(on[0]['value'], off[0]['value'], equal_nan=True)
+
+
+def _as_loaded(session):
+    """``session`` as the loader builds it: the distribution on every trial and none in the metadata."""
+    labels = np.full(session.n_trials, session.distribution, dtype=object)
+    fields = {k: v for k, v in session.metadata.fields.items() if k != 'distribution'}
+    return replace(session, trials=replace(session.trials, distribution=labels), metadata=SessionMetadata(fields))
+
+
+@pytest.mark.parametrize('aid', ['SB00', 'ST01'])
+def test_copies_of_loaded_sessions_keep_their_switches(exp, aid):
+    """Loaded sessions carry the distribution per trial, synthetic ones in their metadata. A copy keeps it either
+    way; otherwise its blocks and days lose their distribution and the model is never scored."""
+    design, mouse, n = _mouse(exp, aid)
+    loaded = run_animal(mouse, [_as_loaded(s) for s in mouse.sessions])
+    assert [s.distribution for s in loaded.sessions] == [s.distribution for s in mouse.sessions]
+    assert all(s.metadata.get('distribution') is None for s in loaded.sessions)
+    observed, _ = measure(loaded, design, n, **SWITCH_KW)
+    predicted, _ = animal_predictions(loaded, design, n, 'BE', [BE_LEARNS], burn_in=100, **SWITCH_KW)
+    assert len(observed) and set(predicted['readout']) == set(observed['readout'])
 
 
 def test_jobs_give_the_same_numbers(exp):

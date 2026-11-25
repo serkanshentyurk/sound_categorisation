@@ -3,6 +3,12 @@
 
 ## Unreleased
 
+- **Analysis 3: the model copies of real mice lost their switches.** A session loaded from files carries its
+  distribution on every trial; a synthetic one carries it in its metadata. `with_choices` rebuilt the copy's
+  trials with `session_from_arrays`, which keeps the label in the metadata only, so every copy of a real session
+  read 'Unknown', found no switch and was never scored (the runs of 25 November 2026 wrote empty score tables).
+  The copy now takes the session's per-trial distribution. A test builds sessions the loader's way, which the
+  synthetic experiment does not.
 - **Which fitted model predicts the Hard sessions?** (thesis analysis 3, agreed 20 November 2026).
   `sc-hard-predictions --fits all-mice/<run id> --cohort C` (`inference/hard_predictions.py`,
   `plotting/hard_predictions.py`): each animal runs from its fitted Uniform sessions (the fit run's

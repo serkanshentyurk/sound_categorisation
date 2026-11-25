@@ -192,12 +192,14 @@ def run_animal(animal, sessions: Sequence) -> AnimalData:
 
 def with_choices(session, choices) -> object:
     """A copy of ``session`` with ``choices`` in place of the animal's: scored by the session's task, the
-    previous-trial fields rebuilt; its id, date, type, distribution, laser flags and aborts kept."""
+    previous-trial fields rebuilt; its id, date, type, distribution, laser flags and aborts kept. A loaded session
+    carries its distribution on every trial (``session_from_arrays`` puts it in the metadata only), so the copy
+    takes the per-trial labels too; without them its distribution reads 'Unknown' and its switches vanish."""
     t = session.trials
     scored = session_from_arrays(t.stimulus, np.asarray(choices, dtype=float), session_idx=session.session_idx,
                                  distribution=session.distribution, abort=t.abort, task=session.task,
                                  laser=t.opto_on, session_date=session.date)
-    return replace(session, trials=scored.trials)
+    return replace(session, trials=replace(scored.trials, distribution=t.distribution))
 
 
 def continuous_run(agent, sessions: Sequence, rng: np.random.Generator) -> list:
