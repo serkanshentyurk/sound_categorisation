@@ -93,16 +93,24 @@ SC_NB_SYNTHETIC=1 SC_RESULTS_ROOT=/tmp/sc_results SC_DATA_ROOT=/tmp/sc_data jupy
 ## 7. Which environment made a result
 
 Every run folder holds `environment.txt`, the installed packages and their versions at the time the run was
-created; nothing needs doing for that. `pyproject.toml` does not pin versions, so for results that have to be
-reproducible later (a thesis, a paper), also commit the cluster environment once the runs are final:
+created; nothing needs doing for that. `pyproject.toml` does not pin versions, so the cluster environment of the
+thesis's final runs is committed as `environment.lock.yml`: the export of 26 November 2026, at 2e52ece. Its header
+says what was edited so that it rebuilds: the `prefix:` line removed, behav_utils pinned to its v1.1.0 git tag,
+the sound-categorisation line removed (this checkout is installed instead) and ssm kept as a comment (no final run
+uses it, and it builds only with `pip install --no-build-isolation`). It rebuilds on Linux x86-64 only: its conda
+packages and torch's CUDA wheels have no macOS builds.
+
+```bash
+conda env create -f environment.lock.yml
+conda activate sound_cat
+pip install -e . --no-deps
+```
+
+For a later set of final runs, export again and make the same edits:
 
 ```bash
 conda env export -n sound_cat --no-builds > environment.lock.yml
-git add environment.lock.yml
-git commit -m "Environment of the final runs"
 ```
-
-`conda env create -f environment.lock.yml` rebuilds it.
 
 ## Troubleshooting
 

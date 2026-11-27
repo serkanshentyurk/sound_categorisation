@@ -30,7 +30,7 @@ from behav_utils.data import (
 from sound_categorisation.data.paths import REPO_ROOT, cohort_path
 from sound_categorisation.settings import MODEL_ID_MIN_SESSIONS
 
-__all__ = ['load_experiment_any', 'gather_genotypes', 'collect_sessions_ppc',
+__all__ = ['load_experiment_any', 'cohort_experiment', 'gather_genotypes', 'collect_sessions_ppc',
            'collect_sessions_alm', 'ensure_presets', 'SITE_TYPE', 'GENOTYPES', 'CONTROL_TYPES',
            'AnimalRecord', 'load_animals', 'select_animals', 'is_synthetic_cohort',
            'preset_min_accuracy', 'LASER_TYPES']
@@ -91,6 +91,23 @@ def load_experiment_any(config_path: Path | None = None, snapshot_path: Path | N
                 f'Fetch it (sc-fetch snapshot), pass snapshot_path=/path/to/sound_cat_store, or mount '
                 f'the raw data dir the config points to.') from None
     raise FileNotFoundError(f'no snapshot at {snapshot_path!r} and no config at {config_path}')
+
+
+def cohort_experiment(cohort: str, config_path: Path | None = None, experiment=None):
+    """The experiment cut to one cohort of ``config.yaml``: the animals the cohort lists that the experiment
+    holds, with its metadata and config (the animals themselves are shared, not copied).
+
+    ``experiment`` defaults to ``load_experiment_any`` (the snapshot). Raises ValueError for a cohort the
+    config does not name.
+    """
+    from behav_utils.data import ExperimentData
+    cfg = Path(config_path) if config_path else REPO_ROOT / 'config.yaml'
+    cohorts = load_cohorts(cfg)
+    if cohort not in cohorts:
+        raise ValueError(f'unknown cohort {cohort!r}; cohorts in config.yaml: {sorted(cohorts)}')
+    full = experiment if experiment is not None else load_experiment_any(config_path=cfg)
+    return ExperimentData(animals={a: full.animals[a] for a in cohorts[cohort] if a in full.animals},
+                          metadata=dict(full.metadata), config=full.config)
 
 
 def _load_csv_as_exported(config_path: Path):

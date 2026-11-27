@@ -9,16 +9,28 @@ and sc-sbi-check if it was run) and, optionally, real runs; writes CSVs to ``<ru
     from the synthetic run   assignments_rule1.csv, assignments_rule2.csv, confusion.csv,
                              call_summary.csv, contested.csv, gs_by_sigma.csv,
                              synthetic_recovery.csv
+    with --october-validation
+                             call_summary_compare.csv (the call summary of this run and of the October
+                             networks' validation run, a ``run`` column first)
     with --real              real_sigma.csv (posterior sigma_percep against the grid's largest
                              value), real_calls.csv (columns current_rule1 / current_rule2, and with
-                             --october also october_rule1: both runs side by side)
+                             --october also october_rule1: both runs side by side), real_votes.csv
+                             (one row per run, animal and method: the model with the lower held-out
+                             error, its p-value, the call, each model's mean held-out error; with
+                             --october both runs)
 
 Rule 1 calls the model with more significant votes (at least one; a call with a significant
 vote against it is flagged contested); rule 2 needs two significant votes. A part whose inputs
 are missing is skipped with a note, so the command can run while a run is still filling.
 
-    sc-validation-tables --cohort synthetic_uniform_k50 --run-id ID \\
-        --real all-mice/<new run id> --october all-mice/<october run id>
+The October runs are scored with today's two voting methods (grid search and the pooled network), so old
+and new are compared on the same rule; the moments network, which voted until mid-November 2026, and the
+single network are listed beside them without a vote. October's own consensus, made with moments voting,
+is therefore not the one in these tables.
+
+    sc-validation-tables --cohort synthetic_uniform_learning_k100 --run-id ID \\
+        --real all-mice/<new run id> --october all-mice/<october run id> \\
+        --october-validation synthetic_uniform_k50/<october validation run id>
 """
 
 from __future__ import annotations
@@ -47,7 +59,7 @@ def _write(df, out: Path, name: str):
 
 
 def write_tables(run: Path, distribution: str, real: Path | None = None,
-                 october: Path | None = None) -> Path:
+                 october: Path | None = None, october_validation: Path | None = None) -> Path:
     from sound_categorisation.inference import validation as V
     from sound_categorisation.inference.consensus import load_all_assignments
     from sound_categorisation.inference.grid_search import DEFAULT_GRID
@@ -81,8 +93,19 @@ def write_tables(run: Path, distribution: str, real: Path | None = None,
         truths = V.synthetic_truths(run, distribution, reps)
         _write(V.gs_sigma_table(assign[1], truths, sigma_max), out, 'gs_by_sigma.csv')
         _write(V.synthetic_recovery_table(run, distribution, reps), out, 'synthetic_recovery.csv')
+        if october_validation is not None:
+            old = {rule: load_all_assignments(october_validation, distribution, min_significant_votes=rule,
+                                              reported=V.LISTED_METHODS)
+                   for rule in V.RULES}
+            if len(old[1]) and 'true_model' in old[1]:
+                _write(V.call_summary_by_run({'current': assign, 'october': old}), out,
+                       'call_summary_compare.csv')
+            else:
+                print(f'  no model-identification results with ground truth in {october_validation}')
     else:
         print('  no model-identification results with ground truth in this run')
+        if october_validation is not None:
+            print('  call_summary_compare.csv: skipped (this run has no ground truth to compare)')
 
     if real is not None:
         _write(V.real_sigma_table(real, distribution, sigma_max, reps), out, 'real_sigma.csv')
@@ -91,9 +114,12 @@ def write_tables(run: Path, distribution: str, real: Path | None = None,
         by_label = {f'current_rule{rule}': load_all_assignments(real, distribution,
                                                                  min_significant_votes=rule)
                     for rule in V.RULES}
+        votes = {'current': by_label['current_rule1']}
         if october is not None:
             by_label = {'october_rule1': load_all_assignments(october, distribution), **by_label}
+            votes['october'] = load_all_assignments(october, distribution, reported=V.LISTED_METHODS)
         _write(V.real_calls_table(by_label), out, 'real_calls.csv')
+        _write(V.real_votes_table(votes), out, 'real_votes.csv')
     return out
 
 
@@ -104,12 +130,16 @@ def main(argv=None):
     p.add_argument('--distribution', default='uniform', choices=DISTRIBUTIONS)
     p.add_argument('--real', default=None, help='<cohort>/<run_id> of the real run to tabulate')
     p.add_argument('--october', default=None, help='<cohort>/<run_id> of an earlier real run to compare')
+    p.add_argument('--october-validation', default=None,
+                   help="<cohort>/<run_id> of the earlier networks' validation run, put beside this one")
     args = p.parse_args(argv)
 
     run = resolve_run('model_identification', args.cohort, args.run_id)
     real = _run(args.real) if args.real else None
     october = _run(args.october) if args.october else None
-    out = write_tables(run, args.distribution, real=real, october=october)
+    october_validation = _run(args.october_validation) if args.october_validation else None
+    out = write_tables(run, args.distribution, real=real, october=october,
+                       october_validation=october_validation)
     meta = build_metadata('validation_tables', vars(args), run_id=run.name)
     (out / 'meta.json').write_text(json.dumps(meta, indent=2, default=str))
 

@@ -232,6 +232,24 @@ class TestVoteCountsAndContested:
 
 
 
+def test_with_experiment_lists_the_cohorts_animals_without_results(tmp_path, monkeypatch):
+    """sc-consensus --with-experiment: a cohort animal with no results gets an Unclear row; an animal of
+    the snapshot outside the cohort gets none."""
+    from behav_utils.data import ExperimentData
+    from sound_categorisation.data.cohort import cohort_experiment
+    t = TestLoadAllAssignments()
+    t._patch(monkeypatch, tmp_path)
+    methods = [('grid_search', None, 'update_matrix')]
+    t._write_method(*methods[0], 'A', 'BE', be_lo=0.10, sc_lo=0.20)
+    cfg = tmp_path / 'config.yaml'
+    cfg.write_text('cohorts:\n  c: [A, Z]\n')
+    snapshot = ExperimentData(animals={'A': None, 'Z': None, 'Q': None})
+    df = load_all_assignments(t.RUN, t.DIST, methods=methods,
+                              experiment=cohort_experiment('c', config_path=cfg, experiment=snapshot))
+    assert df['id'].tolist() == ['A', 'Z']
+    assert df.set_index('id').loc['Z', 'Consensus'] == 'Unclear'
+
+
 class TestReportedMethods:
     """The single-session representation is listed beside the votes and never counted."""
 

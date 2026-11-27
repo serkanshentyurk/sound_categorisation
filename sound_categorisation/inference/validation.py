@@ -31,10 +31,17 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
+from sound_categorisation.inference.consensus import REPORTED_METHODS
+
 ALPHA = 0.05
 RULES = (1, 2)                      # min_significant_votes of the two consensus rules reported
 VOTERS = ('GS-UM', 'SBI-pooled-UM')         # the methods that vote in the consensus
 REPORTED = ('SBI-single-UM',)               # listed beside them, not counted (consensus.REPORTED_METHODS)
+RETIRED = ('SBI-moments-UM',)               # voted until mid-November 2026; listed for the October runs
+# What an October run is loaded with: today's two voters, the single and the moments network listed beside
+# them without a vote, so old and new runs are scored with the same rule.
+LISTED_METHODS = [*REPORTED_METHODS, ('sbi', 'moments', 'update_matrix')]
+VOTE_COLUMNS = ['run', 'id', 'method', 'voting', 'lower', 'p_value', 'call', 'be_error', 'sc_error']
 
 
 # =============================================================================
@@ -236,10 +243,11 @@ def synthetic_truths(run, distribution: str, reps: Sequence[str] = ('pooled', 's
     return pd.DataFrame(list(rows.values()))
 
 
-def voter_calls(assign: pd.DataFrame, voters: Sequence[str] = (*VOTERS, *REPORTED),
+def voter_calls(assign: pd.DataFrame, voters: Sequence[str] = (*VOTERS, *REPORTED, *RETIRED),
                 alpha: float = ALPHA) -> pd.DataFrame:
     """Long table, one row per animal and voter: the call (BE / SC when p < alpha, else 'no call').
-    A reported method is listed with the call it would have made (its ``_lower`` columns)."""
+    A reported method is listed with the call it would have made (its ``_lower`` columns); a voter the
+    table has no columns for is skipped."""
     rows = []
     for _, r in assign.iterrows():
         for v in voters:
@@ -372,6 +380,41 @@ def real_sigma_table(run, distribution: str, sigma_max: float,
             rows.append({'id': r['animal_id'], 'rep': rep, 'model': r['model'],
                          'sigma_percep_median': float(sigma), 'above_grid': bool(sigma > sigma_max)})
     return pd.DataFrame(rows)
+
+
+def call_summary_by_run(assign_by_run: Dict[str, Dict[int, pd.DataFrame]],
+                        alpha: float = ALPHA) -> pd.DataFrame:
+    """``call_summary`` of several validation runs, stacked, a ``run`` column first (e.g. the October
+    networks' validation run beside the current one). ``assign_by_run[run]`` is that run's assignments
+    under each rule, as ``confusion_table`` takes them."""
+    parts = [call_summary(confusion_table(by_rule, alpha=alpha)).assign(run=run)
+             for run, by_rule in assign_by_run.items()]
+    if not parts:
+        return pd.DataFrame()
+    out = pd.concat(parts, ignore_index=True)
+    return out[['run'] + [c for c in out.columns if c != 'run']]
+
+
+def real_votes_table(assign_by_run: Dict[str, pd.DataFrame], alpha: float = ALPHA) -> pd.DataFrame:
+    """One row per run, animal and method (``VOTE_COLUMNS``): the model with the lower mean held-out
+    error (``lower``), its p-value, the call it makes (BE / SC when p < alpha, else 'no call'), each
+    model's mean held-out error, and whether the method votes in the consensus (a listed method, such as
+    the single or the moments network, does not). Every method with held-out errors in a run's table
+    gets rows; an animal a method has no result for gets an empty row."""
+    rows = []
+    for run, a in assign_by_run.items():
+        methods = [c[:-3] for c in a.columns if c.endswith('_be') and f'{c[:-3]}_sc' in a.columns]
+        for _, r in a.iterrows():
+            for m in methods:
+                voting = m in a.columns and f'{m}_p' in a.columns
+                lower, p = ((r.get(m), r.get(f'{m}_p')) if voting
+                            else (r.get(f'{m}_lower'), r.get(f'{m}_lower_pvalue')))
+                lower = lower if lower in ('BE', 'SC') else None
+                call = lower if (lower is not None and pd.notna(p) and p < alpha) else 'no call'
+                rows.append({'run': run, 'id': r['id'], 'method': m, 'voting': voting, 'lower': lower,
+                             'p_value': p, 'call': call, 'be_error': r.get(f'{m}_be'),
+                             'sc_error': r.get(f'{m}_sc')})
+    return pd.DataFrame(rows, columns=VOTE_COLUMNS)
 
 
 def real_calls_table(assign_by_label: Dict[str, pd.DataFrame]) -> pd.DataFrame:

@@ -38,7 +38,7 @@ if SYNTHETIC:
     VALIDATION_COHORT = 'synthetic_uniform'
 else:
     OPTO_COHORT, SWITCH_COHORT, MODEL_COHORT = 'opto1-cohort', 'behaviour1-cohort', 'all-mice'
-    VALIDATION_COHORT = 'synthetic_uniform_k50'      # the SBI validation run read by notebook 91
+    VALIDATION_COHORT = 'synthetic_uniform_learning_k100'   # read by notebooks 11 (noise floor) and 91
 
 apply_style()
 pd.set_option('display.width', 160)

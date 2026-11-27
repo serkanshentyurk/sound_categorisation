@@ -45,6 +45,20 @@ def test_truths_come_from_one_stream_per_model(cohort):
     assert be[0] != be[1]                                 # two draws, not a repeated first draw
 
 
+def test_cohort_experiment_keeps_the_cohorts_animals_only(tmp_path):
+    from sound_categorisation.data.cohort import cohort_experiment
+    from sound_categorisation.data.synthetic import synthetic_experiment
+    exp = synthetic_experiment()
+    cfg = tmp_path / 'config.yaml'
+    cfg.write_text('cohorts:\n  c: [ST00, SB00, XX99]\n')
+    sub = cohort_experiment('c', config_path=cfg, experiment=exp)
+    assert sub.animal_ids == ['SB00', 'ST00']                       # XX99 is not in the experiment
+    assert sub.animals['ST00'] is exp.animals['ST00'] and sub.config is exp.config
+    assert len(exp.animals) > 2                                     # the experiment itself is untouched
+    with pytest.raises(ValueError, match='unknown cohort'):
+        cohort_experiment('other', config_path=cfg, experiment=exp)
+
+
 def test_save_cv_result_keeps_posterior(tmp_path):
     post = {'posterior_samples': np.zeros((10, 4)), 'param_names': ['a', 'b', 'c', 'd'],
             'point_estimate': {'a': 0.0, 'b': 0.0, 'c': 0.0, 'd': 0.0},

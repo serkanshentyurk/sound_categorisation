@@ -1,0 +1,119 @@
+# The cluster environment of the thesis's final runs: `conda env export -n sound_cat --no-builds` on the SWC
+# cluster, 26 November 2026, with sound_categorisation at 2e52ece. Edited in four places so that it rebuilds:
+# the `prefix:` line removed; behav_utils pinned to its v1.1.0 git tag (it is not on PyPI); the
+# sound-categorisation line removed (install this checkout instead); ssm kept as a comment (below).
+# Linux x86-64 only: the conda packages (libgcc, ld_impl_linux-64, ...) and torch's CUDA wheels (nvidia-*,
+# triton) have no macOS builds. Each run's environment.txt records the versions of the machine that made it.
+#
+#   conda env create -f environment.lock.yml
+#   conda activate sound_cat
+#   pip install -e . --no-deps
+name: sound_cat
+channels:
+  - defaults
+dependencies:
+  - _libgcc_mutex=0.1
+  - _openmp_mutex=5.1
+  - bzip2=1.0.8
+  - ca-certificates=2026.3.19
+  - ld_impl_linux-64=2.44
+  - libexpat=2.7.5
+  - libffi=3.4.4
+  - libgcc=15.2.0
+  - libgcc-ng=15.2.0
+  - libgomp=15.2.0
+  - libnsl=2.0.0
+  - libstdcxx=15.2.0
+  - libstdcxx-ng=15.2.0
+  - libuuid=1.41.5
+  - libxcb=1.17.0
+  - libzlib=1.3.1
+  - ncurses=6.5
+  - openssl=3.5.5
+  - packaging=26.0
+  - pthread-stubs=0.3
+  - python=3.11.15
+  - readline=8.3
+  - setuptools=82.0.1
+  - sqlite=3.51.2
+  - tk=8.6.15
+  - wheel=0.46.3
+  - xorg-libx11=1.8.12
+  - xorg-libxau=1.0.12
+  - xorg-libxdmcp=1.1.5
+  - xorg-xorgproto=2024.1
+  - xz=5.8.2
+  - zlib=1.3.1
+  - pip:
+      - absl-py==2.5.1
+      - autograd==1.8.0
+      - behav_utils[store] @ git+https://github.com/serkanshentyurk/behav_utils.git@v1.1.0
+      - cloudpickle==3.1.2
+      - contourpy==1.3.3
+      - cuda-bindings==13.4.4
+      - cuda-pathfinder==1.8.3
+      - cuda-toolkit==13.0.3.0
+      - cycler==0.12.1
+      - cython==3.2.4
+      - filelock==4.2.4
+      - fonttools==4.67.0
+      - fsspec==2026.9.0
+      - grpcio==1.84.1
+      - hmmlearn==0.3.3
+      - iniconfig==2.3.1
+      - jinja2==3.1.6
+      - joblib==1.6.0
+      - kiwisolver==1.5.1
+      - llvmlite==0.47.0
+      - markdown==3.11.2
+      - markupsafe==3.0.4
+      - matplotlib==3.11.2
+      - mpmath==1.3.0
+      - networkx==3.6.1
+      - nflows==0.14
+      - numba==0.65.0
+      - numpy==2.4.6
+      - nvidia-cublas==13.1.1.3
+      - nvidia-cuda-cupti==13.0.85
+      - nvidia-cuda-nvrtc==13.0.88
+      - nvidia-cuda-runtime==13.0.96
+      - nvidia-cudnn-cu13==9.24.0.43
+      - nvidia-cufft==12.0.0.61
+      - nvidia-cufile==1.15.1.6
+      - nvidia-curand==10.4.0.35
+      - nvidia-cusolver==12.0.4.66
+      - nvidia-cusparse==12.6.3.3
+      - nvidia-cusparselt-cu13==0.8.1
+      - nvidia-nccl-cu13==2.30.7
+      - nvidia-nvjitlink==13.4.92
+      - nvidia-nvshmem-cu13==3.4.5
+      - nvidia-nvtx==13.0.85
+      - pandas==3.1.0
+      - pillow==13.0.0
+      - pip==26.2.2
+      - pluggy==1.7.0
+      - protobuf==7.36.2
+      - pyarrow==26.0.1
+      - pygments==2.21.0
+      - pyparsing==3.3.3
+      - pytest==9.2.0
+      - python-dateutil==3.0.0
+      - pyyaml==6.0.3
+      - sbi==0.26.1
+      - scikit-learn==1.8.0
+      - scipy==1.17.1
+      - six==1.17.0
+      - skorch==1.4.0
+      # - ssm==0.0.1    (SLDS; used by no final run; builds only with pip install --no-build-isolation)
+      - sympy==1.14.0
+      - tabulate==0.10.0
+      - tensorboard==2.21.0
+      - tensorboard-data-server==0.7.2
+      - threadpoolctl==3.7.0
+      - torch==2.14.1
+      - tqdm==4.67.3
+      - triton==3.8.0
+      - typing-extensions==4.16.0
+      - tzdata==2026.5
+      - werkzeug==3.1.9
+      - zuko==1.6.0

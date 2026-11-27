@@ -7,7 +7,8 @@ Consensus BE/SC assignment across methods (grid search + SBI representations).
 Reads the finals sc-grid-search (``--gather``) and sc-sbi-condition wrote into one run
 (``model_identification/<cohort>/<run_id>/``), computes one row per animal with each method's call
 and the consensus, and writes ``consensus/<distribution>/{assignments.csv, summary.txt, meta.json}``
-into the same run.
+into the same run. With ``--with-experiment`` (real cohorts) the cohort's animals that are in the snapshot
+but have no results get a row too (Unclear), so the table covers the whole cohort.
 """
 
 from __future__ import annotations
@@ -29,7 +30,8 @@ def main(argv=None):
     p.add_argument('--alpha', type=float, default=0.05)
     p.add_argument('--min-votes', type=int, default=1, help='significant votes needed for a consensus call')
     p.add_argument('--with-experiment', action='store_true',
-                   help='list cohort animals absent from the results (real cohorts only)')
+                   help="also list the cohort's animals that are in the snapshot but have no results "
+                        "(real cohorts only)")
     a = p.parse_args(argv)
 
     try:
@@ -38,8 +40,8 @@ def main(argv=None):
         p.exit(2, f'{e}\n')
     experiment = None
     if a.with_experiment and not is_synthetic_cohort(a.cohort):
-        from sound_categorisation.data.cohort import load_experiment_any
-        experiment = load_experiment_any()
+        from sound_categorisation.data.cohort import cohort_experiment
+        experiment = cohort_experiment(a.cohort)
     df = load_all_assignments(run, a.distribution, experiment=experiment, alpha=a.alpha,
                               min_significant_votes=a.min_votes)
     out = run / 'consensus' / a.distribution

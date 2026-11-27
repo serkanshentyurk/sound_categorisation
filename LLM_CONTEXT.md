@@ -40,13 +40,16 @@ sizes allow.
 - Hard phase (opto1), the light: the WT light effect has the same direction as on Uniform (`mu` +0.36 Hard-A,
   +0.15 Hard-B, vs about +0.06; p 0.114, `min_p` 0.057).
 
-Adaptation: the switch runs at b194525 (18 November 2026), both cohorts; notebook 13.
+Adaptation: the final switch runs at 2e52ece (26 November 2026),
+`switch_adaptation/behaviour1-cohort/2026-11-26_1321_2e52ece` and `switch_adaptation/opto1-cohort/2026-11-26_1321_2e52ece`;
+notebook 13.
 
 - Daily alternation (opto1, the six mice the bias check keeps): the criterion followed partly at most.
   Convergence over trials 100–300 (0 = the criterion before the switch, 1 = the normative one): masking days
   0.41 [−0.04, 0.85], laser days on their laser-off trials 0.24 [−0.15, 0.62].
 - Blocks (behaviour1, the five mice the bias check keeps, whole-block fits): one mouse followed every switch by
-  about the normative amount, two partly, one until its last block went one-sided, one the wrong way. The whole
+  about the normative amount (SS09), two partly (SS04, SS06), one until its last block went one-sided (SS07), one
+  the wrong way (SS05). The whole
   block's share of the normative shift, mean over the mice with a measurable block: Uniform → Hard-B 0.91
   [−0.91, 2.72], Hard-B → Hard-A 0.65 [−0.68, 1.98], Hard-A → Hard-B 0.06 [−1.30, 1.42]. The criterion drifts
   upwards across days, which works against Hard-A → Hard-B, so that switch is the one that tells following
@@ -57,19 +60,41 @@ Adaptation: the switch runs at b194525 (18 November 2026), both cohorts; noteboo
   so silencing had little updating to disrupt, and the cohort that followed in blocks had no laser. Untested,
   not refuted.
 
-Model identification, November 2026.
+Model identification, November 2026: the final runs; notebooks 11 and 91. The method is the lab manuscript's
+(update matrices, two-fold CV repeated over seeds, the lower-error model called at p < 0.05) with three
+departures: fits on Uniform only (the manuscript fitted Hard-A plus Uniform where it had both), 16 grid-search
+seeds (the manuscript's 64) and SBI beside grid search. It is descriptive: too few mice to test BE against SC.
 
-- Noise floor (`sc-noise-floor`, all-mice, 6fd4a93): a model with no trial history scores a median 1.20 times
-  the floor between sessions (above 1.35 in 6 of 19 mice) and 1.11 within sessions. At these data sizes the
-  held-out update matrix tells a model with history from one without only weakly, so for most mice a BE–SC
-  difference in held-out error says little about strategy.
-- Silenced-trial memory (`sc-blocked-update`, on the October fits `all-mice/2026-10-23_0951_64a0f89`): no mouse
-  is consistent with blocking, and the test rarely decides. Complete blocking would move recency and win-stay
-  by about −0.08 under BE and −0.03 under SC (HET medians), against observed 95 % intervals of about ±0.18 to
-  ±0.21.
+- Calls (`model_identification/all-mice/2026-11-17_2256_195866b`, 19 mice): 11 BE, 2 SC (SS14, SS22), 1 split
+  (SS07), 5 unclear; none contested. Grid search is significant in 4 of 19; 9 of the 11 BE calls rest on SBI
+  alone; the two-vote rule calls only SS09 and SS12. The manuscript's mice: 24 BE, 7 SC of 31. Against the October
+  run (`all-mice/2026-10-23_0951_64a0f89`, scored with today's two voters): 8 of 19 calls unchanged; SS14 and
+  SS22 moved from BE to SC. As reported in October: 12 BE, 3 SC, 4 unclear.
+- Validation (`model_identification/synthetic_uniform_learning_k100/2026-11-17_2358_195866b`, 100 synthetic mice
+  per model shaped like the real ones): the consensus is right for 136 of 154 calls; SBI-pooled calls 13 % of true
+  SC mice BE, 1 % the other way; grid search leaves 83 % of BE mice uncalled; SBC: 2 of 32 KS tests below 0.05.
+- Range check (the all-mice run, `range/uniform/`): 14 of 38 mouse–model rows lie outside the simulations under
+  the learning prior (31 under the manuscript's). BE calls with BE statistics outside: SS11, SS12, SS13, SS18, SS21.
+- Noise floor (`noise_floor/all-mice/2026-11-26_1322_2e52ece`): a model with no trial history scores a median 1.20
+  times the floor between sessions (above 1.35 in 6 of 19 mice: SS02, SS04, SS06, SS11, SS13, SS21) and 1.11
+  within sessions (above 1.35 in 4). For most mice the held-out errors of two history models can differ only by a
+  small fraction of the floor.
+- Hard sessions predicted from the Uniform fits (`hard_predictions/behaviour1-cohort/2026-11-25_1809_2e52ece`,
+  `hard_predictions/opto1-cohort/2026-11-25_1839_2e52ece`; notebook 11 §6): both models under-predict the
+  Hard-phase criterion (the observed PSE inside a model's 10–90 % range in 2–3 of 15 rows; the mice sit above both,
+  as the upward drift would make them). On the Hard-A − Hard-B shift SC predicts +0.06 to +0.14 in every clean
+  block mouse, BE about zero for SS04, SS06 and SS07; four of the five shifted the normative way, so SC is closer
+  for all five, on that and on block convergence. SS05 moved the wrong way, which both models miss. Opto cohort: BE
+  is closer on masking days for 5 of the 6 kept mice and on laser days for 4; learning on laser trials or not does
+  not separate the genotypes. The manuscript's Fig 3 fitted Hard-A and both models reproduced the Hard-B shift.
+- Silenced-trial memory (`blocked_update/opto1-cohort/2026-11-25_1624_5f14619`, on the November fits): no reading
+  is consistent with blocking, and the test rarely decides. Of the 30 HET readings (5 mice, 3 measures, 2 models),
+  21 are too weak to test, 6 unclear and 3 not fully blocked (SS23 under SC); WT gives 8, 6 and 4 (SS20). Complete
+  blocking would move recency and win-stay by about −0.05 under BE and −0.01 to −0.02 under SC (HET medians),
+  against observed 95 % intervals of ±0.15 to ±0.22.
 
 ## Repository shape
-Two packages, imports one way: `sound_categorisation` (project) → `behav_utils` (library, 1.0). Both are
+Two packages, imports one way: `sound_categorisation` (project) → `behav_utils` (library, v1.1.0). Both are
 pip installed (`pip install -e .`, which pulls `behav_utils[store]` from its tagged release and installs the
 `sc-*` commands); nothing in the packages manipulates `sys.path`. Import library names from their public
 homes (`behav_utils.data`, `.stats`, `.readouts`, `.models`, …), never from module paths below them. Layout
@@ -148,7 +173,10 @@ cluster folders to the same place on a laptop.
 - Per-session PSE at this cohort's sigma has SE ≈ 0.1; `pse_fixed` (only the criterion free) is steadier.
   `pse_dynamics` τ is not identifiable at ~500 trials; it is in the tables and per-animal PDFs, not on the
   summary pages, for that reason.
-- SS12 has no data; SS17 and SS22 have no Hard sessions; SS20 has no Uniform laser sessions.
+- SS03 has no data. SS10, SS17 and SS19 have Uniform sessions but fewer than 4 that pass the model-identification
+  selection, so the fits cover 19 mice. SS02, SS10, SS12, SS17, SS19 and SS22 have no Hard sessions; SS19 has no
+  laser or masking sessions either. The snapshot also holds eight later mice (SS25–SS35) and `TEST`, one session
+  each, in no cohort.
 - The Hard-A/B hard side is the rig's truncated exponential (rate 2.15329, `data/stimuli.py`), not the
   legacy density; normative PSEs depend on it.
 - `post_opto` is compared with the other laser-off trials; post-opto trials are laser-off trials, and
@@ -159,18 +187,14 @@ cluster folders to the same place on a laptop.
   of Hard trials may still be silent (the unchecked end of each run, and 13 Hard sessions with no check).
 - `*.egg-info`, `build/`, `__pycache__` are build artefacts; they must not be tracked.
 
-## Open work (19 November 2026)
-Aim 1: the October 2026 all-mice run (12 BE, 3 SC, 4 unclear; descriptive, notebook 11) is superseded: its
-networks were trained on 4–6 sessions under the manuscript's prior and conditioned on 2–3-session CV halves.
-The networks are being retrained, Uniform only, under the wider `learning` prior (`settings.SBI_PRIOR`) with the
-number of sessions and valid trials as inputs (`SBI_DESIGN_FEATURES`): pooled (2–5 sessions of 250–600 trials,
-accuracy rule), which votes with the grid search, and single-session, reported beside it as exploratory
-per-session fits (`SBI_TRAIN_REPS`). On them the all-mice run (`all-mice/2026-11-17_2256_195866b`) and an SBI
-validation run on 100 BE + 100 SC synthetic mice shaped like the real ones (`synthetic_uniform_learning_k100`:
-real-run seeds and repeats, SBC, network check; notebook 91) are redone. Primary consensus rule: more
-significant votes (≥ 1), contested calls flagged; the two-vote rule reported alongside. The Hard-block and
-daily-alternation predictions from the Uniform fits are built (`sc-hard-predictions`), not yet run on real fits.
-Still to do: the per-animal model classifier, disRNN.
+## Open work (26 November 2026)
+The thesis data are the snapshot of 14 November 2026, frozen: no new data, no re-export. The final runs of model
+identification (networks retrained Uniform only under the `learning` prior, `settings.SBI_PRIOR`, with the number
+of sessions and valid trials as inputs; pooled votes with grid search, single is listed beside them), the opto
+battery and the analyses above are done; the thesis plan, kept outside the repository, holds the run behind each
+figure. Primary consensus rule: more significant votes (≥ 1), contested calls flagged; the two-vote rule
+alongside. Still to do: the direct model classifier (on the pooled networks' training sets,
+`inference/training_sets.py`), disRNN (JAX in its own environment), the figures and the writing.
 Optional: the learning phase (state-space models). Not planned: Hard-distribution and moments networks (both
 still train by name, e.g. `sc-sbi-train --rep moments`).
 Next-cohort design (blocked distributions, interleaved session types, opsin-negative light control at

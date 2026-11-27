@@ -3,6 +3,23 @@
 
 ## Unreleased
 
+- **Records for the thesis (26 November 2026).** No report number changes; no option or function is renamed.
+  - `sc-validation-tables` with `--real` also writes `real_votes.csv`: one row per run, animal and method, with the
+    model with the lower mean held-out error, its p-value, the call (p < 0.05) and each model's mean held-out error;
+    with `--october`, the October run beside the current one. A new `--october-validation C/ID` writes
+    `call_summary_compare.csv`, the call summary of the October networks' validation run beside this run's. The
+    October runs are scored with today's two voters (grid search and the pooled network), the single and the
+    moments network listed without a vote (`validation.LISTED_METHODS`), so the October consensus in these tables
+    is not the one reported in October. `real_calls.csv` and the other tables are unchanged.
+  - `sc-consensus --with-experiment` lists only the cohort's animals that are in the snapshot but have no results
+    (`data.cohort.cohort_experiment`); it listed every animal in the snapshot.
+  - Notebooks 11 and 91 read the validation cohort `synthetic_uniform_learning_k100` (`nb_setup.VALIDATION_COHORT`).
+    Notebook 91: 100 + 100 synthetic mice; the single network beside the two voters, without a vote; the moments
+    panel gone; the two new tables; the grid search's σ_percep range as it now is (0.05–0.50, the prior's).
+  - `environment.lock.yml`: the cluster environment of the final runs (26 November 2026, at 2e52ece), edited so that
+    it rebuilds on Linux x86-64 (its header and SETUP.md §7 say how).
+  - `LLM_CONTEXT.md` brought up to the final runs; its line on which mice lack which sessions corrected from the
+    snapshot (SS03 has no data, not SS12; SS20 has Uniform laser sessions).
 - **Analysis 3: the model copies of real mice lost their switches.** A session loaded from files carries its
   distribution on every trial; a synthetic one carries it in its metadata. `with_choices` rebuilt the copy's
   trials with `session_from_arrays`, which keeps the label in the metadata only, so every copy of a real session

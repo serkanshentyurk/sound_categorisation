@@ -68,6 +68,44 @@ def test_confusion_and_summaries():
     assert cont.loc[(1, 'BE'), 'n_contested'] == 1 and cont.loc[(1, 'SC'), 'n_contested'] == 0
 
 
+def test_call_summary_by_run_stacks_runs_and_lists_the_retired_voter():
+    """The October networks' validation run beside the current one; moments, present only in the
+    October table, appears there and nowhere else."""
+    current = {r: _assign(r).drop(columns=['SBI-moments-UM', 'SBI-moments-UM_p']) for r in V.RULES}
+    october = {r: _assign(r) for r in V.RULES}
+    both = V.call_summary_by_run({'current': current, 'october': october})
+    assert both.columns[0] == 'run' and set(both['run']) == {'current', 'october'}
+    voters = {'GS-UM', 'SBI-pooled-UM', 'SBI-moments-UM', 'Consensus'}
+    assert set(both.loc[both['run'] == 'october', 'voter']) == voters
+    assert 'SBI-moments-UM' not in set(both.loc[both['run'] == 'current', 'voter'])
+    mine = both[both['run'] == 'current'].drop(columns='run').reset_index(drop=True)
+    alone = V.call_summary(V.confusion_table(current))
+    pd.testing.assert_frame_equal(mine, alone)                      # stacking changes no number
+
+
+def test_real_votes_table_lists_every_method_with_its_role():
+    a = pd.DataFrame([
+        {'id': 'R1', 'GS-UM': 'BE', 'GS-UM_p': 0.20, 'GS-UM_be': 0.10, 'GS-UM_sc': 0.11,
+         'SBI-pooled-UM': 'BE', 'SBI-pooled-UM_p': 0.001, 'SBI-pooled-UM_be': 0.09, 'SBI-pooled-UM_sc': 0.12,
+         'SBI-moments-UM_lower': 'SC', 'SBI-moments-UM_lower_pvalue': 0.01,
+         'SBI-moments-UM_be': 0.13, 'SBI-moments-UM_sc': 0.10,
+         'Consensus': 'BE', 'n_sig_BE': 1, 'n_sig_SC': 0},
+        {'id': 'R2', 'GS-UM': None, 'GS-UM_p': np.nan, 'GS-UM_be': np.nan, 'GS-UM_sc': np.nan,
+         'SBI-pooled-UM': 'SC', 'SBI-pooled-UM_p': 0.03, 'SBI-pooled-UM_be': 0.12, 'SBI-pooled-UM_sc': 0.10,
+         'SBI-moments-UM_lower': None, 'SBI-moments-UM_lower_pvalue': np.nan,
+         'SBI-moments-UM_be': np.nan, 'SBI-moments-UM_sc': np.nan,
+         'Consensus': 'SC', 'n_sig_BE': 0, 'n_sig_SC': 1},
+    ])
+    v = V.real_votes_table({'october': a}).set_index(['id', 'method'])
+    assert list(V.real_votes_table({'october': a}).columns) == V.VOTE_COLUMNS
+    assert len(v) == 6 and set(v['run']) == {'october'}
+    assert (v.loc[('R1', 'GS-UM'), 'lower'], v.loc[('R1', 'GS-UM'), 'call']) == ('BE', 'no call')   # p 0.20
+    assert v.loc[('R1', 'SBI-pooled-UM'), 'call'] == 'BE' and bool(v.loc[('R1', 'SBI-pooled-UM'), 'voting'])
+    row = v.loc[('R1', 'SBI-moments-UM')]
+    assert not bool(row['voting']) and row['call'] == 'SC' and row['sc_error'] == 0.10           # listed
+    assert pd.isna(v.loc[('R2', 'GS-UM'), 'lower']) and v.loc[('R2', 'GS-UM'), 'call'] == 'no call'
+
+
 def test_gs_sigma_split_and_real_calls():
     assign = _assign(1)
     truths = pd.DataFrame({'id': assign['id'], 'sigma_percep': [0.1, 0.4, 0.2, 0.2, 0.45, 0.1, 0.1, 0.1]})
